@@ -87,6 +87,7 @@ pub(crate) struct Flight {
     /// The tool the call is for, to tell of it.
     tool: Tool,
     observation: Option<crate::CallInfo>,
+    started: Time,
     state: State,
 }
 
@@ -252,7 +253,7 @@ pub(crate) fn start(
     // per kit, for the flights retired in this iteration, which are at most those
     // running when it began.
     let id = flights
-        .insert(Flight { kit, tool, observation, state })
+        .insert(Flight { kit, tool, observation, started: env.now, state })
         .expect("the flight slab has room for every kit's flights");
     out.push(Request::Io { owner: id.token(), op, deadline });
     id
@@ -298,7 +299,7 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
         }
         State::Running { reply_to, place, timeout, output, after } => match done {
             Done::Held { head, tail, dropped } => {
-                let job = kit.jobs.held(id);
+                let job = kit.jobs.held(id, flight.observation, flight.started);
                 assert!(kit.flights.remove(&id), "a yielding command leaves its batch");
                 if kit::closing(kit) {
                     out.push(Request::CancelIo { owner });

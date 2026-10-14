@@ -1016,7 +1016,7 @@ fn a_search_is_bounded_and_says_when_it_cannot_run() {
 fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing() {
     let run_with = |facts| {
         let calm = Settings::calm(80);
-        let settings = Settings { tools: Limits { facts, ..calm.tools }, ..calm };
+        let settings = Settings { tools: Limits { facts, jobs: 0, ..calm.tools }, ..calm };
         let script = vec![
             Step::Calls(vec![read(b"src/lib.rs"), list(b"src"), read(b"/etc/passwd")]),
             Step::Calls(vec![edit(b"src/lib.rs", b"fn one", b"fn uno", false), shell(b"cargo test", None)]),

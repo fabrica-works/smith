@@ -156,7 +156,7 @@ fn bounds(messages: u32) -> Limits {
                 shell_tail: 0,
                 search_hits: 1,
                 search_bytes: 64,
-                facts: 6,
+                facts: 18,
                 ..LIMITS.session.tools
             },
             ..LIMITS.session

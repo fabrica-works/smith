@@ -544,3 +544,178 @@ fn a_finished_job_number_is_not_used_again() {
         })
     );
 }
+
+#[test]
+fn a_job_past_its_deadline_answers_timed_out() {
+    let mut fixture = Fixture::new();
+    fixture.checkout.program(b"cargo build", program(4_000, b"Compiling\nFinished\n", Exit::Code(0), &[]));
+    let mut call = shell_after(b"cargo build", 1);
+    if let Call::Shell { timeout, .. } = &mut call {
+        *timeout = tools::Timeout::Asked(Duration::from_secs(2));
+    }
+    let writes = [(Duration::ZERO, b"Compiling\n".as_slice()), (Duration::from_secs(4), b"Finished\n")];
+    let (answers, _) = run(settings(), fixture, &writes, vec![Step::Calls(vec![call]), Step::Calls(vec![job(1, 5)])]);
+    assert_eq!(
+        answers[1],
+        Ok(Outcome::Job {
+            job: JobNumber(1),
+            head: Box::default(),
+            tail: Box::default(),
+            dropped: 0,
+            output: BytesClamp::Within,
+            wait: TimeoutClamp::Within,
+            end: JobEnd::Ended(tools::Exit::TimedOut)
+        })
+    );
+}
+
+fn cancel_builds(reads: Vec<Call>) -> (Vec<Result<Outcome, JobProblem>>, World) {
+    let mut fixture = Fixture::new();
+    fixture.checkout.program(b"cargo build", program(30_000, b"Compiling\nFinished\n", Exit::Code(0), &[]));
+    let writes = [(Duration::ZERO, b"Compiling\n".as_slice()), (Duration::from_secs(3), b"Finished\n")];
+    run(
+        settings(),
+        fixture,
+        &writes,
+        vec![
+            Step::Calls(vec![shell_after(b"cargo build", 1)]),
+            Step::Calls(vec![shell_after(b"cargo build", 1)]),
+            Step::Sleep(Duration::from_secs(2)),
+            Step::CancelJobs,
+            Step::Calls(reads),
+        ],
+    )
+}
+
+#[test]
+fn jobs_cancelled_for_a_check_answer_cancelled_at_their_next_read() {
+    let (answers, world) = cancel_builds(vec![job(1, 5), job(2, 5)]);
+    assert_eq!(
+        answers[2..],
+        [
+            Ok(Outcome::Job {
+                job: JobNumber(1),
+                head: b"Finished\n".as_slice().into(),
+                tail: Box::default(),
+                dropped: 0,
+                output: BytesClamp::Within,
+                wait: TimeoutClamp::Within,
+                end: JobEnd::Cancelled
+            }),
+            Ok(Outcome::Job {
+                job: JobNumber(2),
+                head: b"Finished\n".as_slice().into(),
+                tail: Box::default(),
+                dropped: 0,
+                output: BytesClamp::Within,
+                wait: TimeoutClamp::Within,
+                end: JobEnd::Cancelled
+            }),
+        ]
+    );
+    assert_eq!(world.stats().cancels, 2);
+}
+
+#[test]
+fn a_cancelled_jobs_read_applies_its_own_output_budget() {
+    let mut poll = job(1, 5);
+    if let Call::Job { output, .. } = &mut poll {
+        *output = tools::Budget::Asked(6);
+    }
+    let (answers, _) = cancel_builds(vec![poll, job(2, 5)]);
+    assert_eq!(
+        answers[2],
+        Ok(Outcome::Job {
+            job: JobNumber(1),
+            head: b"Fi".as_slice().into(),
+            tail: b"hed\n".as_slice().into(),
+            dropped: 3,
+            output: BytesClamp::Within,
+            wait: TimeoutClamp::Within,
+            end: JobEnd::Cancelled
+        })
+    );
+}
+
+#[test]
+fn a_close_with_one_job_running_and_one_exited_unread_tells_each_once() {
+    let script =
+        vec![Step::Calls(vec![shell_after(b"cargo build", 1)]), Step::Calls(vec![shell_after(b"cargo build", 1)])];
+    let (_, world) = run(settings(), Fixture::new(), &build(), script);
+    let facts: Vec<_> = world
+        .sessions()
+        .flat_map(|session| world.job_facts(session))
+        .map(|fact| {
+            let tools::FactKind::JobEnded { job, end, unread_bytes, started, .. } = fact.kind else { unreachable!() };
+            (job, end, unread_bytes, started, fact.at)
+        })
+        .collect();
+    assert_eq!(
+        facts,
+        vec![
+            (
+                JobNumber(1),
+                JobEnd::Ended(tools::Exit::Code { code: 0 }),
+                9,
+                Time::ZERO,
+                Time::ZERO.saturating_add(Duration::from_secs(2))
+            ),
+            (
+                JobNumber(2),
+                JobEnd::Cancelled,
+                0,
+                Time::ZERO.saturating_add(Duration::from_secs(1)),
+                Time::ZERO.saturating_add(Duration::from_secs(2))
+            ),
+        ]
+    );
+}
+
+#[test]
+fn cancellation_settles_an_outstanding_read_before_it_acknowledges() {
+    let script = vec![
+        Step::Calls(vec![shell_after(b"cargo build", 1)]),
+        Step::Send(vec![job(1, 5)]),
+        Step::CancelJobs,
+        Step::Calls(vec![job(1, 5)]),
+    ];
+    let (answers, _) = run(settings(), Fixture::new(), &build(), script);
+    assert_eq!(
+        answers[1..],
+        [
+            Ok(Outcome::Job {
+                job: JobNumber(1),
+                head: Box::default(),
+                tail: Box::default(),
+                dropped: 0,
+                output: BytesClamp::Within,
+                wait: TimeoutClamp::Within,
+                end: JobEnd::Cancelled
+            }),
+            Err(JobProblem::Unknown { job: JobNumber(1) }),
+        ]
+    );
+}
+
+#[test]
+fn cancelling_an_already_exited_job_preserves_its_observed_exit() {
+    let script = vec![
+        Step::Calls(vec![shell_after(b"cargo build", 1)]),
+        Step::Sleep(Duration::from_secs(2)),
+        Step::CancelJobs,
+        Step::Calls(vec![job(1, 5)]),
+    ];
+    let (answers, _) = run(settings(), Fixture::new(), &build(), script);
+    assert_eq!(
+        answers[1],
+        Ok(Outcome::Job {
+            job: JobNumber(1),
+            head: b"Finished\n".as_slice().into(),
+            tail: Box::default(),
+            dropped: 0,
+            output: BytesClamp::Within,
+            wait: TimeoutClamp::Within,
+            end: JobEnd::Ended(tools::Exit::Code { code: 0 })
+        })
+    );
+}

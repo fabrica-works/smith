@@ -61,6 +61,8 @@ pub enum Event {
         /// Tools-issued kit identity, valid until its close terminal.
         kit: Token,
     },
+    /// Cancel this kit's held jobs; `JobsCancelled` follows their settlement.
+    CancelJobs { kit: Token },
     /// Terminal for `Io`.
     Done { owner: Token, done: Done },
 }
@@ -91,6 +93,8 @@ pub enum Request {
     Invalid { to: ReplyTo, problem: JobProblem },
     /// The answer to a `Close`: the kit has ended.
     Closed { session: Token },
+    /// Every job cancelled by the session's request has settled.
+    JobsCancelled { session: Token },
     /// Ask io for `op`, giving up at `deadline`.
     Io {
         owner: Token,

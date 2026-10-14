@@ -192,3 +192,58 @@ impl Job {
         }
     }
 }
+
+impl World {
+    /// Content-free job terminals, in the order each session received them.
+    #[must_use]
+    pub fn job_facts(&self, session: u64) -> Vec<tools::Fact> {
+        self.facts
+            .get(&session)
+            .into_iter()
+            .flatten()
+            .filter(|fact| matches!(fact.kind, tools::FactKind::JobEnded { .. }))
+            .copied()
+            .collect()
+    }
+
+    pub(super) fn observe_job_answer(&mut self, session: u64, result: &Result<tools::Outcome, tools::JobProblem>) {
+        match result {
+            Ok(tools::Outcome::Running { job, .. }) => {
+                assert!(self.job_numbers.insert((session, job.0), false).is_none(), "job numbers never repeat");
+            }
+            Ok(tools::Outcome::Job { job, end, .. }) => {
+                let ended = self.job_numbers.get_mut(&(session, job.0)).expect("a job read names a running answer");
+                assert!(!*ended, "a terminal is told once");
+                if *end != JobEnd::Running {
+                    *ended = true;
+                }
+            }
+            _ => {}
+        }
+        let running = self.job_numbers.iter().filter(|((whose, _), ended)| *whose == session && !**ended).count();
+        assert!(running <= self.settings.tools.jobs as usize, "at most jobs commands run per kit");
+    }
+
+    pub(super) fn observe_job_fact(&mut self, fact: &tools::Fact) {
+        match fact.kind {
+            tools::FactKind::JobEnded { session, job, end, .. } => {
+                assert_ne!(end, JobEnd::Running, "a close reports a terminal");
+                let ended =
+                    self.job_numbers.get_mut(&(session.raw(), job.0)).expect("a terminal names a running answer");
+                assert!(!*ended, "a job terminal is told once by answer or fact");
+                *ended = true;
+            }
+            tools::FactKind::Closed { session } => {
+                assert!(
+                    self.job_numbers.iter().all(|((whose, _), ended)| *whose != session.raw() || *ended),
+                    "every job ends before closed"
+                );
+            }
+            tools::FactKind::Opened { .. }
+            | tools::FactKind::Refused { .. }
+            | tools::FactKind::Started { .. }
+            | tools::FactKind::Answered { .. }
+            | tools::FactKind::Closing { .. } => {}
+        }
+    }
+}

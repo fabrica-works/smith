@@ -40,6 +40,7 @@ fn fill(limits: Limits) {
                 request @ (Request::Invalid { .. }
                 | Request::Refused { .. }
                 | Request::Closed { .. }
+                | Request::JobsCancelled { .. }
                 | Request::Job { .. }
                 | Request::CancelIo { .. }) => {
                     panic!("{limits:?}: unexpected {request:?}")
@@ -191,20 +192,28 @@ fn fill_jobs() {
         }
         kits.push((kit, owners));
     }
-    for (kit, owners) in kits {
-        drop(job_step(&mut domain, &env, &mut out, &meter, Event::Close { kit }));
-        for owner in owners {
+    for (kit, owners) in &kits {
+        drop(job_step(&mut domain, &env, &mut out, &meter, Event::CancelJobs { kit: *kit }));
+        for (number, owner) in owners.iter().enumerate() {
             drop(job_step(
                 &mut domain,
                 &env,
                 &mut out,
                 &meter,
                 Event::Done {
-                    owner,
-                    done: Done::Job { head: Box::default(), tail: Box::default(), dropped: 0, end: JobEnd::Cancelled },
+                    owner: *owner,
+                    done: Done::Job {
+                        head: if number == 0 { Box::default() } else { vec![b'h'; LIMITS.shell_head as usize].into() },
+                        tail: if number == 0 { Box::default() } else { vec![b't'; LIMITS.shell_tail as usize].into() },
+                        dropped: 0,
+                        end: JobEnd::Cancelled,
+                    },
                 },
             ));
         }
+    }
+    for (kit, _) in kits {
+        drop(job_step(&mut domain, &env, &mut out, &meter, Event::Close { kit }));
     }
     assert_eq!(domain.kits(), 0);
     assert_eq!(domain.flights(), 0);

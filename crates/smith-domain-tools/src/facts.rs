@@ -66,6 +66,16 @@ pub enum FactKind {
     },
     /// The kit closed.
     Closed { session: Token },
+    /// A job's end went unread; the kit reports it before closing.
+    JobEnded {
+        session: Token,
+        job: crate::JobNumber,
+        /// Parent identity of the shell call, retained after its answer.
+        owner: Token,
+        end: crate::JobEnd,
+        unread_bytes: u64,
+        started: Time,
+    },
 }
 
 /// How a call ended, without what it said: an outcome's kind.
@@ -323,6 +333,10 @@ impl Facts {
 
     pub(crate) fn push_call(&mut self, kind: FactKind, call: Option<CallInfo>) {
         self.queue.push(Fact { at: self.now, kind, call });
+    }
+
+    pub(crate) fn push_at(&mut self, at: Time, kind: FactKind) {
+        self.queue.push(Fact { at, kind, call: None });
     }
 
     pub(crate) fn pop(&mut self) -> Option<Fact> {

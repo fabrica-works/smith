@@ -184,7 +184,7 @@ pub(crate) fn call(
     }
 }
 
-pub(crate) fn close(domain: &mut Domain, kit: Token, out: &mut Queue<Request>) {
+pub(crate) fn close(domain: &mut Domain, kit: Token, limits: &Limits, out: &mut Queue<Request>) {
     let id = Id::from_token(kit);
     let kit = domain.kits.get_mut(id).expect("a kit lives until its session closes it");
     assert!(kit.state == State::Open, "a kit is closed once");
@@ -197,7 +197,8 @@ pub(crate) fn close(domain: &mut Domain, kit: Token, out: &mut Queue<Request>) {
     for flight in &kit.flights {
         flight::cancel(*flight, out);
     }
-    kit.jobs.close(out);
+    kit.jobs.close(kit.session, &mut domain.facts, limits, out);
+    settled(&mut domain.kits, &mut domain.facts, id, out);
 }
 
 /// The token of the kit's session.

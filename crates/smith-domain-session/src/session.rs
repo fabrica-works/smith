@@ -1043,6 +1043,7 @@ const fn kit_session(fact: tools::FactKind) -> Token {
         | tools::FactKind::Started { session, .. }
         | tools::FactKind::Answered { session, .. }
         | tools::FactKind::Closing { session, .. }
+        | tools::FactKind::JobEnded { session, .. }
         | tools::FactKind::Closed { session } => session,
     }
 }
@@ -1113,6 +1114,7 @@ fn tools_step(calls: &mut Calls, env: &Env<Limits>, event: tools::Event, out: &m
             tools::Request::Opened { session: _, kit } => heard.kit = Some(News::Opened { kit }),
             tools::Request::Refused { session: _, refusal } => heard.kit = Some(News::Refused { refusal }),
             tools::Request::Closed { session } => heard.kit = Some(News::Closed { session: Id::from_token(session) }),
+            tools::Request::JobsCancelled { .. } => unreachable!("session cancellation is added in 10.3"),
         }
     }
     assert!(calls.out.is_empty(), "the tools emit no more than their max_out");

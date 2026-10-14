@@ -203,6 +203,7 @@ impl Book {
                     tools::FactKind::Opened { .. }
                     | tools::FactKind::Refused { .. }
                     | tools::FactKind::Closing { .. }
+                    | tools::FactKind::JobEnded { .. }
                     | tools::FactKind::Closed { .. },
                 ..
             } => return,
@@ -266,6 +267,7 @@ impl Book {
                     tools::FactKind::Opened { .. }
                     | tools::FactKind::Refused { .. }
                     | tools::FactKind::Closing { .. }
+                    | tools::FactKind::JobEnded { .. }
                     | tools::FactKind::Closed { .. },
                 ..
             } => unreachable!("only selected actual call facts reach projection"),

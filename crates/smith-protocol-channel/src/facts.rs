@@ -40,6 +40,7 @@ pub(crate) fn project(fact: &domain::Fact) -> Option<(FactKind, u64)> {
                 tools::FactKind::Answered { .. } => Some((FactKind::ToolFinished, 1)),
                 tools::FactKind::Opened { .. }
                 | tools::FactKind::Refused { .. }
+                | tools::FactKind::JobEnded { .. }
                 | tools::FactKind::Closing { .. }
                 | tools::FactKind::Closed { .. } => None,
             },

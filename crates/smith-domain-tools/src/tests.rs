@@ -575,12 +575,12 @@ fn calls_are_refused_at_the_entrance() {
 
 #[test]
 fn the_most_a_step_emits_covers_closing_a_busy_kit() {
-    assert_eq!(max_out(&LIMITS), 8);
+    assert_eq!(max_out(&LIMITS), 12);
 }
 
 #[test]
 fn a_small_call_limit_reserves_held_job_outputs() {
-    assert_eq!(max_out(&Limits { calls: 1, ..LIMITS }), 5);
+    assert_eq!(max_out(&Limits { calls: 1, ..LIMITS }), 9);
 }
 
 #[test]
@@ -1428,7 +1428,7 @@ fn a_minimum_fact_reserve_keeps_every_native_entrance_observation() {
 
 #[test]
 fn the_last_cancelled_operation_fills_the_complete_two_fact_reserve() {
-    let mut h = Harness::new(Limits { facts: crate::max_facts(&LIMITS), ..LIMITS });
+    let mut h = Harness::new(Limits { jobs: 0, facts: 2, ..LIMITS });
     let kit = h.open(5, authority(ALL));
     let (owner, _) = h.start(kit, 1, read(b"src/lib.rs"));
     drop(h.emit(Event::Close { kit }));

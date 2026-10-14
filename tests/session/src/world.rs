@@ -1921,6 +1921,7 @@ impl World {
             | tools::FactKind::Refused { session, .. }
             | tools::FactKind::Started { session, .. }
             | tools::FactKind::Answered { session, .. }
+            | tools::FactKind::JobEnded { session, .. }
             | tools::FactKind::Closing { session, .. }
             | tools::FactKind::Closed { session }) = fact;
             assert!(self.sessions.contains_key(&opener.raw()), "a kit's fact names an opener that opened");
@@ -1954,7 +1955,9 @@ impl World {
                 tools::FactKind::Closed { .. } => &mut told.kits_closed,
                 tools::FactKind::Started { .. } => &mut told.tools_started,
                 tools::FactKind::Answered { .. } => &mut told.tools_answered,
-                tools::FactKind::Refused { .. } | tools::FactKind::Closing { .. } => return,
+                tools::FactKind::Refused { .. }
+                | tools::FactKind::Closing { .. }
+                | tools::FactKind::JobEnded { .. } => return,
             },
             agent::FactKind::DelegateStarted { .. } => &mut told.delegates_started,
             agent::FactKind::DelegateAnswered { .. } => &mut told.delegates_answered,

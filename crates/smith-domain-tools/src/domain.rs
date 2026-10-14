@@ -16,17 +16,17 @@ use crate::limits::Limits;
 /// The most requests one call of [`step`] emits under `limits`: closing a kit
 /// cancels its ordinary calls and held owners. An ended job can invalidate
 /// the reads queued behind its answer, then close its kit. The parent reserves
-/// all calls plus all jobs, or two outputs when that is larger.
+/// all calls plus two outputs per job, or two outputs when that is larger.
 #[must_use]
 pub const fn max_out(limits: &Limits) -> u32 {
-    let owners = limits.calls.saturating_add(limits.jobs);
+    let owners = limits.calls.saturating_add(limits.jobs.saturating_mul(2));
     if owners > 2 { owners } else { 2 }
 }
 
-/// At most an operation terminal and its kit's close are observed together.
+/// Close can report every retained terminal beside its lifecycle facts.
 #[must_use]
-pub const fn max_facts(_limits: &Limits) -> u32 {
-    2
+pub const fn max_facts(limits: &Limits) -> u32 {
+    limits.jobs.saturating_add(2)
 }
 
 /// The tools child domain's state.
@@ -94,7 +94,8 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::Call { kit, reply_to, observation, call, deadline } => {
             kit::call(domain, env, kit, reply_to, observation, call, deadline, out);
         }
-        Event::Close { kit } => kit::close(domain, kit, out),
+        Event::Close { kit } => kit::close(domain, kit, &env.limits, out),
+        Event::CancelJobs { kit } => crate::jobs::cancel(domain, kit, &env.limits, out),
         Event::Done { owner, done } => flight::done(domain, env, owner, done, out),
     }
 }

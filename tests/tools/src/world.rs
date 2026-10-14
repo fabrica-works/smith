@@ -121,6 +121,8 @@ pub enum Step {
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
     Latency(Span),
+    /// Cancel held jobs, continuing only after all their groups settle.
+    CancelJobs,
 }
 
 /// What the world counted.
@@ -277,6 +279,9 @@ enum State {
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
     Closing,
+    Cancelling {
+        kit: Token,
+    },
     Closed,
     Refused(Refusal),
 }
@@ -302,6 +307,7 @@ pub struct World {
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
     calls: BTreeMap<u64, (u64, Option<Result<Outcome, tools::JobProblem>>)>,
+    job_numbers: BTreeMap<(u64, u32), bool>,
     /// io's operations in flight.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
@@ -354,6 +360,7 @@ impl World {
             wire: Schedule::new(),
             sessions: BTreeMap::new(),
             calls: BTreeMap::new(),
+            job_numbers: BTreeMap::new(),
             ops: Ledger::new("operation"),
             owners: BTreeMap::new(),
             kits: BTreeMap::new(),
@@ -444,7 +451,12 @@ impl World {
     pub fn refusal(&self, session: u64) -> Option<Refusal> {
         match self.sessions.get(&session).expect("a session the world made").state {
             State::Refused(refusal) => Some(refusal),
-            State::Opening | State::Running { .. } | State::Waiting { .. } | State::Closing | State::Closed => None,
+            State::Opening
+            | State::Running { .. }
+            | State::Waiting { .. }
+            | State::Cancelling { .. }
+            | State::Closing
+            | State::Closed => None,
         }
     }
 
@@ -496,7 +508,7 @@ impl World {
             let whose = match &event {
                 tools::Event::Call { kit, .. } => Some(*self.kits.get(kit).expect("a kit that opened")),
                 tools::Event::Done { owner, .. } => Some(*self.owners.get(owner).expect("an operation io ran")),
-                tools::Event::Open { .. } | tools::Event::Close { .. } => None,
+                tools::Event::Open { .. } | tools::Event::Close { .. } | tools::Event::CancelJobs { .. } => None,
             };
             let editing = matches!(&event, tools::Event::Call { call: Call::Edit { .. }, .. });
             let before = self.stage.out.len();
@@ -514,6 +526,7 @@ impl World {
                         | tools::Request::Refused { .. }
                         | tools::Request::Answer { .. }
                         | tools::Request::Invalid { .. }
+                        | tools::Request::JobsCancelled { .. }
                         | tools::Request::Closed { .. }
                         | tools::Request::Job { .. }
                         | tools::Request::CancelIo { .. } => {}
@@ -530,6 +543,7 @@ impl World {
 
         // Facts, at the world's own pace.
         while let Some(fact) = self.tools.pop_fact() {
+            self.observe_job_fact(&fact);
             self.stats.facts += 1;
             self.log(&format!("tools tell {fact:?}"));
             self.facts.entry(session_of(&fact).raw()).or_default().push(fact);
@@ -564,6 +578,16 @@ impl World {
                 self.answered(to, Ok(outcome));
             }
             tools::Request::Invalid { to, problem } => self.answered(to, Err(problem)),
+            tools::Request::JobsCancelled { session } => {
+                assert!(
+                    self.jobs.keys().all(|owner| self.owners[owner] != session.raw()),
+                    "cancel waits for every held owner"
+                );
+                let entry = self.session_mut(session.raw());
+                let State::Cancelling { kit } = entry.state else { panic!("one cancel acknowledgement") };
+                entry.state = State::Running { kit };
+                self.next(session.raw());
+            }
             tools::Request::Closed { session } => {
                 let entry = self.sessions.get(&session.raw()).expect("a session the world made");
                 assert_eq!(entry.state, State::Closing, "a kit closes once, when asked");
@@ -614,8 +638,9 @@ impl World {
         let call = to.into_token().raw();
         let (session, answer) = self.calls.get_mut(&call).expect("an answer to a call that was made");
         assert!(answer.is_none(), "a call is answered once");
-        *answer = Some(result);
         let session = *session;
+        self.observe_job_answer(session, &result);
+        self.calls.get_mut(&call).expect("known call").1 = Some(result);
         let entry = self.session_mut(session);
         entry.awaited.remove(&call);
         match entry.state {
@@ -625,6 +650,7 @@ impl World {
             }
             State::Waiting { .. }
             | State::Opening
+            | State::Cancelling { .. }
             | State::Running { .. }
             | State::Closing
             | State::Closed
@@ -823,7 +849,12 @@ impl World {
         let entry = self.session_mut(session);
         let kit = match entry.state {
             State::Running { kit } => kit,
-            State::Opening | State::Waiting { .. } | State::Closing | State::Closed | State::Refused(_) => {
+            State::Opening
+            | State::Waiting { .. }
+            | State::Cancelling { .. }
+            | State::Closing
+            | State::Closed
+            | State::Refused(_) => {
                 unreachable!("a session steps while it runs")
             }
         };
@@ -833,6 +864,10 @@ impl World {
             return;
         };
         match step {
+            Step::CancelJobs => {
+                self.session_mut(session).state = State::Cancelling { kit };
+                self.stage.push(tools::Event::CancelJobs { kit });
+            }
             Step::Calls(calls) => {
                 let sent = self.send(session, kit, calls);
                 let entry = self.session_mut(session);
@@ -910,7 +945,11 @@ impl World {
         for (name, session) in &self.sessions {
             match session.state {
                 State::Closed | State::Refused(_) => {}
-                State::Opening | State::Running { .. } | State::Waiting { .. } | State::Closing => {
+                State::Opening
+                | State::Running { .. }
+                | State::Waiting { .. }
+                | State::Cancelling { .. }
+                | State::Closing => {
                     panic!("session {name} ended, not {:?}", session.state)
                 }
             }
@@ -935,7 +974,7 @@ impl World {
                     tools::FactKind::Refused { .. } => told.refused += 1,
                     tools::FactKind::Started { .. } => told.started += 1,
                     tools::FactKind::Answered { .. } => told.answered += 1,
-                    tools::FactKind::Closing { .. } => {}
+                    tools::FactKind::Closing { .. } | tools::FactKind::JobEnded { .. } => {}
                     tools::FactKind::Closed { .. } => told.closed += 1,
                 }
             }
@@ -943,7 +982,12 @@ impl World {
                 session.calls.iter().filter(|call| self.calls[call].1.as_ref().expect("answered").is_ok()).count();
             let refused = match session.state {
                 State::Refused(_) => 1,
-                State::Opening | State::Running { .. } | State::Waiting { .. } | State::Closing | State::Closed => 0,
+                State::Opening
+                | State::Running { .. }
+                | State::Waiting { .. }
+                | State::Cancelling { .. }
+                | State::Closing
+                | State::Closed => 0,
             };
             let opened = 1 - refused;
             let expected = Told { opened, refused, started: told.started, answered: calls, closed: opened };
@@ -1037,6 +1081,7 @@ fn session_of(fact: &tools::Fact) -> Token {
         | tools::FactKind::Started { session, .. }
         | tools::FactKind::Answered { session, .. }
         | tools::FactKind::Closing { session, .. }
+        | tools::FactKind::JobEnded { session, .. }
         | tools::FactKind::Closed { session } => *session,
     }
 }

@@ -111,7 +111,8 @@ fn drain(out: &mut Queue<Request>, kits: &mut Vec<Token>, ops: &mut Vec<(Token, 
             | Request::Invalid { .. }
             | Request::Closed { .. }
             | Request::Job { .. }
-            | Request::CancelIo { .. } => {}
+            | Request::CancelIo { .. }
+            | Request::JobsCancelled { .. } => {}
         }
     }
 }
