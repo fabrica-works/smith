@@ -39,7 +39,7 @@ meanwhile (implementer.md, section 8.7).
 |---|---|---|---|
 | `01-tasks.md` | 01: the graded tasks: fixtures and `shell-cwd` at version 2, what decides a graded task, comparison budgets refused, `/tmp` listed | — | — |
 | `02-pins.md` | 02: each agent as it ships: smith's pins as product layers, one face, Codex as it ships | — | — |
-| `03-results.md` | 03: priced spend from smith's presets with the formats' version 3, a summary row per attempt, the time record, Codex's children, large effects | — | — |
+| `03-results.md` | 03: priced spend from smith's presets with the formats' version 3, a summary row per attempt, the time record, Codex's children, large effects; 03.s1, a retried failure's tokens (ruling 131), before 12.1's run | — | — |
 | `04-probes.md` | 04: calibration in task files, `history` version 2, the `parity` suite and command, probes gated by calibration, `first-request` calibrated | — | 04.4: smith 03's attempt rows [03.2]; 04.6: smith 02's pins and one face [02.1, 02.2], smith 03's summary version 3 [03.1] |
 | `05-product.md` | 05: `gpt-6.1-sol` and the working tier, one effort bound, a failed start ends `smith exec` | — | — |
 | `06-text.md` | 06: the empty path and the descriptions' facts, then the task role | the baseline `parity` run's summary on `main` [12.1]; smith 08's vocabulary [08.1] | — |
@@ -256,12 +256,12 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 | 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 30 | $3 |
 | 07.3 | `history` and `history/small-window` calibrated: 19 spent at low and medium (rulings 118, 119); version 3 (ruling 121): base 12 at medium, no control; small-window 13 after 04.s3, with its control (ruling 124); 25 more at `high` for both only if model deviations alone put ten passes out of reach | 73 | $4 |
 | 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 24 | $7 |
-| 12.1 | the baseline `parity` run | 58 | $12 |
+| 12.1 | the baseline `parity` run: 10 spent on `17d63afd` (ruling 131), then 58 once 03.s1 lands | 68 | $12.20 |
 | 12.2 | the `compaction` experiment, 10 per arm | 20 | $1 |
 | 12.3 | `tool-output` version 3's four variants and `process-tree`, while room is left | at most 50 | $0.30 |
 | 12.4 | the closing `parity` run | 58 | $12 |
 | reserve | provider-stopped reruns (rule 9) | 6 | $0.30 |
-| **the run** | | **at most 340** | **about $39.50** |
+| **the run** | | **at most 340** | **about $39.70** |
 
 12.3 runs only the calibrations that leave 64 attempts (12.4's 58 and the
 reserve) under 340; those it cannot run go to `later.md`.

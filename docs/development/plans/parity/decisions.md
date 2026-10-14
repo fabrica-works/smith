@@ -916,3 +916,119 @@ changes what section 8.4 holds.
 
 130. **tool.completed's job from tools::FactKind::Answered** (plan defect, smith 10's block of 2026-10-14T22:30:43Z).
      Yes, as the report proposes: a plan defect, 10.4's Files missed where the job number is known. events.md 3.6 asks of `tool.completed`: "`job` | integer, optional | for a `shell` call answered `running`, and for a `job` call not answered `invalid`: the job's number in its conversation". `tools::FactKind::Answered` (`smith-domain-tools/src/facts.rs:48`) gains `job: Option<JobNumber>`, set in `answered` (`facts.rs:189`) from `Outcome::Running`'s and `Outcome::Job`'s `job`, and `None` for every other outcome. The service carries it through `Terminal` (`smith-agent-service/src/calls.rs:345`) into `ToolCompleted.job` (`calls.rs:330`, now `None`), as `u64::from(job.0)`. `JobNumber` is `Copy`, so `FactKind` stays `Copy`. The fact stays content-free, and no other field changes. 10.4's Files gain `smith-domain-tools/src/facts.rs`, `smith-agent-service/src/calls.rs`, and each literal `Answered` fact a test expects: `smith-domain-tools/src/tests/jobs.rs` (6), `smith-domain-session/src/tests.rs` (4), `calls.rs`'s tests (2). Refresh any further literal the compiler names, and list it in the commit body. Size gains 40 lines, to 290. Not on `session::Fact`: the job number stays in the fact of the domain whose outcome names it.
+
+131. **12.1's retried failure: the designer's answer, 03.s1 first** (design gap, smith 12's block of 2026-10-14T22:31:53Z).
+     Ruling 131. The designer's answer, landed as smith `452c9967` (benchmarks.md 3.2, 5.3, 8.2, 15, 16.3) and `909b69ab` (`03.s1` drafted, 12.1 amended), follows. `smith-03.s1` is a new step in session 03, needing nothing (03.1 and 04.4 landed); 12.1 needs it. Row 12.1 becomes 68 attempts and $12.20: the 10 spent on `17d63afd` and the 58 of the new run. The second suite was rule 9's rerun, started before the 22:29 hold; it counts among the 10, and does not use up rule 9 for the new run. The answer's text:
+
+
+     1. **The failed response's usage is unknown, and the result keeps it
+        unknown. This is not option (a).**
+        - The provider answered with a 200 and a first byte at 542 ms. Then
+          it sent nothing for 6.6 s (`largest_gap_ms` 6622) before it failed.
+          It may have read the prompt and reasoned. Nothing in its answer
+          says that it counted nothing.
+        - smith could not report usage here even if the provider sent some.
+          skein's failed call carries none: `Failed { failure: Failure,
+          detail: Box<[u8]> }` (skein `crates/skein-llm/src/dialect.rs:20`),
+          and `response.failed` reads only the response's `error`
+          (`openai/response.rs:775-779`).
+        - So benchmarks.md 1 stands as written: "Unknown is never zero."
+        - 5.3's 4xx sentence does not set a precedent for a zero either. It
+          charges the suite nothing, and says "its usage stays unavailable".
+
+     2. **What such a response charges, and how parity reads it: option (b),
+        narrowed, with the reason that makes it one basis.**
+
+        benchmarks.md 8.2 now names the case:
+        - "**A retried failure** is a response that the provider failed
+          before any block and smith retried, with none of its usage reported
+          (protocol/events.md, section 3.5). Its `response.completed` has
+          `outcome` `failed`, `blocks` 0, a failure whose `evidence` is
+          `response` or `unsent`, and every usage count null. A later
+          `response.started` of its conversation and `turn` has a higher
+          `attempt`."
+        - "**Its scope's totals and the attempt's are lower bounds,** and
+          each names it as a retried failure, apart from any other gap. They
+          miss the failed request alone. Its prompt is its retry's
+          (protocol/events.md, section 3.11), and the retry's usage counts
+          that prompt."
+        - "**The common priced spend** (8.1) of an attempt whose totals miss
+          only retried failures prices what was reported. It is a lower bound
+          naming them. Any other gap in the tokens it prices leaves it
+          unavailable."
+        - "**A failure whose `evidence` is `maybe_sent` is never one.** The
+          provider never answered it: a deadline of smith's cut it, or the
+          connection dropped, and the provider may have carried the request
+          to its end. What it cost is open."
+
+        5.3 adds: "An attempt whose total tokens miss only retried failures
+        (8.2) charges the total's lower bound, what the provider reported,
+        and the suite goes on. Any other unknown in an attempt's total stops
+        the suite as incomplete, since what it would charge is not known."
+
+        16.3's "Incomplete" now excepts "a spend that misses only retried
+        failures (8.2)". It adds: "**smith's retried failures are taken as
+        observed,** and flagged: a spend that misses only retried failures
+        counts as what was reported, and the attempt's row keeps the lower
+        bound that names them." The reasons it gives:
+        - "The provider's failures are not the agent's. Both arms meet them,
+          interleaved on one account."
+        - "Codex's tokens are its own running total, read as observed. The
+          harness sees none of Codex's provider attempts, so whatever a Codex
+          request that the provider failed and Codex retried added to that
+          total is read as observed too."
+        - "Read the same way, smith's figure is what its provider reported to
+          it, as Codex's is."
+
+        **Why not plain (b),** which would take any lower bound on smith's
+        side as observed: 16.3's asymmetry is right in general, because an
+        unknown on smith's side could hide smith's own cost. The exception
+        covers only failures that the provider itself answered, or requests
+        never sent. Both arms meet those, and the retry already counts the
+        prompt. A retried 429 or 401 counts too: its `evidence` is
+        `response` and it has no blocks. A `maybe_sent` failure still stops
+        the suite, and on smith's side still makes the run incomplete.
+
+        **Why not (c):** a run would have to meet no transient failure at
+        all. The first run met one within its first four attempts, and rule
+        9 allows one run more.
+
+     3. **What 12.1 runs next** (12-milestones.md 12.1, as landed):
+        1. **`03.s1` lands first.** Its text is a draft in `03-results.md`,
+           for the supervisor to name and schedule:
+           - the smith adapter records a retried failure with the reason
+             `retried failure`;
+           - `tokens::reported` reads an observed count, or a lower bound
+             that misses only retried failures;
+           - `known_tokens` charges through it;
+           - `priced_spend` returns a lower bound in that case;
+           - `parity`'s `measured` reads such a smith spend as its value.
+
+           It is about 80 lines with five tests, built from an excerpt of
+           attempt 02, plus the smoke.
+        2. **The two runs on `17d63afd` are spent.** Neither summary is
+           committed. Together they are 10 attempts and $0.18 notional, which
+           go in the step's `Live:` trailer.
+        3. **Once 03.s1 is on `main`, 12.1 rebases,** builds `HEAD`, and runs
+           `suite parity` once, whole, as a new run. It then runs `parity
+           <summary> --commit <the new HEAD>`, as its Shape says. Rule 9
+           applies to that run as it would to a first one: the harness's
+           token rule, which 03.s1 changes, ended the first command, not the
+           provider.
+        4. **The proof adds one count:** smith attempts whose priced spend
+           misses only retried failures, `jq '[.attempts[] | select(.agent ==
+           "smith" and .priced_usd.state == "lower-bound")] | length'
+           <summary>`.
+        5. **"Don't: rerun an attempt" and 16.1's "no rerun" stand.** No
+           attempt runs again. The suite runs once, from the start.
+
+     4. **For the supervisor:**
+        - **`03.s1` needs a README row** and a place in the order: before
+          12.1's run. Its smoke counts under "every smith code landing".
+        - **The live budget.** Rule 10's command prints `127 attempts,
+          $1.35`. Adding 12.1's 10 spent attempts and its 58 gives 195
+          attempts and about $13.50, under 340 and $50. Row 12.1 uses 68 of
+          its 87 (58 × 1.5).
+        - **12.4 runs the suite "as 12.1"**, so it relies on 03.s1 as well.
+        - **A retried `maybe_sent` failure still stops a suite.** If one stops
+          12.1's new run, rule 9 runs it once more.
