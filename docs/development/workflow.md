@@ -61,9 +61,9 @@ NEXTEST_DOUBLE_SPAWN=0 cargo nextest run --workspace --profile measure -j 1
 NEXTEST_DOUBLE_SPAWN=0 cargo nextest run --workspace --profile measure -j 1 --ignore-default-filter -E 'binary(/^fuzzy_/)'
 ```
 
-The budgets are wall time on the development machine (4 cores, 8 threads,
-which nextest uses all of), with nothing else building. Run the checks on
-an idle machine.
+The budgets are wall time on the slowest development machine, carbon-forge
+(an i5-8265U, 4 cores, 8 threads, which nextest uses all of), with nothing
+else building. Run the checks on an idle machine.
 
 ## 3. When a fuzzy seed fails
 
