@@ -95,7 +95,8 @@ Shape: `Turn` gains `jobs: u32` after `spent`; `Outcome` gains the
 Test shape: `transcript_schema_matches_generated_code_and_all_goldens`
   (the drift test, over version 4: the sweep);
   `a_turn_round_trips_its_highest_job_number`, `a_running_result_round_trips`.
-  Under 20 ms each.
+  The two round trips under 20 ms each; the drift test, a focused world
+  test over the whole version, under 0.5 s.
 Proof: codecs, those tests.
 Don't: read version 3.
 Size: 120 lines, generated code and goldens not counted.

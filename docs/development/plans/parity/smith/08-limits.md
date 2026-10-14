@@ -88,7 +88,8 @@ Shape: as sketched below; `VERSION = 2`; every golden rewritten under
 Test shape: `tests/codecs/tests/events.rs`: `a_job_ended_record_round_trips_its_fields`,
   `a_tool_completed_with_a_job_round_trips`, and the drift test over
   `golden/v2`, named `event_records_and_every_listed_value_match_frozen_version_two_goldens`
-  (the version's sweep). Under 20 ms each.
+  (the version's sweep). The two round trips under 20 ms each; the drift
+  test, a focused world test over the whole vocabulary, under 0.5 s.
 Proof: unit and codecs, those tests.
 Don't: produce a `job.ended` or a `running` verdict anywhere yet.
 Size: 200 lines, goldens not counted.

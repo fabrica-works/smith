@@ -501,3 +501,11 @@ changes what section 8.4 holds.
 
      - The six lines: `smith_adapter.rs:686-687`, `:765-766` and `:853-854`, each `assert_eq!(local.models.len(), 2);` or `assert_eq!(allowances.len(), 2);`, become `3`. The tests' names, inputs and other assertions stay as they are.
      - A further assertion, in any file, that counts the presets' rendered models or their allowances and expects the count before `gpt-6.1-sol`, takes the count after it; list each in the commit body under "Users outside Files:".
+
+105. **a whole-version drift test's ceiling is 0.5 s** (plan defect, smith 08's block of 2026-10-14T11:03:11Z).
+     Ruling 105. Yes: the drift test over a whole golden version has the focused world test's ceiling, 0.5 s; the new round trips keep 20 ms. testing-strategy.md section 5.6's ceilings read "a unit test under 20 ms, a focused world test under 0.5 s", and the drift test is in `smith-codecs-world` and reads every listed value of the vocabulary: its version-one form took 67 to 117 ms in this run's gates before 08.1 touched it, so "Under 20 ms each" was a plan defect.
+
+     - 08.1: `event_records_and_every_listed_value_match_frozen_version_two_goldens` under 0.5 s; `a_job_ended_record_round_trips_its_fields` and `a_tool_completed_with_a_job_round_trips` under 20 ms each.
+     - 11.1: `transcript_schema_matches_generated_code_and_all_goldens` under 0.5 s; its two round trips under 20 ms each. The session files now say so.
+     - Take out the drift test's worker threads, as you propose; keep the exact receiving ceilings. Every frozen equality and row stays checked.
+     - A further drift test over a whole golden version in this plan takes the same 0.5 s; name it in the commit body with ruling 105.
