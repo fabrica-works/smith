@@ -29,6 +29,18 @@ fn parity_passes_when_every_criterion_is_below_its_margin() {
 }
 
 #[test]
+fn a_smith_spend_missing_only_retried_failures_counts_as_reported() {
+    let mut summary = common::parity_summary(Rows::equal());
+    let row = summary.attempts.iter_mut().find(|row| row.agent == "smith").expect("smith row");
+    row.priced_usd = Measure::LowerBound { value: 1.0, missing: vec!["root: response-3: retried failure".into()] };
+    assert_eq!(recompute(&summary).verdict, Verdict::OnPar);
+    assert_eq!(
+        summary.attempts.iter().find(|row| row.agent == "smith").expect("smith row").priced_usd,
+        Measure::LowerBound { value: 1.0, missing: vec!["root: response-3: retried failure".into()] }
+    );
+}
+
+#[test]
 fn parity_names_the_failing_criterion_and_exits_one() {
     let summary = common::parity_summary(Rows { smith_wall_ms: 130_000, ..Rows::equal() });
     let verdict = recompute(&summary);

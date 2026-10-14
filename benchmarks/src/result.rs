@@ -331,6 +331,7 @@ pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
         return Measure::unavailable("total tokens not reported for pricing");
     };
     let mut counts = Vec::new();
+    let mut gaps = Vec::new();
     for (name, tokens) in [
         ("fresh", &total.usage.fresh),
         ("cache_read", &total.usage.cache_read),
@@ -339,6 +340,10 @@ pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
     ] {
         match tokens {
             Measure::Observed { value } => counts.push(*value),
+            Measure::LowerBound { missing, .. } if crate::tokens::reported(tokens).is_some() => {
+                counts.push(crate::tokens::reported(tokens).expect("reported lower bound"));
+                gaps.extend(missing.iter().cloned());
+            }
             Measure::LowerBound { missing, .. } => {
                 return Measure::unavailable(format!("total {name} tokens are a lower bound: {}", missing.join("; ")));
             }
@@ -361,7 +366,16 @@ pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
         cost = sum;
     }
     match cost.to_string().parse::<f64>() {
-        Ok(cost) => Measure::Observed { value: cost / (f64::from(prices.unit) * 1_000_000.0) },
+        Ok(cost) => {
+            let value = cost / (f64::from(prices.unit) * 1_000_000.0);
+            if gaps.is_empty() {
+                Measure::Observed { value }
+            } else {
+                gaps.sort();
+                gaps.dedup();
+                Measure::LowerBound { value, missing: gaps }
+            }
+        }
         Err(error) => Measure::unavailable(error.to_string()),
     }
 }

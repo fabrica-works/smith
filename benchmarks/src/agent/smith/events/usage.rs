@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use smith_events::{ConversationKind, Event};
+use smith_events::{ConversationKind, Event, Evidence, Outcome, ResponseCompleted, ResponseStarted};
 
 use crate::{Convention, Counts, Measure, ScopeKind, TokenLedger, TokenRecord, Usage};
 
@@ -66,7 +66,11 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
         )?;
     }
     let mut responses = BTreeMap::new();
-    for record in &session.records {
+    let mut requests = BTreeMap::new();
+    for (position, record) in session.records.iter().enumerate() {
+        if let Event::ResponseStarted(request) = &record.event {
+            requests.insert((request.run, request.conversation, request.response), request);
+        }
         if let Event::ResponseCompleted(response) = &record.event
             && response.run == run
         {
@@ -76,7 +80,11 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
                 }
                 Some(_) | None => {}
             }
-            ledger.record(
+            let reason = requests
+                .get(&(response.run, response.conversation, response.response))
+                .filter(|request| retried_failure(session, position, response, request))
+                .map(|_| "retried failure");
+            ledger.record_with_reason(
                 &format!("{prefix}/conversation-{}", response.conversation),
                 &format!("{prefix}/response-{}", response.response),
                 Usage::SmithEvents {
@@ -86,6 +94,7 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
                     output: response.usage.output_tokens,
                     reasoning: response.usage.reasoning_tokens,
                 },
+                reason,
             )?;
         }
     }
@@ -104,6 +113,34 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
         }
     }
     Ok(records)
+}
+
+fn retried_failure(
+    session: &Session,
+    position: usize,
+    response: &ResponseCompleted,
+    request: &ResponseStarted,
+) -> bool {
+    response.outcome == Outcome::Failed
+        && response.blocks == 0
+        && response
+            .failure
+            .as_ref()
+            .is_some_and(|failure| matches!(failure.evidence, Evidence::Response | Evidence::Unsent))
+        && [
+            response.usage.input_tokens,
+            response.usage.cache_read_tokens,
+            response.usage.cache_write_tokens,
+            response.usage.output_tokens,
+            response.usage.reasoning_tokens,
+        ]
+        .iter()
+        .all(Option::is_none)
+        && session.records[position + 1..].iter().any(|record| {
+            matches!(&record.event,
+            Event::ResponseStarted(retry) if retry.run == response.run && retry.conversation == response.conversation
+                && retry.turn == request.turn && retry.attempt > request.attempt)
+        })
 }
 
 pub(super) fn tokens(sessions: &[Session]) -> Result<Vec<TokenRecord>, String> {

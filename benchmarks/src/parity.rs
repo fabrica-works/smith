@@ -85,6 +85,11 @@ fn measured(row: &AttemptRow, cost: bool) -> Option<f64> {
     let value = match measurement {
         Measure::Observed { value } => value,
         Measure::LowerBound { value, .. } if row.agent == "codex" => value,
+        Measure::LowerBound { value, missing }
+            if cost && row.agent == "smith" && crate::tokens::retried_failures(&missing) =>
+        {
+            value
+        }
         Measure::LowerBound { .. } | Measure::Unavailable { .. } => return None,
     };
     (value.is_finite() && value >= 0.0).then_some(value)

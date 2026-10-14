@@ -126,10 +126,7 @@ fn known_tokens(result: &AttemptResult) -> Option<u64> {
     // Cache write is already within fresh input; reasoning is within output.
     let mut used = 0_u64;
     for count in [&total.usage.fresh, &total.usage.cache_read, &total.usage.output] {
-        match count {
-            Measure::Observed { value } => used = used.checked_add(*value)?,
-            Measure::LowerBound { .. } | Measure::Unavailable { .. } => return None,
-        }
+        used = used.checked_add(crate::tokens::reported(count)?)?;
     }
     Some(used)
 }
@@ -550,6 +547,56 @@ pub(crate) fn probe_cases() {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    fn retried_total() -> AttemptResult {
+        let mut result =
+            crate::read_result(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json"))
+                .expect("result fixture");
+        let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
+        total.usage.fresh =
+            Measure::LowerBound { value: 10, missing: vec!["root: response-3: retried failure".into()] };
+        total.usage.cache_read =
+            Measure::LowerBound { value: 20, missing: vec!["root: response-3: retried failure".into()] };
+        total.usage.cache_write =
+            Measure::LowerBound { value: 0, missing: vec!["root: response-3: retried failure".into()] };
+        total.usage.output =
+            Measure::LowerBound { value: 30, missing: vec!["root: response-3: retried failure".into()] };
+        result.identity.model.resolved_model = Measure::Observed { value: "gpt-6.1-sol".into() };
+        result.identity.model.resolved_window = Measure::Observed { value: 272_000 };
+        result
+    }
+
+    #[test]
+    fn a_total_missing_only_retried_failures_charges_its_lower_bound() {
+        assert_eq!(known_tokens(&retried_total()), Some(60));
+    }
+
+    #[test]
+    fn a_total_missing_another_count_charges_nothing_known() {
+        let mut result = retried_total();
+        let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
+        total.usage.output = Measure::LowerBound { value: 30, missing: vec!["root: missing response".into()] };
+        assert_eq!(known_tokens(&result), None);
+    }
+
+    #[test]
+    fn pricing_reported_tokens_keeps_the_retried_failure_lower_bound() {
+        assert_eq!(
+            crate::result::priced_spend(&retried_total()),
+            Measure::LowerBound { value: 0.000_322, missing: vec!["root: response-3: retried failure".into()] }
+        );
+    }
+
+    #[test]
+    fn pricing_a_total_with_another_gap_stays_unavailable() {
+        let mut result = retried_total();
+        let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
+        total.usage.output = Measure::LowerBound { value: 30, missing: vec!["root: missing response".into()] };
+        assert_eq!(
+            crate::result::priced_spend(&result),
+            Measure::unavailable("total output tokens are a lower bound: root: missing response")
+        );
+    }
 
     pub(super) fn no_request_requires_selected_complete_observations_without_inventing_tokens() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));

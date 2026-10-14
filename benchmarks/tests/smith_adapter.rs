@@ -12,6 +12,9 @@ use smith_bench::agent::smith::{Credential, FaceSince, Observing, Prepared};
 use smith_bench::process::{Bounds, Capture, execute};
 use smith_bench::{End, Forced, Measure};
 
+#[path = "smith_adapter/retried.rs"]
+mod retried;
+
 #[test]
 fn a_terminal_peer_can_close_its_stdio_before_the_leader_exits_without_hangup() {
     let directory = root("terminal-before-exit");

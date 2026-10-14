@@ -157,6 +157,19 @@ fn optional(value: Option<u64>, field: &str) -> Measure<u64> {
     value.map_or_else(|| Measure::unavailable(format!("smith {field} is null")), observed)
 }
 
+/// Read reported tokens, retaining only gaps caused by retried failures (8.2).
+pub(crate) fn reported(measure: &Measure<u64>) -> Option<u64> {
+    match measure {
+        Measure::Observed { value } => Some(*value),
+        Measure::LowerBound { value, missing } if retried_failures(missing) => Some(*value),
+        Measure::LowerBound { .. } | Measure::Unavailable { .. } => None,
+    }
+}
+
+pub(crate) fn retried_failures(missing: &[String]) -> bool {
+    missing.iter().all(|reason| reason.ends_with(": retried failure"))
+}
+
 fn parts(measure: &Measure<u64>) -> (Option<u64>, Vec<String>) {
     match measure {
         Measure::Observed { value } => (Some(*value), Vec::new()),
@@ -247,6 +260,16 @@ impl TokenLedger {
     /// Count an immutable response once, returning false for an identical repeat.
     /// Conflicting repeats and convention changes fail rather than replace usage.
     pub fn record(&mut self, scope: &str, response: &str, usage: Usage) -> Result<bool, String> {
+        self.record_with_reason(scope, response, usage, None)
+    }
+
+    pub(crate) fn record_with_reason(
+        &mut self,
+        scope: &str,
+        response: &str,
+        usage: Usage,
+        reason: Option<&str>,
+    ) -> Result<bool, String> {
         let target = self.scopes.get_mut(scope).ok_or_else(|| format!("unknown token scope {scope}"))?;
         if response.is_empty() || target.convention != usage.convention() {
             return Err("response needs an id and its scope's convention".into());
@@ -257,7 +280,11 @@ impl TokenLedger {
             }
             return Ok(false);
         }
-        let normalised = scoped_counts(&usage.normalise()?, response);
+        let counts = match reason {
+            Some(reason) => TokenCounts::unavailable(reason),
+            None => usage.normalise()?,
+        };
+        let normalised = scoped_counts(&counts, response);
         target.responses.insert(response.into(), normalised);
         self.responses.insert(response.into(), usage);
         Ok(true)
