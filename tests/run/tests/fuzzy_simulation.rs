@@ -1,11 +1,14 @@
 //! The agent's run child domain at random: many noisy worlds, each settled with
 //! every start answered once, with broad ending coverage among them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use skein_lib::{Duration, Rng};
-use smith_domain_run::{Answer, Exhausted, Failure, Fault, Invalid, Policy, Refusal};
-use smith_run_world::{Settings, World, noisy};
+use smith_domain_run as run;
+use smith_domain_run::{Answer, Exhausted, Failure, Fault, Invalid, Limits, Policy, Refusal};
+use smith_run_world::host;
+use smith_run_world::partner::Script;
+use smith_run_world::{Checkouts, Settings, Span, World, noisy};
 
 const ITERATIONS: u32 = 1_000_000;
 
@@ -221,4 +224,229 @@ fn drawn_prices_reserve_main_and_children_without_spending_past_the_ceiling() {
         }
     }
     assert!(charged > 48, "priced main and child callbacks actually enter the shared pool");
+}
+
+/// A world where the LLM finishes, with outcomes that fit, and changes land
+/// after their checks fail a time or two.
+fn finishing(seed: u64) -> Settings {
+    let calm = Settings::calm(seed);
+    Settings {
+        host: host::Script { writable: 1000, changes: 1000, verdicts: 1000, ..calm.host },
+        partner: Script { finishes: 300, yields: 0, ..calm.partner },
+        checkout: Checkouts { checks: 1000, check_failures: 2, ..calm.checkout },
+        ..calm
+    }
+}
+
+fn wind_down_pressure(seed: u64, cancel: bool) -> Settings {
+    let mut settings = Settings::calm(seed);
+    settings.host.jobs = 1;
+    settings.host.window = Duration::ZERO;
+    settings.host.writable = 0;
+    settings.host.verdicts = 0;
+    settings.host.reports = 1000;
+    settings.host.host_tools = 0;
+    settings.host.time = Span::millis(6000, 6000);
+    settings.host.reserve = run::charter::Reserve { turns: 2, time: Duration::from_secs(2) };
+    settings.host.cancels = if cancel { 1000 } else { 0 };
+    settings.host.cancel = Span::millis(5000, 5000);
+    settings.partner.turn = Span::millis(3000, 3000);
+    settings.partner.yields = 0;
+    settings.partner.changes = 0;
+    settings.partner.finishes = 0;
+    settings
+}
+
+/// Adds what `world` counted of the states cancels and deadlines found runs in.
+fn tally(world: &World, cancels: &mut BTreeMap<&'static str, u32>, deadlines: &mut BTreeMap<&'static str, u32>) {
+    for (cell, count) in world.cancel_cells() {
+        *cancels.entry(*cell).or_insert(0) += count;
+    }
+    for (cell, count) in world.deadline_cells() {
+        *deadlines.entry(*cell).or_insert(0) += count;
+    }
+}
+
+/// Cancels at random moments, from the host (once, twice, late) and handed
+/// to the run right before or after any of its events, find runs in every
+/// state, and each answers once (checked by `World::run`).
+fn cancels_find_runs_in_every_state_over_many_seeds_cells() -> BTreeMap<&'static str, u32> {
+    let (mut cancels, mut deadlines) = (BTreeMap::new(), BTreeMap::new());
+    for seed in 0..250 {
+        tally(&settled(&noisy(seed)), &mut cancels, &mut deadlines);
+    }
+    // Cancelled twice while the run reads a slow checkout.
+    let calm = Settings::calm(20);
+    let host = host::Script { cancels: 1000, cancel: Span::millis(0, 1_000), recancels: 1000, ..calm.host };
+    let checkout = Checkouts { io: Span::millis(3_000, 5_000), ..calm.checkout };
+    tally(&settled(&Settings { host, checkout, ..calm }), &mut cancels, &mut deadlines);
+    // Cancelled as changes are checked and pushed, and as the LLM spends past
+    // its budget.
+    for seed in 21..24 {
+        let landing = finishing(seed);
+        let run = Limits {
+            runs: 16,
+            conversations: 16,
+            calls: 16,
+            check_timeout: Duration::from_millis(1_999),
+            wrap_up: Duration::from_secs(60),
+            ..landing.run
+        };
+        let host = host::Script {
+            jobs: 16,
+            cancels: 1000,
+            cancel: Span::millis(2_000, 30_000),
+            tokens_min: 80_000,
+            tokens_max: 100_000,
+            ..landing.host
+        };
+        let partner = Script { changes: 1000, ..landing.partner };
+        let checkout = Checkouts { check: Span::millis(2_000, 8_000), check_failures: 3, ..landing.checkout };
+        let settings = Settings { run, host, partner, checkout, inject: 20, ..landing };
+        tally(&settled(&settings), &mut cancels, &mut deadlines);
+    }
+    // Grant one new operation at a time, so cancellation can find its retained
+    // phase rather than an unrelated completion or a denied charter.
+    for seed in 1000..1020 {
+        let calm = Settings::calm(seed);
+        let host = host::Script {
+            cancels: 1000,
+            cancel: Span::millis(100, 2_000),
+            time: Span::millis(60_000, 60_000),
+            ..calm.host
+        };
+        let partner = Script { waits: 1000, yields: 0, turn: Span::millis(10, 50), ..calm.partner };
+        tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
+
+        let host = host::Script {
+            cancels: 1000,
+            cancel: Span::millis(100, 6_000),
+            host_tools: 1000,
+            relay: Span::millis(8_000, 8_000),
+            relay_busy: 500,
+            relay_lost: 500,
+            time: Span::millis(60_000, 60_000),
+            ..calm.host
+        };
+        let partner = Script { host_calls: 1000, yields: 0, turn: Span::millis(10, 50), ..calm.partner };
+        tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
+
+        let host = host::Script {
+            cancels: 1000,
+            cancel: Span::millis(30, 600),
+            host_tools: 1000,
+            relay: Span::millis(1, 1),
+            relay_busy: 1000,
+            relay_lost: 0,
+            time: Span::millis(60_000, 60_000),
+            ..calm.host
+        };
+        tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
+    }
+    tally(&settled(&wind_down_pressure(901, true)), &mut cancels, &mut deadlines);
+    cancels
+}
+
+#[test]
+fn cancels_find_runs_in_every_state_over_many_seeds() {
+    let cancels = cancels_find_runs_in_every_state_over_many_seeds_cells();
+    let cells = [
+        "preparing",
+        "stopping",
+        "opening",
+        "working",
+        "waiting",
+        "relay sending",
+        "relay withdrawing",
+        "relay backoff",
+        "landing",
+        "wind-down",
+        "winding",
+        "answered",
+        "gone",
+    ];
+    for cell in cells {
+        assert!(cancels.get(cell).is_some_and(|count| *count > 0), "no cancel found a run {cell}: {cancels:?}");
+    }
+}
+
+/// Deadlines short against a slow checkout and slow conversations fall due in
+/// every state a run's deadline runs in.
+fn deadlines_find_runs_in_every_state_they_run_in_over_many_seeds_cells() -> BTreeMap<&'static str, u32> {
+    let (mut cancels, mut deadlines) = (BTreeMap::new(), BTreeMap::new());
+    for seed in 0..50 {
+        let calm = Settings::calm(seed);
+        let host = host::Script { time: Span::millis(1_000, 6_000), writable: 0, verdicts: 1000, ..calm.host };
+        let checkout = Checkouts { io: Span::millis(0, 2_000), ..calm.checkout };
+        let partner = Script { turn: Span::millis(100, 2_000), ..calm.partner };
+        let settings = Settings { host, checkout, partner, hop: Span::millis(0, 1_500), ..calm };
+        tally(&settled(&settings), &mut cancels, &mut deadlines);
+    }
+    // And as changes are checked and pushed, and as the LLM spends past its
+    // budget.
+    for seed in 50..56 {
+        let landing = finishing(seed);
+        let run = Limits {
+            runs: 16,
+            conversations: 16,
+            calls: 16,
+            check_timeout: Duration::from_millis(1_999),
+            wrap_up: Duration::from_secs(60),
+            ..landing.run
+        };
+        let host = host::Script {
+            jobs: 16,
+            time: Span::millis(2_000, 15_000),
+            tokens_min: 80_000,
+            tokens_max: 100_000,
+            ..landing.host
+        };
+        let partner = Script { changes: 1000, turn: Span::millis(100, 2_000), ..landing.partner };
+        let checkout = Checkouts { check: Span::millis(2_000, 8_000), check_failures: 3, ..landing.checkout };
+        let settings = Settings { run, host, partner, checkout, hop: Span::millis(0, 1_500), ..landing };
+        tally(&settled(&settings), &mut cancels, &mut deadlines);
+    }
+    for seed in 2000..2020 {
+        let calm = Settings::calm(seed);
+        let partner = Script { waits: 1000, yields: 0, turn: Span::millis(10, 50), ..calm.partner };
+        let host = host::Script { time: Span::millis(100, 500), ..calm.host };
+        tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
+
+        let partner = Script { host_calls: 1000, yields: 0, turn: Span::millis(10, 50), ..calm.partner };
+        let host = host::Script {
+            host_tools: 1000,
+            relay: Span::millis(8_000, 8_000),
+            time: Span::millis(100, 6_000),
+            ..calm.host
+        };
+        tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
+        let host = host::Script {
+            host_tools: 1000,
+            relay: Span::millis(1, 1),
+            relay_busy: 1000,
+            time: Span::millis(30, 300),
+            ..calm.host
+        };
+        tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
+    }
+    tally(&settled(&wind_down_pressure(902, false)), &mut cancels, &mut deadlines);
+    deadlines
+}
+
+#[test]
+fn deadlines_find_runs_in_every_state_they_run_in_over_many_seeds() {
+    let deadlines = deadlines_find_runs_in_every_state_they_run_in_over_many_seeds_cells();
+    for cell in [
+        "preparing",
+        "opening",
+        "working",
+        "waiting",
+        "relay sending",
+        "relay withdrawing",
+        "relay backoff",
+        "landing",
+        "wind-down",
+    ] {
+        assert!(deadlines.get(cell).is_some_and(|count| *count > 0), "no deadline found a run {cell}: {deadlines:?}");
+    }
 }

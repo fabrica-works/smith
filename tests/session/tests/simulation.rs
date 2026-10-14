@@ -514,8 +514,9 @@ fn a_seed_replays_to_the_same_run() {
 /// The parent holds a step until its complete fact reserve is available.
 #[test]
 fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing() {
+    const COVERING_SEEDS: [u64; 1] = [7];
     let mut holds = 0;
-    for seed in 0..100 {
+    for seed in COVERING_SEEDS {
         let run = |minimum| {
             let mut settings = noisy(seed);
             if minimum {

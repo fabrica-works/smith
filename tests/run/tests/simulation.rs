@@ -651,10 +651,11 @@ fn tally(world: &World, cancels: &mut BTreeMap<&'static str, u32>, deadlines: &m
 /// Cancels at random moments, from the host (once, twice, late) and handed
 /// to the run right before or after any of its events, find runs in every
 /// state, and each answers once (checked by `World::run`).
-#[test]
-fn cancels_find_runs_in_every_state() {
+fn cancels_find_runs_in_every_state_cells() -> BTreeMap<&'static str, u32> {
+    const NOISY_SEEDS: [u64; 2] = [92, 151];
+    const OPERATION_SEEDS: [u64; 1] = [1001];
     let (mut cancels, mut deadlines) = (BTreeMap::new(), BTreeMap::new());
-    for seed in 0..250 {
+    for seed in NOISY_SEEDS {
         tally(&settled(&noisy(seed)), &mut cancels, &mut deadlines);
     }
     // Cancelled twice while the run reads a slow checkout.
@@ -662,34 +663,9 @@ fn cancels_find_runs_in_every_state() {
     let host = host::Script { cancels: 1000, cancel: Span::millis(0, 1_000), recancels: 1000, ..calm.host };
     let checkout = Checkouts { io: Span::millis(3_000, 5_000), ..calm.checkout };
     tally(&settled(&Settings { host, checkout, ..calm }), &mut cancels, &mut deadlines);
-    // Cancelled as changes are checked and pushed, and as the LLM spends past
-    // its budget.
-    for seed in 21..24 {
-        let landing = finishing(seed);
-        let run = Limits {
-            runs: 16,
-            conversations: 16,
-            calls: 16,
-            check_timeout: Duration::from_millis(1_999),
-            wrap_up: Duration::from_secs(60),
-            ..landing.run
-        };
-        let host = host::Script {
-            jobs: 16,
-            cancels: 1000,
-            cancel: Span::millis(2_000, 30_000),
-            tokens_min: 80_000,
-            tokens_max: 100_000,
-            ..landing.host
-        };
-        let partner = Script { changes: 1000, ..landing.partner };
-        let checkout = Checkouts { check: Span::millis(2_000, 8_000), check_failures: 3, ..landing.checkout };
-        let settings = Settings { run, host, partner, checkout, inject: 20, ..landing };
-        tally(&settled(&settings), &mut cancels, &mut deadlines);
-    }
     // Grant one new operation at a time, so cancellation can find its retained
     // phase rather than an unrelated completion or a denied charter.
-    for seed in 1000..1020 {
+    for seed in OPERATION_SEEDS {
         let calm = Settings::calm(seed);
         let host = host::Script {
             cancels: 1000,
@@ -726,6 +702,12 @@ fn cancels_find_runs_in_every_state() {
         tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
     }
     tally(&settled(&wind_down_pressure(901, true)), &mut cancels, &mut deadlines);
+    cancels
+}
+
+#[test]
+fn cancels_find_runs_in_every_state() {
+    let cancels = cancels_find_runs_in_every_state_cells();
     let cells = [
         "preparing",
         "stopping",
@@ -748,10 +730,12 @@ fn cancels_find_runs_in_every_state() {
 
 /// Deadlines short against a slow checkout and slow conversations fall due in
 /// every state a run's deadline runs in.
-#[test]
-fn deadlines_find_runs_in_every_state_they_run_in() {
+fn deadlines_find_runs_in_every_state_they_run_in_cells() -> BTreeMap<&'static str, u32> {
+    const CHECKOUT_SEEDS: [u64; 1] = [4];
+    const LANDING_SEEDS: [u64; 1] = [50];
+    const OPERATION_SEEDS: [u64; 1] = [2000];
     let (mut cancels, mut deadlines) = (BTreeMap::new(), BTreeMap::new());
-    for seed in 0..50 {
+    for seed in CHECKOUT_SEEDS {
         let calm = Settings::calm(seed);
         let host = host::Script { time: Span::millis(1_000, 6_000), writable: 0, verdicts: 1000, ..calm.host };
         let checkout = Checkouts { io: Span::millis(0, 2_000), ..calm.checkout };
@@ -761,7 +745,7 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
     }
     // And as changes are checked and pushed, and as the LLM spends past its
     // budget.
-    for seed in 50..56 {
+    for seed in LANDING_SEEDS {
         let landing = finishing(seed);
         let run = Limits {
             runs: 16,
@@ -783,7 +767,7 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
         let settings = Settings { run, host, partner, checkout, hop: Span::millis(0, 1_500), ..landing };
         tally(&settled(&settings), &mut cancels, &mut deadlines);
     }
-    for seed in 2000..2020 {
+    for seed in OPERATION_SEEDS {
         let calm = Settings::calm(seed);
         let partner = Script { waits: 1000, yields: 0, turn: Span::millis(10, 50), ..calm.partner };
         let host = host::Script { time: Span::millis(100, 500), ..calm.host };
@@ -806,7 +790,12 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
         };
         tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
     }
-    tally(&settled(&wind_down_pressure(902, false)), &mut cancels, &mut deadlines);
+    deadlines
+}
+
+#[test]
+fn deadlines_find_runs_in_every_state_they_run_in() {
+    let deadlines = deadlines_find_runs_in_every_state_they_run_in_cells();
     for cell in [
         "preparing",
         "opening",

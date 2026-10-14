@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 use smith_domain_session::End;
 use smith_domain_session::llm::Failure;
+use smith_domain_tools as tools;
 use smith_session_world::{Ended, World, noisy, submit_noisily};
 
 const ITERATIONS: u32 = 100_000;
@@ -160,4 +161,30 @@ fn no_drawn_session_ends_because_its_history_grew() {
         assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
         world.close();
     }
+}
+
+/// The parent holds a step until its complete fact reserve is available.
+#[test]
+fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing_over_many_seeds() {
+    let mut holds = 0;
+    for seed in 0..100 {
+        let run = |minimum| {
+            let mut settings = noisy(seed);
+            if minimum {
+                settings.agent.tools.facts =
+                    (settings.agent.parallel_tools + 2) * tools::max_facts(&settings.agent.tools);
+                settings.agent.facts = smith_domain_session::max_facts(&settings.agent);
+            }
+            let mut world = World::new(settings);
+            submit_noisily(&mut world, &settings, seed);
+            world.run(ITERATIONS);
+            (world.fact_holds(), world.stats(), world.told())
+        };
+        let (_, stats, told) = run(false);
+        assert!(told.ended > 0 && stats.calls > 0, "seed {seed}: actual calls settled");
+        let (held, same, all) = run(true);
+        holds += held;
+        assert!(all.ended > 0 && same.calls > 0, "seed {seed}: every pressured call settled");
+    }
+    assert!(holds > 0, "actual pending work was held for native facts");
 }
