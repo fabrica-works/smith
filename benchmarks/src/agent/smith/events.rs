@@ -34,6 +34,7 @@ mod scopes;
 
 mod final_turn;
 
+mod carried;
 mod compaction_choice;
 
 mod budget;

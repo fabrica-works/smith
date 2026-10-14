@@ -86,6 +86,8 @@ pub enum EventCheck {
         exit: Option<i64>,
         clamped: Option<bool>,
     },
+    /// Tool starts match the count the task asks of the model.
+    CallCount { tool: String, count: Count },
     /// An actual tool terminal retains at least this many result bytes.
     ToolResultBytes { tool: String, at_least: u64 },
     /// A shell request times out at its emitted bound, with its exact clamp and grace.
@@ -122,6 +124,8 @@ pub enum EventCheck {
     FinalTurn,
     /// Every request in a compaction conversation disables tool calls.
     CompactionChoice,
+    /// Compaction carries owed results and opens its parent with its summary.
+    CompactionCarried,
     /// The child stays within its opening's declared completion share.
     ChildShare { turns_at_most: u32 },
     /// Prompt budget text agrees with snapshots and children avoid the reserve.
@@ -162,6 +166,7 @@ impl EventCheck {
             Self::FilePieces { .. } => "file-pieces",
             Self::OversizedWrite { .. } => "oversized-write",
             Self::ToolCall { .. } => "tool-call",
+            Self::CallCount { .. } => "call-count",
             Self::ToolResultBytes { .. } => "tool-result-bytes",
             Self::ToolTimeout { .. } => "tool-timeout",
             Self::SlowCompletion { .. } => "slow-completion",
@@ -180,6 +185,7 @@ impl EventCheck {
             Self::MainAfterChild => "main-after-child",
             Self::FinalTurn => "final-turn",
             Self::CompactionChoice => "compaction-choice",
+            Self::CompactionCarried => "compaction-carried",
             Self::ChildShare { .. } => "child-share",
             Self::BudgetVisible => "budget-visible",
             Self::BudgetTold => "budget-told",

@@ -296,3 +296,48 @@ fn a_block_whose_prompt_digest_differs_gates_nothing() {
     task.prompt.push_str("Read another file.\n");
     assert!(!task.calibrated().expect("changed prompt"));
 }
+
+#[test]
+fn a_failed_call_count_with_smiths_checks_passing_is_a_model_deviation() {
+    let mut result = recorded_passes().remove(0);
+    result.outcome.deciding = vec!["call-count".into(), "compaction-carried".into(), "tool-call".into()];
+    result.outcome.checks = vec![
+        smith_bench::CheckVerdict {
+            check: "call-count".into(),
+            passed: Measure::Observed { value: false },
+            evidence: vec![],
+        },
+        smith_bench::CheckVerdict {
+            check: "compaction-carried".into(),
+            passed: Measure::Observed { value: true },
+            evidence: vec![],
+        },
+        smith_bench::CheckVerdict {
+            check: "tool-call".into(),
+            passed: Measure::Observed { value: true },
+            evidence: vec![],
+        },
+    ];
+    let counted = smith_bench::probe::count(&[result], 10, 12);
+    assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (0, 0, 1, 0));
+}
+
+#[test]
+fn a_model_failure_beside_an_unavailable_contract_check_is_unjudged() {
+    let mut result = recorded_passes().remove(0);
+    result.outcome.deciding = vec!["answer".into(), "compaction-carried".into()];
+    result.outcome.checks = vec![
+        smith_bench::CheckVerdict {
+            check: "answer".into(),
+            passed: Measure::Observed { value: false },
+            evidence: vec![],
+        },
+        smith_bench::CheckVerdict {
+            check: "compaction-carried".into(),
+            passed: Measure::unavailable("prompt was not captured"),
+            evidence: vec![],
+        },
+    ];
+    let counted = smith_bench::probe::count(&[result], 10, 12);
+    assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (0, 0, 0, 1));
+}

@@ -130,6 +130,7 @@ pub fn count(results: &[AttemptResult], required: u32, ceiling: u32) -> Counted 
         match crate::judge_suite(attempt, attempt.len() != physical) {
             Judgment::Pass => counted.passed += 1,
             Judgment::Fail | Judgment::Incomplete if attempt.iter().all(model_deviation) => counted.deviations += 1,
+            Judgment::Fail if attempt.iter().all(|result| deviation(result, true)) => counted.unjudged += 1,
             Judgment::Fail => counted.failed += 1,
             Judgment::Incomplete => counted.unjudged += 1,
         }
@@ -140,7 +141,16 @@ pub fn count(results: &[AttemptResult], required: u32, ceiling: u32) -> Counted 
 /// A completed answer may deviate from the task while smith's contracts hold.
 #[must_use]
 pub fn model_deviation(result: &AttemptResult) -> bool {
+    deviation(result, false)
+}
+
+fn deviation(result: &AttemptResult, permit_unavailable: bool) -> bool {
     if result.outcome.end != End::Completed {
+        return false;
+    }
+    if !permit_unavailable
+        && result.outcome.deciding.iter().any(|name| !result.outcome.checks.iter().any(|check| check.check == *name))
+    {
         return false;
     }
     let mut deviation = false;
@@ -148,7 +158,11 @@ pub fn model_deviation(result: &AttemptResult) -> bool {
         if !result.outcome.deciding.contains(&check.check) || check.passed == (Measure::Observed { value: true }) {
             continue;
         }
+        if permit_unavailable && matches!(&check.passed, Measure::Unavailable { .. }) {
+            continue;
+        }
         let model = check.check == "answer"
+            || check.check == "call-count"
             || check.check == "budget-report"
             || ["file-content:", "file-digest:", "pattern:"].iter().any(|prefix| check.check.starts_with(prefix))
             || matches!(&check.passed, Measure::Unavailable { reason } if reason.starts_with("not exercised:"));

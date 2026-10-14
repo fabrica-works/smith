@@ -15,7 +15,7 @@ pub(super) fn prompt_within_window(observer: &Observer) -> Measure<bool> {
     for session in &observer.sessions {
         let mut models = BTreeMap::new();
         let mut requests = BTreeMap::new();
-        for record in &session.records {
+        for (position, record) in session.records.iter().enumerate() {
             if let Event::ConversationOpened(value) = &record.event {
                 models.insert((value.run, value.conversation), &value.model);
             }
@@ -23,12 +23,19 @@ pub(super) fn prompt_within_window(observer: &Observer) -> Measure<bool> {
                 if models.get(&(value.run, value.conversation)) != Some(&&value.model) {
                     return Measure::unavailable("request model does not match its actual conversation opening");
                 }
-                requests.insert((value.run, value.conversation, value.response), value.model.window_tokens);
+                requests.insert((value.run, value.conversation, value.response), value);
             }
             if let Event::ResponseCompleted(value) = &record.event {
-                let Some(window) = requests.get(&(value.run, value.conversation, value.response)) else {
+                let Some(request) = requests.get(&(value.run, value.conversation, value.response)) else {
                     return Measure::unavailable("response lacks its request's actual model window");
                 };
+                if value.outcome == Outcome::Failed && value.blocks == 0
+                    && session.records[position + 1..].iter().any(|record| matches!(&record.event,
+                        Event::ResponseStarted(retry) if retry.run == value.run && retry.conversation == value.conversation
+                            && retry.turn == request.turn && retry.attempt > request.attempt))
+                {
+                    continue;
+                }
                 let Some(input) = value.usage.input_tokens else {
                     return Measure::unavailable("provider did not report fresh prompt input");
                 };
@@ -39,7 +46,7 @@ pub(super) fn prompt_within_window(observer: &Observer) -> Measure<bool> {
                     return Measure::unavailable("provider did not report written prompt input");
                 };
                 measured = true;
-                if u128::from(input) + u128::from(read) + u128::from(write) > u128::from(*window) {
+                if u128::from(input) + u128::from(read) + u128::from(write) > u128::from(request.model.window_tokens) {
                     return Measure::Observed { value: false };
                 }
             }

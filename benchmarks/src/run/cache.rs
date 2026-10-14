@@ -10,7 +10,8 @@ pub(super) fn observation(process: &ProcessResult, task: &Task) -> Option<Measur
         EventCheck::CacheReuse { median_at_least, full_misses_per_ten_at_most } => {
             Some((*median_at_least, *full_misses_per_ten_at_most))
         }
-        EventCheck::ToolCall { .. }
+        EventCheck::CallCount { .. }
+        | EventCheck::ToolCall { .. }
         | EventCheck::UsageSums
         | EventCheck::NoVerdict { .. }
         | EventCheck::Completions { .. }
@@ -25,6 +26,7 @@ pub(super) fn observation(process: &ProcessResult, task: &Task) -> Option<Measur
         | EventCheck::MainAfterChild
         | EventCheck::FinalTurn
         | EventCheck::CompactionChoice
+        | EventCheck::CompactionCarried
         | EventCheck::ChildShare { .. }
         | EventCheck::BudgetVisible
         | EventCheck::SpendWithin { .. }

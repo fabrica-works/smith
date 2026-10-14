@@ -79,7 +79,10 @@ pub(super) fn checks(
             continue;
         }
         match check {
-            EventCheck::ToolPath { .. } | EventCheck::RunCompleted { .. } | EventCheck::ProviderFailure { .. } => {
+            EventCheck::ToolPath { .. }
+            | EventCheck::RunCompleted { .. }
+            | EventCheck::ProviderFailure { .. }
+            | EventCheck::SlowCompletion { .. } => {
                 unreachable!("identity checks return above")
             }
             EventCheck::WrittenFile { .. } | EventCheck::FilePieces { .. } | EventCheck::OversizedWrite { .. } => {
@@ -136,7 +139,7 @@ pub(super) fn checks(
                     return Err(Refusal::new(file, &key, "tool and cardinality must be nonempty"));
                 }
             }
-            EventCheck::CallsPerResponse { tool, .. } => {
+            EventCheck::CallCount { tool, .. } | EventCheck::CallsPerResponse { tool, .. } => {
                 if tool.trim().is_empty() {
                     return Err(Refusal::new(file, &key, "tool name is empty"));
                 }
@@ -146,11 +149,6 @@ pub(super) fn checks(
             | EventCheck::ChildShare { turns_at_most: at_least } => {
                 if *at_least == 0 {
                     return Err(Refusal::new(file, &key, "cardinality must be positive"));
-                }
-            }
-            EventCheck::SlowCompletion { longer_than_ms, head_ms, idle_ms, reasoning_bytes } => {
-                if [*longer_than_ms, *head_ms, *idle_ms, *reasoning_bytes].contains(&0) {
-                    return Err(Refusal::new(file, &key, "exercise floor and preset bounds must be positive"));
                 }
             }
             EventCheck::UsageSums
@@ -164,6 +162,7 @@ pub(super) fn checks(
             | EventCheck::MainAfterChild
             | EventCheck::FinalTurn
             | EventCheck::CompactionChoice
+            | EventCheck::CompactionCarried
             | EventCheck::BudgetVisible
             | EventCheck::BudgetTold
             | EventCheck::BudgetReport
@@ -175,6 +174,12 @@ pub(super) fn checks(
 }
 
 fn identity_check(file: &Path, key: &str, check: &EventCheck) -> Result<bool, Refusal> {
+    if let EventCheck::SlowCompletion { longer_than_ms, head_ms, idle_ms, reasoning_bytes } = check {
+        if [*longer_than_ms, *head_ms, *idle_ms, *reasoning_bytes].contains(&0) {
+            return Err(Refusal::new(file, key, "exercise floor and preset bounds must be positive"));
+        }
+        return Ok(true);
+    }
     if let EventCheck::ToolPath { tool, path, aliases, verdict } = check {
         if tool.trim().is_empty()
             || path.is_empty()

@@ -135,46 +135,12 @@ impl Observing {
                     self.observer.oversized_write(path, *content_bytes_above, *protocol_input_bytes_above, workspace)
                 }
                 crate::EventCheck::FilePieces { path, bytes_above, file_bytes } => {
-                    let protocol_bound = checks.iter().find_map(|check| match check {
-                        crate::EventCheck::OversizedWrite { protocol_input_bytes_above, .. } => {
+                    let protocol_bound = checks.iter().find_map(|check| {
+                        if let crate::EventCheck::OversizedWrite { protocol_input_bytes_above, .. } = check {
                             *protocol_input_bytes_above
+                        } else {
+                            None
                         }
-                        crate::EventCheck::WrittenFile { .. }
-                        | crate::EventCheck::FilePieces { .. }
-                        | crate::EventCheck::ToolCall { .. }
-                        | crate::EventCheck::UsageSums
-                        | crate::EventCheck::NoVerdict { .. }
-                        | crate::EventCheck::Completions { .. }
-                        | crate::EventCheck::FirstRequestHoldsTask
-                        | crate::EventCheck::NothingBeforeTask
-                        | crate::EventCheck::HandledOnce
-                        | crate::EventCheck::CompletionPerExchange
-                        | crate::EventCheck::NoStop { .. }
-                        | crate::EventCheck::Blocks { .. }
-                        | crate::EventCheck::ConversationOpened { .. }
-                        | crate::EventCheck::PromptWithinWindow
-                        | crate::EventCheck::CacheReuse { .. }
-                        | crate::EventCheck::MainAfterChild
-                        | crate::EventCheck::FinalTurn
-                        | crate::EventCheck::CompactionChoice
-                        | crate::EventCheck::ChildShare { .. }
-                        | crate::EventCheck::BudgetVisible
-                        | crate::EventCheck::SpendWithin { .. }
-                        | crate::EventCheck::CallsInOneResponse { .. }
-                        | crate::EventCheck::ChildrenOverlap { .. }
-                        | crate::EventCheck::NoFailure { .. }
-                        | crate::EventCheck::RunCompleted { .. }
-                        | crate::EventCheck::ProviderFailure { .. }
-                        | crate::EventCheck::NoRequest
-                        | crate::EventCheck::ToolPath { .. }
-                        | crate::EventCheck::ToolResultBytes { .. }
-                        | crate::EventCheck::ToolTimeout { .. }
-                        | crate::EventCheck::SlowCompletion { .. }
-                        | crate::EventCheck::BudgetTold
-                        | crate::EventCheck::BudgetReport
-                        | crate::EventCheck::CallsPerResponse { .. }
-                        | crate::EventCheck::ChildrenInTurn { .. }
-                        | crate::EventCheck::NoRun => None,
                     });
                     match protocol_bound {
                         Some(bound) => self.observer.file_pieces_for_protocol_probe(
@@ -187,7 +153,8 @@ impl Observing {
                         None => self.observer.file_pieces(path, *bytes_above, *file_bytes, workspace),
                     }
                 }
-                crate::EventCheck::ToolCall { .. }
+                crate::EventCheck::CallCount { .. }
+                | crate::EventCheck::ToolCall { .. }
                 | crate::EventCheck::UsageSums
                 | crate::EventCheck::NoVerdict { .. }
                 | crate::EventCheck::Completions { .. }
@@ -203,6 +170,7 @@ impl Observing {
                 | crate::EventCheck::MainAfterChild
                 | crate::EventCheck::FinalTurn
                 | crate::EventCheck::CompactionChoice
+                | crate::EventCheck::CompactionCarried
                 | crate::EventCheck::ChildShare { .. }
                 | crate::EventCheck::BudgetVisible
                 | crate::EventCheck::SpendWithin { .. }

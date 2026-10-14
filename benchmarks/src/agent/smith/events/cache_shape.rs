@@ -15,6 +15,10 @@ pub(super) fn calls_per_response(observer: &Observer, tool: &str, at_most: u32) 
     for session in &observer.sessions {
         for record in &session.records {
             if let Event::ResponseCompleted(value) = &record.event {
+                if value.outcome == smith_events::Outcome::Failed && value.blocks == 0 {
+                    captured = true;
+                    continue;
+                }
                 let Some(completion) = &value.completion else {
                     return Measure::unavailable("response call blocks were not captured");
                 };

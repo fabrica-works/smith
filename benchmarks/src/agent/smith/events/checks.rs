@@ -259,6 +259,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
     {
         unavailable("incomplete event stream prevents a complete task predicate")
     } else {
+        if *check == EventCheck::CompactionCarried {
+            return super::carried::check(observer);
+        }
         if *check == EventCheck::CompactionChoice {
             return super::compaction_choice::check(observer);
         }
@@ -300,6 +303,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms, command } =>
             tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms, command.as_deref()).passed,
         EventCheck::ToolCall { .. } => tool_call(observer, check),
+        EventCheck::CallCount { tool, count } => measured(count.holds(u64::try_from(records.iter().filter(|record|
+            matches!(&record.event, Event::ToolStarted(value) if value.tool.as_ref() == tool.as_bytes())).count()).expect("tool count fits"))),
         EventCheck::ToolResultBytes { tool, at_least } => tool_result_bytes(observer, tool, *at_least).passed,
         EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,
             Event::ToolCompleted(value) if verdicts.iter().any(|verdict| verdict.as_bytes() == names::verdict(&value.verdict))))),
@@ -360,6 +365,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::CacheReuse { median_at_least, full_misses_per_ten_at_most } =>
             super::cache::check(observer, *median_at_least, *full_misses_per_ten_at_most).passed,
         EventCheck::FinalTurn => super::final_turn::check(observer),
+        EventCheck::CompactionCarried => super::carried::check(observer).passed,
         EventCheck::CompactionChoice => super::compaction_choice::check(observer).passed,
         EventCheck::BudgetVisible => super::budget::check(observer),
         EventCheck::BudgetTold => super::budget_report::check(observer, false),
