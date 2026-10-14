@@ -254,6 +254,40 @@ fn a_model_deviation_is_counted_apart_from_smiths_failures() {
 }
 
 #[test]
+fn an_unavailable_advisory_check_leaves_a_model_deviation() {
+    let mut result = recorded_passes().remove(0);
+    result.outcome.deciding = vec!["file-content:first.txt".into()];
+    result.outcome.checks = vec![smith_bench::CheckVerdict {
+        check: "file-content:first.txt".into(),
+        passed: Measure::Observed { value: false },
+        evidence: vec!["No such file or directory (os error 2)".into()],
+    }];
+    for check in ["teardown", "headroom/request-bytes", "headroom/first-byte", "headroom/largest-gap"] {
+        result.outcome.checks.push(smith_bench::CheckVerdict {
+            check: check.into(),
+            passed: Measure::unavailable("not yet: passive observation"),
+            evidence: vec![],
+        });
+    }
+    assert!(smith_bench::probe::model_deviation(&result));
+}
+
+#[test]
+fn a_failed_deciding_contract_check_is_no_model_deviation() {
+    let mut result = recorded_passes().remove(0);
+    result.outcome.deciding = vec!["file-content:first.txt".into(), "run-completed".into()];
+    result.outcome.checks = ["file-content:first.txt", "run-completed"]
+        .into_iter()
+        .map(|check| smith_bench::CheckVerdict {
+            check: check.into(),
+            passed: Measure::Observed { value: false },
+            evidence: vec![],
+        })
+        .collect();
+    assert!(!smith_bench::probe::model_deviation(&result));
+}
+
+#[test]
 fn a_block_whose_prompt_digest_differs_gates_nothing() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut task = smith_bench::read_task(&repository.join("tasks/probes/smoke-tools/task.toml")).expect("task");

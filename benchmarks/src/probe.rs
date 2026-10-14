@@ -145,7 +145,7 @@ pub fn model_deviation(result: &AttemptResult) -> bool {
     }
     let mut deviation = false;
     for check in &result.outcome.checks {
-        if check.passed == (Measure::Observed { value: true }) {
+        if !result.outcome.deciding.contains(&check.check) || check.passed == (Measure::Observed { value: true }) {
             continue;
         }
         let model = check.check == "answer"
