@@ -181,7 +181,7 @@ pub struct Sinks {
 }
 
 pub(crate) const FRONT_RECORDS: u32 = 4;
-const TYPES: usize = 18;
+const TYPES: usize = 19;
 const AUTHORITATIVE: u32 = 4;
 // The three authoritative records, teardown notice and two-record fact hand-off have separate slots.
 const LINE_SLOTS: u32 = 6;
@@ -405,6 +405,7 @@ impl Sinks {
                     | Event::ResponseCompleted(_)
                     | Event::TextDelta(_)
                     | Event::ToolStarted(_)
+                    | Event::JobEnded(_)
                     | Event::ToolCompleted(_)
                     | Event::CheckStarted(_)
                     | Event::CheckCompleted(_)
@@ -525,6 +526,7 @@ impl Sinks {
             | Event::ResponseCompleted(_)
             | Event::TextDelta(_)
             | Event::ToolStarted(_)
+            | Event::JobEnded(_)
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
@@ -886,6 +888,7 @@ fn authoritative(event: &Event) -> bool {
         | Event::ResponseCompleted(_)
         | Event::TextDelta(_)
         | Event::ToolStarted(_)
+        | Event::JobEnded(_)
         | Event::ToolCompleted(_)
         | Event::CheckStarted(_)
         | Event::CheckCompleted(_)
@@ -923,6 +926,7 @@ fn kind(event: &Event) -> usize {
         Event::MessageReceived(_) => 15,
         Event::MessageRead(_) => 16,
         Event::MessageUnread(_) => 17,
+        Event::JobEnded(_) => 18,
     }
 }
 
@@ -946,6 +950,7 @@ fn names(index: usize) -> &'static [u8] {
         b"message.received",
         b"message.read",
         b"message.unread",
+        b"job.ended",
     ]
     .get(index)
     .copied()
@@ -1090,7 +1095,7 @@ pub(crate) mod tests {
     mod view;
 
     pub(crate) fn limits(destinations: u32) -> SinkLimits {
-        let records = smith_events::Limits { string: 64, content: 1024, items: 18 };
+        let records = smith_events::Limits { string: 64, content: 1024, items: 19 };
         let line = largest_line(&records, Capture::None, records.content, records.string).unwrap();
         SinkLimits {
             destinations,
@@ -1196,7 +1201,7 @@ pub(crate) mod tests {
             sinks.record(&Record { t_ms: 37, event: Event::RunCompleted(answer) });
             // The same policy grants the request's content in 02.6.
             let request =
-                golden(include_bytes!("../../smith-events/golden/v1/response_started_everything.jsonl"), &limits);
+                golden(include_bytes!("../../smith-events/golden/v2/response_started_everything.jsonl"), &limits);
             let Event::ResponseStarted(expected) = &request.event else { panic!("golden request") };
             let expected = expected.prompt.clone();
             sinks.record(&request);
@@ -1399,7 +1404,7 @@ pub(crate) mod tests {
         let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         let mut expected = Vec::new();
-        let start = golden(include_bytes!("../../smith-events/golden/v1/session_started_none.jsonl"), &limits);
+        let start = golden(include_bytes!("../../smith-events/golden/v2/session_started_none.jsonl"), &limits);
         sinks.record(&start);
         expected.push(start);
         for name in 0..count {
@@ -1411,10 +1416,10 @@ pub(crate) mod tests {
             expected.push(record);
         }
         assert!(!sinks.takes(), "the actual output cap holds the next fact");
-        let completed = golden(include_bytes!("../../smith-events/golden/v1/run_completed_none.jsonl"), &limits);
+        let completed = golden(include_bytes!("../../smith-events/golden/v2/run_completed_none.jsonl"), &limits);
         sinks.record(&completed);
         expected.push(completed);
-        let end = golden(include_bytes!("../../smith-events/golden/v1/session_ended_none.jsonl"), &limits);
+        let end = golden(include_bytes!("../../smith-events/golden/v2/session_ended_none.jsonl"), &limits);
         sinks.record(&end);
         expected.push(end);
         sinks.finish();

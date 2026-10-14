@@ -217,6 +217,10 @@ pub enum Verdict {
     TooLarge,
     /// The `timed_out` classification.
     TimedOut,
+    /// A command left running as a job, sent in its call answer.
+    Running,
+    /// A job stopped by its call, sent as its terminal.
+    Stopped,
     /// The `failed` classification.
     Failed,
     /// The `cancelled` classification.
@@ -892,6 +896,8 @@ pub struct ToolCompleted {
     pub tool: Box<[u8]>,
     pub verdict: Verdict,
     pub exit: Option<CommandExit>,
+    /// The job number named by a running shell or a valid job answer.
+    pub job: Option<u64>,
     pub bytes: u64,
     /// Bytes the tool's own read window or command capture omitted, before rendering.
     pub omitted_bytes: u64,
@@ -900,6 +906,23 @@ pub struct ToolCompleted {
     pub duration_ms: u64,
     pub child: Option<ChildCompleted>,
     pub delivery: Option<Delivered>,
+}
+
+/// A job whose end no call answer reported, told by its closing session.
+/// Contract: protocol/events.md, section 3.6.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct JobEnded {
+    pub run: u64,
+    pub conversation: u64,
+    pub job: u64,
+    /// The provider id of the shell call that left it running.
+    pub call: Box<[u8]>,
+    /// Its observed end: exited, timed out or cancelled.
+    pub verdict: Verdict,
+    pub exit: Option<CommandExit>,
+    /// Bytes written after the last answer that named it.
+    pub unread_bytes: u64,
+    pub duration_ms: u64,
 }
 
 /// The settled child result the service joins to its enclosing tool terminal.
@@ -1059,6 +1082,8 @@ pub enum Event {
     ToolStarted(ToolStarted),
     /// The `tool.completed` record.
     ToolCompleted(ToolCompleted),
+    /// The terminal of a job whose end no call reported.
+    JobEnded(JobEnded),
     /// The `check.started` record.
     CheckStarted(CheckStarted),
     /// The `check.completed` record.

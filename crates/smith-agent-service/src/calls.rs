@@ -323,6 +323,7 @@ impl Book {
                 tool: call.metadata.name,
                 verdict: terminal.verdict,
                 exit: terminal.exit,
+                job: None,
                 bytes: terminal.bytes,
                 omitted_bytes: terminal
                     .omitted_bytes

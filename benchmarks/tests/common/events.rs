@@ -29,6 +29,7 @@ fn encoded(record: &Record) -> Vec<u8> {
             | Event::ResponseCompleted(_)
             | Event::TextDelta(_)
             | Event::ToolStarted(_)
+            | Event::JobEnded(_)
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
@@ -120,21 +121,21 @@ fn build_balanced() -> Vec<Record> {
     // sweep still reads every unmodified maximum-value codec record.
     let model = model();
     let mut values = vec![
-        record(include_str!("../../../crates/smith-events/golden/v1/session_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/run_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/conversation_opened_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/response_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/response_completed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/conversation_closed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/run_completed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v1/session_ended_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/session_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/run_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/conversation_opened_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/response_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/response_completed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/conversation_closed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/run_completed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v2/session_ended_everything.jsonl")),
     ];
     for (index, record) in values.iter_mut().enumerate() {
         record.t_ms = u64::try_from(index).expect("small index");
         match &mut record.event {
             Event::SessionStarted(value) => {
                 value.mode = smith_events::Mode::Exec;
-                value.versions.events = 1;
+                value.versions.events = 2;
             }
             Event::RunStarted(value) => {
                 value.run = 0;
@@ -196,6 +197,7 @@ fn build_balanced() -> Vec<Record> {
             | Event::Budget(_)
             | Event::TextDelta(_)
             | Event::ToolStarted(_)
+            | Event::JobEnded(_)
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)

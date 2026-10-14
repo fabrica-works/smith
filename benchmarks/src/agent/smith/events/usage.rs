@@ -128,6 +128,7 @@ pub(super) fn tokens(sessions: &[Session]) -> Result<Vec<TokenRecord>, String> {
                 | Event::ResponseCompleted(_)
                 | Event::TextDelta(_)
                 | Event::ToolStarted(_)
+                | Event::JobEnded(_)
                 | Event::ToolCompleted(_)
                 | Event::CheckStarted(_)
                 | Event::CheckCompleted(_)
@@ -236,6 +237,7 @@ pub(super) fn counts(sessions: &[Session]) -> Counts {
                 | Event::TextDelta(_)
                 | Event::CheckStarted(_)
                 | Event::CheckCompleted(_)
+                | Event::JobEnded(_)
                 | Event::Notice(_) => {}
             }
         }
@@ -267,6 +269,8 @@ fn tool_failed(verdict: &smith_events::Verdict) -> bool {
         | Verdict::Result
         | Verdict::NoMatch
         | Verdict::Unchanged
+        | Verdict::Running
+        | Verdict::Stopped
         | Verdict::Unknown(_) => false,
         Verdict::Failed
         | Verdict::TimedOut

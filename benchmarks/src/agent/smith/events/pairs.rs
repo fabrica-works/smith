@@ -32,7 +32,8 @@ fn pair_key(record: &Record) -> Option<(String, bool)> {
         }
         Event::CheckStarted(value) => Some((format!("check/{}", value.run), true)),
         Event::CheckCompleted(value) => Some((format!("check/{}", value.run), false)),
-        Event::MessageReceived(_)
+        Event::JobEnded(_)
+        | Event::MessageReceived(_)
         | Event::MessageRead(_)
         | Event::MessageUnread(_)
         | Event::Budget(_)
@@ -82,7 +83,8 @@ pub(super) fn check(session: &Session) -> Pairing {
                     problems.violations.push("tool terminal changed its call's tool".into());
                 }
             }
-            Event::MessageReceived(_)
+            Event::JobEnded(_)
+            | Event::MessageReceived(_)
             | Event::MessageRead(_)
             | Event::MessageUnread(_)
             | Event::Budget(_)

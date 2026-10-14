@@ -205,6 +205,7 @@ fn collect(totals: &mut Readings, session: &Session, index: usize) {
             | Event::ConversationClosed(_)
             | Event::TextDelta(_)
             | Event::ToolStarted(_)
+            | Event::JobEnded(_)
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)

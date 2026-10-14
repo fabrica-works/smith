@@ -114,7 +114,7 @@ fn absent_transport_content_wrong_join_and_failed_terminal_cannot_pass() {
     }
     let mut values = fixture();
     let mut notice =
-        common::events::record(include_str!("../../crates/smith-events/golden/v1/notice_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v2/notice_everything.jsonl"));
     if let Event::Notice(notice) = &mut notice.event {
         notice.kind = smith_events::NoticeKind::ReasoningDropped;
         notice.run = Some(0);

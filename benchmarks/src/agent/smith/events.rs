@@ -263,6 +263,7 @@ impl Observer {
             | Event::ConversationClosed(_)
             | Event::ResponseStarted(_)
             | Event::TextDelta(_)
+            | Event::JobEnded(_)
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
@@ -377,6 +378,7 @@ fn run(event: &Event) -> Option<u64> {
         Event::ResponseCompleted(value) => Some(value.run),
         Event::TextDelta(value) => Some(value.run),
         Event::ToolStarted(value) => Some(value.run),
+        Event::JobEnded(value) => Some(value.run),
         Event::ToolCompleted(value) => Some(value.run),
         Event::CheckStarted(value) => Some(value.run),
         Event::CheckCompleted(value) => Some(value.run),

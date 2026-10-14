@@ -320,6 +320,7 @@ impl<'a> State<'a> {
             | Event::ResponseCompleted(_)
             | Event::TextDelta(_)
             | Event::ToolStarted(_)
+            | Event::JobEnded(_)
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)

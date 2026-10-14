@@ -8,8 +8,8 @@ use crate::records::{
     Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Forced, Form, Level,
-    LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice,
+    EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Forced, Form, JobEnded,
+    Level, LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice,
     NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
     Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
     Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
@@ -129,6 +129,7 @@ fn read_for_session_ended(
         b"response.completed" => Event::ResponseCompleted(read_response_completed(tokens, limits)?),
         b"text.delta" => Event::TextDelta(read_text_delta(tokens, limits)?),
         b"tool.started" => Event::ToolStarted(read_tool_started(tokens, limits)?),
+        b"job.ended" => Event::JobEnded(read_job_ended(tokens, limits)?),
         b"tool.completed" => Event::ToolCompleted(read_tool_completed(tokens, limits)?),
         b"check.started" => Event::CheckStarted(read_check_started(tokens, limits)?),
         b"check.completed" => Event::CheckCompleted(read_check_completed(tokens, limits)?),
@@ -564,6 +565,8 @@ fn read_verdict(tokens: &[Token], limits: &Limits) -> Result<Verdict, Error> {
         b"missing" => Verdict::Missing,
         b"too_large" => Verdict::TooLarge,
         b"timed_out" => Verdict::TimedOut,
+        b"running" => Verdict::Running,
+        b"stopped" => Verdict::Stopped,
         b"failed" => Verdict::Failed,
         b"cancelled" => Verdict::Cancelled,
         b"ambiguous" => Verdict::Ambiguous,
@@ -744,7 +747,7 @@ fn read_versions(tokens: &[Token], _limits: &Limits) -> Result<Versions, Error> 
 #[cfg(test)]
 #[test]
 fn the_product_announces_its_chat_store_version() {
-    let wire = b"{\"v\":1,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":1,\"channel\":2,\"charter\":2,\"transcript\":4,\"chat_store\":1},\"limits\":{}}\n";
+    let wire = b"{\"v\":2,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":2,\"channel\":2,\"charter\":2,\"transcript\":4,\"chat_store\":1},\"limits\":{}}\n";
     let limits = Limits { string: 32, content: 1024, items: 16 };
     let record = read(wire, &limits).unwrap().unwrap();
     let Event::SessionStarted(started) = &record.event else { panic!("startup record") };
@@ -1378,6 +1381,10 @@ fn read_tool_completed(tokens: &[Token], limits: &Limits) -> Result<ToolComplete
             Some(item) => Some(read_command_exit(item, limits)?),
             None => None,
         },
+        job: match field(tokens, b"job")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
         bytes: unsigned(required(tokens, b"bytes")?)?,
         omitted_bytes: unsigned(required(tokens, b"omitted_bytes")?)?,
         clamped: boolean(required(tokens, b"clamped")?)?,
@@ -1390,6 +1397,23 @@ fn read_tool_completed(tokens: &[Token], limits: &Limits) -> Result<ToolComplete
             Some(item) => Some(read_delivered(item, limits)?),
             None => None,
         },
+    })
+}
+
+fn read_job_ended(tokens: &[Token], limits: &Limits) -> Result<JobEnded, Error> {
+    object(tokens)?;
+    Ok(JobEnded {
+        run: unsigned(required(tokens, b"run")?)?,
+        conversation: unsigned(required(tokens, b"conversation")?)?,
+        job: unsigned(required(tokens, b"job")?)?,
+        call: text(required(tokens, b"call")?, limits.string)?,
+        verdict: read_verdict(required(tokens, b"verdict")?, limits)?,
+        exit: match field(tokens, b"exit")? {
+            Some(item) => Some(read_command_exit(item, limits)?),
+            None => None,
+        },
+        unread_bytes: unsigned(required(tokens, b"unread_bytes")?)?,
+        duration_ms: unsigned(required(tokens, b"duration_ms")?)?,
     })
 }
 

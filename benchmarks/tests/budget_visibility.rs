@@ -34,7 +34,7 @@ fn build_records() -> Vec<Record> {
         value.share = Some(smith_events::Share { turns: 2, time_ms: 1000, spend: 10 });
     }
     let mut returned =
-        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_completed_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
     if let Event::ToolCompleted(value) = &mut returned.event {
         value.run = 0;
         value.conversation = 0;
@@ -281,6 +281,7 @@ fn model_report_requires_actual_child_identity_captured_usage_and_result() {
                 | Event::MessageReceived(_)
                 | Event::MessageRead(_)
                 | Event::MessageUnread(_)
+                | Event::JobEnded(_)
                 | Event::Notice(_) => {}
             }
         }

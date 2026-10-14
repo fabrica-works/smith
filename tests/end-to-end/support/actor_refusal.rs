@@ -50,6 +50,7 @@ pub fn completed(records: &[smith_events::Record]) -> Vec<&smith_events::RunComp
             | smith_events::Event::ResponseCompleted(_)
             | smith_events::Event::TextDelta(_)
             | smith_events::Event::ToolStarted(_)
+            | smith_events::Event::JobEnded(_)
             | smith_events::Event::ToolCompleted(_)
             | smith_events::Event::CheckStarted(_)
             | smith_events::Event::CheckCompleted(_)

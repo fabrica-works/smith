@@ -80,7 +80,8 @@ impl View {
                 spend: budget.spend.clone(),
                 time_ms: budget.time_ms.clone(),
             },
-            Event::SessionStarted(_)
+            Event::JobEnded(_)
+            | Event::SessionStarted(_)
             | Event::SessionEnded(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
@@ -103,7 +104,8 @@ impl View {
             | Event::ToolCompleted(_)
             | Event::Notice(_)
             | Event::Budget(_) => true,
-            Event::SessionStarted(_)
+            Event::JobEnded(_)
+            | Event::SessionStarted(_)
             | Event::SessionEnded(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
@@ -277,6 +279,8 @@ fn verdict(value: &Verdict) -> Verdict {
         | Verdict::Conflict
         | Verdict::Missing
         | Verdict::TooLarge
+        | Verdict::Running
+        | Verdict::Stopped
         | Verdict::TimedOut
         | Verdict::Failed
         | Verdict::Cancelled

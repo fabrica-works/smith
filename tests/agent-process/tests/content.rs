@@ -279,6 +279,7 @@ fn native_provider_failure_keeps_status_and_capture_selected_detail_in_every_ter
                 | Event::ConversationOpened(_)
                 | Event::TextDelta(_)
                 | Event::ToolStarted(_)
+                | Event::JobEnded(_)
                 | Event::ToolCompleted(_)
                 | Event::CheckStarted(_)
                 | Event::CheckCompleted(_)

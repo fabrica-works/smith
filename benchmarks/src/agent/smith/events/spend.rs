@@ -87,6 +87,7 @@ pub(super) fn check(observer: &Observer, currency: u64, ceiling: f64) -> Measure
                 | Event::ResponseStarted(_)
                 | Event::TextDelta(_)
                 | Event::ToolStarted(_)
+                | Event::JobEnded(_)
                 | Event::ToolCompleted(_)
                 | Event::CheckStarted(_)
                 | Event::CheckCompleted(_)

@@ -52,6 +52,7 @@ fn rejected_responses(sessions: &[super::events::Session], expected: u64) -> boo
                 | Event::ConversationOpened(_)
                 | Event::ConversationClosed(_)
                 | Event::ToolStarted(_)
+                | Event::JobEnded(_)
                 | Event::ToolCompleted(_)
                 | Event::CheckStarted(_)
                 | Event::CheckCompleted(_)
@@ -329,7 +330,7 @@ mod tests {
         assert!(!rejected_responses(std::slice::from_ref(&session), 1));
         let mut session = rejection();
         session.records.push(test_events::record(include_str!(
-            "../../../../crates/smith-events/golden/v1/text_delta_everything.jsonl"
+            "../../../../crates/smith-events/golden/v2/text_delta_everything.jsonl"
         )));
         assert!(!rejected_responses(std::slice::from_ref(&session), 1));
         session.records.pop();

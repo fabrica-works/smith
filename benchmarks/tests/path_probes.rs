@@ -42,6 +42,7 @@ fn calls() -> Vec<Record> {
         tool: Box::from(&b"read"[..]),
         verdict: Verdict::Read,
         exit: None,
+        job: None,
         bytes: 150,
         omitted_bytes: 0,
         clamped: false,

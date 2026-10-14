@@ -177,6 +177,7 @@ pub fn check(records: &[Record]) {
             | Event::MessageReceived(_)
             | Event::MessageRead(_)
             | Event::MessageUnread(_)
+            | Event::JobEnded(_)
             | Event::Notice(_) => {}
         }
     }
@@ -205,6 +206,7 @@ fn name(event: &Event) -> &'static [u8] {
         Event::ResponseCompleted(_) => b"response.completed",
         Event::TextDelta(_) => b"text.delta",
         Event::ToolStarted(_) => b"tool.started",
+        Event::JobEnded(_) => b"job.ended",
         Event::ToolCompleted(_) => b"tool.completed",
         Event::CheckStarted(_) => b"check.started",
         Event::CheckCompleted(_) => b"check.completed",

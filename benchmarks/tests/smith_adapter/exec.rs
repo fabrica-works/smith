@@ -188,6 +188,7 @@ fn an_exec_arm_classifies_exit_5_as_needs_input() {
             | smith_events::Event::ResponseCompleted(_)
             | smith_events::Event::TextDelta(_)
             | smith_events::Event::ToolStarted(_)
+            | smith_events::Event::JobEnded(_)
             | smith_events::Event::ToolCompleted(_)
             | smith_events::Event::CheckStarted(_)
             | smith_events::Event::CheckCompleted(_)

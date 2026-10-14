@@ -48,6 +48,7 @@ pub(super) fn check(observer: &Observer) -> Measure<bool> {
                 | Event::ResponseStarted(_)
                 | Event::TextDelta(_)
                 | Event::ToolStarted(_)
+                | Event::JobEnded(_)
                 | Event::ToolCompleted(_)
                 | Event::CheckStarted(_)
                 | Event::CheckCompleted(_)

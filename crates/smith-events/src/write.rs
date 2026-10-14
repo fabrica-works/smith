@@ -5,11 +5,11 @@ use crate::records::{
     Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Forced, Form, Level, LimitValue, Loss,
-    Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome,
-    PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
-    ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Forced, Form, JobEnded, Level,
+    LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice,
+    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
+    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
+    Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -44,6 +44,7 @@ pub fn write_with_ceiling(
         | Event::ResponseCompleted(_)
         | Event::TextDelta(_)
         | Event::ToolStarted(_)
+        | Event::JobEnded(_)
         | Event::ToolCompleted(_)
         | Event::CheckStarted(_)
         | Event::CheckCompleted(_)
@@ -94,6 +95,7 @@ fn encode(json: &mut Encoder, record: &Record, capture: &Capture) {
         Event::ResponseCompleted(_) => json.string(b"response.completed"),
         Event::TextDelta(_) => json.string(b"text.delta"),
         Event::ToolStarted(_) => json.string(b"tool.started"),
+        Event::JobEnded(_) => json.string(b"job.ended"),
         Event::ToolCompleted(_) => json.string(b"tool.completed"),
         Event::CheckStarted(_) => json.string(b"check.started"),
         Event::CheckCompleted(_) => json.string(b"check.completed"),
@@ -116,6 +118,7 @@ fn encode(json: &mut Encoder, record: &Record, capture: &Capture) {
         Event::ResponseCompleted(value) => encode_response_completed(json, value, capture),
         Event::TextDelta(value) => encode_text_delta(json, value, capture),
         Event::ToolStarted(value) => encode_tool_started(json, value, capture),
+        Event::JobEnded(value) => encode_job_ended(json, value, capture),
         Event::ToolCompleted(value) => encode_tool_completed(json, value, capture),
         Event::CheckStarted(value) => encode_check_started(json, value, capture),
         Event::CheckCompleted(value) => encode_check_completed(json, value, capture),
@@ -269,6 +272,8 @@ fn write_verdict(json: &mut Encoder, value: &Verdict, _capture: &Capture) {
         Verdict::Missing => json.string(b"missing"),
         Verdict::TooLarge => json.string(b"too_large"),
         Verdict::TimedOut => json.string(b"timed_out"),
+        Verdict::Running => json.string(b"running"),
+        Verdict::Stopped => json.string(b"stopped"),
         Verdict::Failed => json.string(b"failed"),
         Verdict::Cancelled => json.string(b"cancelled"),
         Verdict::Ambiguous => json.string(b"ambiguous"),
@@ -878,6 +883,10 @@ fn validate_record(record: &Record, limits: &Limits) -> Result<(), Error> {
         Event::ResponseCompleted(value) => validate_response_completed(value, limits),
         Event::TextDelta(value) => validate_text_delta(value, limits),
         Event::ToolStarted(value) => validate_tool_started(value, limits),
+        Event::JobEnded(value) => {
+            check_text(&value.call, limits.string)?;
+            validate_verdict(&value.verdict, limits)
+        }
         Event::ToolCompleted(value) => validate_tool_completed(value, limits),
         Event::CheckCompleted(value) => validate_check_exit(&value.exit, limits),
         Event::CheckStarted(_) | Event::MessageRead(_) | Event::MessageUnread(_) => Ok(()),
@@ -1004,6 +1013,8 @@ fn validate_verdict(value: &Verdict, limits: &Limits) -> Result<(), Error> {
         | Verdict::Conflict
         | Verdict::Missing
         | Verdict::TooLarge
+        | Verdict::Running
+        | Verdict::Stopped
         | Verdict::TimedOut
         | Verdict::Failed
         | Verdict::Cancelled
@@ -1890,6 +1901,10 @@ fn encode_tool_completed(json: &mut Encoder, value: &ToolCompleted, capture: &Ca
         json.key(b"exit");
         write_command_exit(json, item, capture);
     }
+    if let Some(job) = value.job {
+        json.key(b"job");
+        json.unsigned(job);
+    }
     json.key(b"bytes");
     json.unsigned(value.bytes);
     json.key(b"omitted_bytes");
@@ -1906,6 +1921,27 @@ fn encode_tool_completed(json: &mut Encoder, value: &ToolCompleted, capture: &Ca
         json.key(b"delivery");
         write_delivered(json, item, capture);
     }
+}
+
+fn encode_job_ended(json: &mut Encoder, value: &JobEnded, capture: &Capture) {
+    json.key(b"run");
+    json.unsigned(value.run);
+    json.key(b"conversation");
+    json.unsigned(value.conversation);
+    json.key(b"job");
+    json.unsigned(value.job);
+    json.key(b"call");
+    json.string(&value.call);
+    json.key(b"verdict");
+    write_verdict(json, &value.verdict, capture);
+    if let Some(exit) = &value.exit {
+        json.key(b"exit");
+        write_command_exit(json, exit, capture);
+    }
+    json.key(b"unread_bytes");
+    json.unsigned(value.unread_bytes);
+    json.key(b"duration_ms");
+    json.unsigned(value.duration_ms);
 }
 
 fn encode_check_started(json: &mut Encoder, value: &CheckStarted, _capture: &Capture) {

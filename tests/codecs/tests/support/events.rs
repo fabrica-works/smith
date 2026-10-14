@@ -175,6 +175,8 @@ fn value_verdict(name: &str, spelling: &str) -> Verdict {
         "missing" => Verdict::Missing,
         "too_large" => Verdict::TooLarge,
         "timed_out" => Verdict::TimedOut,
+        "running" => Verdict::Running,
+        "stopped" => Verdict::Stopped,
         "failed" => Verdict::Failed,
         "cancelled" => Verdict::Cancelled,
         "ambiguous" => Verdict::Ambiguous,
@@ -584,6 +586,7 @@ fn value_tool_completed(name: &str, spelling: &str) -> ToolCompleted {
         tool: Box::from("sample\n\"🌍".as_bytes()),
         verdict: value_verdict(name, spelling),
         exit: Some(value_command_exit(name, spelling)),
+        job: None,
         bytes: u64::MAX,
         omitted_bytes: u64::MAX,
         clamped: true,
@@ -1737,6 +1740,7 @@ fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
     samples.push(child_terminal("child_stop_budget", smith_events::ChildStop::Budget));
     samples.push(child_terminal("child_stop_failed", smith_events::ChildStop::Failed));
     samples.push(child_terminal("child_stop_closed", smith_events::ChildStop::Closed));
+    samples.extend(job_samples());
     samples
 }
 
@@ -1753,6 +1757,7 @@ fn child_terminal(name: &'static str, stop: smith_events::ChildStop) -> (&'stati
                 tool: Box::from(b"sub_agent".as_slice()),
                 verdict: Verdict::Result,
                 exit: None,
+                job: None,
                 bytes: 1,
                 omitted_bytes: 0,
                 clamped: false,
@@ -2049,6 +2054,43 @@ fn answer_field_samples() -> Vec<(&'static str, Record, Capture)> {
         failure.used = used;
         failure.bound = bound;
         samples.push((name, Record { t_ms: 0, event: Event::RunCompleted(run) }, Capture::None));
+    }
+    samples
+}
+
+fn job_samples() -> Vec<(&'static str, Record, Capture)> {
+    let mut samples = Vec::new();
+    for name in ["running", "stopped"] {
+        let mut completed = value_tool_completed("Verdict", name);
+        completed.job = Some(u64::MAX);
+        samples.push((
+            if name == "running" { "verdict_running" } else { "verdict_stopped" },
+            Record { t_ms: u64::MAX, event: Event::ToolCompleted(completed) },
+            Capture::Everything,
+        ));
+    }
+    for (name, verdict, exit) in [
+        ("job_ended_exited", Verdict::Exited, Some(CommandExit::Code { code: i64::MIN })),
+        ("job_ended_timed_out", Verdict::TimedOut, None),
+        ("job_ended_cancelled", Verdict::Cancelled, None),
+    ] {
+        samples.push((
+            name,
+            Record {
+                t_ms: u64::MAX,
+                event: Event::JobEnded(smith_events::JobEnded {
+                    run: u64::MAX,
+                    conversation: u64::MAX,
+                    job: u64::MAX,
+                    call: Box::from("sample\n\"🌍".as_bytes()),
+                    verdict,
+                    exit,
+                    unread_bytes: u64::MAX,
+                    duration_ms: u64::MAX,
+                }),
+            },
+            Capture::Everything,
+        ));
     }
     samples
 }

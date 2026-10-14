@@ -71,7 +71,7 @@ fn named_rollouts_survive_seeded_truncation_corruption_and_response_repetition()
 fn typed_event_chunks_preserve_records_under_seeded_cuts_and_corruption() {
     use smith_bench::agent::smith::events::Observer as Events;
     let limits = smith_events::Limits { string: 128, content: 1024, items: 16 };
-    let stream = include_bytes!("../../crates/smith-events/golden/v1/session_started_effective_limits.jsonl");
+    let stream = include_bytes!("../../crates/smith-events/golden/v2/session_started_effective_limits.jsonl");
     let mut rng = Rng::new(0xe7e0_0020);
     for _ in 0..128 {
         let mut observer = Events::new(&limits).expect("bounds");

@@ -155,6 +155,7 @@ impl State {
             | Event::RunCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
+            | Event::JobEnded(_)
             | Event::Notice(_) => {}
         }
         Ok(())
