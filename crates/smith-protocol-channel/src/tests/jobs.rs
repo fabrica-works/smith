@@ -46,6 +46,7 @@ fn read(end: JobEnd) -> Outcome {
 #[test]
 fn a_running_commands_number_and_output_survive_resume() {
     let outcome = Outcome::Running {
+        timeout: TimeoutClamp::Within,
         job: JobNumber(3),
         head: b"start".as_slice().into(),
         tail: b"end".as_slice().into(),
@@ -56,6 +57,7 @@ fn a_running_commands_number_and_output_survive_resume() {
     assert_eq!(
         round_trip(outcome),
         Ok(Outcome::Running {
+            timeout: TimeoutClamp::Within,
             job: JobNumber(3),
             head: b"start".as_slice().into(),
             tail: b"end".as_slice().into(),
@@ -183,6 +185,7 @@ fn a_cancelled_job_and_unread_output_survive_resume() {
 #[test]
 fn a_job_number_zero_is_refused_on_resume() {
     let outcome = Outcome::Running {
+        timeout: TimeoutClamp::Within,
         job: JobNumber(0),
         head: Box::default(),
         tail: Box::default(),
@@ -191,4 +194,70 @@ fn a_job_number_zero_is_refused_on_resume() {
         after: TimeoutClamp::Within,
     };
     assert_eq!(round_trip(outcome), Err(record::Refusal::Malformed));
+}
+
+#[test]
+fn a_running_commands_deadline_clamp_survives_its_resume() {
+    let outcome = Outcome::Running {
+        job: JobNumber(3),
+        head: Box::default(),
+        tail: Box::default(),
+        dropped: 0,
+        timeout: TimeoutClamp::Clamped {
+            asked: skein_lib::Duration::from_secs(180),
+            ceiling: skein_lib::Duration::from_secs(120),
+        },
+        output: BytesClamp::Within,
+        after: TimeoutClamp::Within,
+    };
+    assert_eq!(
+        round_trip(outcome),
+        Ok(Outcome::Running {
+            job: JobNumber(3),
+            head: Box::default(),
+            tail: Box::default(),
+            dropped: 0,
+            timeout: TimeoutClamp::Clamped {
+                asked: skein_lib::Duration::from_secs(180),
+                ceiling: skein_lib::Duration::from_secs(120)
+            },
+            output: BytesClamp::Within,
+            after: TimeoutClamp::Within,
+        })
+    );
+}
+
+fn round_trip_problem(problem: llm::Problem) -> llm::Problem {
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).unwrap();
+    let endpoints = crate::Endpoints::new(configured);
+    let limits = smith_transcript::CEILINGS;
+    let mut turn = crate::decode_turn(&super::saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();
+    turn.messages = Box::new([llm::Message {
+        role: llm::Role::User,
+        content: Box::new([llm::Block::ToolResult {
+            id: b"invalid".as_slice().into(),
+            result: llm::Returned::Invalid { problem },
+        }]),
+    }]);
+    let bytes = crate::encode_turn(&turn, &limits, &endpoints).unwrap();
+    let decoded = crate::decode_turn(&bytes, 1, &limits, &endpoints).unwrap();
+    match &decoded.messages[0].content[0] {
+        llm::Block::ToolResult { result: llm::Returned::Invalid { problem }, .. } => problem.clone(),
+        other @ (llm::Block::Opaque { .. }
+        | llm::Block::Refusal { .. }
+        | llm::Block::Text { .. }
+        | llm::Block::ToolCall { .. }
+        | llm::Block::ToolResult { .. }) => panic!("expected invalid result: {other:?}"),
+    }
+}
+
+#[test]
+fn a_full_job_tables_invalid_problem_survives_its_resume() {
+    assert_eq!(round_trip_problem(llm::Problem::JobsFull { jobs: 4 }), llm::Problem::JobsFull { jobs: 4 });
+}
+
+#[test]
+fn an_unknown_jobs_invalid_problem_survives_its_resume() {
+    assert_eq!(round_trip_problem(llm::Problem::UnknownJob { job: 17 }), llm::Problem::UnknownJob { job: 17 });
 }

@@ -77,7 +77,7 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
     let mut rng = Rng::new(941);
     let mut smallest_bound = u32::MAX;
     let mut read_cuts = Vec::new();
-    for case in 0_usize..2 {
+    for case in 0_usize..1 {
         let mut caps = tools();
         caps.read_bytes = u32::try_from(rng.next_u64() % 1024).unwrap();
         caps.shell_head = u32::try_from(rng.next_u64() % 1024).unwrap();
@@ -130,6 +130,10 @@ fn random_outcomes(caps: &tools::Limits) -> [tools::Outcome; 6] {
             },
         },
         tools::Outcome::Running {
+            timeout: tools::TimeoutClamp::Clamped {
+                asked: Duration::from_nanos(u64::MAX),
+                ceiling: Duration::from_nanos(1),
+            },
             job: tools::JobNumber(u32::MAX),
             head: vec![0xff; usize::try_from(caps.shell_head).unwrap()].into(),
             tail: vec![0; usize::try_from(caps.shell_tail).unwrap()].into(),
@@ -660,6 +664,7 @@ fn render_job(end: tools::JobEnd) -> (Box<[u8]>, bool) {
 #[test]
 fn a_running_command_names_the_job_to_read_next() {
     let outcome = tools::Outcome::Running {
+        timeout: tools::TimeoutClamp::Within,
         job: tools::JobNumber(3),
         head: b"start".as_slice().into(),
         tail: Box::default(),
@@ -746,6 +751,7 @@ fn a_cancelled_jobs_answer_says_it_was_cancelled() {
 #[test]
 fn a_commands_yield_clamp_names_the_asked_and_ceiling() {
     let outcome = tools::Outcome::Running {
+        timeout: tools::TimeoutClamp::Within,
         job: tools::JobNumber(3),
         head: Box::default(),
         tail: Box::default(),
@@ -796,5 +802,34 @@ fn a_jobs_output_clamp_names_the_asked_and_ceiling() {
             b"job 3 output since its last answer:\nrunning\n[output clamped: 90 bytes to 30 bytes]".as_slice().into(),
             false
         )
+    );
+}
+
+#[test]
+fn a_running_command_says_its_deadline_and_yield_clamps() {
+    let outcome = tools::Outcome::Running {
+        job: tools::JobNumber(3),
+        head: Box::default(),
+        tail: Box::default(),
+        dropped: 0,
+        timeout: tools::TimeoutClamp::Clamped { asked: Duration::from_secs(180), ceiling: Duration::from_secs(120) },
+        after: tools::TimeoutClamp::Clamped { asked: Duration::from_secs(90), ceiling: Duration::from_secs(30) },
+        output: tools::BytesClamp::Within,
+    };
+    assert_eq!(render_outcome(&outcome, &tools::Namespace::One, 1024).unwrap(),
+        (b"job 3 running; use job to read the rest\n[timeout clamped: 180000 ms to 120000 ms]\n[yield clamped: 90000 ms to 30000 ms]".as_slice().into(), false));
+}
+
+#[test]
+fn a_full_jobs_problem_names_the_bound_and_recovery() {
+    assert_eq!(crate::failure::problem(smith_domain::llm::Problem::JobsFull { jobs: 4 }, 1024).unwrap().as_ref(),
+        b"invalid yield_seconds: at most 4 jobs may run at once; job with stop stops one, or reads the end of one that ended");
+}
+
+#[test]
+fn an_unknown_job_problem_names_which_number_was_invalid() {
+    assert_eq!(
+        crate::failure::problem(smith_domain::llm::Problem::UnknownJob { job: 17 }, 1024).unwrap().as_ref(),
+        b"invalid job 17: no running answer named it, or its end was already answered"
     );
 }

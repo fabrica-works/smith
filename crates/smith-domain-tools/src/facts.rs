@@ -255,12 +255,17 @@ fn observed(outcome: &Outcome, observation: Observation) -> Observation {
             omitted_bytes: *dropped,
             clamped: observation.clamped || timeout_clamped(*timeout) || bytes_clamped(*output),
         },
-        Outcome::Running { dropped, after, output, .. } | Outcome::Job { dropped, wait: after, output, .. } => {
-            Observation {
-                omitted_bytes: *dropped,
-                clamped: observation.clamped || timeout_clamped(*after) || bytes_clamped(*output),
-            }
-        }
+        Outcome::Running { dropped, timeout, after, output, .. } => Observation {
+            omitted_bytes: *dropped,
+            clamped: observation.clamped
+                || timeout_clamped(*timeout)
+                || timeout_clamped(*after)
+                || bytes_clamped(*output),
+        },
+        Outcome::Job { dropped, wait: after, output, .. } => Observation {
+            omitted_bytes: *dropped,
+            clamped: observation.clamped || timeout_clamped(*after) || bytes_clamped(*output),
+        },
         Outcome::Read { window, .. } => Observation {
             omitted_bytes: observation.omitted_bytes,
             clamped: observation.clamped || bytes_clamped(*window),

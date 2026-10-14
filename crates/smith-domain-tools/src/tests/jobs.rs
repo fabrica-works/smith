@@ -23,6 +23,7 @@ fn observe(end: JobEnd) -> FactKind {
 #[test]
 fn a_running_commands_fact_keeps_its_loss_and_clamp() {
     let outcome = Outcome::Running {
+        timeout: TimeoutClamp::Within,
         job: JobNumber(2),
         head: b"abc".as_slice().into(),
         tail: b"de".as_slice().into(),
@@ -103,6 +104,35 @@ fn a_cancelled_jobs_fact_keeps_its_loss_and_clamp() {
             verdict: Verdict::Cancelled,
             bytes: 5,
             omitted_bytes: 7,
+            clamped: true
+        }
+    );
+}
+
+#[test]
+fn a_running_commands_fact_preserves_its_deadline_clamp_alone() {
+    let outcome = Outcome::Running {
+        job: JobNumber(2),
+        head: Box::default(),
+        tail: Box::default(),
+        dropped: 0,
+        output: BytesClamp::Within,
+        after: TimeoutClamp::Within,
+        timeout: TimeoutClamp::Clamped { asked: Duration::from_secs(180), ceiling: Duration::from_secs(120) },
+    };
+    assert_eq!(
+        crate::facts::answered(
+            Token::new(1),
+            Tool::Shell,
+            &outcome,
+            crate::facts::Observation { omitted_bytes: 0, clamped: false }
+        ),
+        FactKind::Answered {
+            session: Token::new(1),
+            tool: Tool::Shell,
+            verdict: Verdict::Running,
+            bytes: 0,
+            omitted_bytes: 0,
             clamped: true
         }
     );

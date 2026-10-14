@@ -888,8 +888,8 @@ pub(crate) fn io_done(
     let mark = out.len();
     let heard = tools_step(&mut domain.calls, env, tools::Event::Done { owner, done }, out);
     let mut concerned = None;
-    if let Some((run, outcome)) = heard.answer {
-        concerned = Some(owned_answered(domain, env, run, outcome, out));
+    if let Some((run, result)) = heard.answer {
+        concerned = Some(owned_answered(domain, env, run, result, out));
     }
     match heard.kit {
         Some(News::Closed { session }) => {
@@ -911,7 +911,7 @@ fn owned_answered(
     domain: &mut Domain,
     env: &Env<Limits>,
     run: Id<Run>,
-    outcome: Outcome,
+    result: Returned,
     out: &mut Queue<Request>,
 ) -> Id<Session> {
     let Run { session: id, slot, block, by, credit, metadata: _, ended: _ } = ended_run(&mut domain.calls.runs, run);
@@ -921,12 +921,10 @@ fn owned_answered(
     let conversation = &mut session.conversation;
     session.state = match state {
         State::Tooling { tools } => {
-            let result = Returned::Owned { outcome };
             tool_ran(conversation, id, &mut domain.calls, tools, slot, block, credit, result, env, out)
         }
         State::Closing { end, waiting } => {
-            let end = keep_closing(conversation, slot, block, credit, Returned::Owned { outcome }, &env.limits)
-                .unwrap_or(end);
+            let end = keep_closing(conversation, slot, block, credit, result, &env.limits).unwrap_or(end);
             settled(end, waiting)
         }
         State::Calling { .. } | State::Backoff { .. } | State::Resting { .. } | State::Yielded | State::Closed => {
@@ -1071,7 +1069,7 @@ fn ended_run(runs: &mut Slab<Run>, run: Id<Run>) -> Run {
 /// What a step of the tools gave back: the answer to a call, if one came, and
 /// news of a kit.
 struct Heard {
-    answer: Option<(Id<Run>, Outcome)>,
+    answer: Option<(Id<Run>, Returned)>,
     kit: Option<News>,
 }
 
@@ -1102,7 +1100,15 @@ fn tools_step(calls: &mut Calls, env: &Env<Limits>, event: tools::Event, out: &m
             tools::Request::CancelIo { owner } => out.push(Request::CancelIo { owner }),
             tools::Request::Answer { to, outcome } => {
                 assert!(heard.answer.is_none(), "a step of the tools answers one call at most");
-                heard.answer = Some((Id::from_token(to.into_token()), outcome));
+                heard.answer = Some((Id::from_token(to.into_token()), Returned::Owned { outcome }));
+            }
+            tools::Request::Invalid { to, problem } => {
+                assert!(heard.answer.is_none(), "a step of the tools answers one call at most");
+                let problem = match problem {
+                    tools::JobProblem::Full { jobs } => Problem::JobsFull { jobs },
+                    tools::JobProblem::Unknown { job } => Problem::UnknownJob { job: job.0 },
+                };
+                heard.answer = Some((Id::from_token(to.into_token()), Returned::Invalid { problem }));
             }
             tools::Request::Opened { session: _, kit } => heard.kit = Some(News::Opened { kit }),
             tools::Request::Refused { session: _, refusal } => heard.kit = Some(News::Refused { refusal }),
@@ -1512,7 +1518,7 @@ fn advance(
                 started = started.saturating_add(1);
                 batch = Some(effect);
                 // Answered at the tools' entrance, or running.
-                let Some((answered, outcome)) = heard.answer else {
+                let Some((answered, result)) = heard.answer else {
                     tools.slots.push(Slot::Running { run }).expect("a slot for every call");
                     tools.running = tools.running.saturating_add(1);
                     continue;
@@ -1522,7 +1528,6 @@ fn advance(
                 // Refused at the entrance: its block and its id were counted
                 // when the message was recorded, and a refusal holds nothing
                 // more, so it fits, and the batch it is in goes on.
-                let result = Returned::Owned { outcome };
                 receive_result(conversation, credit, &result, &env.limits);
                 let result = Block::ToolResult { id: call_id(conversation, index), result };
                 tools.slots.push(Slot::Done { result }).expect("a slot for every call");
@@ -2661,7 +2666,9 @@ fn problem_cost(problem: &Problem) -> Option<u64> {
         | Problem::NotAnObject
         | Problem::TooLarge
         | Problem::Oversize { .. }
-        | Problem::CutOff { .. } => Some(0),
+        | Problem::CutOff { .. }
+        | Problem::JobsFull { .. }
+        | Problem::UnknownJob { .. } => Some(0),
         Problem::Missing { field } | Problem::WrongType { field } | Problem::BadValue { field } => len(field),
     }
 }

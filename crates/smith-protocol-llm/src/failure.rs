@@ -87,6 +87,22 @@ pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, 
     match problem {
         llm::Problem::Oversize { bytes, bound } => return call_size_problem(bytes, Some(bound), maximum),
         llm::Problem::CutOff { bytes } => return call_size_problem(bytes, None, maximum),
+        llm::Problem::JobsFull { jobs } => {
+            return job_problem(
+                b"invalid yield_seconds: at most ",
+                jobs,
+                b" jobs may run at once; job with stop stops one, or reads the end of one that ended",
+                maximum,
+            );
+        }
+        llm::Problem::UnknownJob { job } => {
+            return job_problem(
+                b"invalid job ",
+                job,
+                b": no running answer named it, or its end was already answered",
+                maximum,
+            );
+        }
         llm::Problem::UnknownTool
         | llm::Problem::Nesting
         | llm::Problem::NotAnObject
@@ -103,7 +119,10 @@ pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, 
         llm::Problem::WrongType { field } => (b"wrong field type ", Some(field)),
         llm::Problem::BadValue { field } => (b"invalid field value ", Some(field)),
         llm::Problem::TooLarge => (b"input exceeds receiving limits", None),
-        llm::Problem::Oversize { .. } | llm::Problem::CutOff { .. } => unreachable!("size notes rendered above"),
+        llm::Problem::Oversize { .. }
+        | llm::Problem::CutOff { .. }
+        | llm::Problem::JobsFull { .. }
+        | llm::Problem::UnknownJob { .. } => unreachable!("scalar problems rendered above"),
     };
     let mut length = prefix.len();
     if let Some(field) = &field {
@@ -199,4 +218,31 @@ pub(crate) const fn cap(which: shared::Cap) -> llm::Cap {
         shared::Cap::AccessToken => llm::Cap::AccessToken,
         shared::Cap::AccountId => llm::Cap::AccountId,
     }
+}
+
+fn job_problem(prefix: &[u8], number: u32, suffix: &[u8], maximum: u32) -> Result<Box<[u8]>, Error> {
+    let number = Decimal::of(u64::from(number));
+    let length = prefix
+        .len()
+        .checked_add(number.as_bytes().len())
+        .ok_or(Error::Limit)?
+        .checked_add(suffix.len())
+        .ok_or(Error::Limit)?;
+    if length > usize::try_from(maximum).expect("u32 fits usize") {
+        return Err(Error::Limit);
+    }
+    let mut writer = Writer::new(length);
+    writer.put(prefix).expect("measured problem prefix");
+    writer.put(number.as_bytes()).expect("measured problem number");
+    writer.put(suffix).expect("measured problem suffix");
+    Ok(writer.finish())
+}
+
+pub(crate) fn job_problem_worst_case() -> Option<u64> {
+    let mut largest = 0;
+    for problem in [llm::Problem::JobsFull { jobs: u32::MAX }, llm::Problem::UnknownJob { job: u32::MAX }] {
+        let rendered = self::problem(problem, u32::MAX).ok()?;
+        largest = largest.max(u64::try_from(rendered.len()).ok()?);
+    }
+    Some(largest)
 }

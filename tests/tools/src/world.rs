@@ -288,7 +288,7 @@ pub struct World {
     /// Every call made, by name: whose it is, and its answer once it came.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
-    calls: BTreeMap<u64, (u64, Option<Outcome>)>,
+    calls: BTreeMap<u64, (u64, Option<Result<Outcome, tools::JobProblem>>)>,
     /// io's operations in flight.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
@@ -407,6 +407,15 @@ impl World {
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
     #[must_use]
     pub fn answers(&self, session: u64) -> Vec<&Outcome> {
+        self.results(session)
+            .into_iter()
+            .map(|answer| answer.as_ref().expect("this story has no invalid calls"))
+            .collect()
+    }
+
+    /// The typed answers and invalid-call problems, in call order.
+    #[must_use]
+    pub fn results(&self, session: u64) -> Vec<&Result<Outcome, tools::JobProblem>> {
         let calls = &self.sessions.get(&session).expect("a session the world made").calls;
         calls.iter().map(|call| self.calls[call].1.as_ref().expect("every call is answered")).collect()
     }
@@ -487,6 +496,7 @@ impl World {
                         tools::Request::Opened { .. }
                         | tools::Request::Refused { .. }
                         | tools::Request::Answer { .. }
+                        | tools::Request::Invalid { .. }
                         | tools::Request::Closed { .. }
                         | tools::Request::Job { .. }
                         | tools::Request::CancelIo { .. } => {}
@@ -534,26 +544,9 @@ impl World {
                 entry.state = State::Refused(refusal);
             }
             tools::Request::Answer { to, outcome } => {
-                let call = to.into_token().raw();
-                let (session, answer) = self.calls.get_mut(&call).expect("an answer to a call that was made");
-                assert!(answer.is_none(), "a call is answered once");
-                *answer = Some(outcome);
-                let session = *session;
-                let entry = self.session_mut(session);
-                entry.awaited.remove(&call);
-                match entry.state {
-                    State::Waiting { kit } if entry.awaited.is_empty() => {
-                        entry.state = State::Running { kit };
-                        self.next(session);
-                    }
-                    State::Waiting { .. }
-                    | State::Opening
-                    | State::Running { .. }
-                    | State::Closing
-                    | State::Closed
-                    | State::Refused(_) => {}
-                }
+                self.answered(to, Ok(outcome));
             }
+            tools::Request::Invalid { to, problem } => self.answered(to, Err(problem)),
             tools::Request::Closed { session } => {
                 let entry = self.sessions.get(&session.raw()).expect("a session the world made");
                 assert_eq!(entry.state, State::Closing, "a kit closes once, when asked");
@@ -589,6 +582,28 @@ impl World {
                 self.abandon(pending.work);
                 self.stage.push(tools::Event::Done { owner, done: Done::Cancelled });
             }
+        }
+    }
+
+    fn answered(&mut self, to: ReplyTo, result: Result<Outcome, tools::JobProblem>) {
+        let call = to.into_token().raw();
+        let (session, answer) = self.calls.get_mut(&call).expect("an answer to a call that was made");
+        assert!(answer.is_none(), "a call is answered once");
+        *answer = Some(result);
+        let session = *session;
+        let entry = self.session_mut(session);
+        entry.awaited.remove(&call);
+        match entry.state {
+            State::Waiting { kit } if entry.awaited.is_empty() => {
+                entry.state = State::Running { kit };
+                self.next(session);
+            }
+            State::Waiting { .. }
+            | State::Opening
+            | State::Running { .. }
+            | State::Closing
+            | State::Closed
+            | State::Refused(_) => {}
         }
     }
 

@@ -749,7 +749,9 @@ fn rejected_calls(completion: &llm::Completion) -> (u64, u64) {
                     | llm::Problem::Missing { .. }
                     | llm::Problem::WrongType { .. }
                     | llm::Problem::BadValue { .. }
-                    | llm::Problem::TooLarge => {}
+                    | llm::Problem::TooLarge
+                    | llm::Problem::JobsFull { .. }
+                    | llm::Problem::UnknownJob { .. } => {}
                 },
                 llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } => {}
             },

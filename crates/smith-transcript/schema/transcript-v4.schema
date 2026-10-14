@@ -37,7 +37,7 @@ enum TimeoutClamp { within, clamped: DurationClamp }
 record CommandEnd { exit: Exit head: bytes 1048576 last: bytes 1048576 dropped: u64 timeout: TimeoutClamp output: BytesClamp }
 record JobExit { exit: Exit }
 enum JobEnd { running, ended: JobExit, stopped, cancelled }
-record CommandRunning { job: u32 head: bytes 1048576 last: bytes 1048576 dropped: u64 output: BytesClamp after: TimeoutClamp }
+record CommandRunning { job: u32 head: bytes 1048576 last: bytes 1048576 dropped: u64 timeout: TimeoutClamp output: BytesClamp after: TimeoutClamp }
 record JobRead { job: u32 head: bytes 1048576 last: bytes 1048576 dropped: u64 output: BytesClamp wait: TimeoutClamp end: JobEnd }
 enum SizePart { file, write_content, edit_old, edit_new, edit_items, edit_result, edit_replacements, list_glob }
 record TooLarge { what: SizePart size: u64 bound: u32 }
@@ -64,10 +64,12 @@ enum Outcome {
 record FieldProblem { field: text 64 }
 record OversizeProblem { bytes: u64 bound: u32 }
 record CutProblem { bytes: u64 }
+record JobsFullProblem { jobs: u32 }
+record UnknownJobProblem { job: u32 }
 enum CallProblem {
     unknown_tool, not_an_object, missing: FieldProblem,
     wrong_type: FieldProblem, bad_value: FieldProblem, too_large,
-    oversize: OversizeProblem, cut_off: CutProblem, nesting
+    oversize: OversizeProblem, cut_off: CutProblem, nesting, jobs_full: JobsFullProblem, unknown_job: UnknownJobProblem
 }
 record Said { text: text 1048576 error: bool }
 record Invalid { problem: CallProblem }

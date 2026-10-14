@@ -279,6 +279,8 @@ fn problem(source: &wire::CallProblem) -> llm::Problem {
         wire::CallProblem::Missing(field) => llm::Problem::Missing { field: Box::from(field.field()) },
         wire::CallProblem::WrongType(field) => llm::Problem::WrongType { field: Box::from(field.field()) },
         wire::CallProblem::BadValue(field) => llm::Problem::BadValue { field: Box::from(field.field()) },
+        wire::CallProblem::JobsFull(problem) => llm::Problem::JobsFull { jobs: problem.jobs() },
+        wire::CallProblem::UnknownJob(problem) => llm::Problem::UnknownJob { job: problem.job() },
         wire::CallProblem::TooLarge => llm::Problem::TooLarge,
         wire::CallProblem::Oversize(problem) => {
             llm::Problem::Oversize { bytes: problem.bytes(), bound: problem.bound() }
@@ -367,6 +369,7 @@ fn outcome(
                 head: Box::from(command.head()),
                 tail: Box::from(command.last()),
                 dropped: command.dropped(),
+                timeout: timeout_clamp(command.timeout())?,
                 output: byte_clamp(command.output())?,
                 after: timeout_clamp(command.after())?,
             }

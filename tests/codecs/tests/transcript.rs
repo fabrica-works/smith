@@ -114,6 +114,7 @@ fn a_running_result_round_trips() {
             head: b"before yield".as_slice().into(),
             last: b"latest".as_slice().into(),
             dropped: 19,
+            timeout: TimeoutClamp::Within,
             output: BytesClamp::Within,
             after: TimeoutClamp::Within,
         },

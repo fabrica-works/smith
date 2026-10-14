@@ -271,7 +271,15 @@ pub enum Outcome {
     },
 
     /// A shell command still running at its yield, returned to its session.
-    Running { job: JobNumber, head: Box<[u8]>, tail: Box<[u8]>, dropped: u64, output: BytesClamp, after: TimeoutClamp },
+    Running {
+        job: JobNumber,
+        head: Box<[u8]>,
+        tail: Box<[u8]>,
+        dropped: u64,
+        timeout: TimeoutClamp,
+        output: BytesClamp,
+        after: TimeoutClamp,
+    },
     /// A job call's unread output and observed end, returned to its session.
     Job {
         job: JobNumber,

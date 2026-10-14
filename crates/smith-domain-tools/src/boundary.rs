@@ -85,6 +85,8 @@ pub enum Request {
         /// Declared or accepted result, validated against the host's contract.
         outcome: Outcome,
     },
+    /// A call refused for its job number or the session's job bound; consumes its reply right.
+    Invalid { to: ReplyTo, problem: JobProblem },
     /// The answer to a `Close`: the kit has ended.
     Closed { session: Token },
     /// Ask io for `op`, giving up at `deadline`.
@@ -99,6 +101,15 @@ pub enum Request {
     CancelIo { owner: Token },
     /// Read or stop a held command; ends in one `Event::Done`.
     Job { owner: Token, act: JobAct },
+}
+
+/// A job call's invalid input, reported by the kit to its session.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum JobProblem {
+    /// A yielding shell call would exceed the session's held-job bound.
+    Full { jobs: u32 },
+    /// No running answer named this number, or its end was already answered.
+    Unknown { job: crate::JobNumber },
 }
 
 /// One act on the command held under its original spawn token.

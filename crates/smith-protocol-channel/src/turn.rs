@@ -186,6 +186,13 @@ fn encode_problem(source: &llm::Problem, limits: &wire::v4::Limits) -> Result<wi
             limits,
             wire::FieldProblemParts { field: field.clone() },
         )?),
+        llm::Problem::JobsFull { jobs } => {
+            wire::CallProblem::JobsFull(wire::JobsFullProblem::new(limits, wire::JobsFullProblemParts { jobs: *jobs })?)
+        }
+        llm::Problem::UnknownJob { job } => wire::CallProblem::UnknownJob(wire::UnknownJobProblem::new(
+            limits,
+            wire::UnknownJobProblemParts { job: *job },
+        )?),
         llm::Problem::TooLarge => wire::CallProblem::TooLarge,
         llm::Problem::Oversize { bytes, bound } => wire::CallProblem::Oversize(wire::OversizeProblem::new(
             limits,
@@ -295,7 +302,7 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v4::Limits) -> Result<
                 },
             )?)
         }
-        tools::Outcome::Running { job, head, tail, dropped, output, after } => {
+        tools::Outcome::Running { job, head, tail, dropped, timeout, output, after } => {
             wire::Outcome::Running(wire::CommandRunning::new(
                 limits,
                 wire::CommandRunningParts {
@@ -303,6 +310,7 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v4::Limits) -> Result<
                     head: head.clone(),
                     last: tail.clone(),
                     dropped: *dropped,
+                    timeout: encode_timeout(*timeout, limits)?,
                     output: encode_bytes(*output, limits)?,
                     after: encode_timeout(*after, limits)?,
                 },

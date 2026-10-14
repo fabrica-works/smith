@@ -54,7 +54,7 @@ mod tests;
 mod window;
 
 pub use authority::{Authority, Grants, Repo};
-pub use boundary::{Done, Event, Expect, JobAct, Op, Refusal, Request, Version};
+pub use boundary::{Done, Event, Expect, JobAct, JobProblem, Op, Refusal, Request, Version};
 pub use call::{
     Budget, BytesClamp, Call, Cut, Depth, Effect, Entry, Exit, Fault, Hit, JobEnd, JobNumber, Kind, Mismatch, Next,
     Occurrences, Outcome, Replacement, SizePart, Timeout, TimeoutClamp, Tool, effect, tool,

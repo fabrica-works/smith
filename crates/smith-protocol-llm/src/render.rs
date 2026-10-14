@@ -217,10 +217,11 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             command_following(*timeout, *kept, output)?;
             failure
         }
-        Outcome::Running { job, head, tail, dropped, after, output: kept } => {
+        Outcome::Running { job, head, tail, dropped, timeout, after, output: kept } => {
             job_number(*job, output)?;
             output.put(b" running; use job to read the rest")?;
             command_output(head, tail, *dropped, output)?;
+            command_following(*timeout, tools::BytesClamp::Within, output)?;
             job_following(b"yield", *after, *kept, output)?;
             false
         }

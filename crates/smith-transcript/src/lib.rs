@@ -18,12 +18,12 @@ pub use v4::{
     CutProblemParts, DurationClamp, DurationClampParts, EditFailed, EditFailedParts, Edited, EditedParts, Entry,
     EntryParts, Exit, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Failed, FailedParts, Fault, FieldProblem,
     FieldProblemParts, Found, FoundParts, Hit, HitParts, Invalid, InvalidParts, JobEnd, JobExit, JobExitParts, JobRead,
-    JobReadParts, Kind, LineNumber, LineNumberParts, Listed, ListedParts, Message, MessageParts, Mismatch, Next,
-    Opaque, OpaqueParts, OtherPath, OtherPathParts, Outcome, OutsidePath, OutsidePathParts, OversizeProblem,
-    OversizeProblemParts, OwnedOutcome, OwnedOutcomeParts, Read, ReadCut, ReadParts, Replay, ReplayParts, Resolved,
-    ResolvedFailure, ResolvedFailureParts, Returned, Role, Said, SaidParts, SizePart, Text, TextParts, TimeoutClamp,
-    TooLarge, TooLargeParts, ToolResult, ToolResultParts, Turn, TurnKind, TurnParts, Usage, UsageParts, WorkingPath,
-    WorkingPathParts, Written, WrittenParts,
+    JobReadParts, JobsFullProblem, JobsFullProblemParts, Kind, LineNumber, LineNumberParts, Listed, ListedParts,
+    Message, MessageParts, Mismatch, Next, Opaque, OpaqueParts, OtherPath, OtherPathParts, Outcome, OutsidePath,
+    OutsidePathParts, OversizeProblem, OversizeProblemParts, OwnedOutcome, OwnedOutcomeParts, Read, ReadCut, ReadParts,
+    Replay, ReplayParts, Resolved, ResolvedFailure, ResolvedFailureParts, Returned, Role, Said, SaidParts, SizePart,
+    Text, TextParts, TimeoutClamp, TooLarge, TooLargeParts, ToolResult, ToolResultParts, Turn, TurnKind, TurnParts,
+    UnknownJobProblem, UnknownJobProblemParts, Usage, UsageParts, WorkingPath, WorkingPathParts, Written, WrittenParts,
 };
 
 impl Turn {

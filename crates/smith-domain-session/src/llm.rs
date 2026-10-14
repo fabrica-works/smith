@@ -207,6 +207,10 @@ pub enum Problem {
         /// Name of the required input member which failed validation.
         field: Box<[u8]>,
     },
+    /// A yielding shell call would exceed its session's job bound.
+    JobsFull { jobs: u32 },
+    /// A job number was never answered running, or its end was already answered.
+    UnknownJob { job: u32 },
     /// The call holds more than the agent takes at once.
     TooLarge,
     /// The received call exceeded its argument bound; no input was retained.

@@ -291,7 +291,9 @@ impl Decoded {
                 | Problem::NotAnObject
                 | Problem::TooLarge
                 | Problem::Oversize { .. }
-                | Problem::CutOff { .. } => 0,
+                | Problem::CutOff { .. }
+                | Problem::JobsFull { .. }
+                | Problem::UnknownJob { .. } => 0,
                 Problem::Missing { field } | Problem::WrongType { field } | Problem::BadValue { field } => {
                     u64::try_from(field.len()).ok()?
                 }
