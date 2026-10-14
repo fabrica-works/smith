@@ -6206,10 +6206,10 @@ mod golden_tests {
 
     type Case = (&'static str, fn() -> bool);
 
-    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+    pub(super) fn table<const N: usize>(cases: &[Case; N]) {
         let mut failures = [None; N];
         let mut passed = true;
-        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+        for ((name, case), failure) in cases.iter().zip(&mut failures) {
             if !case() {
                 *failure = Some(name);
                 passed = false;
@@ -6252,7 +6252,7 @@ mod golden_tests {
         };
         at && past
     }
-    const GOLDEN_0: [Case; 230] = [
+    static GOLDEN_0: [Case; 230] = [
         ("record_usage_smallest", || { let value = Usage::new(&CEILINGS, UsageParts { input: None, output: None, cache_read: None, cache_write: None, reasoning: None }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Usage::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_usage_full", || { let value = Usage::new(&CEILINGS, UsageParts { input: Some(u64::MAX), output: Some(u64::MAX), cache_read: Some(u64::MAX), cache_write: Some(u64::MAX), reasoning: Some(u64::MAX) }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Usage::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_replay_smallest", || { let value = Replay::new(&CEILINGS, ReplayParts { dialect: Box::from([].as_slice()), bytes: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Replay::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -6487,10 +6487,10 @@ mod golden_tests {
 
     #[test]
     fn golden_0() {
-        table(GOLDEN_0);
+        table(&GOLDEN_0);
     }
 
-    const BOUNDS_0: [Case; 30] = [
+    static BOUNDS_0: [Case; 30] = [
         ("bound_replay_dialect", || bound((Path::ReplayDialect, skein_codec::Reason::Bound), &Limits { replay_dialect: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Replay::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_replay_bytes", || bound((Path::ReplayBytes, skein_codec::Reason::Bound), &Limits { replay_bytes: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Replay::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_text_text", || bound((Path::TextText, skein_codec::Reason::Bound), &Limits { text_text: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0], |limits, bytes| match Text::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
@@ -6525,7 +6525,7 @@ mod golden_tests {
 
     #[test]
     fn bounds_0() {
-        table(BOUNDS_0);
+        table(&BOUNDS_0);
     }
 
 }

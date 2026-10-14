@@ -3222,10 +3222,10 @@ mod golden_tests {
 
     type Case = (&'static str, fn() -> bool);
 
-    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+    pub(super) fn table<const N: usize>(cases: &[Case; N]) {
         let mut failures = [None; N];
         let mut passed = true;
-        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+        for ((name, case), failure) in cases.iter().zip(&mut failures) {
             if !case() {
                 *failure = Some(name);
                 passed = false;
@@ -3268,7 +3268,7 @@ mod golden_tests {
         };
         at && past
     }
-    const GOLDEN_0: [Case; 50] = [
+    static GOLDEN_0: [Case; 50] = [
         ("record_section_smallest", || { let value = Section::new(&CEILINGS, SectionParts { title: Box::from([].as_slice()), body: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Section::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_section_full", || { let value = Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Section::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_families_smallest", || { let value = Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Families::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -3323,10 +3323,10 @@ mod golden_tests {
 
     #[test]
     fn golden_0() {
-        table(GOLDEN_0);
+        table(&GOLDEN_0);
     }
 
-    const BOUNDS_0: [Case; 31] = [
+    static BOUNDS_0: [Case; 31] = [
         ("bound_section_title", || bound((Path::SectionTitle, skein_codec::Reason::Bound), &Limits { section_title: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Section::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_section_body", || bound((Path::SectionBody, skein_codec::Reason::Bound), &Limits { section_body: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Section::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_host_tool_name", || bound((Path::HostToolName, skein_codec::Reason::Bound), &Limits { host_tool_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match HostTool::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
@@ -3362,7 +3362,7 @@ mod golden_tests {
 
     #[test]
     fn bounds_0() {
-        table(BOUNDS_0);
+        table(&BOUNDS_0);
     }
 
 }
