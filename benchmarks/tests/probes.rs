@@ -76,6 +76,15 @@ fn small_window_requires_a_compaction_and_no_prompt_past_its_window() {
     assert!(task.event.contains(&compacted));
     assert!(task.event.contains(&smith_bench::EventCheck::PromptWithinWindow));
     let mut records = common::events::balanced();
+    if let smith_events::Event::SessionStarted(value) = &mut records[0].event {
+        value
+            .limits
+            .push(smith_events::EffectiveLimit {
+                name: b"policy.compaction_threshold".as_slice().into(),
+                value: smith_events::LimitValue::Fraction { numerator: 1, denominator: 1000 },
+            })
+            .expect("threshold fits fixture");
+    }
     assert_eq!(history_observer(&mut records).check(&compacted, "task").passed, Measure::Observed { value: false });
     let mut summary = records[2..6].to_vec();
     for record in &mut summary {

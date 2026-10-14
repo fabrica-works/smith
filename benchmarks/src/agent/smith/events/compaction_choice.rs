@@ -60,7 +60,14 @@ pub(super) fn check(observer: &Observer) -> CheckVerdict {
     if exercised {
         CheckVerdict { check: "compaction-choice".into(), passed: Measure::Observed { value: true }, evidence: vec![] }
     } else {
-        unavailable("no compaction request was observed")
+        match super::threshold::reached(observer) {
+            Measure::Observed { value: false } => {
+                unavailable("not exercised: no request reached the compaction threshold")
+            }
+            Measure::Observed { value: true } | Measure::Unavailable { .. } | Measure::LowerBound { .. } => {
+                unavailable("no compaction request was observed")
+            }
+        }
     }
 }
 

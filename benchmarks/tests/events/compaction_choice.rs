@@ -48,3 +48,50 @@ fn compaction_choice_is_unavailable_without_a_compaction() {
         Measure::unavailable("no compaction request was observed")
     );
 }
+
+// Six responses from history/small-window attempt 03 at 8a5bb9ec. The
+// excerpt keeps usage, model windows and the threshold, omitting captures
+// and startup limits these checks do not read.
+fn threshold_records() -> Vec<Record> {
+    include_str!("../recorded/compaction-threshold-8a5bb9ec-03.jsonl").lines().map(super::record).collect()
+}
+
+fn compaction_opened() -> EventCheck {
+    EventCheck::ConversationOpened { kind: "compaction".into(), count: smith_bench::Count::AtLeast(1) }
+}
+
+#[test]
+fn compaction_checks_are_not_exercised_below_the_threshold() {
+    let observer = super::observe(&threshold_records());
+    for check in [compaction_opened(), EventCheck::CompactionChoice] {
+        assert_eq!(
+            observer.check(&check, "task").passed,
+            Measure::unavailable("not exercised: no request reached the compaction threshold")
+        );
+    }
+}
+
+#[test]
+fn conversation_opened_fails_a_request_past_the_threshold() {
+    let mut records = threshold_records();
+    for record in &mut records {
+        if let Event::ResponseCompleted(value) = &mut record.event
+            && value.response == 6
+        {
+            value.usage.cache_read_tokens = Some(51_852);
+        }
+    }
+    assert_eq!(super::observe(&records).check(&compaction_opened(), "task").passed, Measure::Observed { value: false });
+}
+
+#[test]
+fn conversation_opened_is_unavailable_without_the_threshold() {
+    let mut records = threshold_records();
+    if let Event::SessionStarted(value) = &mut records[0].event {
+        value.limits.clear();
+    }
+    assert_eq!(
+        super::observe(&records).check(&compaction_opened(), "task").passed,
+        Measure::unavailable("session.started lacks policy.compaction_threshold")
+    );
+}

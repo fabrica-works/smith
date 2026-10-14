@@ -341,3 +341,27 @@ fn a_model_failure_beside_an_unavailable_contract_check_is_unjudged() {
     let counted = smith_bench::probe::count(&[result], 10, 12);
     assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (0, 0, 0, 1));
 }
+
+#[test]
+fn an_early_finish_before_the_threshold_is_a_model_deviation() {
+    let mut result = recorded_passes().remove(0);
+    result.outcome.deciding =
+        vec!["answer".into(), "call-count".into(), "conversation-opened".into(), "compaction-choice".into()];
+    result.outcome.checks = ["answer", "call-count"]
+        .into_iter()
+        .map(|check| smith_bench::CheckVerdict {
+            check: check.into(),
+            passed: Measure::Observed { value: false },
+            evidence: vec![],
+        })
+        .collect();
+    for check in ["conversation-opened", "compaction-choice"] {
+        result.outcome.checks.push(smith_bench::CheckVerdict {
+            check: check.into(),
+            passed: Measure::unavailable("not exercised: no request reached the compaction threshold"),
+            evidence: vec![],
+        });
+    }
+    let counted = smith_bench::probe::count(&[result], 10, 12);
+    assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (0, 0, 1, 0));
+}
