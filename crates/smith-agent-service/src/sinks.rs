@@ -1306,6 +1306,7 @@ pub(crate) mod tests {
 
     #[test]
     fn each_settled_end_reports_its_destination_loss_and_counts_itself_once() {
+        let count = u64::from(LINE_SLOTS).next_power_of_two();
         let limits = limits(2);
         let token = Token::new(11);
         let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
@@ -1313,7 +1314,7 @@ pub(crate) mod tests {
         sinks.add(Destination::Output, Token::new(12), Delivery::BestEffort).unwrap();
         sinks.up(io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
         sinks.up(io::Event::Closed { owner: Token::new(12) });
-        for name in 0..10_000 {
+        for name in 0..count {
             sinks.record(&counted(name));
         }
         let ended = Ended {
@@ -1327,9 +1328,9 @@ pub(crate) mod tests {
         sinks.ended(Time::ZERO, Time::ZERO, &ended);
         let records = drain(&mut sinks, token);
         let Event::SessionEnded(end) = &records.last().unwrap().event else { panic!("end is last") };
-        assert_eq!(end.emitted.iter().map(|entry| entry.count).sum::<u64>(), 10_001);
-        assert_eq!(u64::try_from(records.len()).unwrap().checked_add(end.loss.events).unwrap(), 10_001);
-        assert_eq!(sinks.writers.get(1).unwrap().loss, 10_001);
+        assert_eq!(end.emitted.iter().map(|entry| entry.count).sum::<u64>(), count + 1);
+        assert_eq!(u64::try_from(records.len()).unwrap().checked_add(end.loss.events).unwrap(), count + 1);
+        assert_eq!(sinks.writers.get(1).unwrap().loss, count + 1);
         assert_eq!(sinks.pop_given_up(), Some(Destination::Output));
         assert_eq!(sinks.pop_given_up(), None);
         assert!(sinks.closed());
@@ -1392,6 +1393,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_slow_complete_destination_preserves_order_and_reserves_authoritative_room() {
+        let count = u64::from(LINE_SLOTS).next_power_of_two();
         let limits = limits(1);
         let token = Token::new(11);
         let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
@@ -1400,7 +1402,7 @@ pub(crate) mod tests {
         let start = golden(include_bytes!("../../smith-events/golden/v1/session_started_none.jsonl"), &limits);
         sinks.record(&start);
         expected.push(start);
-        for name in 0..10_000 {
+        for name in 0..count {
             if !sinks.takes() {
                 break;
             }
@@ -1425,11 +1427,12 @@ pub(crate) mod tests {
 
     #[test]
     fn best_effort_loses_only_the_counted_records_that_find_it_behind() {
+        let count = u64::from(LINE_SLOTS).next_power_of_two();
         let limits = limits(1);
         let token = Token::new(11);
         let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::BestEffort).unwrap();
-        for name in 0..10_000 {
+        for name in 0..count {
             sinks.record(&counted(name));
         }
         assert!(sinks.takes(), "best effort never holds its owner");
@@ -1437,8 +1440,8 @@ pub(crate) mod tests {
         assert!(lost > 0);
         sinks.finish();
         let records = drain(&mut sinks, token);
-        assert_eq!(u64::try_from(records.len()).unwrap().checked_add(lost).unwrap(), 10_000);
-        assert_eq!(sinks.emitted().get(0).unwrap().count, 10_000);
+        assert_eq!(u64::try_from(records.len()).unwrap().checked_add(lost).unwrap(), count);
+        assert_eq!(sinks.emitted().get(0).unwrap().count, count);
     }
 
     #[test]

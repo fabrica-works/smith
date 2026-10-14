@@ -10,9 +10,7 @@ use std::path::PathBuf;
 
 /// The bounded agent settings shared by both local placements.
 pub fn lower_configuration() -> agent::Config {
-    let launch = fixture_launch(false);
-    let configuration = smith_agent_shell::config::from_value(agent_document(&launch)).expect("generated fixture JSON");
-    specialize(configuration.service)
+    lower_configuration_with(false)
 }
 
 pub(super) fn specialize(mut lower: agent::Config) -> agent::Config {
@@ -241,9 +239,60 @@ fn local_policy(lower: &agent::Config, change: bool, tools: bool) -> (local::Con
 /// The same agent policy, with loopback plaintext or trust in the test root.
 #[must_use]
 pub fn lower_configuration_with(tls: bool) -> agent::Config {
-    let configuration =
-        smith_agent_shell::config::from_value(agent_document(&fixture_launch(tls))).expect("generated fixture JSON");
-    specialize(configuration.service)
+    static PLAINTEXT: std::sync::OnceLock<agent::Config> = std::sync::OnceLock::new();
+    static TLS: std::sync::OnceLock<agent::Config> = std::sync::OnceLock::new();
+    let stored = if tls { &TLS } else { &PLAINTEXT };
+    let lower = stored.get_or_init(|| {
+        let configuration = smith_agent_shell::config::from_value(agent_document(&fixture_launch(tls)))
+            .expect("generated fixture JSON");
+        specialize(configuration.service)
+    });
+    agent::Config {
+        limits: lower.limits,
+        domain: lower.domain.clone(),
+        channel_endpoints: lower.channel_endpoints.clone(),
+        llm_endpoints: cloned_endpoints(lower),
+        environment: lower.environment.clone(),
+        stream_mode: lower.stream_mode,
+    }
+}
+
+fn cloned_endpoints(lower: &agent::Config) -> smith_protocol_llm::Endpoints {
+    use skein_llm_connection::{Endpoint, Transport};
+    let configured = lower
+        .domain
+        .endpoints
+        .iter()
+        .map(|name| {
+            let name = smith_domain::llm::Endpoint(name.0);
+            let options = lower.llm_endpoints.resolve(name).expect("configured fixture endpoint");
+            let destination =
+                lower.llm_endpoints.destinations().get(options.index).expect("resolved fixture destination");
+            let transport = match &destination.transport {
+                Transport::Plaintext => Transport::Plaintext,
+                Transport::Tls { server_name, trust } => {
+                    Transport::Tls { server_name: server_name.clone(), trust: trust.clone() }
+                }
+            };
+            smith_protocol_llm::ConfiguredEndpoint {
+                name,
+                destination: Endpoint {
+                    address: destination.address,
+                    transport,
+                    llm: destination.llm.clone(),
+                    limits: destination.limits,
+                    credential: destination.credential,
+                },
+                account: options.account,
+                connect: options.connect,
+                handshake: options.handshake,
+                identity: options.identity,
+                models: options.models.clone(),
+            }
+        })
+        .collect();
+    smith_protocol_llm::Endpoints::new(configured, lower.limits.llm.connection.endpoints, lower.limits.llm.accounts)
+        .expect("unchanged checked fixture endpoints")
 }
 
 fn fixture_launch(tls: bool) -> Launch {

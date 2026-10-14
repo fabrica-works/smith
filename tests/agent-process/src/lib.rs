@@ -148,6 +148,11 @@ pub fn profile() -> agent::profile::Profile {
 /// Bounded agent-process settings derived from the tiny deployment and model.
 #[must_use]
 pub fn limits() -> agent::Limits {
+    static LIMITS: std::sync::OnceLock<agent::Limits> = std::sync::OnceLock::new();
+    *LIMITS.get_or_init(derive_limits)
+}
+
+fn derive_limits() -> agent::Limits {
     let profile = profile();
     let configuration = declarations(0);
     let mut limits = agent::profile::derive(&profile, &configuration).expect("tiny profile derives");

@@ -486,14 +486,18 @@ mod tests {
         assert!(!core::str::from_utf8(&line).unwrap().contains("\"result\":"));
     }
 
-    fn fixture(capture: Capture) -> (Book, Sinks, Token, Token, session::ToolCall) {
+    fn source() -> session::Limits {
         let mut profile = crate::profile::standard();
         profile.declared.memory = 2_147_483_648;
         let mut source = crate::profile::derive(&profile, &crate::tests::declarations(0)).unwrap().domain.session;
         source.sessions = 1;
         source.parallel_tools = 2;
         source.completion_bytes = 1024;
-        let book = Book::new(&source, capture);
+        source
+    }
+
+    fn fixture(source: &session::Limits, capture: Capture) -> (Book, Sinks, Token, Token, session::ToolCall) {
+        let book = Book::new(source, capture);
         let limits = crate::sinks::tests::limits(1);
         let mut sinks = Sinks::new(&limits, capture, 7);
         let destination = Token::new(999);
@@ -558,7 +562,8 @@ mod tests {
 
     #[test]
     fn a_timed_out_command_is_projected_as_timed_out_with_its_bound() {
-        let (mut book, mut sinks, destination, opener, mut metadata) = fixture(Capture::Everything);
+        let source = source();
+        let (mut book, mut sinks, destination, opener, mut metadata) = fixture(&source, Capture::Everything);
         metadata.name = b"shell".as_slice().into();
         metadata.effect = tools::Effect::Write;
         let start = book.started(
@@ -584,6 +589,7 @@ mod tests {
 
     #[test]
     fn actual_workspace_terminals_keep_scalar_measurements_and_provider_identity_under_every_capture() {
+        let source = source();
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             for (verdict, expected, exit, omitted, clamped) in [
                 (tools::Verdict::Read, smith_events::Verdict::Read, None, 19, true),
@@ -612,7 +618,7 @@ mod tests {
                 (tools::Verdict::TimedOut, smith_events::Verdict::TimedOut, None, 0, true),
                 (tools::Verdict::Cancelled, smith_events::Verdict::Cancelled, None, 0, true),
             ] {
-                let (mut book, mut sinks, destination, opener, metadata) = fixture(capture);
+                let (mut book, mut sinks, destination, opener, metadata) = fixture(&source, capture);
                 book.fact(
                     Time::ZERO,
                     &session::Fact {
@@ -692,6 +698,7 @@ mod tests {
     )]
     fn actual_child_terminals_join_public_identity_reported_usage_and_omissions_under_every_capture() {
         use smith_domain::run;
+        let source = source();
         let used = run::facts::Used { turns: 2, spend: 18, time: Duration::from_millis(13) };
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             for (result, yielded, end, expected, omitted) in [
@@ -731,7 +738,7 @@ mod tests {
                     0,
                 ),
             ] {
-                let (mut book, mut sinks, destination, opener, mut metadata) = fixture(capture);
+                let (mut book, mut sinks, destination, opener, mut metadata) = fixture(&source, capture);
                 metadata.source = session::ToolSource::Run;
                 book.fact(
                     Time::ZERO,
@@ -882,6 +889,7 @@ mod tests {
     #[test]
     fn actual_main_deliveries_keep_the_exclusive_provider_call_under_every_capture() {
         use smith_domain::run;
+        let source = source();
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             for (status, returned, expected) in [
                 (run::DeliveryStatus::Delivered, run::facts::Return::Delivered, smith_events::Delivered::Delivered),
@@ -895,7 +903,7 @@ mod tests {
                 (run::DeliveryStatus::Stale, run::facts::Return::Stale, smith_events::Delivered::Stale),
             ] {
                 for ask in [run::facts::Asked::Finish, run::facts::Asked::Deliver] {
-                    let (mut book, mut sinks, destination, opener, mut metadata) = fixture(capture);
+                    let (mut book, mut sinks, destination, opener, mut metadata) = fixture(&source, capture);
                     metadata.source = session::ToolSource::Run;
                     metadata.name = if ask == run::facts::Asked::Finish {
                         b"finish".as_slice().into()

@@ -204,6 +204,7 @@ fn world(seed: u64) -> World<Owner, Judge, Disk> {
 }
 
 fn configured(seed: u64, fresh: bool) -> World<Owner, Judge, Disk> {
+    drop(smith_local_process_world::process::lower_configuration());
     let mut files = Files::new();
     let state = local::ChatState {
         identity: smith_domain::run::Identity::new([42; 16]),
