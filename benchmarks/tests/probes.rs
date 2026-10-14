@@ -32,12 +32,18 @@ fn history_reads_one_file_per_completion_to_its_sum() {
     assert!(task.outcome.contains(&smith_bench::OutcomeCheck::Answer { pattern: "^ALPHA 528$".into() }));
     assert!(task.event.contains(&smith_bench::EventCheck::ToolCall {
         tool: "read".into(),
-        count: Some(smith_bench::Count::Exactly(32)),
+        count: None,
         input_bytes_at_least: None,
         verdict: Some("read".into()),
         exit: None,
         clamped: None,
     }));
+    assert!(
+        task.event.contains(&smith_bench::EventCheck::CallCount {
+            tool: "read".into(),
+            count: smith_bench::Count::Exactly(32),
+        })
+    );
     assert!(task.event.contains(&smith_bench::EventCheck::CallsPerResponse { tool: "read".into(), at_most: 1 }));
     assert_eq!(task.smith["deployment.calls_per_response"].as_integer(), Some(1));
 }

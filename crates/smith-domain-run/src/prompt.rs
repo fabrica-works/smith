@@ -27,10 +27,11 @@ use crate::workspace::{self, Directory, Workspace};
 pub(crate) const BEGIN: &[u8] = b"Begin the work your brief describes.";
 
 /// The summary keeps the work ready to continue in a new window.
-pub(crate) const SUMMARY: &[u8] = b"Summarise the work so far so it can continue in a new context window. Keep the task, decisions, changes made, current results, pending work and constraints. Be concise and concrete.";
+pub(crate) const SUMMARY: &[u8] = b"Summarise the work so far. The work is not finished: a new context window will continue it, opening with the task's own words. Answer with text only; call no tool. Write what the next window needs that the task does not say: what was done and found, with exact values, names and paths as they were read; what remains; and the decisions taken. Do not restate the task or its required answer.";
 
 /// The text introducing a summary in the new window.
-pub(crate) const PREAMBLE: &[u8] = b"Summary of the earlier context window, written by you before it was compacted:";
+pub(crate) const PREAMBLE: &[u8] =
+    b"What follows is your own summary of an earlier context window. The work continues in this window:";
 
 /// The summary instruction's contribution to the compaction headroom.
 #[must_use]

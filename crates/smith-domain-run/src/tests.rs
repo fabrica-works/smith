@@ -5069,3 +5069,11 @@ fn assert_check_fact_pair(harness: &mut Harness, expected: &[u8]) {
     assert_eq!(records.get(0).expect("start").as_ref(), b"started");
     assert_eq!(records.get(1).expect("terminal").as_ref(), expected);
 }
+
+#[test]
+fn the_summary_instruction_and_its_preamble_fit_smiths_own_part() {
+    let fixed = super::prompt::fixed_prompt();
+    assert!(fixed.ends_with(b"Summarise the work so far. The work is not finished: a new context window will continue it, opening with the task's own words. Answer with text only; call no tool. Write what the next window needs that the task does not say: what was done and found, with exact values, names and paths as they were read; what remains; and the decisions taken. Do not restate the task or its required answer.What follows is your own summary of an earlier context window. The work continues in this window:"));
+    assert_eq!(super::prompt::summary_bytes(), 390);
+    assert!(super::prompt::fixed_prompt_bytes().expect("bounded own part") <= 8_192);
+}

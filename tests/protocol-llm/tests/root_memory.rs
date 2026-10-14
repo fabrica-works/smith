@@ -1285,8 +1285,8 @@ fn cap(source: &Counted) -> u64 {
         + 2 * size::<session::llm::Descriptor>()
         + size::<session::llm::Block>()
         + 2 * len(text)
-        + 181
-        + 78; // Retained summary instruction and preamble beside the task and history.
+        + 390
+        + 97; // Retained summary instruction and preamble beside the task and history.
     let prefix = source
         .prefix
         .as_ref()

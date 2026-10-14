@@ -1,60 +1,107 @@
-id = "history"
-version = 2
-kind = "probe"
-tier = "small"
-effort = "low"
 deadline_seconds = 330
-prompt = "Follow the 32-file pointer chain beginning at node-93e158a7.txt. Read each whole file using exactly one read call per completion. Each file has a value and a next pointer; ignore its padding. Keep a running sum and your next filename as you go, including across any summary. Do not list, batch reads, use shell, write, edit, or delegate. After the 32nd read reaches END, finish with exactly the word ALPHA, one space, then the sum.\n"
-seed_sha256 = "aea294bc0d91c756ea8377fa43ae1644dbf9a003e9b50947b1b1a8fd4820f336"
+deciding = ["end", "exit-code", "answer", "tool-call", "call-count", "calls-per-response", "prompt-within-window", "compaction-carried"]
+# At medium effort, version 3's base calibration stopped on three wrong
+# sums in five attempts despite written running sums (rulings 121, 124).
+effort = "high"
 guards = ["domain/session.md, section 8", "protocol/limits.md, section 3"]
-deciding = ["end", "exit-code", "answer", "tool-call", "calls-per-response", "completions", "prompt-within-window"]
+id = "history"
+kind = "probe"
+prompt = """
+Follow the 32-file pointer chain beginning at node-93e158a7.txt. Read each whole file using exactly one read call per completion. Each file has a value and a next pointer; ignore its padding. Keep a running sum and your next filename as you go, including across any summary. In each completion, before its read call, write one line of text: the sum of the values read so far, and the file you are reading. Do not list, batch reads, use shell, write, edit, or delegate. After the 32nd read reaches END, finish with exactly the word ALPHA, one space, then the sum.
+"""
+seed_sha256 = "aea294bc0d91c756ea8377fa43ae1644dbf9a003e9b50947b1b1a8fd4820f336"
+tier = "small"
+version = 3
 
 [budget]
 seconds = 300
-turns = 64
 spend = 2.0
+turns = 64
 
-[smith]
-"models.\"{model}\".window" = 272000
-"budget.reserve.seconds" = 150
-"models.\"{model}\".output" = 8192
-"deployment.calls_per_response" = 1
-"deployment.tool_payload" = 8192
-"deployment.read_window" = 8192
+[calibration]
+attempts = 12
+binary = "8a5bb9ecd798ecffbf4a18a81fd512c3ce597228"
+binary_sha256 = "3469b4a4e3928d1f65b22f03e00e039e7702a829dffb28e3dd462e751e9cbc90"
+checks_sha256 = "a03681bc6697ed0e5edd8be5b7726426803794af3d6c91e6f8d854c7efeb80e4"
+control = "none: no runnable control was named"
+date = "2026-10-14T21:52:37.819587364Z"
+deviations = ["probes-history-8a5bb9ec-20261014T215237Z/08", "probes-history-8a5bb9ec-20261014T215237Z/11"]
+failed_before = []
+passes = ["probes-history-8a5bb9ec-20261014T215237Z/01", "probes-history-8a5bb9ec-20261014T215237Z/02", "probes-history-8a5bb9ec-20261014T215237Z/03", "probes-history-8a5bb9ec-20261014T215237Z/04", "probes-history-8a5bb9ec-20261014T215237Z/05", "probes-history-8a5bb9ec-20261014T215237Z/06", "probes-history-8a5bb9ec-20261014T215237Z/07", "probes-history-8a5bb9ec-20261014T215237Z/09", "probes-history-8a5bb9ec-20261014T215237Z/10", "probes-history-8a5bb9ec-20261014T215237Z/12"]
+prompt_sha256 = "6d0ff1d74f9250ebf1c8c136a642176cb96feafef332a70959f743c0e968728d"
+seed_sha256 = "aea294bc0d91c756ea8377fa43ae1644dbf9a003e9b50947b1b1a8fd4820f336"
+summary = "summaries/probes-history-8a5bb9ec-20261014T215237Z.json"
+
+[[event]]
+check = "tool-call"
+tool = "read"
+verdict = "read"
+
+[[event]]
+check = "call-count"
+tool = "read"
+
+[event.count]
+exactly = 32
+
+[[event]]
+at_most = 1
+check = "calls-per-response"
+tool = "read"
+
+[[event]]
+check = "prompt-within-window"
+
+[[event]]
+check = "compaction-carried"
 
 [[outcome]]
 check = "end"
 end = "completed"
+
 [[outcome]]
 check = "exit-code"
 code = 0
+
 [[outcome]]
 check = "answer"
 pattern = "^ALPHA 528$"
-[[event]]
-check = "tool-call"
-tool = "read"
-count = { exactly = 32 }
-verdict = "read"
-[[event]]
-check = "calls-per-response"
-tool = "read"
-at_most = 1
-[[event]]
-check = "completions"
-count = { at-least = 33 }
-before = "answer"
-[[event]]
-check = "prompt-within-window"
+
+[smith]
+"budget.reserve.seconds" = 150
+"deployment.calls_per_response" = 1
+"deployment.read_window" = 8192
+"deployment.tool_payload" = 8192
+'models."{model}".output' = 8192
+'models."{model}".window' = 272000
 
 [[variant]]
-name = "small-window"
 deciding = ["conversation-opened", "compaction-choice"]
-[variant.smith]
-"models.\"{model}\".window" = 65536
+name = "small-window"
+
+[variant.calibration]
+attempts = 11
+binary = "8a5bb9ecd798ecffbf4a18a81fd512c3ce597228"
+binary_sha256 = "3469b4a4e3928d1f65b22f03e00e039e7702a829dffb28e3dd462e751e9cbc90"
+checks_sha256 = "c057873d098531332af161904617f3404599e69e55267e02460b8a834243b7f1"
+control = "8a630f4107c821379efa488818bc815823457045"
+date = "2026-10-14T21:27:48.707801306Z"
+deviations = ["probes-history-small-window-8a5bb9ec-20261014T212649Z/06"]
+failed_before = ["probes-history-small-window-8a630f41-20261014T212650Z/01"]
+passes = ["probes-history-small-window-8a5bb9ec-20261014T212649Z/01", "probes-history-small-window-8a5bb9ec-20261014T212649Z/02", "probes-history-small-window-8a5bb9ec-20261014T212649Z/03", "probes-history-small-window-8a5bb9ec-20261014T212649Z/04", "probes-history-small-window-8a5bb9ec-20261014T212649Z/05", "probes-history-small-window-8a5bb9ec-20261014T212649Z/07", "probes-history-small-window-8a5bb9ec-20261014T212649Z/08", "probes-history-small-window-8a5bb9ec-20261014T212649Z/09", "probes-history-small-window-8a5bb9ec-20261014T212649Z/10", "probes-history-small-window-8a5bb9ec-20261014T212649Z/11"]
+prompt_sha256 = "6d0ff1d74f9250ebf1c8c136a642176cb96feafef332a70959f743c0e968728d"
+seed_sha256 = "aea294bc0d91c756ea8377fa43ae1644dbf9a003e9b50947b1b1a8fd4820f336"
+summary = "summaries/probes-history-small-window-8a5bb9ec-20261014T212649Z.json"
+
 [[variant.event]]
 check = "conversation-opened"
 kind = "compaction"
-count = { at-least = 1 }
+
+[variant.event.count]
+at-least = 1
+
 [[variant.event]]
 check = "compaction-choice"
+
+[variant.smith]
+'models."{model}".window' = 65536
