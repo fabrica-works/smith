@@ -100,7 +100,14 @@ fn summarize_command(
         let seed = seed.parse::<u64>().map_err(|error| error.to_string())?;
         let results = smith_bench::read_results(results).map_err(|error| error.to_string())?;
         let reference = reference.map(smith_bench::read_baseline).transpose().map_err(|error| error.to_string())?;
-        let summary = smith_bench::summarise(&results, suite, tier, design, seed, reference.as_ref())?;
+        let reference_arm = if design == smith_bench::Design::Interleaved {
+            let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("suites").join(format!("{suite}.toml"));
+            smith_bench::read_suite(&file).map_err(|error| error.to_string())?.reference
+        } else {
+            None
+        };
+        let summary =
+            smith_bench::summarise(&results, suite, tier, design, seed, reference.as_ref(), reference_arm.as_deref())?;
         let output = committed_output("summaries", &summary.run)?;
         smith_bench::write_summary(&output, &summary)?;
         Ok(output)

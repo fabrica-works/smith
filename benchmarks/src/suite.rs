@@ -68,6 +68,8 @@ pub struct Suite {
     pub name: String,
     pub tier: String,
     pub design: Design,
+    #[serde(default)]
+    pub reference: Option<String>,
     pub repetitions: u32,
     /// Zero or one rerun after a failed attempt.
     pub rerun_failed: u32,
@@ -219,6 +221,16 @@ pub fn validate_suite(
         };
         if name.is_empty() || !arm_names.insert(name) {
             return Err(Refusal::new(file, "arm.name", "arm names must be nonempty and unique"));
+        }
+    }
+    let has_codex = suite.agents.iter().any(|agent| agent.agent == Agent::Codex)
+        || suite.arms.iter().any(|arm| matches!(arm, Arm::Agent { agent: Agent::Codex, .. }));
+    if suite.design == Design::Interleaved && !has_codex {
+        let Some(reference) = &suite.reference else {
+            return Err(Refusal::new(file, "reference", "a comparison without Codex must name its reference arm"));
+        };
+        if !arm_names.contains(reference) {
+            return Err(Refusal::new(file, "reference", format!("unknown reference arm {reference}")));
         }
     }
     Ok(selected.into_iter().collect())

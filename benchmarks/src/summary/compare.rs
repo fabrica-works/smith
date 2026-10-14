@@ -8,11 +8,22 @@ pub(crate) fn comparisons(
     groups: &[ArmSummary],
     grouped: &BTreeMap<(String, String), Vec<&AttemptResult>>,
     seed: u64,
+    reference_arm: Option<&str>,
 ) -> Result<Vec<SummaryComparison>, String> {
     let mut comparisons = Vec::new();
-    for (index, left) in groups.iter().enumerate() {
-        for right in &groups[index + 1..] {
-            if left.task != right.task {
+    let tasks: std::collections::BTreeSet<_> = groups.iter().map(|group| group.task.as_str()).collect();
+    for task in tasks {
+        let arms: Vec<_> = groups.iter().filter(|group| group.task == task).collect();
+        if arms.len() < 2 {
+            continue;
+        }
+        let left = arms
+            .iter()
+            .find(|group| group.agent == crate::Agent::Codex)
+            .or_else(|| arms.iter().find(|group| Some(group.arm.as_str()) == reference_arm))
+            .ok_or_else(|| format!("{task}: comparison without Codex needs its named reference arm"))?;
+        for right in &arms {
+            if right.arm == left.arm {
                 continue;
             }
             if left.task_version != right.task_version

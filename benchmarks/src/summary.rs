@@ -86,6 +86,45 @@ pub struct SummaryComparison {
     pub result: Measure<Comparison>,
 }
 
+/// One attempt's evidence, retained by the builder for an offline verdict.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AttemptRow {
+    pub attempt: String,
+    pub task: String,
+    pub arm: String,
+    pub agent: String,
+    pub end: String,
+    pub passed: bool,
+    pub task_wall_ms: Measure<u64>,
+    pub priced_usd: Measure<f64>,
+    pub fresh_tokens: Measure<u64>,
+    pub cache_read_tokens: Measure<u64>,
+    pub output_tokens: Measure<u64>,
+}
+
+fn attempt_row(result: &AttemptResult) -> AttemptRow {
+    let total = result.tokens.iter().find(|record| record.role == ScopeKind::Total);
+    AttemptRow {
+        attempt: result.identity.attempt.clone(),
+        task: result.identity.task.clone(),
+        arm: result.identity.arm.clone(),
+        agent: result.identity.agent.directory().into(),
+        end: end_name(&result.outcome.end).into(),
+        passed: crate::judge(result) == crate::Judgment::Pass,
+        task_wall_ms: result.timing.task_wall_ms.clone(),
+        priced_usd: result.spend.priced.clone(),
+        fresh_tokens: total
+            .map_or_else(|| Measure::unavailable("total tokens not reported"), |record| record.usage.fresh.clone()),
+        cache_read_tokens: total.map_or_else(
+            || Measure::unavailable("total tokens not reported"),
+            |record| record.usage.cache_read.clone(),
+        ),
+        output_tokens: total
+            .map_or_else(|| Measure::unavailable("total tokens not reported"), |record| record.usage.output.clone()),
+    }
+}
+
 /// A committed run summary supplied by the offline summary command.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -99,6 +138,7 @@ pub struct RunSummary {
     pub design: Design,
     pub seed: u64,
     pub date: String,
+    pub attempts: Vec<AttemptRow>,
     pub groups: Vec<ArmSummary>,
     pub comparisons: Vec<SummaryComparison>,
     pub audits: Vec<String>,
@@ -400,6 +440,7 @@ pub fn summarise(
     design: Design,
     seed: u64,
     reference: Option<&Baseline>,
+    reference_arm: Option<&str>,
 ) -> Result<RunSummary, String> {
     if results.is_empty() || suite.is_empty() || tier.is_empty() || results.len() > u32::MAX as usize {
         return Err("summary needs attempts, suite and tier".into());
@@ -430,8 +471,11 @@ pub fn summarise(
     for group in grouped.values() {
         groups.push(group_summary(group)?);
     }
-    let comparisons =
-        if design == Design::Interleaved { compare::comparisons(&groups, &grouped, seed)? } else { Vec::new() };
+    let comparisons = if design == Design::Interleaved {
+        compare::comparisons(&groups, &grouped, seed, reference_arm)?
+    } else {
+        Vec::new()
+    };
     let audits = audit_sample(ordered.len(), 3, &disagreements, seed)?
         .into_iter()
         .map(|index| ordered[index].identity.attempt.clone())
@@ -450,6 +494,7 @@ pub fn summarise(
         design,
         seed,
         date,
+        attempts: results.iter().map(attempt_row).collect(),
         groups,
         comparisons,
         audits,
@@ -583,11 +628,20 @@ fn read_json<T: serde::de::DeserializeOwned>(file: &Path) -> Result<T, Refusal> 
 
 /// Read the one summary version and the current result version.
 pub fn read_summary(file: &Path) -> Result<RunSummary, Refusal> {
-    let summary: RunSummary = read_json(file)?;
-    if summary.version != SUMMARY_VERSION || summary.result_version != RESULT_VERSION {
-        return Err(Refusal::new(file, "version", "unsupported summary or result version"));
+    let document: serde_json::Value = read_json(file)?;
+    if document["version"].as_u64() != Some(u64::from(SUMMARY_VERSION))
+        || document["result_version"].as_u64() != Some(u64::from(RESULT_VERSION))
+    {
+        return Err(Refusal::new(
+            file,
+            "version",
+            format!(
+                "summary version {} or result version {} is unsupported",
+                document["version"], document["result_version"]
+            ),
+        ));
     }
-    Ok(summary)
+    serde_json::from_value(document).map_err(|error| Refusal::new(file, "document", error.to_string()))
 }
 
 /// Read a drift reference only at the supported versions.

@@ -70,8 +70,8 @@ fn cache_triplets_judge_the_median_and_pool_misses_without_passing_a_partial_tri
         smith_bench::parse_result(std::path::Path::new("result.json"), &source).expect("strict reader"),
         values[0]
     );
-    let summary =
-        smith_bench::summarise(&values, "cache-reuse", "small", smith_bench::Design::Single, 1, None).expect("summary");
+    let summary = smith_bench::summarise(&values, "cache-reuse", "small", smith_bench::Design::Single, 1, None, None)
+        .expect("summary");
     let group = &summary.groups[0];
     assert_eq!(group.passes.passed, 1, "one logical attempt, three physical repetitions");
     assert_eq!(group.cache_triplets[0].median_reuse, Measure::Observed { value: 0.9 });

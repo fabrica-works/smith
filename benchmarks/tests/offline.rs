@@ -205,8 +205,8 @@ fn a_recorded_attempt_round_trips_without_erasing_measurement_gaps() {
 fn a_summary_and_baseline_from_recorded_results_round_trip_offline() {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
     let results = smith_bench::read_results(&file).expect("recorded attempts");
-    let summary =
-        smith_bench::summarise(&results, "recorded", "small", smith_bench::Design::Single, 123, None).expect("summary");
+    let summary = smith_bench::summarise(&results, "recorded", "small", smith_bench::Design::Single, 123, None, None)
+        .expect("summary");
     assert_eq!(summary.groups[0].counts_by_end["completed"], 1);
     assert_eq!(summary.groups[0].metrics["task_wall_ms"].observed, 1);
     let baseline = smith_bench::baseline(&summary).expect("single configuration baseline");
@@ -323,8 +323,9 @@ fn committed_summaries_and_baselines_parse_at_result_version_two() {
 fn multi_configuration_summary() -> smith_bench::RunSummary {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
     let results = smith_bench::read_results(&file).expect("recorded attempts");
-    let mut summary = smith_bench::summarise(&results, "recorded", "small", smith_bench::Design::Single, 123, None)
-        .expect("whole summary");
+    let mut summary =
+        smith_bench::summarise(&results, "recorded", "small", smith_bench::Design::Single, 123, None, None)
+            .expect("whole summary");
     let first = summary.groups[0].clone();
     for change in 0..4 {
         let mut other = first.clone();

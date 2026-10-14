@@ -727,7 +727,7 @@ pub fn record_calibration(
         .insert("calibration".into(), toml::Value::try_from(block).map_err(|error| error.to_string())?);
     let text = toml::to_string(&document).map_err(|error| error.to_string())?;
     let task = selected_task(file, name)?;
-    let summary = crate::summarise(results, "calibrate", &task.tier, crate::Design::Single, seed, None)?;
+    let summary = crate::summarise(results, "calibrate", &task.tier, crate::Design::Single, seed, None, None)?;
     let path = repository.join("benchmarks").join(&block.summary);
     fs::create_dir_all(path.parent().ok_or("summary directory required")?).map_err(|error| error.to_string())?;
     crate::write_summary(&path, &summary)?;

@@ -1,6 +1,7 @@
 name = "compaction"
 tier = "small"
 design = "interleaved"
+reference = "80-percent"
 repetitions = 5
 rerun_failed = 0
 max_wall_seconds = 3600
