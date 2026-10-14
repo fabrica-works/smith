@@ -683,8 +683,8 @@ fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
             .map(|model| model.protocol_allowance)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        assert_eq!(local.models.len(), 2);
-        assert_eq!(allowances.len(), 2);
+        assert_eq!(local.models.len(), 3);
+        assert_eq!(allowances.len(), 3);
         local.validate(&resolved.limits).expect("actual run policy admitted");
         match prepared.credential {
             Credential::Record(Some(borrowed)) => {
@@ -762,8 +762,8 @@ fn process_tree_profile_renders_and_passes_the_actual_public_startup_derivation(
             .map(|model| model.protocol_allowance)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        assert_eq!(local.models.len(), 2);
-        assert_eq!(allowances.len(), 2);
+        assert_eq!(local.models.len(), 3);
+        assert_eq!(allowances.len(), 3);
         local.validate(&resolved.limits).expect("actual run policy admitted");
         match prepared.credential {
             Credential::Record(Some(borrowed)) => {
@@ -850,8 +850,8 @@ fn slow_completion_profile_renders_and_passes_the_actual_public_startup_derivati
             .map(|model| model.protocol_allowance)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        assert_eq!(local.models.len(), 2);
-        assert_eq!(allowances.len(), 2);
+        assert_eq!(local.models.len(), 3);
+        assert_eq!(allowances.len(), 3);
         local.validate(&resolved.limits).expect("actual run policy admitted");
         match prepared.credential {
             Credential::Record(Some(borrowed)) => {

@@ -143,6 +143,38 @@ fn codex_takes_long_prompt_rates_only_past_272000_tokens() {
     assert_eq!(decoded.values["models.codex/gpt-6-astra.output_price"].value.as_float(), Some(75.0));
 }
 
+#[test]
+fn gpt_six_one_sol_is_declared_with_its_list_prices() {
+    for (window, input, cached, cache_write, output) in [(272_000, 2.0, 0.1, 2.5, 10.0), (272_001, 4.0, 0.2, 5.0, 15.0)]
+    {
+        let decoded = settings(&[source(Layer::User, &format!("[models.'codex/gpt-6.1-sol']\nwindow={window}\n"))])
+            .expect("sol preset");
+        let prefix = "models.\"codex/gpt-6.1-sol\"";
+        for (field, expected) in [
+            ("input_price", input),
+            ("cached_price", cached),
+            ("cache_write_price", cache_write),
+            ("output_price", output),
+        ] {
+            assert_eq!(
+                decoded.values[&format!("{prefix}.{field}")].value.as_float(),
+                Some(expected),
+                "window {window}, {field}"
+            );
+        }
+        for (field, expected) in
+            [("window", window), ("output", 32_000), ("reasoning_item", 65_536), ("head", 60), ("idle", 300)]
+        {
+            assert_eq!(
+                decoded.values[&format!("{prefix}.{field}")].value.as_integer(),
+                Some(expected),
+                "window {window}, {field}"
+            );
+        }
+        assert!(!decoded.values.contains_key(&format!("{prefix}.efforts")));
+    }
+}
+
 fn selection(text: &str) -> Result<super::resolve::Selection, super::Refusal> {
     let settings = settings(&[source(Layer::User, text)])?;
     super::resolve::select(&settings)
@@ -152,7 +184,7 @@ fn selection(text: &str) -> Result<super::resolve::Selection, super::Refusal> {
 fn a_codex_only_first_run_needs_no_anthropic_credential() {
     let selected =
         selection("model='codex/gpt-6-astra'\n[accounts.codex]\nsource='borrow'\n").expect("one account's run");
-    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna"]);
+    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna", "codex/gpt-6.1-sol"]);
     assert_eq!(selected.accounts.len(), 1);
     assert_eq!(selected.accounts[0].name, "codex");
     assert_eq!(selected.accounts[0].fields["source"].value.as_str(), Some("borrow"));
@@ -170,7 +202,8 @@ fn sub_agents_on_adds_the_models_of_every_account_with_a_source() {
             "anthropic/claude-haiku-5-5",
             "anthropic/claude-opus-5-5",
             "anthropic/claude-sonnet-5-5",
-            "codex/gpt-6-luna"
+            "codex/gpt-6-luna",
+            "codex/gpt-6.1-sol"
         ]
     );
     assert_eq!(
@@ -190,7 +223,7 @@ fn mains_account_without_a_source_is_refused_naming_the_key() {
 fn sub_agents_on_keeps_an_unset_accounts_models_out() {
     let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n")
         .expect("codex delegation");
-    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna"]);
+    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna", "codex/gpt-6.1-sol"]);
     assert_eq!(selected.accounts.len(), 1);
 }
 
@@ -233,7 +266,7 @@ fn an_unknown_endpoint_preset_is_refused_at_its_source() {
 fn a_declared_model_with_a_source_is_available_to_sub_agents() {
     let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n[models.'codex/declared']\nwindow=100000\noutput=1000\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n")
         .expect("declared child model");
-    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/declared", "codex/gpt-6-luna"]);
+    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/declared", "codex/gpt-6-luna", "codex/gpt-6.1-sol"]);
     assert_eq!(selected.accounts.len(), 1);
 }
 
@@ -263,11 +296,11 @@ fn composed(extra: &str) -> Result<super::resolve::Resolved, super::Refusal> {
 fn composition_derives_only_the_main_model_with_sub_agents_off() {
     let resolved = composed("[models.'anthropic/claude-opus-5-5']\nhead=0\nreasoning_item=0\n")
         .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 2);
+    assert_eq!(resolved.local.models.len(), 3);
     assert_eq!(resolved.local.models[0].model.as_ref(), b"gpt-6-luna");
     assert_eq!(resolved.accounts.len(), 1);
     assert_eq!(resolved.agent.declarations.endpoints.len(), 1);
-    assert_eq!(resolved.agent.declarations.endpoints[0].models.len(), 2);
+    assert_eq!(resolved.agent.declarations.endpoints[0].models.len(), 3);
     assert_eq!(resolved.outside_models["anthropic/claude-opus-5-5"], "sub_agents is off");
 }
 
@@ -275,7 +308,7 @@ fn composition_derives_only_the_main_model_with_sub_agents_off() {
 fn composition_adds_every_model_of_accounts_with_a_source() {
     let resolved = composed("sub_agents=true\n[accounts.anthropic]\nsource='env'\n")
         .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 5);
+    assert_eq!(resolved.local.models.len(), 6);
     assert_eq!(resolved.local.models[0].model.as_ref(), b"gpt-6-luna");
     assert_eq!(
         resolved.accounts.iter().map(|account| account.name.as_str()).collect::<Vec<_>>(),
@@ -289,7 +322,7 @@ fn composition_adds_every_model_of_accounts_with_a_source() {
 #[test]
 fn composition_reports_an_account_without_a_source_outside_the_run() {
     let resolved = composed("sub_agents=true\n").unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 2);
+    assert_eq!(resolved.local.models.len(), 3);
     assert_eq!(resolved.outside_models.len(), 3);
     assert_eq!(resolved.outside_models["anthropic/claude-opus-5-5"], "account has no source");
 }
@@ -376,7 +409,7 @@ fn an_outside_declared_model_needs_only_its_value_checks() {
         "[models.'outside/model']\nwindow=1024\noutput=16\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n",
     )
     .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 2);
+    assert_eq!(resolved.local.models.len(), 3);
     assert_eq!(resolved.outside_models["outside/model"], "sub_agents is off");
 }
 
@@ -398,7 +431,7 @@ fn trust_paths_are_resolved_from_the_settings_workspace() {
         &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
     )
     .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 2);
+    assert_eq!(resolved.local.models.len(), 3);
 }
 
 #[test]
@@ -575,7 +608,7 @@ fn the_configuration_holds_each_model_of_mains_endpoint_and_none_of_another() {
     let resolved = composed("effort='high'\n").unwrap_or_else(|why| panic!("{}", why.line()));
     let declared = &resolved.agent.declarations.endpoints;
     assert_eq!(declared.len(), 1);
-    assert_eq!(declared[0].models.len(), 2);
+    assert_eq!(declared[0].models.len(), 3);
     assert!(declared[0].models.iter().any(|model| model.name.as_ref() == b"gpt-6-astra"));
     assert!(declared[0].models.iter().any(|model| model.name.as_ref() == b"gpt-6-luna"));
     let charter = smith_local_domain::charter(&resolved.local);

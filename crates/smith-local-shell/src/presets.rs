@@ -4,9 +4,10 @@
 use crate::settings::{Origin, Settings, Sourced};
 pub use smith_domain::run::Prices;
 
-const MODELS: [&str; 5] = [
+const MODELS: [&str; 6] = [
     "codex/gpt-6-astra",
     "codex/gpt-6-luna",
+    "codex/gpt-6.1-sol",
     "anthropic/claude-opus-5-5",
     "anthropic/claude-sonnet-5-5",
     "anthropic/claude-haiku-5-5",
@@ -61,6 +62,13 @@ reasoning_item = 65536
 head = 60
 idle = 300
 price_unit = 1000000
+[models.'codex/gpt-6.1-sol']
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60
+idle = 300
+price_unit = 1000000
 "
         }
         Preset::Anthropic => {
@@ -103,16 +111,17 @@ price_unit = 1000000
 }
 
 /// List rates in micro-dollars per million tokens for the resolved window.
-/// Standard rates: developers.openai.com/api/docs/models/{gpt-6-astra,gpt-6-luna}
-/// and platform.claude.com/docs/en/about-claude/pricing (2026-10-12).
+/// Standard rates: developers.openai.com/api/docs/models/{gpt-6-astra,gpt-6-luna,gpt-6.1-sol}
+/// and platform.claude.com/docs/en/about-claude/pricing (2026-10-14).
 #[must_use]
 pub fn list_prices(endpoint: &str, model: &str, window: u64) -> Option<Prices> {
     let (input, cached, cache_write, output) = match (endpoint, model) {
         ("codex", "gpt-6-astra") if window > 272_000 => (20_000_000, 2_000_000, 25_000_000, 75_000_000),
         ("codex", "gpt-6-astra") => (10_000_000, 1_000_000, 12_500_000, 50_000_000),
         ("codex", "gpt-6-luna") if window > 272_000 => (200_000, 20_000, 250_000, 750_000),
+        ("codex", "gpt-6.1-sol") if window > 272_000 => (4_000_000, 200_000, 5_000_000, 15_000_000),
         ("anthropic", "claude-opus-5-5") => (4_000_000, 200_000, 5_000_000, 20_000_000),
-        ("anthropic", "claude-sonnet-5-5") => (2_000_000, 100_000, 2_500_000, 10_000_000),
+        ("codex", "gpt-6.1-sol") | ("anthropic", "claude-sonnet-5-5") => (2_000_000, 100_000, 2_500_000, 10_000_000),
         ("anthropic", "claude-haiku-5-5") if window > 100_000 => (500_000, 50_000, 625_000, 2_500_000),
         ("codex", "gpt-6-luna") | ("anthropic", "claude-haiku-5-5") => (100_000, 10_000, 125_000, 500_000),
         _ => return None,
