@@ -289,7 +289,25 @@ below holds.
   `smith-protocol-llm/src/render.rs:220` (both clamps said), `tests.rs:132`,
   `:662`, `:748`; `tests/codecs/tests/transcript.rs:109-122`.
 
+**10.6** (10.5's remainder: the kit's job table, admission, flights and
+the tools world's stories; ruling 122)
+- 10.6 also takes the two parts of 10.2 without which a held job can
+  outlive its kit or meet an unanswered act: `job` with `stop` asks
+  `JobAct::Stop` and answers `stopped`, or the end the job already had
+  (tools.md 5, "Stopping it"); and the kit's close stops its running
+  jobs' groups and waits for them to settle before `Request::Closed`
+  (10.2's Don't: "let a job outlive its kit's close"). Its tests:
+  `a_job_stopped_and_one_stopped_after_it_exited` (moved from 10.2) and
+  `a_close_with_a_job_running_settles_it_before_closed`, under 0.5 s each.
+- 10.1's "Don't: stop or cancel a job yet" no longer binds 10.6, for
+  those two only.
+
 **10.2**
+- 10.6 has taken `job` with `stop` and the close's stop-and-wait (ruling
+  122). 10.2 keeps `Event::CancelJobs` and `Request::JobsCancelled`,
+  `cancelled` at a job's next read, the close's facts for each job whose
+  end no answer reported, the referee and the fuzzy world, and its tests
+  but `a_job_stopped_and_one_stopped_after_it_exited`.
 - `tools::Request::JobsCancelled` needs arms at `smith-domain-session/src/session.rs:1098-1108`
   (`tools_step`) and `tests/tools/tests/memory.rs:36-46`;
   `tools::Event::CancelJobs` at `smith-domain-tools/src/domain.rs:91-98`.

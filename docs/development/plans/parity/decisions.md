@@ -749,3 +749,15 @@ changes what section 8.4 holds.
         - **README "Done when" item 4** says "(version 2)". It is version 3
           now.
         - **code-organization.md:101** names "`history` version 2".
+
+122. **10.6 stops a job and settles its jobs at close** (plan defect, smith 10's block of 2026-10-14T20:39:29Z).
+     Ruling 122. Option 1. 10.6 takes from 10.2 the two parts without which a held job can outlive its kit or meet an act nothing answers:
+
+     - `job` with `stop` asks `JobAct::Stop` and answers `stopped`, or the end the job already had (tools.md 5: "`job` with `stop: true` stops the job's group in the steps a deadline uses …, then answers its end, `stopped` … A job that had already ended is answered with that end").
+     - The kit's close stops its running jobs' groups and waits for them to settle before `Request::Closed` (10.2's Don't: "let a job outlive its kit's close").
+
+     Its tests are `a_job_stopped_and_one_stopped_after_it_exited` (moved from 10.2) and `a_close_with_a_job_running_settles_it_before_closed`, under 0.5 s each. 10.1's Don't, "stop or cancel a job yet (10.2)", no longer binds 10.6, for these two only.
+
+     - 10.2 keeps `Event::CancelJobs` and `Request::JobsCancelled`, `cancelled` at a job's next read, the close's facts for each job whose end no answer reported, the referee and the fuzzy world, and its other tests.
+     - Option 2 (10.6 and 10.2 landing together) is not taken. If 10.6 with these two parts passes README rule 1's split point, split it there, as rule 1 says.
+     - Nothing is offered to a model: `job` waits for 11.2, and production `shell` calls keep `Yield::Never` until 11.2 (the 10.1 corrections).
