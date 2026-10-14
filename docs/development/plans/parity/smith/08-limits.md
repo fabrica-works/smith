@@ -130,7 +130,10 @@ Files: `crates/smith-agent-service/src/profile/quantities.rs`
   (`declared()`, `:86-118`; `policy()`), `crates/smith-agent-service/src/profile/effective/`
   (its tests print the names), `crates/smith-domain-tools/src/limits.rs`
   (`Limits`, `:19`; `Derivation`, `:191`), `crates/smith-protocol-machine/src/limits.rs`
-  (`processes`, `:167`; `worst_case`, `:202`), the settings and agent
+  (`processes`, `:167`; `worst_case`, `:202`; `Limits` and `Derivation`
+  gain `tool_payload`, ruling 110), `crates/smith-agent-service/src/profile/checks.rs`
+  and `validate.rs` (`MachineHoldsTools`), `profile/effective/boundaries.rs`
+  and `list.rs` (the printed `machine.tool_payload`), the settings and agent
   configuration files of 08.2, and each `Limits` literal the audit lists
   (rule 3).
 Shape: `Declared.jobs: u32` (4) and `Policy.job_wait: Duration` (30 s),
@@ -140,7 +143,13 @@ Shape: `Declared.jobs: u32` (4) and `Policy.job_wait: Duration` (30 s),
   kept outputs at `shell_head + shell_tail` and their process records;
   `Check::Deadlines` refuses `job_wait` of zero or above `tool_deadline`;
   `Check::MachineHoldsTools` checks the processes; printed as
-  `declared.jobs` and `policy.job_wait`.
+  `declared.jobs` and `policy.job_wait`. The machine's `Limits` and
+  `Derivation` gain `tool_payload`, derived from the tools' `tool_payload`
+  (limits.md 2.2: "the arguments of one call"); `MachineHoldsTools`
+  checks it, the machine refuses translated arguments above it, and a
+  listing's or search's filter and pattern are priced at it, not at
+  `file_bytes`; printed as `machine.tool_payload`. Shipped memory stays
+  (decisions.md 7.4).
 Test shape: profile tests: `the_machines_processes_hold_every_batch_check_and_job`
   (a derivation property, `conversations` 3), `a_job_wait_above_the_tool_deadline_is_refused`,
   `the_worst_case_counts_each_sessions_jobs_at_their_kept_output`. Under

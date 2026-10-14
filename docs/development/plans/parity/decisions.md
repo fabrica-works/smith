@@ -540,3 +540,13 @@ changes what section 8.4 holds.
 
      - Tasks 3785 (smith's land gate) and 3786 (smith 03's `cargo nextest run`) were killed at 12:32; tasks 3788 (smith 04's land gate), 3789 (smith 05's smoke) and 3790 (smith 07's land prebuild) were queued with no process waiting on them, and were removed. Each session runs its interrupted command again, from the start: a rerun the disk caused counts as no retry of its own.
      - The 2026-10-08 benchmark's `target/` directories are gone, by the user's leave (about 50 GB): the disk reads 167 GB. Ruling 108's rules stay.
+
+110. **the machine derives tool_payload and prices patterns at it** (cross-session scope, smith 08's block of 2026-10-14T18:11:54Z).
+     Ruling 110. Yes: the machine's `Limits` and `Derivation` gain `tool_payload`, derived from the tools domain's `tool_payload`, as you propose. limits.md 3.5 says "`smith-protocol-machine` derives from the tools' limits, never beside them", and limits.md 2.2 defines `tool_payload` as "the most a tool exchanges in one piece: a `read`'s largest window, a `write`'s content, the arguments of one call". A listing's or search's filter and pattern come from one call's arguments, so pricing them at `file_bytes` ("the largest file the tools hold whole") overcounts every process slot that 08.3's 42 processes multiply. This is the design's own bound, not a new quantity, and no design text changes.
+
+     - `machine::Limits.tool_payload` and `Derivation.tool_payload`, from `tools::Limits.tool_payload`; `Check::MachineHoldsTools` refuses a machine `tool_payload` below the tools', as it does `file_bytes` (`profile/validate.rs:229-240`).
+     - The machine refuses translated tool arguments above `tool_payload`; filter and pattern ownership is priced at it.
+     - Printed as `machine.tool_payload`, by the existing scheme (README rule 12: no new version).
+     - Shipped memory and every preset stay (decisions.md 7.4, "Memory needs no change").
+     - A further per-step overcount (the pathname copies you name) may be tightened only where a heap test like your saturated eight-listing check shows the bytes; no preset or expected value changes. If the three stories that fail now (`smith_exec_ephemeral_removes_its_private_files_after_a_failed_answer`, `smith_exec_json_ends_accepted_with_its_events_and_exit_0`, `slash_effort_reaches_the_next_request`) still refuse at startup after that, stop on a question with the remaining bytes, and change nothing else.
+     - Each `machine::Limits` literal and destructuring outside Files takes the new field set from the tools' `tool_payload` (README rule 3; `service.rs`, `tests/host/src/inline.rs` among them); list each in the commit body under "Users outside Files:".
