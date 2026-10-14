@@ -226,7 +226,9 @@ Proof: live, once each, through `heavy --gate`, on the branch rebased
     before 04.s3 and is spent: `calibrate` has no resume, so the command
     runs again whole, control included. A base `history` block written
     before 04.s3 stands: base `history` decides neither compaction
-    check.
+    check. If that base run stopped on model deviations alone, the
+    small-window command does not run again at medium: the next bullet
+    applies, and both commands run once, at `high`.
   - If either command stops on model deviations alone (ten passes out of
     reach), the task names `effort = "high"`, its reason in the comment
     above it, and both commands run once more. An attempt that ends on its
