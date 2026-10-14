@@ -277,6 +277,69 @@ Don't: change a check, a task, or which checks decide.
 Size: 20 lines.
 Removes: nothing.
 
+### 04.s2 Whose failure: `call-count`, `compaction-carried`, a retried request
+Scope: benchmarks.md 3.2 ("Whose failure", "A count is the model's only
+  where smith's side is checked", "A request smith retried") and 11.1's
+  `history` row, as the designer's answer to the question of
+  2026-10-14T20:18:45Z amended them.
+Needs: 04.s1.
+Files: `benchmarks/src/task.rs` (`EventCheck`, `:55`, and its names,
+  `:182`), `benchmarks/src/check/events.rs` (`:166`),
+  `benchmarks/src/agent/smith/observe.rs` (`:159`, `:205`),
+  `benchmarks/src/run/cache.rs` (`:27`),
+  `benchmarks/src/agent/smith/events/checks.rs` (`tool_call`, `:24`;
+  `evaluate_complete`, `:290`), a new
+  `benchmarks/src/agent/smith/events/carried.rs` beside
+  `compaction_choice.rs`, `events/cache_shape.rs` (`calls_per_response`,
+  `:13`), `events/scopes.rs` (`prompt_within_window`, `:13`),
+  `benchmarks/src/probe.rs` (`count`, `:125`; `model_deviation`, `:142`),
+  `benchmarks/tests/events/` (a new `carried.rs`),
+  `benchmarks/tests/probe_command.rs`, `benchmarks/tests/recorded/` (two
+  excerpts).
+Shape:
+  - `call-count` (`tool`, `count`) counts the `tool.started` records of
+    `tool`, as `tool_call` counts them, and judges nothing else.
+    `model_deviation` reads it as the model's, beside `answer`.
+  - `compaction-carried` (no parameters), for each `conversation.opened`
+    of kind `compaction`: its first `response.started` holds, in
+    `prompt.messages`, a `result` block for each `call` block of its
+    parent's last `completed` response before the opening; and the
+    parent's first `response.started` after the compaction's
+    `conversation.closed` holds, in its first message, a text block equal
+    to the summary: the text blocks of the compaction's completed
+    `completion`, joined by `"\n\n"` (session.md 8.2). Observed true with
+    no compaction; false naming the compaction and the missing call or
+    summary; unavailable when a prompt or completion it reads was not
+    captured. With no parent request after the compaction (the session
+    failed in it), the second half does not apply.
+  - `calls_per_response` counts a `response.completed` whose `outcome` is
+    `failed` with `blocks` 0 as no calls, without its `completion`.
+    `prompt_within_window` skips such a response when a later
+    `response.started` of its conversation and `turn` has a higher
+    `attempt`; with none, it stays unavailable, as today.
+  - `count`: an attempt whose failed deciding checks are all the model's,
+    with a deciding check unavailable other than "not exercised:", is
+    `unjudged`, not `failed`.
+Test shape: `tests/events/carried.rs`:
+  `compaction_carried_passes_when_the_owed_read_and_the_summary_cross`
+  (an excerpt of `probes-history-small-window-c2498a9d-20261014T200958Z`
+  attempt 05's second compaction),
+  `compaction_carried_fails_a_request_without_its_owed_result` and
+  `compaction_carried_fails_a_window_without_its_summary` (that excerpt,
+  edited); `a_failed_request_that_was_retried_leaves_its_checks_observed`
+  (`probes-history-c2498a9d-20261014T202009Z` attempt 03's responses 27
+  to 29: `calls-per-response` and `prompt-within-window` observed true);
+  `probe_command.rs`:
+  `a_failed_call_count_with_smiths_checks_passing_is_a_model_deviation`,
+  `a_model_failure_beside_an_unavailable_contract_check_is_unjudged`.
+  Under 20 ms each.
+Proof: unit, those tests; the smoke (rule 8). The live proof is 07.3's
+  calibration.
+Don't: change `tool-call`, its count or its owner: other tasks keep it,
+  read as smith's. Change no task file: 07.3 changes `history`'s.
+Size: 150 lines.
+Removes: nothing.
+
 ## Interface sketches
 
 ```rust

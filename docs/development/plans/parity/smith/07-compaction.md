@@ -7,7 +7,7 @@ text blocks glued with nothing between them, opens the new window with no
 framing, and its instruction asks it to keep the task, which the new
 window already holds (findings K1 to K4). This session asks every
 compaction with `ToolChoice::None`, frames the summary with the run's
-preamble, and rewrites the instruction; `history` version 2's
+preamble, and rewrites the instruction; `history` version 3's
 calibration proves it.
 
 ## Read first
@@ -171,31 +171,63 @@ Removes: the summary glued with nothing between its blocks.
 ### 07.3 The instruction's words, proven by `history`
 Scope: run.md 3.3's four requirements and the preamble's words
   (findings K2, K4; decisions.md 4.3); benchmarks.md 4.2's before and
-  after.
+  after; `history` version 3 (benchmarks.md 3.2 and 11.1, as the
+  designer's answer to the question of 2026-10-14T20:18:45Z amended
+  them).
 Needs: 07.2; smith 04's calibration blocks and `history` version 2 [04.1,
-  04.2]; smith 03's summary version 3 [03.1].
+  04.2]; 04.s2's `call-count` and `compaction-carried`; smith 03's
+  summary version 3 [03.1].
 Files: `crates/smith-domain-run/src/prompt.rs` (`SUMMARY`, `:30`;
   `PREAMBLE`), its tests, `tests/local-process/src/world.rs` (`:1089`,
   a fake cue that matches "Summarise the work so far": the new `SUMMARY`
   keeps that opening, or the cue matches its new one),
-  `benchmarks/tasks/probes/history/task.toml` (the two blocks, and
-  `effort = "medium"` with its reason, ruling 118),
+  `benchmarks/tasks/probes/history/task.toml` (version 3, the two
+  blocks, and `effort = "medium"` with its reason, ruling 118),
   `benchmarks/summaries/`.
 Shape: `SUMMARY` and `PREAMBLE` rewritten to say, in that order, what
-  run.md 3.3 lists; `SUMMARY` no longer says "Keep the task".
+  run.md 3.3 lists; `SUMMARY` no longer says "Keep the task". `history`
+  `version = 3`:
+  - the prompt's sentence "Keep a running sum and your next filename as
+    you go, including across any summary." is followed by "In each
+    completion, before its read call, write one line of text: the sum of
+    the values read so far, and the file you are reading."; nothing else
+    in the prompt, and nothing in the seed, changes;
+  - `tool-call` keeps `tool = "read"` and `verdict = "read"`, without its
+    `count`; a new `[[event]]` `check = "call-count"`, `tool = "read"`,
+    `count = { exactly = 32 }`; a new `[[event]]` `check =
+    "compaction-carried"`; `completions` goes: 32 reads, at most one per
+    response, imply its 33 completions;
+  - `deciding = ["end", "exit-code", "answer", "tool-call", "call-count",
+    "calls-per-response", "prompt-within-window", "compaction-carried"]`;
+    `small-window`'s own `deciding`, checks and window stay as they
+    are.
 Test shape: `the_summary_instruction_and_its_preamble_fit_smiths_own_part`
   (their bytes within the bound the profile measures), under 20 ms.
-Proof: live, once each, through `heavy --gate`, with the control 07.1's
-  parent, built first: `calibrate probes/history/small-window --control
-  <07.1's parent> --arm <dir>` (the control fails `compaction-choice`;
-  the arm passes 10 within 12) and `calibrate probes/history --control
-  <07.1's parent> --arm <dir>`. Each writes its block (04.1). At most 28
-  attempts, $1.50, 60 minutes; ruling 118 makes it 37 attempts, $4 and
-  90 minutes in all, the 9 spent at low effort included. A malformed end under `None` is smith's,
-  and stops on a question (decisions.md 4.4).
-Don't: change the threshold (4/5; decisions.md 4.5).
+Proof: live, once each, through `heavy --gate`, on the branch rebased
+  on 04.s2 with the arm rebuilt, and the control 07.1's parent:
+  `calibrate probes/history/small-window --control <07.1's parent> --arm
+  <dir>` (the control fails `compaction-choice`; the arm passes 10 within
+  12), then `calibrate probes/history --arm <dir>`, with no control: base
+  `history` never compacts, so 07.1's parent runs nothing of it that the
+  arm changed, and can fail it only by the model's errors. Its block's
+  `control` reads "none: no runnable control was named", and the commit
+  body says why (benchmarks.md 3.1). Each writes its block (04.1).
+  - A failed check that is smith's (benchmarks.md 3.2), or an unjudged
+    attempt, stops on a question quoting the attempt's failed checks and
+    their evidence. A malformed end under `None` is smith's, and stops on
+    a question (decisions.md 4.4).
+  - If either command stops on model deviations alone (ten passes out of
+    reach), the task names `effort = "high"`, its reason in the comment
+    above it, and both commands run once more. An attempt that ends on its
+    budget at high, or a second such stop, stops on a question.
+  - The attempts and spend are README row 07.3's.
+Don't: change the threshold (4/5; decisions.md 4.5); change `SUMMARY` or
+  `PREAMBLE` to suit `history`: a summary that drops or misstates what it
+  was given, with `compaction-carried` passing, is the model's
+  (benchmarks.md 3.2).
 Size: 30 lines.
-Removes: "Keep the task, decisions, …" from the instruction.
+Removes: "Keep the task, decisions, …" from the instruction; `history`'s
+  `completions` check and `tool-call`'s read count.
 
 ## Done when
 
