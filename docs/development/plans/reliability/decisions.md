@@ -2232,3 +2232,18 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    failed, setup and budget attempts stay in the counts and in every
    metric they have; no significance is inferred from three attempts.
    12.7 states the threshold beside the results.
+133. **smith-12.s3: the harness prepares a suite's override arms** (block
+   of 2026-10-14T00:27:09Z, smith 12.6). 12.6's Needs count on "smith
+   00's one command per probe run [00.27], with the suite's override
+   arms"; `probe::prepare` (`benchmarks/src/probe.rs:345`) makes requests
+   only for a suite's `agents`, never its `[[arm]]`s, and
+   `batch::check_requests` then refuses a suite whose arms have none.
+   benchmarks.md 3 has an arm be "a binary, a configuration override or
+   an agent". Ruling: a step not in the plan, 12.s3, in session 12's
+   file: the harness prepares one request per attempt of each `[[arm]]
+   source = "override"` arm, on the suite's agent and arm binary, with
+   the arm's overrides applied as `-c` settings and the arm named in the
+   request's and result's identity, interleaved by the suite's design,
+   replacing the base execution for that agent; no smith change. Then
+   12.6 runs its card unchanged. Past 300 lines, or needing a smith
+   change, 12.s3 stops, and 12.6 is dropped with 12.7 saying why.

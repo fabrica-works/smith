@@ -421,7 +421,7 @@ Scope: of benchmarks.md, 11.3, `compaction` runs over
   each dialect has one edit format (protocol/llm.md, 12; `later.md`).
 Needs: smith 00's `history` probe and `small-window` [00.16], with smith
   08's compaction; smith 00's one command per probe run [00.27], with
-  the suite's override arms; 12.3 passed.
+  the suite's override arms (12.s3, decisions.md 13.133); 12.3 passed.
 Files: `benchmarks/suites/compaction.toml`, `benchmarks/summaries/<run>.json`
   (new). Shape: none, a run.
 Test shape: none new; tests/offline.rs:28 reads the suite and summary.
@@ -432,6 +432,29 @@ Proof: live, `heavy --gate cargo run -p smith-bench -- suite compaction
 Don't: add a setting or switch to make an arm (benchmarks.md, 4.2: "No
   switch is added only for this"); change the shipped threshold.
 Size: no production code. Removes: nothing.
+
+### 12.s3 The harness prepares a suite's override arms
+Added (decisions.md, 13.133), before 12.6. Scope: `smith-bench`'s
+preparation makes one request per attempt of each `[[arm]] source =
+"override"` arm (benchmarks.md, 3: an arm is "a binary, a configuration
+override or an agent"): the suite's agent and the arm binary given with
+`--arm`, the arm's overrides passed as `-c KEY=VALUE` settings after the
+task's own, the arm's name in the request's and the result's identity,
+attempts interleaved as the suite's design says; such arms replace the
+agent's base execution, so a suite of two override arms of five
+attempts makes exactly ten requests; the summary groups by arm.
+Needs: nothing.
+Files: `benchmarks/src/{probe.rs,batch.rs,suite.rs}` and the summary's
+grouping if it needs the arm; `benchmarks/tests/`.
+Shape: the request's and result's arm identity, as the suite names it.
+Test shape: offline:
+`a_suite_with_two_override_arms_prepares_ten_interleaved_requests`,
+`an_override_arms_settings_reach_its_command_after_the_tasks`; 0.5 s.
+Proof: offline, the first test; once. Smoke as for any code landing.
+Don't: change smith, a task, a pin, the shipped threshold or the
+summary's statistics.
+Size: at most 300; past it, or needing a smith change, it stops and 12.6
+is dropped (13.133).
 
 ### 12.7 The new benchmark report
 Scope: `docs/development/benchmarks/smith-codex-<date>.md` in smith, the
