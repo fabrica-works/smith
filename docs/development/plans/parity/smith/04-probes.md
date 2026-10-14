@@ -233,7 +233,7 @@ Scope: benchmarks.md 3.1 and 11.5's `calibrate`, for the smoke's
   `first-request` with its own overrides (findings F1; decisions.md 3.4,
   7.1).
 Needs: smith 02's product pins and one face [02.1, 02.2]; smith 03's
-  summary version 3 [03.1]; 04.1.
+  summary version 3 [03.1]; 04.1; 04.s1 (ruling 112).
 Files: `benchmarks/tasks/probes/first-request/task.toml` (the block),
   `benchmarks/summaries/` (its summary).
 Shape: no new code. Build the arm, then `heavy --gate cargo run -p
@@ -245,9 +245,34 @@ Shape: no new code. Build the arm, then `heavy --gate cargo run -p
   so.
 Test shape: none new.
 Proof: live, once: that command, 10 passes within 12. At most 12
-  attempts, 15 minutes.
+  attempts, 15 minutes, after 04.s1; the step's row is 22 attempts, the
+  10 of its first calibration (`probes-first-request-ecd28c01-20261014T184751Z`,
+  stopped by 04.s1's defect) and these 12 (ruling 112).
 Don't: change the probe's prompt, seed or checks.
 Size: none.
+Removes: nothing.
+
+### 04.s1 Calibration reads only deciding checks
+Scope: benchmarks.md 3.1 (the arm's other attempts fail "only by the
+  model, never by smith") and 3.2 (an unobservable passive check "decides
+  nothing"); ruling 112.
+Needs: 04.1.
+Files: `benchmarks/src/probe.rs` (`model_deviation`, `:142-162`), its
+  tests.
+Shape: `model_deviation` reads only the checks the result's
+  `outcome.deciding` names; a check outside it, observed or unavailable,
+  neither makes nor breaks a deviation. A deciding check that fails and is
+  not the model's (`answer`, `budget-report`, `file-content:`,
+  `file-digest:`, `pattern:`, or unavailable "not exercised:") still
+  returns false.
+Test shape: `an_unavailable_advisory_check_leaves_a_model_deviation`
+  (attempt 10 of the run above, trimmed: `file-content:first.txt` false,
+  `teardown` and `headroom/*` unavailable and not deciding),
+  `a_failed_deciding_contract_check_is_no_model_deviation`. Under 20 ms
+  each.
+Proof: unit, those tests; the smoke (rule 8).
+Don't: change a check, a task, or which checks decide.
+Size: 20 lines.
 Removes: nothing.
 
 ## Interface sketches
