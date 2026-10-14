@@ -900,3 +900,11 @@ changes what section 8.4 holds.
      - Production: `crates/smith-domain-session/src/session.rs:414` passes the restored last turn's `jobs`, and 0 when there is none. `crates/smith-domain-tools/src/domain.rs:93` passes it to `kit::open`.
      - Users to adapt (each `Event::Open { session, authority }` gains `jobs: 0` unless its test is about resuming): `crates/smith-domain-tools/src/tests.rs:152`, `:272`, `:465`, `:1409`, `:1525`; `tests/tools/src/world.rs:669`; `tests/tools/tests/fuzzy_memory.rs:47`; `tests/tools/tests/memory.rs:56`, `:143`. Adapt any further one that `cargo check --workspace --all-targets` reports, as README rule 3 says, and list it under "Users outside Files:".
      - One test opens a kit with `jobs: 3`, starts a job, and expects it answered `running` as job 4.
+
+128. **a job call's wait is announced through operation.rs** (cross-session scope, smith 10's block of 2026-10-14T22:05:59Z).
+     Ruling 128. Yes. 10.3's Files gain `crates/smith-domain/src/operation.rs` and `crates/smith-domain/src/route.rs`, for about 25 production lines beyond the exhaustive arms. `smith/10-jobs.md`, "What the design asks": "A job charges no turn, token or spend; a `job` call's wait is a long operation, a job running between calls is not (session.md 6; host.md 4; run.md 8.1)." Long-operation notices have one owner, `operation.rs`, which already announces `Operation::Command`, so the job read's route announces through it.
+
+     - The existing `Request::Job` route announces an `Operation::Command` span until the read's wait, bounded by `tools.tool_deadline`. It registers the read's IO owner in the existing commands map, and the existing `Done` route ends the notice.
+     - No host boundary type, `Operation` variant or lease rule changes. A job running between calls announces nothing.
+     - One test: a `job` call that waits is announced as a long operation and ended at its answer, and a job running between calls is not. Name it in the commit body.
+     - If the change passes 40 production lines beyond the arms, stop on a question with the count.
