@@ -566,3 +566,10 @@ changes what section 8.4 holds.
 
 113. **smith 10's Shapes against main** (ready check of smith-10.1).
      The ready check of smith 10 (all four increments, against smith `main` at `7aa4fa03`; two sketches compiled under clippy) found the session file written before the code it names: a sketch that does not compile (`b"…".into()` into `Box<[u8]>`) and two `Copy` fact kinds that cannot carry a `Box<[u8]>` call id; `record.rs` where the outcomes' mapping is `smith-protocol-channel`'s `turn.rs:367` and `transcript.rs:381`; the private `run` of `simulation.rs`; and about 40 constructions and exhaustive matches outside Files. `smith/10-jobs.md` now has a section, "The ready check's corrections", which each increment's Files include and which holds where it and the text above differ.
+
+114. **every probe's overrides start within shipped memory: 08.s1, then 04.6** (plan defect, smith 04's block of 2026-10-14T19:21:56Z).
+     Ruling 114. A new step, `smith-08.s1`, brings every probe task's overrides within shipped memory; then 04.6 calibrates once more. On `main` at `25388ac8` the chat face refuses `first-request`'s overrides at startup, "service.worst_case=2147682394 bytes; declared.memory=2147462772 bytes", 219,622 bytes over, while the smoke's configuration passes: a smith defect on `main` that only some probes' overrides reach, and 12.1's baseline runs them all.
+
+     - `smith-08.s1`, in `smith/08-limits.md`, session 08 (08.3 is its owner's last increment): find the priced term past the bound (Budget: 3 runs, 60 minutes, README rule 5), and remove an overcount a heap test shows, as ruling 110 did, with no preset, `declared.memory` or expected value changed; if none closes the gap, stop on a question with the term and its bytes. Its guard is one test over every `benchmarks/tasks/probes/*/task.toml`, as `smith_adapter.rs:449` and `:464` do for one profile each.
+     - 04.6 needs 08.s1, then runs its calibration once, at most 12 attempts. Its row is now 23: the 10 and the 1 already spent, which count in its `Live:` trailer, and these 12.
+     - No probe's prompt, seed, checks or deciding list changes.

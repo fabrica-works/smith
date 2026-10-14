@@ -249,7 +249,7 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 |---:|---|---:|---:|
 | every smith code landing | `smoke-tools`, once, once more on failure (rule 8); 39 landings, most passing at once | 50 | $0.25 |
 | 02.1, 02.3 | `first-request`, and Codex on `smoke-tools`, each at most 2 | 4 | $0.02 |
-| 04.6 | `first-request` calibrated, no control (ruling 112: 10 spent, 12 fresh) | 22 | $0.05 |
+| 04.6 | `first-request` calibrated, no control (rulings 112, 114: 11 spent, 12 fresh) | 23 | $0.05 |
 | 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 30 | $3 |
 | 07.3 | `history` and `history/small-window` calibrated, with their control | 28 | $1.50 |
 | 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 24 | $7 |

@@ -233,7 +233,7 @@ Scope: benchmarks.md 3.1 and 11.5's `calibrate`, for the smoke's
   `first-request` with its own overrides (findings F1; decisions.md 3.4,
   7.1).
 Needs: smith 02's product pins and one face [02.1, 02.2]; smith 03's
-  summary version 3 [03.1]; 04.1; 04.s1 (ruling 112).
+  summary version 3 [03.1]; 04.1; 04.s1 (ruling 112); 08.s1 (ruling 114).
 Files: `benchmarks/tasks/probes/first-request/task.toml` (the block),
   `benchmarks/summaries/` (its summary).
 Shape: no new code. Build the arm, then `heavy --gate cargo run -p
@@ -247,7 +247,9 @@ Test shape: none new.
 Proof: live, once: that command, 10 passes within 12. At most 12
   attempts, 15 minutes, after 04.s1; the step's row is 22 attempts, the
   10 of its first calibration (`probes-first-request-ecd28c01-20261014T184751Z`,
-  stopped by 04.s1's defect) and these 12 (ruling 112).
+  stopped by 04.s1's defect) and these 12 (ruling 112); with the 1 of
+  `probes-first-request-25388ac8-20261014T192031Z`, refused at startup, 23
+  (ruling 114).
 Don't: change the probe's prompt, seed or checks.
 Size: none.
 Removes: nothing.

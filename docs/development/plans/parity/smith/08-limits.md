@@ -160,6 +160,30 @@ Don't: let a job's values reach a tool yet.
 Size: 160 lines.
 Removes: the bound of 8 processes.
 
+### 08.s1 Every probe's overrides start within shipped memory
+Scope: limits.md 3.5 and 5 (the worst case within `declared.memory`);
+  ruling 114. On `main` at `25388ac8`, `first-request`'s overrides refuse
+  at startup: "service.worst_case=2147682394 bytes; declared.memory=2147462772
+  bytes", 219,622 bytes over (`probes-first-request-25388ac8-20261014T192031Z/01/stderr.log`).
+Needs: 08.3.
+Budget: 3 runs, 60 minutes (README rule 5), to find the priced term that
+  grew past the bound.
+Files: `crates/smith-protocol-machine/src/limits.rs`, `crates/smith-agent-service/src/profile/`,
+  `benchmarks/tests/smith_adapter.rs` (beside `:449` and `:464`).
+Shape: the worst case of every probe task's `[smith]` overrides fits the
+  shipped memory, by removing an overcount a heap test shows (as ruling
+  110 did), with no preset, no `declared.memory` and no expected value
+  changed. If no such overcount closes the gap, stop on a question with
+  the term and its bytes.
+Test shape: `every_probe_tasks_overrides_pass_the_actual_public_startup_derivation`
+  (one outcome over each `benchmarks/tasks/probes/*/task.toml`, as `:449`
+  does for one profile), and the heap test that shows the overcount.
+  Under 0.5 s each.
+Proof: unit, those tests; the smoke (rule 8).
+Don't: raise memory or change a probe.
+Size: 60 lines.
+Removes: the overcount.
+
 ## Interface sketches
 
 ```rust
