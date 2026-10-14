@@ -526,3 +526,11 @@ changes what section 8.4 holds.
      - The one-line change to smith's product resolver (a file trace only when `trace.path` is set) is a small fix outside Files (implementer.md 8.2): name it in the commit body with the text of benchmarks.md section 6 it follows ("one event destination"), and the test that covers it.
      - README rule 8 now says, until the run ends: a second failure refused at setup, before any model request, on a branch that changes `benchmarks/src/agent/smith/` or `benchmarks/agents/smith/`, while `main`'s last landed smoke passed, stops its step on a question, and the line goes on. Every other second failure stops the line, as before.
      - The two refused attempts count in the step's `Live:` trailer (rule 10).
+
+108. **a session's target goes after each landing; 6 sessions below 60 GB** (infrastructure, smith 03's block of 2026-10-14T12:34:13Z).
+     Ruling 108. The line resumes once a disk check reads 40 GB or more (it read 48 GB at 12:44), under two rules that bound the sessions' build output, until the run ends. The cause is not kache: a session's `target/` grows to 17–21 GB over a few increments (`target/debug/deps` alone is 20 GB in smith 03's), not the 1–8 GB that development.md 11.4 assumes, and eight of them outgrow what kache's eviction frees between wake-ups. A fresh `target/` is 8–9 GB (smith 05's and 07's).
+
+     - **After each landing,** the coordinator removes that session's `target/` before its next increment starts, and when a session yields, hands over or ends. kache refills it from its store: "it gains most when worktrees are new" (development.md 11.3). The implementer is told this once, so that it does not wait for a warm `target/`.
+     - **While a disk check reads below 60 GB,** at most 6 sessions run at once; at 60 GB or more, 8 again. Below 40 GB new starts are held, and below 15 GB the line stops, as 11.4 says.
+     - Ruling 103's `kache gc` below 40 GB stays.
+     - Nothing outside the run's own directories is removed by the run: the user's checkouts and `~/src/rust/smith-benchmark-2026-10-08/` stay unless the user says otherwise.
