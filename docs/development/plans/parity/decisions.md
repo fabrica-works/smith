@@ -878,3 +878,11 @@ changes what section 8.4 holds.
         - **`04.s3` needs a README row** and a place in the order: before
           07.3's small-window rerun, after `04.s2`, which landed as
           `ca595dbc`.
+
+125. **10.2's refusal is its own: the line resumes, its corrected arm smokes afresh** (plan defect, smith 10's block of 2026-10-14T21:24:14Z).
+     Ruling 125. The smith line resumes now. Once its accounting correction is in, 10.2's corrected arm takes the smoke afresh, as README rule 8 says: once, and once more on a failure. Both refusals were 10.2's own. Its branch's worst case, 2,147,930,390 bytes, passed the shipped `declared.memory`, 2,147,462,772, at setup, before any model request. `main`'s smoke, run by the coordinator as rule 8 asks, passed: `probes-smoke-tools-2ae7b719-20261014T212344Z attempts=1 verdict=pass`. This is the second block of its kind (ruling 107 was the first), so it becomes rule 8's standing text.
+
+     - **The correction** removes an overcount that a heap test shows, as rulings 110 and 114 did. The two capture scratch buffers are priced per domain step, not per kit, and the cancellation buffers stay per job. No preset, `declared.memory` or expected value changes. Name the heap test in the commit body, with the bytes it removes (the report expects 524,288) and the margin left (the report expects 56,670).
+     - **A second failure** of the corrected arm stops 10.2 on a question with the term and its bytes, and the line goes on (rule 8, as amended).
+     - The two refused attempts count in 10.2's `Live:` trailer (rule 10). They are $0, with no model request.
+     - **README rule 8 now says,** until the run ends: a second failure refused at setup, before any model request, is followed by the coordinator's smoke of `origin/main`. If `main`'s smoke passes, the failure is the step's own: it stops its step on a question, and the line goes on. If `main`'s is refused too, the line stops (ruling 115). Every other second failure stops the line, as before.
