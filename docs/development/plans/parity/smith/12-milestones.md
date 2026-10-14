@@ -62,7 +62,9 @@ Files: `benchmarks/summaries/parity-*.json`.
 Shape: no code. `heavy cargo run -p smith-bench -- build HEAD`, then
   `heavy --gate cargo run -p smith-bench -- suite parity --arm <dir>`,
   then `cargo run -q -p smith-bench -- parity <its summary> --commit
-  <HEAD>`; commit the summary.
+  <SHA>`, where `<SHA>` is the full 40-hex `git rev-parse HEAD`, taken
+  before the summary is committed (a short SHA or `HEAD` exits 2,
+  `parity.rs:243-256`); commit the summary.
 Test shape: none.
 Proof: live, once: the run, 58 attempts, about $12 and 4 hours; its five
   criteria lines, the verdict's exit, and each arm's time-record medians
@@ -76,10 +78,17 @@ Scope: benchmarks.md 11.3's `compaction` (decisions.md 4.5).
 Needs: smith 07's compaction [07.3].
 Files: `benchmarks/suites/compaction.toml` (`repetitions = 10`;
   `reference = "80-percent"`, the shipped threshold; its smith `config` as
-  02.1 left it), `benchmarks/summaries/compaction-*.json`.
-Shape: no code. `heavy --gate cargo run -p smith-bench -- suite
-  compaction --arm <dir>` with the arms `80-percent` and `60-percent`;
-  commit the summary.
+  02.1 left it; `max_tokens = 24000000`, from 12000000, since an attempt
+  uses about 689K tokens and 20 need about 13.8M; `max_wall_seconds =
+  7200`, from 3600), `benchmarks/summaries/compaction-*.json`.
+Shape: no code. `heavy cargo run -p smith-bench -- build HEAD` gives
+  `<dir>`; `heavy --gate cargo run -p smith-bench -- suite compaction
+  --arm <dir>` with the arms `80-percent` and `60-percent`. The suite
+  writes no summary (only `parity` and `calibrate` do), so then
+  `cargo run -q -p smith-bench -- summarise
+  ~/.local/state/smith-bench/runs/<run> compaction small interleaved
+  <seed>`, with the run and seed the suite printed; it writes
+  `benchmarks/summaries/compaction-<commit8>-<stamp>.json`. Commit it.
 Test shape: none.
 Proof: live, once: 20 attempts, about $1 and 45 minutes. The report's
   `Evidence:` gives each arm's passes, ends and median task wall, and the

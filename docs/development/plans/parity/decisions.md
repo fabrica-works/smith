@@ -908,3 +908,8 @@ changes what section 8.4 holds.
      - No host boundary type, `Operation` variant or lease rule changes. A job running between calls announces nothing.
      - One test: a `job` call that waits is announced as a long operation and ended at its answer, and a job running between calls is not. Name it in the commit body.
      - If the change passes 40 production lines beyond the arms, stop on a question with the count.
+
+129. **smith 12's Shapes against main** (ready check of smith-12.1).
+     Ruling 129. smith 12's Shapes against main (smith `c4b348ed`, skein `5171bbf`), ready check of smith-12.1. 12.1 holds as written, but for one wording: `--commit` takes the full 40-hex `git rev-parse HEAD`, taken before the summary is committed (`parity.rs:243-256` refuses a short SHA or `HEAD` with exit 2). 12.2 gains two corrections:
+     - `benchmarks/suites/compaction.toml` sets `max_tokens = 24000000`, from 12000000, and `max_wall_seconds = 7200`, from 3600. The committed small-window summary shows about 689K tokens an attempt, and 20 attempts need about 13.8M; `batch.rs:500-533` would stop the suite at its 18th.
+     - `suite compaction` writes no summary (only `parity`, `probe.rs:578-580`, and `calibrate`, `:777-779`, do), so 12.2's Shape adds `summarise ~/.local/state/smith-bench/runs/<run> compaction small interleaved <seed>`, which writes `benchmarks/summaries/compaction-<commit8>-<stamp>.json` (`main.rs:148-155`). `tests/overrides/suite.rs:7`'s inline suite copy stands alone and does not change.
