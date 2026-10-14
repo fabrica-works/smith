@@ -1054,3 +1054,34 @@ names the step that left it. Ordered by what they cost the next plan.
   - smith-bench keys its readers to commit hashes (`faces.toml`).
   - The generated codecs move with every skein repin: 10.s2 regenerated
     about 751 unrelated lines (13.105).
+
+## 10. Decisions
+
+2026-10-14.
+The user delegated these decisions (2026-10-14: 'take reasonable decisions'); the designer took them, and the user may revise any row.
+
+| # | Decision | Where applied |
+|---|---|---|
+| 1 | adopted in part: as the parity plan's own rule, until development.md takes it | the parity plan's README |
+| 2 | adopted in part: as the parity plan's own rule, until development.md takes it | the parity plan's README |
+| 3 | adopted in part: the planner's records in `findings/`, as the parity plan's own rule, until development.md takes it; `plan check`'s refusal deferred until after the parity run, since a change to `plan` does not land right before an unattended run | the parity plan's README and `findings/` |
+| 4 | adopted in part: implementer.md 8.2 now lets through, named in the commit body, a new variant's arms, the case the Shape changes, a value printed differently, a value the Shape makes invalid, a version's sweep and a fixture's inputs; a removed name replaced by its successor and calls adapted to a new signature, past 8.2's 20 lines, as the parity plan's own rule, until development.md takes it | skein 479f836: implementer.md 8.2; the parity plan's README |
+| 5 | adopted in part: a session whose peak context passes the limit hands over at its next landing; `plan contexts`' mark by the peak deferred until after the parity run (a change to `plan`) | skein 7f4b0e8: development.md 7.3, step 4 |
+| 6 | adopted in part: a fresh designer past 150,000 tokens or an hour idle, not one per question: a question within the hour reads a warm cache, and the numbers are section 13's open question on the roles' limits | skein 479f836: development.md 10.4 and 13; `plan wake` |
+| 7 | adopted | skein 479f836: development.md 2.5 and 10.5; supervisor.md 7; `plan handover`, `plan watch`; at 300,000 tokens rather than 400,000 |
+| 8 | adopted | skein 479f836: development.md 14.1 and supervisor.md 6 (a fresh sub-agent returns the entry); skein 7f4b0e8: development.md 14.1, step 1 (the pulse unfiltered, `plan downstream`'s lines read before the entry) |
+| 9 | adopted in part: each document names its wait (implementer.md 8.3, the tool's longest, 60 seconds on Codex; development.md 7.4, `wait_agent` at 300,000 ms), and an idle coordinator ends its turn; the 300-second `write_stdin` and `test-plan --live`'s measurement deferred until after the parity run: of 71 `write_stdin` calls asking 300,000 ms in this machine's rollouts of 10-12 to 10-14, 70 returned within 60 seconds, many as a cell still running at 31, so the longer yield is not established | skein 479f836: implementer.md 8.3; development.md 7.4; `plan idle` |
+| 10 | adopted in part: the implementer reads its card, its repository's `AGENTS.md`, its session file and the design sections its Read first names, and development.md only by section; skein's programming-model.md and testing-strategy.md by the sections the session file cites, as the parity plan's own rule, until development.md takes it | skein 479f836: implementer.md 8.1; development.md 7.2; the parity plan's README |
+| 11 | adopted in part: the spawn prompt takes nothing beyond the Pass-on texts and a restart's findings, no graph or coverage evidence, whatever other instructions say; the profile's switch and `plan check --fix`'s exclude deferred until after the parity run: kit changes before an unattended run, and Codex's sub-agents may share the profile's servers, which implementer.md 8.1 tells the implementers to use. The user's global Codex `AGENTS.md` stays theirs | skein 7f4b0e8: development.md 7.2 |
+| 12 | adopted | skein 7f4b0e8: development.md 10.3 (`## Checked`, `Amends:`); supervisor.md 3, step 3 |
+| 13 | adopted in part: as the parity plan's own rule, until development.md takes it | the parity plan's README |
+| 14 | adopted in part: clippy after the last edit is `land`'s build-lane pass, before the gate lane; the focused tests of the changed crates' dependents before `land`, as the parity plan's own rule, until development.md takes it | skein 479f836: development.md 9.1, `land`; the parity plan's README |
+| 15 | adopted in part: a landed step's `git status` only while its worktree is on its branch; the trailers alone in the last paragraph; the Pulse-word check before `land`, as the parity plan's own rule; `land`'s refusal of a tip without `Plan:` and `Step:`, and its own Pulse-word check, deferred until after the parity run (a change to `land`) | skein 7f4b0e8: development.md 7.3, step 2; skein 479f836: implementer.md 8.4; the parity plan's README |
+| 16 | adopted in part: `context.md` rewritten in place, its lines at most 200 characters, no earlier version kept, and `log.md` and `blocked.md` holding only the headings and kinds development.md names; `plan pulse`'s check of them deferred until after the parity run (a change to `plan`) | skein 7f4b0e8: development.md 7.5 |
+| 17 | adopted in part: each Claude Code message counted once across sessions, the planner's included; escalations counted once; suites from each repository's gated commits; `land`'s gates apart from the gate lane's other tasks; Proof headings as written. The rest (split steps as added, other coordinator headings, `.s<k>` proofs, lines by kind, `done.md`'s recorded time, a restart's whole cause) deferred until after the parity run (a change to `numbers.sh`) | skein 479f836: numbers.sh; development.md 15.2 |
+| 18 | adopted | skein 7f4b0e8: development.md 5.2 and 7.6; supervisor.md 8 |
+| 19 | adopted | smith 97875b08: benchmarks.md 3.1, 3.2, 5.3, 8.3, 9 and 10 (rulings 13.14, .41, .44, .91, .98, .99, .132), protocol/limits.md 2.4 (13.116); skein bc26df2: io.md 6 (13.39) |
+| 20 | adopted in part: the supervisor runs `plan resume` itself, once, when the ring finds no turn in progress; the cause from the coordinator's last event, `alerts.md` printed by `plan status`, and `plan check --fix`'s fast-forward deferred until after the parity run (changes to `plan`) | skein 7f4b0e8: development.md 10.5; supervisor.md 2 |
+| 21 | adopted in part: each calibration in its probe's task file, a `[calibration]` block per task and per variant, and a probe without one gates nothing; a "Done when" that counts the probes calibrated there, as the parity plan's own rule, until development.md takes it | smith 97875b08: benchmarks.md 3.1, 5.2 and 11.5; the parity plan's README |
+
+The rows deferred until after the parity run come back to the designer once that run's retrospective has landed.
