@@ -613,3 +613,11 @@ changes what section 8.4 holds.
      - **The reruns:** each `calibrate` command once, as 07.3's Proof gives it, with the same control (07.1's parent, `8a630f41`) and the arm rebuilt on the branch with the effort change. 07.3's row becomes 37 attempts, $4 and 90 minutes in all, the 9 spent included. 12.3 takes 9 fewer, as README line 268 says.
      - **If a non-model check fails again at medium** (`tool-call` or any other check `model_deviation` does not list), 07.3 stops on a question. The question names the attempt, and quotes its summaries' last lines and the `tool.completed`/`conversation.opened` times around each compaction. That classification then goes to the designer. No check, criterion or `model_deviation` changes in this step.
      - 07.3's other work stands: `SUMMARY` at 390 bytes and `PREAMBLE` at 97, and the fixture's two byte inputs in `root_memory.rs`, named under "Users outside Files:".
+
+119. **07.3 calibrates base history while the designer answers** (design gap (interim), smith 07's block of 2026-10-14T20:17:56Z).
+     Ruling 119. Interim, until the designer's answer: 07.3 runs the base `history` calibration at medium now, once, as its Proof gives it. `history/small-window` waits for the answer. The question is in the run's `question.md`: is a small-window attempt that fails only `tool-call` and `answer`, with its compaction checks passing, a model deviation or smith's failure? The base calibration has no compaction and so does not rest on that answer. Ruling 118 still says: "If a non-model check fails again at medium … 07.3 stops on a question."
+
+     - Run `calibrate probes/history --control 8a630f41 --arm <the medium arm already built>` once. If it reaches 10 passes, commit its `[calibration]` block on `parity/smith-07-words`, and land nothing.
+     - If it stops on a failure `model_deviation` does not list, report it as a question with the attempt's name, and stop. If it stops on model deviations alone (ten passes out of reach), report the count, and stop.
+     - Then 07.3 waits for the answer. No small-window attempt runs, and no check, criterion, `model_deviation` or instruction word changes, until the answer's ruling.
+     - Row 07.3's allowance holds: 37 attempts and $4 in all, 15 and $0.30 spent.
