@@ -70,6 +70,7 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
         Tool::Edit => output.put(
             b"Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. ",
         ),
+        Tool::Job => unreachable!("job is not offered until its schema is installed"),
         Tool::Shell => {
             output.put(b"Run a command; files may change. Max ");
             output.number(u64::from(stated.output_ceiling));
@@ -82,14 +83,14 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
             output.number(u64::from(stated.file_bytes));
             output.put(b" bytes. ");
         }
-        Tool::List | Tool::Search | Tool::Shell => {}
+        Tool::List | Tool::Search | Tool::Shell | Tool::Job => {}
     }
     match tool {
         Tool::Write | Tool::Edit => output.put(b"For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. "),
-        Tool::Read | Tool::List | Tool::Search | Tool::Shell => {}
+        Tool::Read | Tool::List | Tool::Search | Tool::Shell | Tool::Job => {}
     }
     match tool {
-        Tool::Read | Tool::List | Tool::Search => {
+        Tool::Read | Tool::List | Tool::Search | Tool::Job => {
             output.put(b"Batch independent reads, lists and searches side by side.");
         }
         Tool::Write | Tool::Edit | Tool::Shell => {
@@ -162,6 +163,7 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
             payload(stated, output);
             output.put(br#""},"all":{"type":"boolean","description":"False requires one unique match; true replaces every match."}},"required":["old","new"]}}},"required":["path","edits"]}"#);
         }
+        Tool::Job => unreachable!("job is not offered until its schema is installed"),
         Tool::Shell => {
             output.put(br#""command":{"type":"string","description":"Shell command text."#);
             input(stated, output);

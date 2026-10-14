@@ -48,7 +48,10 @@ pub enum Call {
         timeout: Timeout,
         /// Caller-selected retained output, within the configured capture ceiling.
         output: Budget,
+        after: Yield,
     },
+    /// Read a session's held command, optionally stopping it before answering.
+    Job { job: JobNumber, wait: Wait, output: Budget, stop: bool },
 }
 
 /// One ordered replacement sent by the protocol layer with an edit call.
@@ -92,6 +95,24 @@ pub enum Timeout {
     /// Use the deployment's command deadline.
     Default,
     /// Apply this duration within the tool deadline.
+    Asked(Duration),
+}
+
+/// How long a shell call waits before answering with a running job.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Yield {
+    /// Wait until the command ends.
+    Never,
+    /// Answer after this duration, clamped to the configured job wait.
+    Asked(Duration),
+}
+
+/// How long a job call waits for its held command to end.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Wait {
+    /// Use the configured job wait.
+    Default,
+    /// Apply this wait within the configured ceiling.
     Asked(Duration),
 }
 
@@ -157,6 +178,8 @@ pub enum Tool {
     Edit,
     /// Contained shell-command tool.
     Shell,
+    /// Read or stop a command the session left running.
+    Job,
 }
 
 /// The tool `call` is for.
@@ -169,6 +192,7 @@ pub const fn tool(call: &Call) -> Tool {
         Call::Write { .. } => Tool::Write,
         Call::Edit { .. } => Tool::Edit,
         Call::Shell { .. } => Tool::Shell,
+        Call::Job { .. } => Tool::Job,
     }
 }
 
@@ -208,8 +232,8 @@ pub enum SizePart {
 #[must_use]
 pub const fn effect(call: &Call) -> Effect {
     match call {
-        Call::Read { .. } | Call::List { .. } | Call::Search { .. } => Effect::Read,
-        Call::Write { .. } | Call::Edit { .. } | Call::Shell { .. } => Effect::Write,
+        Call::Read { .. } | Call::List { .. } | Call::Search { .. } | Call::Job { stop: false, .. } => Effect::Read,
+        Call::Write { .. } | Call::Edit { .. } | Call::Shell { .. } | Call::Job { stop: true, .. } => Effect::Write,
     }
 }
 
@@ -457,7 +481,8 @@ impl Call {
                 }
                 Some(cost)
             }
-            Call::Shell { command, timeout: _, output: _ } => owned_len(command),
+            Call::Shell { command, .. } => owned_len(command),
+            Call::Job { .. } => Some(0),
         };
         u64::try_from(size_of::<Self>()).ok()?.checked_add(payload?)
     }

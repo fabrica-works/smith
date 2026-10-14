@@ -126,6 +126,7 @@ fn random_call(limits: &Limits, rng: &mut Rng) -> Call {
         1 => Call::List { path: path(limits, file), depth: smith_domain_tools::Depth::Whole, glob: None },
         2 => write(limits, file),
         3 => Call::Shell {
+            after: smith_domain_tools::Yield::Never,
             command: b"cargo test"[..].into(),
             timeout: smith_domain_tools::Timeout::Default,
             output: smith_domain_tools::Budget::Asked(

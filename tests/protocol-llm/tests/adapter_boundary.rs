@@ -395,6 +395,7 @@ fn resolutions(case: Attestation) -> Box<[ResolvedCall]> {
         Attestation::Kind => {
             exact.call = llm::Decoded::Owned {
                 call: tools::Call::Shell {
+                    after: smith_domain_tools::Yield::Never,
                     command: Box::new([]),
                     timeout: tools::Timeout::Default,
                     output: tools::Budget::Default,

@@ -1685,7 +1685,7 @@ impl World {
         let writes = match told {
             Some(tool) => match tool {
                 tools::Tool::Write | tools::Tool::Edit | tools::Tool::Shell => true,
-                tools::Tool::Read | tools::Tool::List | tools::Tool::Search => false,
+                tools::Tool::Read | tools::Tool::List | tools::Tool::Search | tools::Tool::Job => false,
             },
             None => panic!("a call's first operation follows its native start observation"),
         };

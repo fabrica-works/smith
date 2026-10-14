@@ -221,7 +221,7 @@ fn tool_limits(call: &Call, share: u64, declared: &Limits) -> Limits {
     let cap = u32::try_from(share).unwrap_or(u32::MAX);
     match call {
         Call::Read { .. } => limits.tools.tool_payload = limits.tools.tool_payload.min(cap),
-        Call::Shell { .. } => {
+        Call::Shell { .. } | Call::Job { .. } => {
             let full = limits.tools.shell_head.checked_add(limits.tools.shell_tail).expect("declared capture");
             if cap < full {
                 let head = u64::from(cap)

@@ -108,3 +108,109 @@ fn a_domain_with_every_kit_full_stays_within_its_worst_case() {
     fill(Limits { kits: 16, calls: 8, repos: 8, known_files: 64, path_bytes: 511, ..LIMITS });
     fill(Limits { kits: 64, calls: 1, repos: 1, known_files: 200, path_bytes: 127, ..LIMITS });
 }
+
+fn job_step(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    out: &mut Queue<Request>,
+    meter: &Meter,
+    event: Event,
+) -> Vec<Request> {
+    meter.start();
+    while domain.pop_fact().is_some() {}
+    smith_domain_tools::step(domain, env, event, out);
+    domain.reclaim();
+    let measured = meter.end();
+    meter.check(measured, worst_case(&env.limits).expect("bounded jobs fixture"), &"held jobs and queued reads");
+    std::iter::from_fn(|| out.pop()).collect()
+}
+
+fn fill_jobs() {
+    use smith_domain_tools::{Budget, Call, JobEnd, JobNumber, Timeout, Wait, Yield};
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: LIMITS };
+    let mut out = Queue::with_capacity(max_out(&LIMITS));
+    let meter = Meter::new();
+    let mut domain = Domain::new(&LIMITS);
+    let deadline = Time::from_nanos(u64::MAX);
+    let mut kits = Vec::new();
+    for session in 0..LIMITS.kits {
+        let requests = job_step(
+            &mut domain,
+            &env,
+            &mut out,
+            &meter,
+            Event::Open { session: Token::new(u64::from(session)), authority: authority(&LIMITS) },
+        );
+        let Request::Opened { kit, .. } = requests[0] else { panic!("one admitted kit") };
+        let mut owners = Vec::new();
+        for number in 1..=LIMITS.jobs {
+            let call = Call::Shell {
+                command: b"build".as_slice().into(),
+                timeout: Timeout::Default,
+                output: Budget::Default,
+                after: Yield::Asked(Duration::ZERO),
+            };
+            let requests = job_step(
+                &mut domain,
+                &env,
+                &mut out,
+                &meter,
+                Event::Call {
+                    kit,
+                    reply_to: ReplyTo::new(Token::new(u64::from(number))),
+                    observation: None,
+                    call,
+                    deadline,
+                },
+            );
+            let Request::Io { owner, .. } = requests[0] else { panic!("one command owner") };
+            owners.push(owner);
+            drop(job_step(
+                &mut domain,
+                &env,
+                &mut out,
+                &meter,
+                Event::Done { owner, done: Done::Held { head: Box::default(), tail: Box::default(), dropped: 0 } },
+            ));
+        }
+        for reader in 0..LIMITS.calls {
+            let call = Call::Job { job: JobNumber(1), wait: Wait::Default, output: Budget::Default, stop: false };
+            drop(job_step(
+                &mut domain,
+                &env,
+                &mut out,
+                &meter,
+                Event::Call {
+                    kit,
+                    reply_to: ReplyTo::new(Token::new(u64::from(reader))),
+                    observation: None,
+                    call,
+                    deadline,
+                },
+            ));
+        }
+        kits.push((kit, owners));
+    }
+    for (kit, owners) in kits {
+        drop(job_step(&mut domain, &env, &mut out, &meter, Event::Close { kit }));
+        for owner in owners {
+            drop(job_step(
+                &mut domain,
+                &env,
+                &mut out,
+                &meter,
+                Event::Done {
+                    owner,
+                    done: Done::Job { head: Box::default(), tail: Box::default(), dropped: 0, end: JobEnd::Cancelled },
+                },
+            ));
+        }
+    }
+    assert_eq!(domain.kits(), 0);
+    assert_eq!(domain.flights(), 0);
+}
+
+#[test]
+fn held_jobs_and_queued_reads_fit_the_tools_bound() {
+    fill_jobs();
+}

@@ -18,7 +18,9 @@
 //!   [`Request::Answer`], which consumes its `ReplyTo`.
 //! - Operations out, one terminal event in: each [`Request::Io`] is ended by
 //!   exactly one [`Event::Done`], after a [`Request::CancelIo`] too. Its
-//!   `owner` is the tools' token, echoed on the terminal.
+//!   `owner` is the tools' token, echoed on the terminal. A spawn answered
+//!   `Held` retains that owner; each `Job` act returns one `Done::Job`, and
+//!   the binding ends when that answer reports the command's end.
 //!
 //! The tools arm no timers. A call comes with its deadline, which bounds every
 //! operation it asks for; io runs the race (programming-model.md, section 5.3) and reports a lost one as

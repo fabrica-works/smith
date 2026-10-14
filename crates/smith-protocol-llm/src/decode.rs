@@ -169,7 +169,12 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
                 None => tools::Budget::Default,
             };
             llm::Decoded::Owned {
-                call: tools::Call::Shell { command: required_string(tokens, b"command")?, timeout, output },
+                call: tools::Call::Shell {
+                    after: tools::Yield::Never,
+                    command: required_string(tokens, b"command")?,
+                    timeout,
+                    output,
+                },
             }
         }
         Kind::Wait => llm::Decoded::Served { ask: run::Ask::Wait },

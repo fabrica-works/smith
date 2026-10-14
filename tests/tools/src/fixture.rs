@@ -60,6 +60,7 @@ impl Fixture {
         checkout.write(b"etc/passwd", b"root:x:0:0\n");
         checkout
             .program(b"cargo fmt", program(2_000, b"", Exit::Code(0), &[(b"work/temper/src/lib.rs", Some(FORMATTED))]));
+        checkout.program(b"cargo build", program(2_000, b"Compiling\nFinished\n", Exit::Code(0), &[]));
         checkout.program(b"cargo test", program(3_000, &test_log(), Exit::Code(101), &[]));
         checkout
             .program(b"sleep 600", program(600_000, b"zzz", Exit::Code(0), &[(b"work/temper/slept", Some(b"yes"))]));

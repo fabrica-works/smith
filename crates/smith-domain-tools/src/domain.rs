@@ -14,12 +14,13 @@ use crate::kit::{self, Kit};
 use crate::limits::Limits;
 
 /// The most requests one call of [`step`] emits under `limits`: closing a kit
-/// cancels each call it is running, up to `limits.calls`, and any other event
-/// emits at most two. The parent reserves this much room in `out` before
-/// calling it.
+/// cancels its ordinary calls and held owners. An ended job can invalidate
+/// the reads queued behind its answer, then close its kit. The parent reserves
+/// all calls plus all jobs, or two outputs when that is larger.
 #[must_use]
 pub const fn max_out(limits: &Limits) -> u32 {
-    if limits.calls > 2 { limits.calls } else { 2 }
+    let owners = limits.calls.saturating_add(limits.jobs);
+    if owners > 2 { owners } else { 2 }
 }
 
 /// At most an operation terminal and its kit's close are observed together.
@@ -54,7 +55,7 @@ impl Domain {
         self.kits.len()
     }
 
-    /// Calls running, answered ones included until they are reclaimed.
+    /// IO owners retained, including held jobs and slots awaiting reclaim.
     #[must_use]
     pub fn flights(&self) -> u32 {
         self.flights.len()

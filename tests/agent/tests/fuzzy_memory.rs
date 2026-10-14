@@ -582,6 +582,7 @@ impl Driver {
                 }]),
             },
             5 => Call::Shell {
+                after: smith_domain_tools::Yield::Never,
                 command: bytes(8),
                 timeout: smith_domain::tools::Timeout::Default,
                 output: smith_domain::tools::Budget::Default,

@@ -1,3 +1,5 @@
+mod jobs;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use skein_fake_checkout::Checkout;
@@ -177,19 +179,30 @@ enum Delivery {
     /// A session opens its kit.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
-    Open { session: u64 },
+    Open {
+        session: u64,
+    },
     /// A session takes the next step of its script.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
-    Next { session: u64 },
+    Next {
+        session: u64,
+    },
     /// io has run the operation of `owner`.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
-    Ran { owner: Token },
+    Ran {
+        owner: Token,
+    },
     /// The deadline of the operation of `owner` passes.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
-    Deadline { owner: Token },
+    Deadline {
+        owner: Token,
+    },
+    Job {
+        owner: Token,
+    },
 }
 
 /// An operation in flight, as io keeps it.
@@ -316,6 +329,8 @@ pub struct World {
     writable: BTreeMap<u64, bool>,
     untouched: Option<BTreeMap<Vec<u8>, Vec<u8>>>,
 
+    jobs: BTreeMap<Token, jobs::Job>,
+    job_outputs: BTreeMap<Vec<u8>, Vec<(Duration, Vec<u8>)>>,
     stats: Stats,
     trace: Trace,
 }
@@ -347,6 +362,8 @@ impl World {
             facts: BTreeMap::new(),
             writable: BTreeMap::new(),
             untouched: None,
+            jobs: BTreeMap::new(),
+            job_outputs: BTreeMap::new(),
             stats: Stats::default(),
             trace: Trace::default(),
         }
@@ -522,7 +539,7 @@ impl World {
         // takes its slot.
         let limits = &self.settings.tools;
         assert!(self.tools.kits() <= limits.kits, "kits stay within their slots");
-        assert!(self.tools.flights() <= limits.kits * limits.calls * 2, "jobs stay within their slots");
+        assert!(self.tools.flights() <= limits.kits * (limits.calls + limits.jobs) * 2, "jobs stay within their slots");
         self.tools.reclaim();
     }
 
@@ -556,6 +573,10 @@ impl World {
                 self.session_mut(session.raw()).state = State::Closed;
             }
             tools::Request::Io { owner, op, deadline } => {
+                if self.start_yielded(owner, &op, deadline) {
+                    self.stats.ops += 1;
+                    return;
+                }
                 let (work, ran) = self.start(owner, op);
                 let ran = self.wire.send(ran, Delivery::Ran { owner });
                 let deadline = self.wire.send(deadline, Delivery::Deadline { owner });
@@ -563,8 +584,12 @@ impl World {
                 self.ops.open(owner, pending);
                 self.stats.ops += 1;
             }
-            tools::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
+            tools::Request::Job { owner, act } => self.job_act(owner, act),
             tools::Request::CancelIo { owner } => {
+                if self.cancel_job(owner) {
+                    self.stats.cancels += 1;
+                    return;
+                }
                 // An operation that has ended has its terminal on the way: the
                 // cancel lost the race and changes nothing.
                 if !self.ops.contains(owner) {
@@ -618,6 +643,7 @@ impl World {
                     self.stage.push(tools::Event::Open { session: Token::new(session), authority });
                 }
                 Delivery::Next { session } => self.step(session),
+                Delivery::Job { owner } => self.job_tick(owner),
                 Delivery::Ran { owner } => {
                     // A run is withdrawn when its operation ends first.
                     let pending = self.ops.end(owner);
@@ -879,6 +905,7 @@ impl World {
         assert_eq!(self.tools.kits(), 0, "every kit has closed and been reclaimed");
         assert_eq!(self.tools.flights(), 0, "every job has ended and been reclaimed");
         self.ops.assert_settled();
+        assert!(self.jobs.is_empty(), "every held command ended");
         assert!(self.wire.is_empty() && !self.stage.has_events(), "nothing is on its way");
         for (name, session) in &self.sessions {
             match session.state {
@@ -912,7 +939,8 @@ impl World {
                     tools::FactKind::Closed { .. } => told.closed += 1,
                 }
             }
-            let calls = session.calls.len();
+            let calls =
+                session.calls.iter().filter(|call| self.calls[call].1.as_ref().expect("answered").is_ok()).count();
             let refused = match session.state {
                 State::Refused(_) => 1,
                 State::Opening | State::Running { .. } | State::Waiting { .. } | State::Closing | State::Closed => 0,
@@ -920,7 +948,7 @@ impl World {
             let opened = 1 - refused;
             let expected = Told { opened, refused, started: told.started, answered: calls, closed: opened };
             assert_eq!(told, expected, "session {name}: the facts tell what the world saw");
-            assert!(told.started <= calls, "session {name}: a call starts at most once");
+            assert!(told.started <= session.calls.len(), "session {name}: a call starts at most once");
         }
     }
 

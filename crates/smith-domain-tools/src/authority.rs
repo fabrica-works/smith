@@ -164,7 +164,7 @@ pub(crate) const fn granted(grants: Grants, call: &Call) -> bool {
     match call {
         Call::Read { .. } | Call::List { .. } | Call::Search { .. } => grants.inspect,
         Call::Write { .. } | Call::Edit { .. } => grants.modify,
-        Call::Shell { .. } => grants.shell,
+        Call::Shell { .. } | Call::Job { .. } => grants.shell,
     }
 }
 

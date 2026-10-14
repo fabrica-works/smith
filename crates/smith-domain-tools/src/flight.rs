@@ -1,8 +1,8 @@
-//! Jobs: the calls a kit is running, each waiting on one operation of io.
+//! Flights: active calls and the original IO owners of held commands.
 //!
 //! A call that passes the kit's entrance becomes a flight, which asks io for its
-//! operation and answers the call once that operation has ended. Every
-//! operation ends in exactly one terminal event, so a flight answers exactly once,
+//! operation and answers the call once that operation ends or yields. A yielded
+//! owner stays live outside its batch until its job ends. Each call answers once,
 //! whether the operation completed, failed, timed out, or lost or won a race
 //! with a cancel.
 //!
@@ -45,8 +45,11 @@
 //!            conflict, creating          Done      not read
 //!            conflict, replacing         Done      stale; a file now absent is forgotten
 //!            any other                   Done      what it says
-//! Running    exited                      Done      how it ended, and its output
+//! Running    held                        Held      running, job number and output
+//!            exited                      Done      how it ended, and its output
 //!            any other                   Done      what it says
+//! Held       job running                 Held      the active read, then the next read
+//!            job ended                   Done      the read, or owner-close settlement
 //! ```
 //!
 //! A kit that closes while an edit loads stores nothing: whichever way the
@@ -55,9 +58,9 @@
 //! A cell either moves to its next state or answers the call; answering, and
 //! telling it as a fact, is done in one place ([`settle`]). A flight is retired
 //! once it is Done ([`follow`]), which also ends a closing kit with its last
-//! flight.
+//! flight and held owner.
 //!
-//! Contract: domain/tools.md, sections 3 and 6; programming-model.md, sections 4.4 and 6.3.
+//! Contract: domain/tools.md, sections 3, 5 and 6; programming-model.md, sections 4.4 and 6.3.
 
 use alloc::boxed::Box;
 use core::mem;
@@ -97,6 +100,7 @@ pub(crate) fn io_session(domain: &Domain, owner: Token) -> Option<Token> {
 enum Next {
     Wait(State),
     Answer { reply_to: ReplyTo, outcome: Outcome, omitted_bytes: u64 },
+    Held { reply_to: ReplyTo, outcome: Outcome, job: crate::JobNumber },
 }
 
 #[derive(Debug)]
@@ -110,7 +114,15 @@ enum State {
     /// Storing the file at `place`, for `change`.
     Storing { reply_to: ReplyTo, place: Place, change: Change },
     /// Running a command.
-    Running { reply_to: ReplyTo, place: Place, timeout: crate::TimeoutClamp, output: crate::BytesClamp },
+    Running {
+        reply_to: ReplyTo,
+        place: Place,
+        timeout: crate::TimeoutClamp,
+        output: crate::BytesClamp,
+        after: crate::TimeoutClamp,
+    },
+    /// Original IO owner of a command answered running, outside the batch.
+    Held { job: crate::JobNumber },
     /// Searching files.
     Searching { reply_to: ReplyTo, place: Place },
     /// Terminal: answered, holds nothing.
@@ -164,6 +176,7 @@ pub(crate) enum Work {
         command: Box<[u8]>,
         timed: crate::command::Timed,
         kept: crate::command::Kept,
+        yielded: (Option<skein_lib::Duration>, crate::TimeoutClamp),
     },
     Search {
         place: Place,
@@ -224,10 +237,10 @@ pub(crate) fn start(
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
             (State::Editing { reply_to, editing: Editing { place, edits, deadline: call_deadline } }, op)
         }
-        Work::Shell { cwd, command, timed, kept } => {
+        Work::Shell { cwd, command, timed, kept, yielded } => {
             let place = cwd.clone();
-            let op = Op::Spawn { cwd, command, head: kept.head, tail: kept.tail, after: None };
-            (State::Running { reply_to, place, timeout: timed.clamp, output: kept.clamp }, op)
+            let op = Op::Spawn { cwd, command, head: kept.head, tail: kept.tail, after: yielded.0 };
+            (State::Running { reply_to, place, timeout: timed.clamp, output: kept.clamp, after: yielded.1 }, op)
         }
         Work::Search { place, pattern, glob } => {
             let op =
@@ -255,8 +268,22 @@ pub(crate) fn cancel(id: Id<Flight>, out: &mut Queue<Request>) {
 // cell's handler, follow the new state.
 
 pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: Done, out: &mut Queue<Request>) {
-    let Domain { kits, flights, facts } = domain;
     let id = Id::from_token(owner);
+    let flight = domain.flights.get(id).expect("an IO owner lives until its terminal");
+    match flight.state {
+        State::Held { job } => {
+            crate::jobs::done(domain, env, id, job, done, out);
+            return;
+        }
+        State::Reading { .. }
+        | State::Listing { .. }
+        | State::Searching { .. }
+        | State::Editing { .. }
+        | State::Storing { .. }
+        | State::Running { .. }
+        | State::Done => {}
+    }
+    let Domain { kits, flights, facts } = domain;
     let flight = flights.get_mut(id).expect("a flight lives until its operation has ended");
     let kit = kits.get_mut(flight.kit).expect("a kit lives until its flights have ended");
     let state = mem::replace(&mut flight.state, State::Done);
@@ -269,9 +296,37 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
         State::Storing { reply_to, place, change } => {
             stored(&kit.checkout, &mut kit.knowledge, reply_to, place, change, done)
         }
-        State::Running { reply_to, place, timeout, output } => {
-            exited(&kit.checkout, reply_to, place, timeout, output, done)
-        }
+        State::Running { reply_to, place, timeout, output, after } => match done {
+            Done::Held { head, tail, dropped } => {
+                let job = kit.jobs.held(id);
+                assert!(kit.flights.remove(&id), "a yielding command leaves its batch");
+                if kit::closing(kit) {
+                    out.push(Request::CancelIo { owner });
+                }
+                Next::Held {
+                    reply_to,
+                    outcome: Outcome::Running { job, head, tail, dropped, timeout, output, after },
+                    job,
+                }
+            }
+            done @ (Done::Loaded { .. }
+            | Done::Listed { .. }
+            | Done::Stored { .. }
+            | Done::Conflict { .. }
+            | Done::Exited { .. }
+            | Done::Job { .. }
+            | Done::Found { .. }
+            | Done::Missing
+            | Done::NotFile
+            | Done::Linked
+            | Done::NotDirectory
+            | Done::TooLarge { .. }
+            | Done::Escapes
+            | Done::Failed { .. }
+            | Done::TimedOut
+            | Done::Cancelled) => exited(&kit.checkout, reply_to, place, timeout, output, done),
+        },
+        State::Held { .. } => unreachable!("held terminals use the job table"),
         State::Done => unreachable!("a flight that has answered has nothing in flight"),
     };
     flight.state = settle(next, kit::session(kit), flight, clamped, facts, out);
@@ -282,11 +337,14 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
 fn state_clamped(state: &State) -> bool {
     match state {
         State::Reading { span, .. } => facts::bytes_clamped(span.window.clamp),
-        State::Running { timeout, output, .. } => facts::timeout_clamped(*timeout) || facts::bytes_clamped(*output),
+        State::Running { timeout, output, after, .. } => {
+            facts::timeout_clamped(*timeout) || facts::bytes_clamped(*output) || facts::timeout_clamped(*after)
+        }
         State::Listing { .. }
         | State::Searching { .. }
         | State::Editing { .. }
         | State::Storing { .. }
+        | State::Held { .. }
         | State::Done => false,
     }
 }
@@ -303,6 +361,14 @@ fn settle(
 ) -> State {
     match next {
         Next::Wait(state) => state,
+        Next::Held { reply_to, outcome, job } => {
+            facts.push_call(
+                facts::answered(session, flight.tool, &outcome, facts::Observation { omitted_bytes: 0, clamped }),
+                flight.observation,
+            );
+            out.push(Request::Answer { to: reply_to, outcome });
+            State::Held { job }
+        }
         Next::Answer { reply_to, outcome, omitted_bytes } => {
             facts.push_call(
                 facts::answered(session, flight.tool, &outcome, facts::Observation { omitted_bytes, clamped }),
@@ -330,7 +396,8 @@ fn follow(
         | State::Searching { .. }
         | State::Editing { .. }
         | State::Storing { .. }
-        | State::Running { .. } => {}
+        | State::Running { .. }
+        | State::Held { .. } => {}
         State::Done => {
             kit::finished(kits, facts, flight.kit, id, out);
             flights.retire(id);
@@ -554,9 +621,14 @@ fn exited(
     Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
+/// A held IO owner's kit, retained after its shell call has answered.
+pub(crate) fn kit(flight: &Flight) -> Id<Kit> {
+    flight.kit
+}
+
 /// The slots the flight slab needs under `limits`, or `None` past a `u32`.
 pub(crate) fn slots(limits: &Limits) -> Option<u32> {
-    limits.kits.checked_mul(limits.calls)?.checked_mul(2)
+    limits.kits.checked_mul(limits.calls.checked_add(limits.jobs)?)?.checked_mul(2)
 }
 
 /// What a running flight holds beyond its slot, or `None` past a `u64`: at most

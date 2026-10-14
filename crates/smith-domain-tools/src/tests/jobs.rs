@@ -137,3 +137,31 @@ fn a_running_commands_fact_preserves_its_deadline_clamp_alone() {
         }
     );
 }
+
+#[test]
+fn parallel_job_reads_reserve_each_calls_capture_budget() {
+    let limits = crate::Limits {
+        read_bytes: 1,
+        tool_payload: 1,
+        list_bytes: 1,
+        search_hits: 0,
+        search_bytes: 0,
+        path_bytes: 1,
+        ..super::LIMITS
+    };
+    assert_eq!(crate::batch_result_worst_case(&limits, 3), Some(576));
+}
+
+#[test]
+fn a_job_read_has_the_read_effect() {
+    let call =
+        crate::Call::Job { job: JobNumber(1), wait: crate::Wait::Default, output: crate::Budget::Default, stop: false };
+    assert_eq!(crate::effect(&call), crate::Effect::Read);
+}
+
+#[test]
+fn a_job_stop_has_the_write_effect() {
+    let call =
+        crate::Call::Job { job: JobNumber(1), wait: crate::Wait::Default, output: crate::Budget::Default, stop: true };
+    assert_eq!(crate::effect(&call), crate::Effect::Write);
+}

@@ -315,7 +315,12 @@ fn reading_calls_have_the_read_effect_and_the_rest_write() {
             Effect::Write,
         ),
         (
-            Call::Shell { command: bytes(b"ls"), timeout: crate::Timeout::Default, output: crate::Budget::Default },
+            Call::Shell {
+                after: crate::Yield::Never,
+                command: bytes(b"ls"),
+                timeout: crate::Timeout::Default,
+                output: crate::Budget::Default,
+            },
             Effect::Write,
         ),
     ];
@@ -508,8 +513,12 @@ fn authorities_beyond_the_limits_are_refused_as_invalid() {
 fn calls_are_refused_at_the_entrance() {
     let inspect = Grants { inspect: true, modify: false, shell: false };
     let modify = Grants { inspect: false, modify: true, shell: false };
-    let shell =
-        Call::Shell { command: bytes(b"cargo test"), timeout: crate::Timeout::Default, output: crate::Budget::Default };
+    let shell = Call::Shell {
+        after: crate::Yield::Never,
+        command: bytes(b"cargo test"),
+        timeout: crate::Timeout::Default,
+        output: crate::Budget::Default,
+    };
     let table = [
         (modify, read(b"src/lib.rs"), Outcome::NotGranted),
         (modify, Call::List { path: path(b"."), depth: crate::Depth::Whole, glob: None }, Outcome::NotGranted),
@@ -566,8 +575,12 @@ fn calls_are_refused_at_the_entrance() {
 
 #[test]
 fn the_most_a_step_emits_covers_closing_a_busy_kit() {
-    assert_eq!(max_out(&LIMITS), 4);
-    assert_eq!(max_out(&Limits { calls: 1, ..LIMITS }), 2);
+    assert_eq!(max_out(&LIMITS), 8);
+}
+
+#[test]
+fn a_small_call_limit_reserves_held_job_outputs() {
+    assert_eq!(max_out(&Limits { calls: 1, ..LIMITS }), 5);
 }
 
 #[test]
@@ -1144,6 +1157,7 @@ fn a_path_is_in_git_when_one_of_its_names_is_dot_git() {
 fn spawned(h: &mut Harness, kit: Token, timeout: Option<Duration>) -> (Token, Op, Time) {
     let reply_to = ReplyTo::new(Token::new(1));
     let call = Call::Shell {
+        after: crate::Yield::Never,
         command: bytes(b"cargo test"),
         timeout: match timeout {
             Some(duration) => crate::Timeout::Asked(duration),
@@ -1200,6 +1214,7 @@ fn a_command_runs_as_long_as_it_asks_within_the_tools_limit() {
     // The call's own deadline holds over both.
     let reply_to = ReplyTo::new(Token::new(1));
     let call = Call::Shell {
+        after: crate::Yield::Never,
         command: bytes(b"sleep 9"),
         timeout: crate::Timeout::Asked(Duration::from_secs(5)),
         output: crate::Budget::Default,
@@ -1246,7 +1261,12 @@ fn commands_need_the_shell_grant_and_a_working_directory_in_the_checkout() {
     assert_eq!(
         h.call(
             modify,
-            Call::Shell { command: bytes(b"ls"), timeout: crate::Timeout::Default, output: crate::Budget::Default }
+            Call::Shell {
+                after: crate::Yield::Never,
+                command: bytes(b"ls"),
+                timeout: crate::Timeout::Default,
+                output: crate::Budget::Default
+            }
         ),
         Outcome::NotGranted
     );
@@ -1256,7 +1276,12 @@ fn commands_need_the_shell_grant_and_a_working_directory_in_the_checkout() {
     assert_eq!(
         h.call(
             outside,
-            Call::Shell { command: bytes(b"ls"), timeout: crate::Timeout::Default, output: crate::Budget::Default }
+            Call::Shell {
+                after: crate::Yield::Never,
+                command: bytes(b"ls"),
+                timeout: crate::Timeout::Default,
+                output: crate::Budget::Default
+            }
         ),
         Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work") } }
     );
@@ -1319,7 +1344,12 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
     let table = [
         Call::Search { path: path(b"."), pattern: bytes(b"a\0b"), glob: None },
         Call::Search { path: path(b"."), pattern: bytes(b"a"), glob: Some(bytes(b"*.rs\0")) },
-        Call::Shell { command: bytes(b"ls\0-la"), timeout: crate::Timeout::Default, output: crate::Budget::Default },
+        Call::Shell {
+            after: crate::Yield::Never,
+            command: bytes(b"ls\0-la"),
+            timeout: crate::Timeout::Default,
+            output: crate::Budget::Default,
+        },
     ];
     for call in table {
         assert_eq!(h.call(kit, call.clone()), Outcome::NulByte, "{call:?}");
@@ -1817,6 +1847,7 @@ fn a_command_retains_its_requested_deadline_and_output_clamps_at_the_terminal() 
     let mut h = Harness::new(limits);
     let kit = h.open(1, authority(ALL));
     let call = Call::Shell {
+        after: crate::Yield::Never,
         command: bytes(b"test"),
         timeout: crate::Timeout::Asked(Duration::from_secs(15)),
         output: crate::Budget::Asked(20),
@@ -1846,7 +1877,12 @@ fn a_requested_command_capture_is_split_in_the_deployments_proportion() {
     for (output, head, tail) in
         [(crate::Budget::Default, 6, 2), (crate::Budget::Asked(5), 3, 2), (crate::Budget::Asked(1), 0, 1)]
     {
-        let call = Call::Shell { command: bytes(b"test"), timeout: crate::Timeout::Default, output };
+        let call = Call::Shell {
+            after: crate::Yield::Never,
+            command: bytes(b"test"),
+            timeout: crate::Timeout::Default,
+            output,
+        };
         let reply_to = ReplyTo::new(Token::new(1));
         let request = h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(3600) });
         let Some(Request::Io { owner, op, .. }) = request else { panic!("command spawn") };
@@ -1926,7 +1962,7 @@ fn command_terminal_facts_preserve_capture_loss_and_clamps_across_all_terminals(
             let mut h = Harness::new(limits);
             let kit = h.open(5, authority(ALL));
             drop(told(&mut h));
-            let call = Call::Shell { command: bytes(b"test"), timeout, output };
+            let call = Call::Shell { after: crate::Yield::Never, command: bytes(b"test"), timeout, output };
             let request = h.step(Event::Call {
                 kit,
                 observation: None,

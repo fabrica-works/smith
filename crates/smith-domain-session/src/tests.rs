@@ -2961,6 +2961,7 @@ fn a_later_search_keeps_its_hit_cells_and_text_within_its_share() {
 #[test]
 fn a_later_command_keeps_its_head_and_tail_within_its_share() {
     let call = Call::Shell {
+        after: smith_domain_tools::Yield::Never,
         command: bytes(b"echo output"),
         timeout: tools::Timeout::Default,
         output: tools::Budget::Asked(u32::MAX),

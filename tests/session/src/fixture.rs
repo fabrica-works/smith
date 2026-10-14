@@ -108,6 +108,7 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
         | Call::Search { path, .. }
         | Call::Write { path, .. }
         | Call::Edit { path, .. } => path,
+        Call::Job { .. } => return matches!(outcome, Outcome::Job { .. }),
         Call::Shell { command, .. } => {
             let Outcome::Exited { exit, head, .. } = outcome else {
                 return false;

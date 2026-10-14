@@ -910,12 +910,16 @@ fn the_limits_fit_and_a_session_must_take_what_the_run_asks() {
 
 #[test]
 fn what_an_entry_point_may_emit_grows_with_the_tools_cancels_only_once() {
-    assert_eq!(max_out(&LIMITS), 1142);
+    let base = Limits {
+        session: session::Limits { tools: tools::Limits { jobs: 0, ..LIMITS.session.tools }, ..LIMITS.session },
+        ..LIMITS
+    };
+    assert_eq!(max_out(&base), 1142);
     // A kit's close cancels as many operations as the tools run, which go out
     // to io and lead nowhere else: what the run is sent does not grow with
     // them.
-    let tools = tools::Limits { calls: 256, ..LIMITS.session.tools };
-    let wide = Limits { session: session::Limits { parallel_tools: 8, tools, ..LIMITS.session }, ..LIMITS };
+    let tools = tools::Limits { calls: 256, ..base.session.tools };
+    let wide = Limits { session: session::Limits { parallel_tools: 8, tools, ..base.session }, ..base };
     // Four session records plus eight delegated calls may reach the run;
     // each can open/say at most MAX_OUT sessions. The kit's io cancels do not.
     assert_eq!(limits::session_steps(&wide), 74);
@@ -2336,6 +2340,7 @@ fn command_span_ends_at_the_actual_io_terminal_after_cancel() {
         Box::new([owned(
             b"command",
             Call::Shell {
+                after: smith_domain_tools::Yield::Never,
                 command: bytes(b"sleep 12"),
                 timeout: tools::Timeout::Asked(Duration::from_secs(30)),
                 output: tools::Budget::Default,

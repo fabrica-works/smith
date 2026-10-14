@@ -1428,16 +1428,19 @@ fn a_kept_output_asked_for_is_split_between_head_and_tail_and_its_clamp_is_said(
     let settings = Settings { tools: Limits { shell_output: 8, shell_head: 9, shell_tail: 3, ..calm.tools }, ..calm };
     let commands = [
         tools::Call::Shell {
+            after: smith_domain_tools::Yield::Never,
             command: b"cargo test".as_slice().into(),
             timeout: tools::Timeout::Default,
             output: tools::Budget::Default,
         },
         tools::Call::Shell {
+            after: smith_domain_tools::Yield::Never,
             command: b"cargo test".as_slice().into(),
             timeout: tools::Timeout::Default,
             output: tools::Budget::Asked(5),
         },
         tools::Call::Shell {
+            after: smith_domain_tools::Yield::Never,
             command: b"cargo test".as_slice().into(),
             timeout: tools::Timeout::Default,
             output: tools::Budget::Asked(99),

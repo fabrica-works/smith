@@ -338,7 +338,14 @@ fn shell_budgets_decode_by_unit_and_a_unitless_timeout_is_ignored() {
     ] {
         assert_eq!(
             adapter::decode(b"shell", input, grants(), &[], llm::Asker::Main, &limits()),
-            llm::Decoded::Owned { call: tools::Call::Shell { command: b"test".as_slice().into(), timeout, output } }
+            llm::Decoded::Owned {
+                call: tools::Call::Shell {
+                    after: smith_domain_tools::Yield::Never,
+                    command: b"test".as_slice().into(),
+                    timeout,
+                    output
+                }
+            }
         );
     }
     for (input, field) in [

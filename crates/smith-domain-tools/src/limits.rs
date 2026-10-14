@@ -142,7 +142,7 @@ pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
             let ambiguity_slot_bytes = u64::try_from(size_of::<u32>()).ok()?;
             ambiguity_slot_bytes.checked_mul(u64::from(limits.match_lines))
         }
-        Call::Shell { output, .. } => {
+        Call::Shell { output, .. } | Call::Job { output, .. } => {
             limits.shell_head.checked_add(limits.shell_tail)?;
             let kept = crate::command::kept(*output, limits);
             u64::from(kept.head).checked_add(u64::from(kept.tail))
@@ -161,9 +161,10 @@ pub fn batch_result_worst_case(limits: &Limits, parallel: u32) -> Option<u64> {
         .ok()?
         .checked_mul(u64::from(limits.search_hits))?
         .checked_add(u64::from(limits.search_bytes))?;
-    let read = u64::from(limits.read_bytes.max(limits.tool_payload)).max(limits.list_bytes).max(search).max(path);
-    let edit = u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::from(limits.match_lines))?;
     let shell = u64::from(limits.shell_head.checked_add(limits.shell_tail)?);
+    let read =
+        u64::from(limits.read_bytes.max(limits.tool_payload)).max(limits.list_bytes).max(search).max(path).max(shell);
+    let edit = u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::from(limits.match_lines))?;
     Some(read.checked_mul(u64::from(parallel))?.max(edit).max(shell).max(path))
 }
 
@@ -174,7 +175,7 @@ fn kit(limits: &Limits) -> Option<u64> {
     let known = u64::from(limits.known_files).checked_mul(u64::from(limits.path_bytes))?;
     let knowledge = Map::<Place, Seen>::worst_case(limits.known_files)?.checked_add(known)?;
     let flights = Set::<Id<Flight>>::worst_case(limits.calls)?;
-    authority(limits)?.checked_add(knowledge)?.checked_add(flights)
+    authority(limits)?.checked_add(knowledge)?.checked_add(flights)?.checked_add(crate::jobs::worst_case(limits)?)
 }
 
 /// What a kit's authority holds, each path in it at most `path_bytes` joined.

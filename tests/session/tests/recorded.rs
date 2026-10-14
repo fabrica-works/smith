@@ -789,6 +789,7 @@ fn maximum_owned_result(
         }
         3 => (
             Call::Shell {
+                after: smith_domain_tools::Yield::Never,
                 command: b"echo owned".as_slice().into(),
                 timeout: smith_domain_tools::Timeout::Default,
                 output: smith_domain_tools::Budget::Asked(4096),

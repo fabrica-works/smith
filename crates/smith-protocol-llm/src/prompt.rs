@@ -336,6 +336,7 @@ fn fixed_name(descriptor: &ToolSchema) -> bool {
             tools::Tool::Write => descriptor.name.as_ref() == b"write",
             tools::Tool::Edit => descriptor.name.as_ref() == b"edit",
             tools::Tool::Shell => descriptor.name.as_ref() == b"shell",
+            tools::Tool::Job => descriptor.name.as_ref() == b"job",
         },
         ToolKind::Finish => descriptor.name.as_ref() == b"finish",
         ToolKind::Deliver => descriptor.name.as_ref() == b"deliver",
@@ -350,6 +351,7 @@ fn offered(kind: ToolKind, input: &llm::Prompt) -> bool {
             tools::Tool::Read | tools::Tool::List | tools::Tool::Search => input.tools.inspect,
             tools::Tool::Write | tools::Tool::Edit => input.tools.modify,
             tools::Tool::Shell => input.tools.shell,
+            tools::Tool::Job => false,
         },
         ToolKind::Finish | ToolKind::Deliver | ToolKind::SubAgent | ToolKind::Wait => {
             for descriptor in &input.served {

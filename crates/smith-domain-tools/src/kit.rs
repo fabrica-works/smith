@@ -9,6 +9,8 @@
 //! and must change something, its deadline must not have passed, and the kit
 //! must have room for one more call. A filesystem call that passes becomes a
 //! flight; the namespace root's listing answers directly from its authority.
+//! A yielded command leaves the batch but keeps its IO owner in the jobs
+//! table. Reads of one job queue there; reads of different jobs can proceed.
 //!
 //! The transition table.
 //!
@@ -23,9 +25,9 @@
 //! ```
 //!
 //! A call or a close to a kit that is not open is the session's bug. A kit is
-//! retired once it is Closed.
+//! retired once it is Closed, after both calls and held owners have settled.
 //!
-//! Contract: domain/tools.md, sections 2–4; programming-model.md, sections 4.4 and 6.3.
+//! Contract: domain/tools.md, sections 2–5; programming-model.md, sections 4.4 and 6.3.
 
 use alloc::boxed::Box;
 
@@ -50,7 +52,8 @@ pub(crate) struct Kit {
     pub(crate) checkout: Checkout,
     pub(crate) knowledge: Knowledge,
     /// The flights running its calls.
-    flights: Set<Id<Flight>>,
+    pub(crate) flights: Set<Id<Flight>>,
+    pub(crate) jobs: crate::jobs::Jobs,
     state: State,
 }
 
@@ -83,6 +86,7 @@ pub(crate) fn open(
         checkout,
         knowledge: Knowledge::new(env.limits.known_files),
         flights: Set::with_capacity(env.limits.calls),
+        jobs: crate::jobs::Jobs::new(&env.limits),
         state: State::Open,
     };
     let id = domain.kits.insert(kit).expect("checked for room above");
@@ -109,8 +113,48 @@ pub(crate) fn call(
     deadline: Time,
     out: &mut Queue<Request>,
 ) {
-    let Domain { kits, flights, facts } = domain;
     let id = Id::from_token(kit);
+    let entry = domain.kits.get(id).expect("the session owns its kit");
+    assert!(entry.state == State::Open, "no call follows a close");
+    let call = match call {
+        Call::Job { job, wait, output, stop } => {
+            if !entry.checkout.grants.shell {
+                domain.facts.push_call(
+                    facts::answered(
+                        session(entry),
+                        crate::Tool::Job,
+                        &Outcome::NotGranted,
+                        facts::Observation { omitted_bytes: 0, clamped: false },
+                    ),
+                    observation,
+                );
+                out.push(Request::Answer { to: reply_to, outcome: Outcome::NotGranted });
+                return;
+            }
+            let read = crate::jobs::read(
+                job,
+                reply_to,
+                observation,
+                crate::command::waited(wait, &env.limits),
+                crate::command::kept(output, &env.limits),
+                deadline,
+                stop,
+            );
+            crate::jobs::call(domain, env, id, read, out);
+            return;
+        }
+        Call::Shell { after: crate::Yield::Asked(_), .. } if entry.jobs.full() => {
+            out.push(Request::Invalid { to: reply_to, problem: crate::JobProblem::Full { jobs: env.limits.jobs } });
+            return;
+        }
+        call @ (Call::Read { .. }
+        | Call::List { .. }
+        | Call::Search { .. }
+        | Call::Write { .. }
+        | Call::Edit { .. }
+        | Call::Shell { .. }) => call,
+    };
+    let Domain { kits, flights, facts } = domain;
     let kit = kits.get_mut(id).expect("a kit lives until its session closes it");
     assert!(kit.state == State::Open, "no call follows a close");
     let tool = call::tool(&call);
@@ -144,7 +188,7 @@ pub(crate) fn close(domain: &mut Domain, kit: Token, out: &mut Queue<Request>) {
     let id = Id::from_token(kit);
     let kit = domain.kits.get_mut(id).expect("a kit lives until its session closes it");
     assert!(kit.state == State::Open, "a kit is closed once");
-    if kit.flights.is_empty() {
+    if kit.flights.is_empty() && kit.jobs.empty() {
         end(&mut domain.kits, &mut domain.facts, id, out);
         return;
     }
@@ -153,6 +197,7 @@ pub(crate) fn close(domain: &mut Domain, kit: Token, out: &mut Queue<Request>) {
     for flight in &kit.flights {
         flight::cancel(*flight, out);
     }
+    kit.jobs.close(out);
 }
 
 /// The token of the kit's session.
@@ -184,11 +229,19 @@ pub(crate) fn finished(
     match kit.state {
         State::Open => {}
         State::Closing => {
-            if kit.flights.is_empty() {
+            if kit.flights.is_empty() && kit.jobs.empty() {
                 end(kits, facts, id, out);
             }
         }
         State::Closed => unreachable!("a closed kit runs no flight"),
+    }
+}
+
+/// Finish a closing kit once both ordinary calls and held owners have settled.
+pub(crate) fn settled(kits: &mut Slab<Kit>, facts: &mut Facts, id: Id<Kit>, out: &mut Queue<Request>) {
+    let kit = kits.get(id).expect("a kit owns its pending work");
+    if kit.state == State::Closing && kit.flights.is_empty() && kit.jobs.empty() {
+        end(kits, facts, id, out);
     }
 }
 
@@ -329,7 +382,7 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             replacements_fit(&edits, limits)?;
             Work::Edit { place: located.place, edits }
         }
-        Call::Shell { command, timeout, output } => {
+        Call::Shell { command, timeout, output, after } => {
             passable(&command)?;
             // Commands run in the working directory, which must be in the
             // checkout.
@@ -352,20 +405,22 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
                 command,
                 timed: crate::command::timed(timeout, limits),
                 kept: crate::command::kept(output, limits),
+                yielded: crate::command::yielded(after, limits),
             }
         }
+        Call::Job { .. } => unreachable!("job calls go through their numbered table"),
     };
     ready(kit, deadline, env)?;
     Ok(Admitted::Work(work))
 }
 
 /// The common entrance deadline and concurrent-call bounds.
-fn ready(kit: &Kit, deadline: Time, env: &Env<Limits>) -> Result<(), Outcome> {
+pub(crate) fn ready(kit: &Kit, deadline: Time, env: &Env<Limits>) -> Result<(), Outcome> {
     let limits = &env.limits;
     if deadline <= env.now {
         return Err(Outcome::TimedOut);
     }
-    if kit.flights.len() >= limits.calls {
+    if kit.flights.len().checked_add(kit.jobs.calls()).expect("bounded active calls") >= limits.calls {
         return Err(Outcome::Busy);
     }
     Ok(())

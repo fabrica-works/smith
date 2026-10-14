@@ -70,6 +70,7 @@ pub fn edits(at: &[u8], replacements: &[(&[u8], &[u8], bool)]) -> Call {
 #[must_use]
 pub fn shell(command: &[u8], timeout: Option<Duration>) -> Call {
     Call::Shell {
+        after: smith_domain_tools::Yield::Never,
         command: command.into(),
         timeout: match timeout {
             Some(duration) => smith_domain_tools::Timeout::Asked(duration),
@@ -86,4 +87,25 @@ pub fn shell(command: &[u8], timeout: Option<Duration>) -> Call {
 #[must_use]
 pub fn search(at: &[u8], pattern: &[u8], glob: Option<&[u8]>) -> Call {
     Call::Search { path: path(at), pattern: pattern.into(), glob: glob.map(Into::into) }
+}
+
+/// Leave a command running after the asked seconds.
+#[must_use]
+pub fn shell_after(command: &[u8], seconds: u64) -> Call {
+    let mut call = shell(command, None);
+    if let Call::Shell { after, .. } = &mut call {
+        *after = smith_domain_tools::Yield::Asked(Duration::from_secs(seconds));
+    }
+    call
+}
+
+/// Read the job's unread output, waiting the asked seconds.
+#[must_use]
+pub fn job(number: u32, seconds: u64) -> Call {
+    Call::Job {
+        job: smith_domain_tools::JobNumber(number),
+        wait: smith_domain_tools::Wait::Asked(Duration::from_secs(seconds)),
+        output: smith_domain_tools::Budget::Default,
+        stop: false,
+    }
 }
