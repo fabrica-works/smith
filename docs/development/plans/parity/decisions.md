@@ -509,3 +509,11 @@ changes what section 8.4 holds.
      - 11.1: `transcript_schema_matches_generated_code_and_all_goldens` under 0.5 s; its two round trips under 20 ms each. The session files now say so.
      - Take out the drift test's worker threads, as you propose; keep the exact receiving ceilings. Every frozen equality and row stays checked.
      - A further drift test over a whole golden version in this plan takes the same 0.5 s; name it in the commit body with ruling 105.
+
+106. **smith 07's Shapes against main** (ready check of smith-07.1).
+     The ready check of smith 07 (07.1 and 07.2 checked against main at bdb26312; 07.3's Needs not landed) corrected `smith/07-compaction.md`:
+
+     - 07.1: Files add the code that makes and carries `NotRun::OutsideChoice` (`session.rs:2102`; the session's `llm.rs` `NotRun` and `ToolChoice`; smith-domain's own `NotRun`, `llm.rs:21`; `peer.rs:339`; `prompt.rs:436`) and the six tests that build or match it. Only `prompt_bytes` (`compaction.rs:107`) prices `None`, and only while `compaction.asking()`; `new_bytes` (`:256`) keeps the conversation's choice. The repin changes no cache count (333 tests of three worlds unchanged); the `None` compaction's commit gives any changed value. Size 120 lines.
+     - 07.2: `Open` is `Opening` (`smith-domain-run/src/boundary.rs:643`); the summary gets its own join at `compaction.rs:341`, and `text_of` with its yield users stays as it is; Files add `translate.rs:67`, `:121`, `session.rs:186`, `:2025`, `:2055`, `compaction.rs:259` and `:209` (`+ 3`), the `Spec`/`Opening` literals and byte checks in five test files, and the two tests that read the old layout (`compaction.rs:138`, `window_referee.rs:73-82`); `profile.rs:490`, `restore :423`. Size 160 lines.
+     - A version-4 window turn written before 07.2 comes only from the run's own builds; 07.2 handles nothing else.
+     - 07.3: Files add `tests/local-process/src/world.rs:1089`, whose fake cue matches "Summarise the work so far".

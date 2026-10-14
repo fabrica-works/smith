@@ -55,7 +55,11 @@ calibration proves it.
 - The window turn's preamble is a text block like the others, and the
   summary moves to the third block: a layout a reader notices, so 07.2
   lands under the transcript's version 4 (11.1; README, rule 12), and no
-  version-3 transcript is read with it.
+  version-3 transcript is read with it. A version-4 window turn written
+  between 11.1 and 07.2, with the summary at index 1, comes only from the
+  run's own builds: no smith that writes version 4 has shipped, and no
+  step restores one, so 07.2 reads the summary at index 2 and handles
+  nothing else (ready check of 07.1).
 
 ## Rules that bind it
 
@@ -74,21 +78,39 @@ Needs: smith 08's vocabulary [08.1] (07.3's control is this increment's
   [skein 01.1], repinned in this increment's first commit (`heavy cargo update -p skein-fake-llm-domain`, or the
   package of skein's git source that moves it).
 Files: `Cargo.lock`; `crates/smith-domain-session/src/session.rs`
-  (`:2186`, `:2201`), `crates/smith-domain-session/src/compaction.rs`
-  (`:107`, `:256`), `crates/smith-protocol-llm/src/prompt.rs` (`:98-110`,
-  `result_text` `:457`, `outside_choice` `:181-210`), the `NotRun` result
-  type it renders, `tests/session/tests/compaction.rs`,
+  (`:2186`, `:2201`; `answer_unchosen`, `:2102`, which makes
+  `NotRun::OutsideChoice` and stores `conversation.choice` with it),
+  `crates/smith-domain-session/src/llm.rs` (`NotRun`; `ToolChoice::Only`
+  holds tickets, `:168`), `crates/smith-domain-session/src/compaction.rs`
+  (`prompt_bytes`, `:107`, only), `crates/smith-domain/src/llm.rs` (`:21`
+  re-exports the session's `NotRun`; the renderer needs the choice as
+  served names, so smith-domain takes its own `NotRun`),
+  `crates/smith-domain/src/peer.rs` (`:339`, which translates the kept
+  choice as `:267-274` translates the request's),
+  `crates/smith-protocol-llm/src/prompt.rs` (`:98-110`, `result_text`
+  `:457`, `outside_choice` `:181-210`, and `:436`, which passes the
+  request's choice to `result_text`), the tests that build or match the
+  variant (`crates/smith-domain-session/src/tests.rs` `:2538`, `:2670`;
+  `tests/protocol-llm/tests/client.rs` `:603`;
+  `tests/session/tests/child_final.rs` `:51`;
+  `tests/session/tests/wind_down.rs` `:48`; `tests/session/src/translate.rs`
+  `:293`), `tests/session/tests/compaction.rs`,
   `tests/protocol-llm/tests/production_render.rs` (`:371`),
   `tests/protocol-llm/tests/` (a compaction in each dialect), and the
   tests that assert the fake's cache counts (`tests/protocol-llm/tests/brief.rs`
   `:387`, `:550`; `tests/protocol-llm/tests/budget.rs` `:397`, `:683`;
-  `tests/agent/tests/budget.rs` `:338`), which the new prefix may change:
-  their new expected values are derived by hand from fake-llm.md 2.1, and
-  the commit body gives each old and new value.
+  `tests/agent/tests/budget.rs` `:338`). The repin changes none of those
+  counts (the ready check ran the three worlds after it: 333 tests passed
+  unchanged); only the `None` compaction may, and that commit's body
+  gives each old and new value, derived by hand from fake-llm.md 2.1.
 Shape: the compaction's `Prompt` carries `ToolChoice::None` for
-  `Purpose::Compaction`, and its priced choice bytes are `None`'s; the
-  next window's first request carries `conversation.choice`. A `not run`
-  result outside the choice keeps the choice it was answered under.
+  `Purpose::Compaction`; `prompt_bytes` (`compaction.rs:107`, which also
+  serves `due`, `:71`, for ordinary requests) prices `None`'s choice bytes
+  only while `compaction.asking()`, the state `session.rs:2167` calls it
+  from; `new_bytes` (`:256`) keeps `conversation.choice`, which the new
+  window asks with. The next window's first request carries
+  `conversation.choice`. A `not run` result outside the choice keeps the
+  choice it was answered under; `NotRun` loses `Copy`.
 Test shape: `tests/session/tests/compaction.rs`:
   `a_compaction_is_asked_with_none_and_the_windows_tools`,
   `a_conversation_narrowed_to_only_asks_only_again_after_its_compaction`,
@@ -99,37 +121,51 @@ Test shape: `tests/session/tests/compaction.rs`:
 Proof: world, those tests; the live before and after are 07.3's.
 Don't: drop the tools from a compaction, or retry or nudge one
   (decisions.md 4.1, 4.4).
-Size: 80 lines.
+Size: 120 lines.
 Removes: the compaction's use of the conversation's choice.
 
 ### 07.2 The summary, framed
 Scope: session.md 8.2 (the new window, the summary); run.md 3.3 (the
   preamble given at open); limits.md 3.9; transcript.md 2 (findings K3).
 Needs: 07.1; smith 11's transcript version 4 [11.1].
-Files: `crates/smith-domain-session/src/session.rs` (`text_of`,
-  `:2239`), `crates/smith-domain-session/src/compaction.rs` (`open_window`,
-  `:209-216`; `restore`, `:424`), `crates/smith-domain-session/src/boundary.rs`
-  (`Spec.summary`, `:281`), `crates/smith-domain-run/src/boundary.rs`
-  (`Open.summary`, `:673`), `crates/smith-domain-run/src/opening.rs`
+Files: `crates/smith-domain-session/src/session.rs` (the conversation's
+  `summary`, `:186`; the opening's bytes, `:2025`, `:2055`),
+  `crates/smith-domain-session/src/compaction.rs` (`open_window`,
+  `:209-216`, where `held + 2` becomes `+ 3`; `new_bytes`, `:259`, which
+  counts the preamble; the summary's own join at `:341`; `restore`,
+  `:423`), `crates/smith-domain-session/src/boundary.rs` (`Spec.summary`,
+  `:281`), `crates/smith-domain-run/src/boundary.rs` (`Opening.summary`,
+  `:643`, `:673`), `crates/smith-domain/src/translate.rs` (`:67`, `:121`,
+  `Opening` into `Spec`), `crates/smith-domain-run/src/opening.rs`
   (`:60`), `crates/smith-domain-run/src/run.rs` (`child_opening`,
   `:2036`), `crates/smith-domain-run/src/prompt.rs` (`render_fixed`,
   `:84`; `summary_bytes`, `:34`), `crates/smith-agent-service/src/profile.rs`
-  (`:486`), `tests/session/tests/compaction.rs` (`:59`), the session and
-  run worlds' fixtures.
-Shape: `Spec` and `Open` gain `preamble: Box<[u8]>` beside `summary`; the
-  run gives `PREAMBLE` (in `prompt.rs`, beside `SUMMARY`) with each session
-  it opens; the new window's message is `[task, preamble, summary,
-  held-back…]`; `text_of` joins text blocks with `b"\n\n"` and takes no
-  refusal text; `restore` reads the summary at index 2; the preamble's
-  bytes count in smith's own part.
+  (`:490`), the struct literals and byte checks of `Spec` and `Opening`
+  (`crates/smith-domain-session/src/tests.rs` `:298`, its expected bytes
+  `:491`; `crates/smith-domain-run/src/tests.rs` `:403`;
+  `tests/session/tests/memory.rs` `:414`, `:508`, `:593`, `:696`;
+  `tests/session/tests/recorded.rs` `:470`, `initial_owned`), the tests
+  that read the old layout (`tests/session/tests/compaction.rs` `:59` and
+  `:138`; `tests/session/src/window_referee.rs` `:73-82`), and the session
+  and run worlds' fixtures.
+Shape: `Spec` and `Opening` gain `preamble: Box<[u8]>` beside `summary`;
+  the run gives `PREAMBLE` (in `prompt.rs`, beside `SUMMARY`) with each
+  session it opens; the new window's message is `[task, preamble, summary,
+  held-back…]`; the summary has its own join, at `compaction.rs:341`, its
+  text blocks separated by `b"\n\n"`; `text_of` and its other users
+  (`session.rs:1585`, the child's final text; `:1642`, the `Yielded` text)
+  stay as they are, and a refusal block already ends the compaction
+  `NoSummary::Refused` (`compaction.rs:311-326`); `restore` reads the
+  summary at index 2; the preamble's bytes count in smith's own part.
 Test shape: `a_summary_of_several_text_blocks_is_joined_by_blank_lines`,
   `the_new_window_opens_with_the_task_the_preamble_and_the_summary`,
-  `a_restored_window_reads_its_summary_after_the_preamble`. The test at
-  `tests/session/tests/compaction.rs:59` expects the new order (the case
-  the Shape changes). Under 0.5 s each.
+  `a_restored_window_reads_its_summary_after_the_preamble`. The tests at
+  `tests/session/tests/compaction.rs:59` and `:138`, and the referee at
+  `tests/session/src/window_referee.rs:73-82`, expect the new order and
+  join (the case the Shape changes). Under 0.5 s each.
 Proof: world, those tests.
 Don't: put the preamble in the summary's block.
-Size: 120 lines.
+Size: 160 lines.
 Removes: the summary glued with nothing between its blocks.
 
 ### 07.3 The instruction's words, proven by `history`
@@ -139,8 +175,11 @@ Scope: run.md 3.3's four requirements and the preamble's words
 Needs: 07.2; smith 04's calibration blocks and `history` version 2 [04.1,
   04.2]; smith 03's summary version 3 [03.1].
 Files: `crates/smith-domain-run/src/prompt.rs` (`SUMMARY`, `:30`;
-  `PREAMBLE`), its tests, `benchmarks/tasks/probes/history/task.toml`
-  (the two blocks), `benchmarks/summaries/`.
+  `PREAMBLE`), its tests, `tests/local-process/src/world.rs` (`:1089`,
+  a fake cue that matches "Summarise the work so far": the new `SUMMARY`
+  keeps that opening, or the cue matches its new one),
+  `benchmarks/tasks/probes/history/task.toml` (the two blocks),
+  `benchmarks/summaries/`.
 Shape: `SUMMARY` and `PREAMBLE` rewritten to say, in that order, what
   run.md 3.3 lists; `SUMMARY` no longer says "Keep the task".
 Test shape: `the_summary_instruction_and_its_preamble_fit_smiths_own_part`
