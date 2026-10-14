@@ -621,3 +621,11 @@ changes what section 8.4 holds.
      - If it stops on a failure `model_deviation` does not list, report it as a question with the attempt's name, and stop. If it stops on model deviations alone (ten passes out of reach), report the count, and stop.
      - Then 07.3 waits for the answer. No small-window attempt runs, and no check, criterion, `model_deviation` or instruction word changes, until the answer's ruling.
      - Row 07.3's allowance holds: 37 attempts and $4 in all, 15 and $0.30 spent.
+
+120. **a derived writer ceiling follows ruling 117's layout** (cross-session scope, smith 10's block of 2026-10-14T20:20:00Z).
+     Ruling 120. Option 1. In `crates/smith-agent-service/tests/sink_memory.rs:68`, 10.5 changes the expected `line_ceiling(Capture::Everything)` from `Some(19_849_728)` to the value the product limits now derive, `Some(19_427_968)`. The test's name, its product fixture, its allocation checks and its sent-byte assertions stay as they are. The ceiling is derived, not a bound the design sets: `EventLimits::derive` adds `client.history_items * 128` (`crates/smith-agent-service/src/events.rs:84`). Ruling 117's `timeout` on `Running` widens the block the receiving derivation prices, so 3,295 fewer history items fit: 3,295 × 128 = 421,760, which is the difference.
+
+     - Name it in the commit body under "Users outside Files:", as a consequence of ruling 117's layout, with that arithmetic.
+     - **Further copies:** where a later test fails on a literal derived from the same receiving layout (a history-item count, or a ceiling built from it), refresh it to the value the product limits derive, and list each in the commit body with its old and new values. A test that fails on a bound the design states (a preset, `declared.memory`, a window) stops on a question instead.
+     - `benchmarks/tests/recorded/smith-time.jsonl`'s `"events.observation_line":19849728` is a recorded run's limits, so it stays as recorded.
+     - The smoke (rule 8) and 08.s1's guard over every probe task's overrides run as usual. A smaller derived ceiling only lowers the worst case.
