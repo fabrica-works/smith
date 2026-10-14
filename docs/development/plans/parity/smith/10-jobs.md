@@ -338,6 +338,15 @@ the tools world's stories; ruling 122)
   `smith-domain/src/domain.rs:456-474` (an exhaustive `run::Request`
   match). "Its referee" is the one of `tests/run/src/*_referee.rs` whose
   story the increment's test runs; name it in the commit body.
+- `tool.completed`'s `job` (ruling 130): `tools::FactKind::Answered`
+  (`smith-domain-tools/src/facts.rs:48`) gains `job: Option<JobNumber>`,
+  set in `answered` (`:189`) from `Outcome::Running`'s and `Outcome::Job`'s
+  `job`, `None` for every other outcome; the service carries it through
+  `Terminal` (`smith-agent-service/src/calls.rs:345`) into
+  `ToolCompleted.job` (`:330`, now `None`). Files gain those two files and
+  each literal `Answered` fact a test expects (`smith-domain-tools/src/tests/jobs.rs`,
+  `smith-domain-session/src/tests.rs`, `smith-agent-service/src/calls.rs`'s
+  tests, and any further one the compiler names).
 
 ## Interface sketches
 
