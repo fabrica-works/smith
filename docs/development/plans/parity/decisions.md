@@ -517,3 +517,12 @@ changes what section 8.4 holds.
      - 07.2: `Open` is `Opening` (`smith-domain-run/src/boundary.rs:643`); the summary gets its own join at `compaction.rs:341`, and `text_of` with its yield users stays as it is; Files add `translate.rs:67`, `:121`, `session.rs:186`, `:2025`, `:2055`, `compaction.rs:259` and `:209` (`+ 3`), the `Spec`/`Opening` literals and byte checks in five test files, and the two tests that read the old layout (`compaction.rs:138`, `window_referee.rs:73-82`); `profile.rs:490`, `restore :423`. Size 160 lines.
      - A version-4 window turn written before 07.2 comes only from the run's own builds; 07.2 handles nothing else.
      - 07.3: Files add `tests/local-process/src/world.rs:1089`, whose fake cue matches "Summarise the work so far".
+
+107. **02.1 smokes afresh; a branch's setup refusal stops its step** (process, smith 02's block of 2026-10-14T12:00:49Z).
+     Ruling 107. The smith line resumes now, and 02.1's corrected arm takes the smoke afresh. Both failures were 02.1's own: its harness change gave the check two event destinations, and the service's worst case, 2,159,054,753 bytes, passed the shipped `declared.memory`, 2,147,463,091, at setup, before any model request. `main`'s smoke passed on every landing of the last two hours, the last at 11:44 (`probes-smoke-tools-27579583-20261014T114406Z`), so smith on `main` is not what failed.
+
+     - 02.1 runs README rule 8's smoke on its corrected arm as written: once, and once more on a failure. A second failure stops 02.1 on a question; it does not stop the line.
+     - The shipped memory and every other preset stay as they are.
+     - The one-line change to smith's product resolver (a file trace only when `trace.path` is set) is a small fix outside Files (implementer.md 8.2): name it in the commit body with the text of benchmarks.md section 6 it follows ("one event destination"), and the test that covers it.
+     - README rule 8 now says, until the run ends: a second failure refused at setup, before any model request, on a branch that changes `benchmarks/src/agent/smith/` or `benchmarks/agents/smith/`, while `main`'s last landed smoke passed, stops its step on a question, and the line goes on. Every other second failure stops the line, as before.
+     - The two refused attempts count in the step's `Live:` trailer (rule 10).

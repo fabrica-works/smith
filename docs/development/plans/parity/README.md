@@ -159,7 +159,11 @@ until the run ends.
    as its reason): the step lands and reports "smoke not run: <the end and
    its reason>", and the coordinator escalates it as `credentials` or
    `infrastructure`. A second failure for any other reason stops the line
-   for smith.
+   for smith, except a second failure refused at setup, before any model
+   request, on a branch that changes `benchmarks/src/agent/smith/` or
+   `benchmarks/agents/smith/`, while `main`'s last landed smoke passed:
+   that stops its step on a question, and the line goes on (decisions.md,
+   ruling 107).
 9. **Live runs** (lesson 10). Every live command goes through `heavy
    --gate`. A `suite` runs in one call, unsplit, whatever its attempts. A
    `probe` runs at most 12 attempts a call; a `calibrate`, at most 12 on
