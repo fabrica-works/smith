@@ -88,7 +88,10 @@ workspace, ending in one result (section 8). The kinds are a closed set:
   most twelve attempts on the binary it guards, the other attempts failed
   only by the model, never by smith (a model deviation; section 8.3's
   ends), and a failure on the binary before the fix or,
-  for a behaviour already in place, on a control arm. A probe that cannot
+  for a behaviour already in place, on a control arm. Where neither can
+  run, as for a behaviour older than the oldest binary the harness runs
+  (6.2) that no setting turns off, the block says why, and the
+  calibration stands on its passes. A probe that cannot
   fail guards nothing. A calibration stands while the variant's prompt,
   seed and checks keep the digests its block records; a new task version
   that changes none of them for a variant keeps that variant's block.
