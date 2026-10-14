@@ -893,3 +893,10 @@ changes what section 8.4 holds.
      - Name it in the commit body under "Users outside Files:", with that arithmetic. `compare.toml`'s own 8,000,000 does not change.
      - Stopping is ruling 124's: a smith failure or an unjudged attempt stops 07.3 on a question. If model deviations alone put ten passes out of reach at `high`, report the count and stop.
      - Row 07.3 holds: 73 attempts and $4, of which 46 and $0.93 are spent; this rerun is at most 12 more.
+
+127. **tools' Open carries the last turn's highest job number** (cross-session scope, smith 10's block of 2026-10-14T21:54:54Z).
+     Ruling 127. Option 1. `tools::Event::Open` gains `jobs: u32`: the highest job number its conversation's last turn records, or 0 for a fresh session. The kit starts `Jobs.highest` from it. tools.md 5 says: "A session resumed in a later activation numbers its next job after the highest its transcript's last turn records". transcript.md 4 says: "the resumed session's next job takes the number after the highest its last turn records". The session already holds that number as `Turn.jobs` (`crates/smith-domain-session/src/record.rs:158`). One field on the one opening is the smallest contract. A separate restore entrance (option 2) would add a second way to change the same table.
+
+     - Production: `crates/smith-domain-session/src/session.rs:414` passes the restored last turn's `jobs`, and 0 when there is none. `crates/smith-domain-tools/src/domain.rs:93` passes it to `kit::open`.
+     - Users to adapt (each `Event::Open { session, authority }` gains `jobs: 0` unless its test is about resuming): `crates/smith-domain-tools/src/tests.rs:152`, `:272`, `:465`, `:1409`, `:1525`; `tests/tools/src/world.rs:669`; `tests/tools/tests/fuzzy_memory.rs:47`; `tests/tools/tests/memory.rs:56`, `:143`. Adapt any further one that `cargo check --workspace --all-targets` reports, as README rule 3 says, and list it under "Users outside Files:".
+     - One test opens a kit with `jobs: 3`, starts a job, and expects it answered `running` as job 4.
