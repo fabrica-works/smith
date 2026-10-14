@@ -2,12 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::{ArmSummary, AttemptResult, Convention, Measure, PriceTable, SummaryComparison, bootstrap_ratio};
+use crate::{ArmSummary, AttemptResult, Convention, Measure, SummaryComparison, bootstrap_ratio};
 
 pub(crate) fn comparisons(
     groups: &[ArmSummary],
     grouped: &BTreeMap<(String, String), Vec<&AttemptResult>>,
-    prices: &PriceTable,
     seed: u64,
 ) -> Result<Vec<SummaryComparison>, String> {
     let mut comparisons = Vec::new();
@@ -25,9 +24,9 @@ pub(crate) fn comparisons(
             for metric in left.metrics.keys() {
                 let Some((candidate_metric, conventions)) = counterpart(metric, left, right) else { continue };
                 let (reference_values, reference_missing) =
-                    super::observations(&grouped[&(left.task.clone(), left.arm.clone())], metric, prices);
+                    super::observations(&grouped[&(left.task.clone(), left.arm.clone())], metric);
                 let (candidate_values, candidate_missing) =
-                    super::observations(&grouped[&(right.task.clone(), right.arm.clone())], &candidate_metric, prices);
+                    super::observations(&grouped[&(right.task.clone(), right.arm.clone())], &candidate_metric);
                 let result = if reference_missing.is_empty() && candidate_missing.is_empty() {
                     bootstrap_ratio(&reference_values, &candidate_values, seed, 10_000)
                         .map_or_else(Measure::unavailable, |value| Measure::Observed { value })

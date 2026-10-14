@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Agent, Provider, Refusal, TokenRecord};
 
 /// The one result format understood by this harness.
-pub const RESULT_VERSION: u32 = 2;
+pub const RESULT_VERSION: u32 = 3;
 
 /// A measurement supplied by an observer, preserving its knowledge boundary.
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -76,6 +76,7 @@ pub struct ModelIdentity {
     pub requested_model: String,
     pub requested_effort: String,
     pub resolved_model: Measure<String>,
+    pub resolved_window: Measure<u64>,
     pub resolved_effort: Measure<String>,
 }
 
@@ -273,8 +274,63 @@ pub enum SpendBasis {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Spend {
+    pub priced: Measure<f64>,
     pub basis: SpendBasis,
     pub usd: Measure<f64>,
+}
+
+pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
+    let Measure::Observed { value: model } = &result.identity.model.resolved_model else {
+        return Measure::unavailable("resolved model not observed for pricing");
+    };
+    let Measure::Observed { value: window } = &result.identity.model.resolved_window else {
+        return Measure::unavailable("declared model window not observed for pricing");
+    };
+    let endpoint = match result.identity.provider {
+        Provider::Codex => "codex",
+        Provider::Anthropic => "anthropic",
+    };
+    let model = model.strip_prefix(&format!("{endpoint}/")).unwrap_or(model);
+    let Some(prices) = smith_local_shell::presets::list_prices(endpoint, model, *window) else {
+        return Measure::unavailable(format!("model {endpoint}/{model} missing from product presets"));
+    };
+    let Some(total) = result.tokens.iter().find(|record| record.role == crate::ScopeKind::Total) else {
+        return Measure::unavailable("total tokens not reported for pricing");
+    };
+    let mut counts = Vec::new();
+    for (name, tokens) in [
+        ("fresh", &total.usage.fresh),
+        ("cache_read", &total.usage.cache_read),
+        ("cache_write", &total.usage.cache_write),
+        ("output", &total.usage.output),
+    ] {
+        match tokens {
+            Measure::Observed { value } => counts.push(*value),
+            Measure::LowerBound { missing, .. } => {
+                return Measure::unavailable(format!("total {name} tokens are a lower bound: {}", missing.join("; ")));
+            }
+            Measure::Unavailable { reason } => return Measure::unavailable(format!("total {name} tokens: {reason}")),
+        }
+    }
+    let Some(fresh) = counts[0].checked_sub(counts[2]) else {
+        return Measure::unavailable("cache writes exceed fresh tokens");
+    };
+    let mut cost = 0_u128;
+    for (tokens, rate) in [
+        (fresh, prices.input),
+        (counts[1], prices.cached),
+        (counts[2], prices.cache_write.unwrap_or(prices.input)),
+        (counts[3], prices.output),
+    ] {
+        let Some(sum) = cost.checked_add(u128::from(tokens) * u128::from(rate)) else {
+            return Measure::unavailable("token price sum overflow");
+        };
+        cost = sum;
+    }
+    match cost.to_string().parse::<f64>() {
+        Ok(cost) => Measure::Observed { value: cost / (f64::from(prices.unit) * 1_000_000.0) },
+        Err(error) => Measure::unavailable(error.to_string()),
+    }
 }
 
 /// The typed failure class supplied by an adapter when no answer was accepted.
@@ -468,7 +524,10 @@ pub fn render_result(result: &AttemptResult) -> Result<String, String> {
     if result.version != RESULT_VERSION {
         return Err("unsupported result version".into());
     }
-    if !finite(&result.spend.usd) || result.health.headroom.values().any(|entry| !finite(&entry.fraction_used)) {
+    if !finite(&result.spend.priced)
+        || !finite(&result.spend.usd)
+        || result.health.headroom.values().any(|entry| !finite(&entry.fraction_used))
+    {
         return Err("non-finite measurement".into());
     }
     let text = serde_json::to_string_pretty(result).map_err(|error| error.to_string())?;

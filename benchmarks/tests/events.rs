@@ -1566,3 +1566,28 @@ fn expected_entrance_refusal_requires_captured_reason_and_no_request() {
     }
     assert!(matches!(observe_against(&values, None).check(&predicate, "task").passed, Measure::Unavailable { .. }));
 }
+
+#[test]
+fn the_resolved_window_comes_from_each_agents_stream() {
+    use smith_bench::agent::codex::{RolloutFile, Rollouts};
+    let mut identity = smith_bench::read_result(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json"),
+    )
+    .expect("recorded identity")
+    .identity
+    .model;
+    observe(&balanced()).resolve_model(&mut identity);
+    assert_eq!(identity.resolved_model, Measure::Observed { value: "model".into() });
+    assert_eq!(identity.resolved_window, Measure::Observed { value: 10_000 });
+    let rollouts = Rollouts {
+        responses: vec![],
+        children: vec![],
+        files: vec![RolloutFile {
+            thread: "root".into(),
+            bytes: include_bytes!("recorded/codex/model-window.jsonl").to_vec(),
+        }],
+    };
+    rollouts.resolve_model("root", &mut identity).expect("root model metadata");
+    assert_eq!(identity.resolved_model, Measure::Observed { value: "gpt-6-astra".into() });
+    assert_eq!(identity.resolved_window, Measure::Observed { value: 258_400 });
+}

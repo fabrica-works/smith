@@ -54,16 +54,8 @@ fn a_suite_with_two_override_arms_prepares_ten_interleaved_requests() {
         result.identity = decoded.identity;
         results.push(result);
     }
-    let summary = crate::summarise(
-        &results,
-        "compaction",
-        "small",
-        crate::Design::Interleaved,
-        17,
-        None,
-        &crate::PriceTable::default(),
-    )
-    .expect("grouped summary");
+    let summary = crate::summarise(&results, "compaction", "small", crate::Design::Interleaved, 17, None)
+        .expect("grouped summary");
     assert_eq!(summary.groups.len(), 2);
     assert_eq!(summary.groups.iter().map(|group| group.arm.as_str()).collect::<Vec<_>>(), ["60-percent", "80-percent"]);
     assert!(summary.groups.iter().all(|group| group.attempts.len() == 5));

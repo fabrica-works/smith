@@ -6,6 +6,12 @@
 
 mod compare;
 
+/// The one committed summary format understood by this harness.
+pub const SUMMARY_VERSION: u32 = 3;
+
+/// The one baseline format understood by this harness.
+pub const BASELINE_VERSION: u32 = 1;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -86,6 +92,7 @@ pub struct SummaryComparison {
 pub struct RunSummary {
     pub version: u32,
     pub result_version: u32,
+    pub priced_at: String,
     pub run: String,
     pub suite: String,
     pub tier: String,
@@ -138,7 +145,7 @@ fn measure_u64(measure: &Measure<u64>) -> Measure<f64> {
     }
 }
 
-fn metric_values(result: &AttemptResult, prices: &crate::PriceTable) -> BTreeMap<String, Measure<f64>> {
+fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
     let mut values = BTreeMap::new();
     for (name, value) in [
         ("process_wall_ms", &result.timing.process_wall_ms),
@@ -186,7 +193,7 @@ fn metric_values(result: &AttemptResult, prices: &crate::PriceTable) -> BTreeMap
             values.insert(format!("tokens/{convention}/{name}"), measure_u64(value));
         }
     }
-    values.insert("spend_usd/priced".into(), priced_spend(result, prices));
+    values.insert("spend_usd/priced".into(), result.spend.priced.clone());
     values.insert("delegation/turns".into(), measure_u64(&result.delegation.turns));
     values.insert("delegation/parent_blocked_ms".into(), measure_u64(&result.delegation.parent_blocked_ms));
     for (name, budget_only) in [("children", false), ("children_budget", true)] {
@@ -219,35 +226,11 @@ fn metric_values(result: &AttemptResult, prices: &crate::PriceTable) -> BTreeMap
     values
 }
 
-fn priced_spend(result: &AttemptResult, table: &crate::PriceTable) -> Measure<f64> {
-    let model = &result.identity.model.requested_model;
-    let Some(prices) = table.models.get(model) else {
-        return Measure::unavailable(format!("model {model} missing from price table"));
-    };
-    let Some(total) = result.tokens.iter().find(|record| record.role == ScopeKind::Total) else {
-        return Measure::unavailable("total tokens not reported");
-    };
-    let mut usd = 0.0;
-    for (name, tokens, rate) in [
-        ("fresh", &total.usage.fresh, prices.fresh),
-        ("cache_read", &total.usage.cache_read, prices.cache_read),
-        ("output", &total.usage.output, prices.output),
-    ] {
-        match (measure_u64(tokens), measure_u64(&Measure::Observed { value: rate })) {
-            (Measure::Observed { value: tokens }, Measure::Observed { value: rate }) => {
-                usd += tokens * rate / 1_000_000_000_000.0;
-            }
-            _ => return Measure::unavailable(format!("total {name} tokens or price not observed at exact precision")),
-        }
-    }
-    observed(usd)
-}
-
-fn observations(results: &[&AttemptResult], metric: &str, prices: &crate::PriceTable) -> (Vec<f64>, Vec<String>) {
+fn observations(results: &[&AttemptResult], metric: &str) -> (Vec<f64>, Vec<String>) {
     let mut values = Vec::new();
     let mut missing = Vec::new();
     for result in results {
-        match metric_values(result, prices).remove(metric) {
+        match metric_values(result).remove(metric) {
             Some(Measure::Observed { value }) if value.is_finite() && value >= 0.0 => values.push(value),
             Some(Measure::Observed { value: _ }) => missing.push(format!("{}: invalid value", result.identity.attempt)),
             Some(Measure::LowerBound { value: _, missing: reasons }) => {
@@ -260,12 +243,8 @@ fn observations(results: &[&AttemptResult], metric: &str, prices: &crate::PriceT
     (values, missing)
 }
 
-fn metric_summary(
-    results: &[&AttemptResult],
-    metric: &str,
-    prices: &crate::PriceTable,
-) -> Result<MetricSummary, String> {
-    let (values, missing) = observations(results, metric, prices);
+fn metric_summary(results: &[&AttemptResult], metric: &str) -> Result<MetricSummary, String> {
+    let (values, missing) = observations(results, metric);
     let n = u32::try_from(values.len()).map_err(|_| "too many observations")?;
     let total = u32::try_from(results.len()).map_err(|_| "too many attempts")?;
     let median = median(&values).map_or_else(Measure::unavailable, observed);
@@ -340,7 +319,7 @@ pub(crate) fn same_inputs(left: &Identity, right: &Identity) -> bool {
         && left.harness_commit == right.harness_commit
 }
 
-fn group_summary(results: &[&AttemptResult], prices: &crate::PriceTable) -> Result<ArmSummary, String> {
+fn group_summary(results: &[&AttemptResult]) -> Result<ArmSummary, String> {
     let first = &results[0].identity;
     if results.iter().any(|result| !same_inputs(first, &result.identity)) {
         return Err(format!("{} / {} mixes task versions or arm inputs", first.task, first.arm));
@@ -387,10 +366,10 @@ fn group_summary(results: &[&AttemptResult], prices: &crate::PriceTable) -> Resu
     } else {
         passes.interval_95 = Measure::unavailable("some eligible attempt checks are unavailable");
     }
-    let names: BTreeSet<String> = results.iter().flat_map(|result| metric_values(result, prices).into_keys()).collect();
+    let names: BTreeSet<String> = results.iter().flat_map(|result| metric_values(result).into_keys()).collect();
     let mut metrics = BTreeMap::new();
     for name in names {
-        metrics.insert(name.clone(), metric_summary(results, &name, prices)?);
+        metrics.insert(name.clone(), metric_summary(results, &name)?);
     }
     Ok(ArmSummary {
         task: first.task.clone(),
@@ -421,7 +400,6 @@ pub fn summarise(
     design: Design,
     seed: u64,
     reference: Option<&Baseline>,
-    prices: &crate::PriceTable,
 ) -> Result<RunSummary, String> {
     if results.is_empty() || suite.is_empty() || tier.is_empty() || results.len() > u32::MAX as usize {
         return Err("summary needs attempts, suite and tier".into());
@@ -433,7 +411,11 @@ pub fn summarise(
     let mut grouped: BTreeMap<(String, String), Vec<&AttemptResult>> = BTreeMap::new();
     let mut disagreements = Vec::new();
     for (index, result) in ordered.iter().enumerate() {
-        if result.version != RESULT_VERSION || &result.identity.run != run || !ids.insert(&result.identity.attempt) {
+        if result.version != RESULT_VERSION
+            || &result.identity.run != run
+            || result.identity.harness_commit != results[0].identity.harness_commit
+            || !ids.insert(&result.identity.attempt)
+        {
             return Err("summary mixes runs/versions or duplicate attempts".into());
         }
         if let Some(Measure::Observed { value: grade }) = result.outcome.grade
@@ -446,10 +428,10 @@ pub fn summarise(
     }
     let mut groups = Vec::new();
     for group in grouped.values() {
-        groups.push(group_summary(group, prices)?);
+        groups.push(group_summary(group)?);
     }
     let comparisons =
-        if design == Design::Interleaved { compare::comparisons(&groups, &grouped, prices, seed)? } else { Vec::new() };
+        if design == Design::Interleaved { compare::comparisons(&groups, &grouped, seed)? } else { Vec::new() };
     let audits = audit_sample(ordered.len(), 3, &disagreements, seed)?
         .into_iter()
         .map(|index| ordered[index].identity.attempt.clone())
@@ -459,8 +441,9 @@ pub fn summarise(
     let drift_notices =
         if let Some(reference) = reference { drift(&groups, suite, tier, reference)? } else { Vec::new() };
     Ok(RunSummary {
-        version: 2,
+        version: SUMMARY_VERSION,
         result_version: RESULT_VERSION,
+        priced_at: results[0].identity.harness_commit.clone(),
         run: run.clone(),
         suite: suite.into(),
         tier: tier.into(),
@@ -475,7 +458,7 @@ pub fn summarise(
 }
 
 fn drift(groups: &[ArmSummary], suite: &str, tier: &str, reference: &Baseline) -> Result<Vec<String>, String> {
-    if reference.version != 1
+    if reference.version != BASELINE_VERSION
         || reference.result_version != RESULT_VERSION
         || reference.suite != suite
         || reference.tier != tier
@@ -524,7 +507,7 @@ fn drift(groups: &[ArmSummary], suite: &str, tier: &str, reference: &Baseline) -
 /// Freeze a suite for one configuration and tier; comparisons use separate baselines.
 pub fn baseline(summary: &RunSummary) -> Result<Baseline, String> {
     let first = summary.groups.first().ok_or("baseline needs a task")?;
-    if summary.version != 2
+    if summary.version != SUMMARY_VERSION
         || summary.result_version != RESULT_VERSION
         || summary.groups.iter().any(|group| {
             group.arm != first.arm
@@ -538,7 +521,7 @@ pub fn baseline(summary: &RunSummary) -> Result<Baseline, String> {
         return Err("baseline needs one supported agent configuration, model tier and binary".into());
     }
     Ok(Baseline {
-        version: 1,
+        version: BASELINE_VERSION,
         result_version: RESULT_VERSION,
         suite: summary.suite.clone(),
         tier: summary.tier.clone(),
@@ -601,7 +584,7 @@ fn read_json<T: serde::de::DeserializeOwned>(file: &Path) -> Result<T, Refusal> 
 /// Read the one summary version and the current result version.
 pub fn read_summary(file: &Path) -> Result<RunSummary, Refusal> {
     let summary: RunSummary = read_json(file)?;
-    if summary.version != 2 || summary.result_version != RESULT_VERSION {
+    if summary.version != SUMMARY_VERSION || summary.result_version != RESULT_VERSION {
         return Err(Refusal::new(file, "version", "unsupported summary or result version"));
     }
     Ok(summary)
@@ -610,7 +593,7 @@ pub fn read_summary(file: &Path) -> Result<RunSummary, Refusal> {
 /// Read a drift reference only at the supported versions.
 pub fn read_baseline(file: &Path) -> Result<Baseline, Refusal> {
     let reference: Baseline = read_json(file)?;
-    if reference.version != 1 || reference.result_version != RESULT_VERSION {
+    if reference.version != BASELINE_VERSION || reference.result_version != RESULT_VERSION {
         return Err(Refusal::new(file, "version", "unsupported baseline or result version"));
     }
     Ok(reference)
@@ -685,7 +668,10 @@ pub fn committed_costs(
     }
     let mut latest: BTreeMap<(String, String), (String, crate::Estimate)> = BTreeMap::new();
     for summary in summaries {
-        if summary.version != 2 || summary.result_version != RESULT_VERSION || summary.tier != suite.tier {
+        if summary.version != SUMMARY_VERSION || summary.result_version != RESULT_VERSION {
+            return Err("committed summary has unsupported summary or result version".into());
+        }
+        if summary.tier != suite.tier {
             continue;
         }
         for group in &summary.groups {

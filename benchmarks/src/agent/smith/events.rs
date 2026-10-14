@@ -99,6 +99,26 @@ fn codec(error: smith_events::Error) -> HarnessFault {
 }
 
 impl Observer {
+    /// Resolve the main conversation's first declared model and window.
+    pub fn resolve_model(&self, identity: &mut crate::ModelIdentity) {
+        identity.resolved_model = crate::Measure::unavailable("main conversation model not reported");
+        identity.resolved_window = crate::Measure::unavailable("main conversation window not reported");
+        for session in &self.sessions {
+            for record in &session.records {
+                if let Event::ConversationOpened(opened) = &record.event
+                    && opened.kind == smith_events::ConversationKind::Main
+                {
+                    identity.resolved_model = std::str::from_utf8(&opened.model.model).map_or_else(
+                        |error| crate::Measure::unavailable(error.to_string()),
+                        |model| crate::Measure::Observed { value: model.into() },
+                    );
+                    identity.resolved_window = crate::Measure::Observed { value: opened.model.window_tokens };
+                    return;
+                }
+            }
+        }
+    }
+
     /// Reserve the codec's bounded line before reading; invalid limits refuse.
     pub fn new(limits: &smith_events::Limits) -> Result<Self, HarnessFault> {
         Ok(Self {
@@ -397,7 +417,11 @@ pub(super) fn reported_spend(observer: &Observer, currency: u64) -> Result<crate
     } else {
         crate::Measure::LowerBound { value, missing }
     };
-    Ok(crate::Spend { basis: crate::SpendBasis::Notional, usd })
+    Ok(crate::Spend {
+        priced: crate::Measure::unavailable("common price basis not applied yet"),
+        basis: crate::SpendBasis::Notional,
+        usd,
+    })
 }
 
 impl Observer {

@@ -192,9 +192,8 @@ fn block(task: &smith_bench::Task) -> smith_bench::Calibration {
 fn calibration_files(name: &str) -> (PathBuf, PathBuf) {
     let directory = root(name);
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
-    std::fs::create_dir_all(directory.join("benchmarks/agents")).expect("prices directory");
-    std::fs::copy(repository.join("agents/prices.toml"), directory.join("benchmarks/agents/prices.toml"))
-        .expect("recorded prices");
+    std::fs::create_dir_all(&directory).expect("calibration directory");
+
     let file = directory.join("task.toml");
     std::fs::copy(repository.join("tasks/probes/smoke-tools/task.toml"), &file).expect("task");
     (directory, file)

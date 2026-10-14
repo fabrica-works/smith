@@ -205,16 +205,8 @@ fn a_recorded_attempt_round_trips_without_erasing_measurement_gaps() {
 fn a_summary_and_baseline_from_recorded_results_round_trip_offline() {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
     let results = smith_bench::read_results(&file).expect("recorded attempts");
-    let summary = smith_bench::summarise(
-        &results,
-        "recorded",
-        "small",
-        smith_bench::Design::Single,
-        123,
-        None,
-        &smith_bench::PriceTable::default(),
-    )
-    .expect("summary");
+    let summary =
+        smith_bench::summarise(&results, "recorded", "small", smith_bench::Design::Single, 123, None).expect("summary");
     assert_eq!(summary.groups[0].counts_by_end["completed"], 1);
     assert_eq!(summary.groups[0].metrics["task_wall_ms"].observed, 1);
     let baseline = smith_bench::baseline(&summary).expect("single configuration baseline");
@@ -310,19 +302,19 @@ fn invalid_recorded_manifests() {
 #[test]
 fn committed_summaries_and_baselines_parse_at_result_version_two() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    assert_eq!(smith_bench::RESULT_VERSION, 2);
+    assert_eq!(smith_bench::RESULT_VERSION, 3);
     // The catalogue test checks the full inventory; sample each versioned reader here.
     for entry in std::fs::read_dir(root.join("summaries")).expect("summaries") {
         let path = entry.expect("summary entry").path();
         if path.extension().is_some_and(|extension| extension == "json") {
-            assert_eq!(smith_bench::read_summary(&path).expect("committed summary").result_version, 2);
+            assert_eq!(smith_bench::read_summary(&path).expect("committed summary").result_version, 3);
             break;
         }
     }
     for entry in std::fs::read_dir(root.join("baselines")).expect("baselines") {
         let path = entry.expect("baseline entry").path();
         if path.extension().is_some_and(|extension| extension == "json") {
-            assert_eq!(smith_bench::read_baseline(&path).expect("committed baseline").result_version, 2);
+            assert_eq!(smith_bench::read_baseline(&path).expect("committed baseline").result_version, 3);
             break;
         }
     }
@@ -331,16 +323,8 @@ fn committed_summaries_and_baselines_parse_at_result_version_two() {
 fn multi_configuration_summary() -> smith_bench::RunSummary {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
     let results = smith_bench::read_results(&file).expect("recorded attempts");
-    let mut summary = smith_bench::summarise(
-        &results,
-        "recorded",
-        "small",
-        smith_bench::Design::Single,
-        123,
-        None,
-        &smith_bench::PriceTable::default(),
-    )
-    .expect("whole summary");
+    let mut summary = smith_bench::summarise(&results, "recorded", "small", smith_bench::Design::Single, 123, None)
+        .expect("whole summary");
     let first = summary.groups[0].clone();
     for change in 0..4 {
         let mut other = first.clone();

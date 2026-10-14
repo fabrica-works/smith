@@ -114,6 +114,7 @@ fn blank(identity: Identity) -> AttemptResult {
             peak_rss_bytes: Measure::unavailable(missing),
         },
         spend: Spend {
+            priced: Measure::unavailable(missing),
             basis: SpendBasis::Priced,
             usd: Measure::unavailable("adapter has not supplied scoped usage and prices"),
         },
@@ -561,11 +562,13 @@ fn collect_observation(
                     }
                     collection?;
                     let rollouts = observing.collected.as_ref().expect("completed collection");
+                    rollouts.resolve_model(&thread, &mut result.identity.model).map_err(|error| error.to_string())?;
                     result.tokens = rollouts.token_records(&thread)?;
                     result.counts.responses = rollouts.response_count();
                 }
             }
             crate::agent::Observing::Smith(observing) => {
+                observing.observer.resolve_model(&mut result.identity.model);
                 result.tokens = observing.tokens()?;
                 result.spend = observing.spend(&result.tokens)?;
                 result.counts = observing.counts();
@@ -656,6 +659,7 @@ fn observe(
         None => Vec::new(),
     };
     collect_observation(guard, directory, result, process)?;
+    result.spend.priced = crate::result::priced_spend(result);
     result.cache = cache::observation(process, task);
     if result.identity.agent == crate::Agent::Codex && result.cache.is_some() {
         result.outcome.checks.push(crate::CheckVerdict {

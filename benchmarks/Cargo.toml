@@ -21,6 +21,7 @@ regex = "1"
 base64 = "0.22"
 rusqlite = { version = "0.37", features = ["bundled"] }
 time = { version = "0.3", features = ["formatting"] }
+smith-local-shell = { path = "../crates/smith-local-shell" }
 smith-events.workspace = true
 smith-local-protocol.workspace = true
 skein-lib.workspace = true
@@ -35,7 +36,6 @@ smith-agent-service.workspace = true
 smith-domain-run.workspace = true
 smith-domain-session.workspace = true
 smith-agent-shell = { path = "../crates/smith-agent-shell" }
-smith-local-shell = { path = "../crates/smith-local-shell" }
 
 [lints.rust]
 unsafe_code = "forbid"

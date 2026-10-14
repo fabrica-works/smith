@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "identity": {
     "run": "recorded-run",
     "attempt": "recorded-attempt",
@@ -26,6 +26,10 @@
         "reason": "not reported"
       },
       "resolved_effort": {
+        "state": "unavailable",
+        "reason": "not reported"
+      },
+      "resolved_window": {
         "state": "unavailable",
         "reason": "not reported"
       }
@@ -189,6 +193,10 @@
     "usd": {
       "state": "unavailable",
       "reason": "not reported"
+    },
+    "priced": {
+      "state": "unavailable",
+      "reason": "common price basis not applied yet"
     }
   },
   "outcome": {

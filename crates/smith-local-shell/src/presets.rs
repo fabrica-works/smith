@@ -1,8 +1,8 @@
 //! Presets supply literal settings and list prices; layers retain their origins.
 //! They know no file, credential or running service. `built_in` supplies the
-//! catalog; `prices` selects the tier after a window resolves (shell.md, 5.2, 6.1–6.2).
+//! catalog; `list_prices` selects the tier after a window resolves (shell.md, 5.2, 6.1–6.2).
 use crate::settings::{Origin, Settings, Sourced};
-use smith_domain::run::Prices;
+pub use smith_domain::run::Prices;
 
 const MODELS: [&str; 5] = [
     "codex/gpt-6-astra",
@@ -106,15 +106,15 @@ price_unit = 1000000
 /// Standard rates: developers.openai.com/api/docs/models/{gpt-6-astra,gpt-6-luna}
 /// and platform.claude.com/docs/en/about-claude/pricing (2026-10-12).
 #[must_use]
-pub(crate) fn prices(model: &str, window: u32) -> Option<Prices> {
-    let (input, cached, cache_write, output) = match model {
-        "codex/gpt-6-astra" if window > 272_000 => (20_000_000, 2_000_000, 25_000_000, 75_000_000),
-        "codex/gpt-6-astra" => (10_000_000, 1_000_000, 12_500_000, 50_000_000),
-        "codex/gpt-6-luna" if window > 272_000 => (200_000, 20_000, 250_000, 750_000),
-        "anthropic/claude-opus-5-5" => (4_000_000, 200_000, 5_000_000, 20_000_000),
-        "anthropic/claude-sonnet-5-5" => (2_000_000, 100_000, 2_500_000, 10_000_000),
-        "anthropic/claude-haiku-5-5" if window > 100_000 => (500_000, 50_000, 625_000, 2_500_000),
-        "codex/gpt-6-luna" | "anthropic/claude-haiku-5-5" => (100_000, 10_000, 125_000, 500_000),
+pub fn list_prices(endpoint: &str, model: &str, window: u64) -> Option<Prices> {
+    let (input, cached, cache_write, output) = match (endpoint, model) {
+        ("codex", "gpt-6-astra") if window > 272_000 => (20_000_000, 2_000_000, 25_000_000, 75_000_000),
+        ("codex", "gpt-6-astra") => (10_000_000, 1_000_000, 12_500_000, 50_000_000),
+        ("codex", "gpt-6-luna") if window > 272_000 => (200_000, 20_000, 250_000, 750_000),
+        ("anthropic", "claude-opus-5-5") => (4_000_000, 200_000, 5_000_000, 20_000_000),
+        ("anthropic", "claude-sonnet-5-5") => (2_000_000, 100_000, 2_500_000, 10_000_000),
+        ("anthropic", "claude-haiku-5-5") if window > 100_000 => (500_000, 50_000, 625_000, 2_500_000),
+        ("codex", "gpt-6-luna") | ("anthropic", "claude-haiku-5-5") => (100_000, 10_000, 125_000, 500_000),
         _ => return None,
     };
     Some(Prices { input, cached, cache_write: Some(cache_write), output, unit: 1_000_000 })
@@ -133,7 +133,8 @@ pub(crate) fn fill_prices(settings: &mut Settings, model: &str, preset_model: &s
     let window = u32::try_from(window.value.as_integer().expect("validated window")).expect("window fits");
     let unit = settings.values.get(&format!("{prefix}.price_unit")).expect("preset price unit");
     let unit = u32::try_from(unit.value.as_integer().expect("validated unit")).expect("unit fits");
-    let Some(rates) = prices(preset_model, window) else { return };
+    let Some((endpoint, model_name)) = preset_model.split_once('/') else { return };
+    let Some(rates) = list_prices(endpoint, model_name, u64::from(window)) else { return };
     for (field, rate) in [
         ("input_price", rates.input),
         ("cached_price", rates.cached),
@@ -147,5 +148,23 @@ pub(crate) fn fill_prices(settings: &mut Settings, model: &str, preset_model: &s
         let rate = f64::from(u32::try_from(rate).expect("list rate fits u32"));
         let value = toml::Value::Float(rate / 1_000_000.0 * f64::from(unit) / 1_000_000.0);
         settings.values.insert(key, Sourced { value, origin: Origin::BuiltIn });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Prices, list_prices};
+
+    #[test]
+    fn list_prices_switches_to_long_context_past_272000() {
+        for (window, input, cached, cache_write, output) in [
+            (272_000, 10_000_000, 1_000_000, 12_500_000, 50_000_000),
+            (272_001, 20_000_000, 2_000_000, 25_000_000, 75_000_000),
+        ] {
+            assert_eq!(
+                list_prices("codex", "gpt-6-astra", window),
+                Some(Prices { input, cached, cache_write: Some(cache_write), output, unit: 1_000_000 })
+            );
+        }
     }
 }

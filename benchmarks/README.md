@@ -88,9 +88,9 @@ estimates; missing costs remain unavailable.
 `summarise` reads result files recursively or one explicit result. It
 writes `benchmarks/summaries/<run>.json`, recording the suite, tier,
 design and seed. An optional baseline path is its final argument.
-Summaries use version 2. Cross-agent comparisons retain both token conventions
-and price total fresh, cache-read and output tokens from `agents/prices.toml`,
-in micro-dollars per million tokens. Tool calls stay within each arm; only task
+Summaries use version 3 and name the harness commit as `priced_at`.
+Cross-agent comparisons retain both token conventions and use common priced
+spend from the product presets at that commit. Tool calls stay within each arm; only task
 and process wall time, token fields and priced spend compare across agents.
 `baseline` freezes one binary, configuration and tier under
 `benchmarks/baselines/<name>.json`. For a suite with several configurations, `--group` selects one agent,
@@ -100,7 +100,7 @@ overwrites. Commit these
 summaries and baselines; raw attempt data stays outside repositories.
 Smoke and fix evidence belongs in commit bodies.
 
-Results are strict version-two JSON documents with observed,
+Results are strict version-three JSON documents with observed,
 lower-bound or unavailable measurements. Missing observations never
 become zero or a root-only fallback. Token records retain their scope
 and convention, deduplicate responses and name missing child evidence.

@@ -51,7 +51,6 @@ pub fn check_benchmark_tree_with_bundles(
     let tasks = crate::catalogue(&root.join("tasks"), design)?;
     crate::bundle::check_repository_bundles(&tasks, bundles)?;
     let agents = root.join("agents");
-    crate::read_prices(&agents.join("prices.toml"))?;
     let models = crate::read_model_tiers(&agents.join("models.toml"))?;
     for provider in [crate::Provider::Codex, crate::Provider::Anthropic] {
         models.lookup(&agents.join("models.toml"), "small", provider)?;

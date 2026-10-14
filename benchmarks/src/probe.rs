@@ -259,6 +259,7 @@ fn request(
                     .into(),
                 requested_effort: task.effort.clone().or_else(|| model.effort.clone()).ok_or("unresolved effort")?,
                 resolved_model: Measure::unavailable("not run"),
+                resolved_window: Measure::unavailable("not run"),
                 resolved_effort: Measure::unavailable("not run"),
             },
             harness_commit: run.3.into(),
@@ -726,9 +727,7 @@ pub fn record_calibration(
         .insert("calibration".into(), toml::Value::try_from(block).map_err(|error| error.to_string())?);
     let text = toml::to_string(&document).map_err(|error| error.to_string())?;
     let task = selected_task(file, name)?;
-    let prices =
-        crate::read_prices(&repository.join("benchmarks/agents/prices.toml")).map_err(|error| error.to_string())?;
-    let summary = crate::summarise(results, "calibrate", &task.tier, crate::Design::Single, seed, None, &prices)?;
+    let summary = crate::summarise(results, "calibrate", &task.tier, crate::Design::Single, seed, None)?;
     let path = repository.join("benchmarks").join(&block.summary);
     fs::create_dir_all(path.parent().ok_or("summary directory required")?).map_err(|error| error.to_string())?;
     crate::write_summary(&path, &summary)?;

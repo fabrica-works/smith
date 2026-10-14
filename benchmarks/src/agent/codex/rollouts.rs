@@ -348,3 +348,35 @@ impl Rollouts {
         ledger.records()
     }
 }
+
+impl Rollouts {
+    /// Resolve the root's first native model and declared context window.
+    pub fn resolve_model(&self, thread: &str, identity: &mut crate::ModelIdentity) -> Result<(), ParseError> {
+        identity.resolved_model = crate::Measure::unavailable("root rollout turn_context model not reported");
+        identity.resolved_window =
+            crate::Measure::unavailable("root rollout token_count model_context_window not reported");
+        let Some(file) = self.files.iter().find(|file| file.thread == thread) else { return Ok(()) };
+        let text = std::str::from_utf8(&file.bytes).map_err(|error| bad("rollout", "UTF-8", error.to_string()))?;
+        let mut model_seen = false;
+        let mut window_seen = false;
+        for line in text.lines() {
+            let value: serde_json::Value =
+                serde_json::from_str(line).map_err(|error| bad("rollout", "JSON", error.to_string()))?;
+            if value["type"] == "turn_context" && !model_seen {
+                model_seen = true;
+                if let Some(model) = value["payload"]["model"].as_str().filter(|model| !model.is_empty()) {
+                    identity.resolved_model = crate::Measure::Observed { value: model.into() };
+                }
+            }
+            if value["type"] == "event_msg" && value["payload"]["type"] == "token_count" && !window_seen {
+                window_seen = true;
+                if let Some(window) =
+                    value["payload"]["info"]["model_context_window"].as_u64().filter(|window| *window > 0)
+                {
+                    identity.resolved_window = crate::Measure::Observed { value: window };
+                }
+            }
+        }
+        Ok(())
+    }
+}

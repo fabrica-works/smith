@@ -33,7 +33,7 @@ pub mod process;
 pub mod grade;
 
 pub use agent::{Agent, Configuration, PinnedConfiguration, Provider, read_configuration};
-pub use models::{ModelChoice, ModelTiers, PriceTable, Prices, read_model_tiers, read_prices};
+pub use models::{ModelChoice, ModelTiers, read_model_tiers};
 pub use result::{
     Artifact, AttemptResult, BudgetLimit, CheckVerdict, Child, ChildStop, Clamp, Classification, Counts, Delegation,
     End, Exit, FailureReason, Forced, Headroom, Health, Identity, Measure, ModelIdentity, Outcome, RESULT_VERSION,
@@ -49,8 +49,8 @@ pub use suite::{
     choose_guards_with_costs, include, read_suite, validate_suite,
 };
 pub use summary::{
-    ArmSummary, Baseline, MetricSummary, PassCounts, RunSummary, SummaryComparison, baseline, baseline_group,
-    committed_costs, read_baseline, read_results, read_summary, summarise, write_summary,
+    ArmSummary, BASELINE_VERSION, Baseline, MetricSummary, PassCounts, RunSummary, SUMMARY_VERSION, SummaryComparison,
+    baseline, baseline_group, committed_costs, read_baseline, read_results, read_summary, summarise, write_summary,
 };
 pub use tokens::{Convention, ScopeKind, TokenCounts, TokenLedger, TokenRecord, Usage};
 
