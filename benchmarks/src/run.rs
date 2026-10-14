@@ -577,7 +577,7 @@ fn collect_observation(
                     rollouts.resolve_model(&thread, &mut result.identity.model).map_err(|error| error.to_string())?;
                     rollouts.timing(&thread, &mut result.timing).map_err(|error| error.to_string())?;
                     result.tokens = rollouts.token_records(&thread)?;
-                    result.counts.responses = rollouts.response_count();
+                    rollouts.counts(&thread, &mut result.counts).map_err(|error| error.to_string())?;
                 }
             }
             crate::agent::Observing::Smith(observing) => {

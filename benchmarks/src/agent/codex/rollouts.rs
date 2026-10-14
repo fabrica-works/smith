@@ -110,7 +110,10 @@ fn metadata(
     if id != thread && !ancestors.contains(id) {
         return Err(bad("session_meta", "payload.id", "rollout metadata is neither its owner nor a declared ancestor"));
     }
-    let parent = match payload.get("parent_thread_id") {
+    let parent = match payload
+        .pointer("/source/subagent/thread_spawn/parent_thread_id")
+        .or_else(|| payload.get("parent_thread_id"))
+    {
         Some(serde_json::Value::String(id)) if !id.is_empty() => Some(id.clone()),
         Some(serde_json::Value::Null) | None => None,
         Some(_) => return Err(bad("session_meta", "payload.parent_thread_id", "invalid parent id")),
@@ -293,33 +296,6 @@ pub(super) fn collect_named(
 }
 
 impl Rollouts {
-    /// Count only immutable linked responses, retaining gaps in every scope.
-    #[must_use]
-    pub fn response_count(&self) -> crate::Measure<u64> {
-        let mut ids = BTreeSet::new();
-        let mut missing = Vec::new();
-        if self.responses.is_empty() {
-            return crate::Measure::unavailable("named root has no per-response records");
-        }
-        ids.extend(self.responses.iter().map(|response| &response.response));
-        for child in &self.children {
-            match &child.link {
-                Link::Linked { .. } if !child.responses.is_empty() => {
-                    ids.extend(child.responses.iter().map(|response| &response.response));
-                }
-                Link::Linked { .. } | Link::Unlinked => {
-                    missing.push(format!("child {} has no linked per-response usage", child.thread));
-                }
-            }
-        }
-        let value = u64::try_from(ids.len()).expect("bounded response count");
-        if missing.is_empty() {
-            crate::Measure::Observed { value }
-        } else {
-            crate::Measure::LowerBound { value, missing }
-        }
-    }
-
     /// Replace root turn aggregates with immutable per-response scope evidence.
     pub fn token_records(&self, root: &str) -> Result<Vec<TokenRecord>, String> {
         let mut ledger = TokenLedger::default();
@@ -378,6 +354,80 @@ impl Rollouts {
                 }
             }
         }
+        Ok(())
+    }
+}
+
+impl Rollouts {
+    fn reaches_root(&self, child: &ChildThread, root: &str) -> bool {
+        let mut current = child;
+        for _ in 0..self.children.len() {
+            match &current.link {
+                Link::Linked { parent } if parent == root => return true,
+                Link::Linked { parent } => {
+                    let Some(next) = self.children.iter().find(|child| child.thread == *parent) else { return false };
+                    current = next;
+                }
+                Link::Unlinked => return false,
+            }
+        }
+        false
+    }
+
+    /// Count responses per linked thread from changing native token-count totals.
+    pub fn responses_per_thread(&self, root: &str) -> Result<BTreeMap<String, crate::Measure<u64>>, ParseError> {
+        let mut counts = BTreeMap::new();
+        for thread in std::iter::once(root).chain(
+            self.children.iter().filter(|child| self.reaches_root(child, root)).map(|child| child.thread.as_str()),
+        ) {
+            let mut totals = BTreeSet::new();
+            if let Some(file) = self.files.iter().find(|file| file.thread == thread) {
+                let text =
+                    std::str::from_utf8(&file.bytes).map_err(|error| bad("rollout", "UTF-8", error.to_string()))?;
+                for line in text.lines() {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).map_err(|error| bad("rollout", "JSON", error.to_string()))?;
+                    if value["type"] == "event_msg" && value["payload"]["type"] == "token_count" {
+                        let usage = value["payload"]["info"]["total_token_usage"].clone();
+                        if !usage.is_null() {
+                            let native: NativeUsage = serde_json::from_value(usage.clone())
+                                .map_err(|error| bad("token_count", "total_token_usage", error.to_string()))?;
+                            native.usage().map_err(|reason| bad("token_count", "total_token_usage", reason))?;
+                            totals.insert(usage.to_string());
+                        }
+                    }
+                }
+            }
+            let count = if totals.is_empty() {
+                crate::Measure::unavailable("thread has no token_count usage records")
+            } else {
+                crate::Measure::Observed { value: u64::try_from(totals.len()).expect("bounded rollout records") }
+            };
+            counts.insert(thread.into(), count);
+        }
+        Ok(counts)
+    }
+
+    /// Fill linked conversation counts and per-thread responses; shares stay unknown.
+    pub fn counts(&self, root: &str, counts: &mut crate::Counts) -> Result<(), ParseError> {
+        if !self.files.iter().any(|file| file.thread == root) {
+            return Ok(());
+        }
+        let children = u64::try_from(self.children.iter().filter(|child| self.reaches_root(child, root)).count())
+            .expect("bounded threads");
+        counts.children = crate::Measure::Observed { value: children };
+        counts.conversations = crate::Measure::Observed { value: children.checked_add(1).expect("bounded threads") };
+        let mut responses = Some(0_u64);
+        for count in self.responses_per_thread(root)?.values() {
+            responses = match count {
+                crate::Measure::Observed { value } => responses.and_then(|sum| sum.checked_add(*value)),
+                crate::Measure::LowerBound { .. } | crate::Measure::Unavailable { .. } => None,
+            };
+        }
+        counts.responses = responses.map_or_else(
+            || crate::Measure::unavailable("linked thread token_count records missing"),
+            |value| crate::Measure::Observed { value },
+        );
         Ok(())
     }
 }

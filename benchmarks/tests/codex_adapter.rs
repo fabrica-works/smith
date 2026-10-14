@@ -382,14 +382,25 @@ fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope()
     let collected = Rollouts {
         responses,
         children: vec![ChildThread { thread: child.into(), link, responses: child_responses }],
-        files: Vec::new(),
+        files: vec![
+            smith_bench::agent::codex::RolloutFile {
+                thread: root.into(),
+                bytes: include_bytes!("recorded/codex/live-root-rollout.jsonl").to_vec(),
+            },
+            smith_bench::agent::codex::RolloutFile {
+                thread: child.into(),
+                bytes: include_bytes!("recorded/codex/live-child-rollout.jsonl").to_vec(),
+            },
+        ],
     };
     let tokens = collected.token_records(root).expect("actual scope totals");
     assert!(matches!(
         tokens.iter().find(|r| r.role == ScopeKind::Total).expect("total").usage.output,
         Measure::Observed { value: 186 }
     ));
-    assert_eq!(collected.response_count(), Measure::Observed { value: 6 });
+    let mut counts = smith_bench::agent::codex::Observer::default().counts();
+    collected.counts(root, &mut counts).expect("native counts");
+    assert_eq!(counts.responses, Measure::Observed { value: 6 });
 }
 
 fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential() {
@@ -656,4 +667,63 @@ fn a_summary_keeps_the_time_records_medians() {
         );
     }
     assert!(matches!(summary.groups[0].metrics["time/commands_outside_calls_ms"].median, Measure::Unavailable { .. }));
+}
+
+fn repository_threads() -> (String, Rollouts) {
+    let root = "01a13785-a5a8-7543-ad07-90745b2ada69";
+    let sources = [
+        (root, include_bytes!("recorded/codex/repository-04-root.jsonl").as_slice()),
+        (
+            "01a13785-fa70-7333-8992-f27e7720f4fb",
+            include_bytes!("recorded/codex/repository-04-child-one.jsonl").as_slice(),
+        ),
+        (
+            "01a13786-12c9-7381-a0de-7de1cbc6eb1d",
+            include_bytes!("recorded/codex/repository-04-child-two.jsonl").as_slice(),
+        ),
+    ];
+    let mut rollouts = Rollouts { responses: vec![], children: vec![], files: vec![] };
+    for (thread, bytes) in sources {
+        let (link, responses) = parse_rollout(bytes, thread).expect("archived native rollout");
+        if thread == root {
+            rollouts.responses = responses;
+        } else {
+            rollouts.children.push(ChildThread { thread: thread.into(), link, responses });
+        }
+        rollouts.files.push(smith_bench::agent::codex::RolloutFile { thread: thread.into(), bytes: bytes.into() });
+    }
+    (root.into(), rollouts)
+}
+
+#[test]
+fn linked_codex_children_are_counted_from_their_rollouts() {
+    let (root, mut rollouts) = repository_threads();
+    let child = &rollouts.children[0].thread;
+    rollouts.children.push(ChildThread {
+        thread: "grandchild".into(),
+        link: Link::Linked { parent: child.clone() },
+        responses: vec![],
+    });
+    rollouts.children.push(ChildThread {
+        thread: "unrelated".into(),
+        link: Link::Linked { parent: "another-root".into() },
+        responses: vec![],
+    });
+    rollouts.children.push(ChildThread { thread: "unlinked".into(), link: Link::Unlinked, responses: vec![] });
+    let mut counts = smith_bench::agent::codex::Observer::default().counts();
+    rollouts.counts(&root, &mut counts).expect("native counts");
+    assert_eq!(counts.children, Measure::Observed { value: 3 });
+    assert_eq!(counts.conversations, Measure::Observed { value: 4 });
+}
+
+#[test]
+fn codex_responses_per_thread_come_from_token_counts() {
+    let (root, rollouts) = repository_threads();
+    let counts = rollouts.responses_per_thread(&root).expect("native token-count records");
+    for (thread, responses) in [(&root, 55), (&rollouts.children[0].thread, 30), (&rollouts.children[1].thread, 27)] {
+        assert_eq!(counts[thread], Measure::Observed { value: responses }, "{thread}");
+    }
+    let mut total = smith_bench::agent::codex::Observer::default().counts();
+    rollouts.counts(&root, &mut total).expect("counts");
+    assert_eq!(total.responses, Measure::Observed { value: 112 });
 }
