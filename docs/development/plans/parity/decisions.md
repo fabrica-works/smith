@@ -769,3 +769,112 @@ changes what section 8.4 holds.
      - It stops as ruling 121's point 5.4 says: on a question for any failure that is smith's under benchmarks.md 3.2, or any unjudged attempt. On model deviations alone that put ten passes out of reach, report the count and stop. `high` waits for the answer, so that both calibrations move to it together.
      - Then 07.3 waits for the answer. No small-window attempt runs, and no check, classifier or instruction word changes.
      - Row 07.3: 69 attempts and $4 in all, 23 and $0.45 spent.
+
+124. **the designer's answer on checks not exercised; 04.s3, then small-window** (design gap, smith 07's block of 2026-10-14T20:59:36Z).
+     Ruling 124. The designer's answer, landed as smith `f242ecaa` (benchmarks.md 3.2, 11.1), `728c9660` (`04.s3` drafted, 07.3 amended) and `3f618dbe` (07.3 goes to `high` at once if base `history` needs it), follows. `smith-04.s3` is a new step in session 04, after `04.s2`. 07.3's small-window rerun needs it. Row 07.3 becomes 73 attempts and $4. The answer's text:
+
+
+     1. **Attempt 03 is a model deviation.** No compaction was owed, so its
+        compaction checks were not exercised. Its other failed checks,
+        `call-count` and `answer`, are the model's.
+        - The model stopped by itself after 12 s. It had 299 s and 64 turns,
+          and smith told it so, accurately.
+        - Every read came back whole.
+        - Its largest prompt was 11,168 tokens. With the 8,192 reserved for
+          output, that is 19,360. The window compacts at 52,428 (65,536 ×
+          4/5).
+        - smith compacts only when a window check fails: "A completion that
+          fails the check is not made: the session compacts instead"
+          (domain/session.md, section 8.1). The check never came near failing.
+        - `conversation-opened`'s "at least 1" holds only for a model that
+          reads far enough to fill the window. The attempt's failure there
+          judged the model's early stop, not a contract of smith's.
+
+     2. **The defect is benchmarks.md's.** "Not exercised" was defined only
+        inside two probes' rows. The supervisor's reading missed the second
+        one, slow-completion's, which is the closer precedent: "An attempt
+        under 60 s is 'not exercised': neither a pass nor a fail, counted like
+        a model deviation". `history` had no such case. Its compaction checks
+        judged that a compaction happened at all, while smith's contract is
+        conditional.
+
+        benchmarks.md 3.2 now says:
+        - **"Not exercised."** "Some of smith's contracts apply only once
+          their condition arises: a call past a bound, a call that lasts over
+          60 s, a window at its compaction threshold. … A check of such a
+          contract, in an attempt where its condition never arose, is 'not
+          exercised': neither a pass nor a fail. What kept the condition away
+          was the model's, so in a calibration the attempt counts like a model
+          deviation (3.1): never a pass, and within the attempts the model may
+          fail. … A check that cannot tell whether its condition arose,
+          because a record it reads is missing, is unavailable instead, and
+          leaves the attempt unjudged."
+        - The unjudged rule's "other than 'not exercised' (11.1)" now reads
+          "(below)".
+
+        benchmarks.md 11.1's `history` row now says how the stream shows the
+        condition:
+        - "A request has reached it when its prompt, as its usage counts it,
+          plus the completion's most output, is above the window times the
+          compaction threshold that `session.started` carries (protocol/limits.md,
+          section 9)."
+        - "The window check (domain/session.md, section 8.1) counts what was
+          appended since the last prompt as an upper bound, so smith makes no
+          ordinary completion past that point: it compacts first."
+        - "An attempt that opened no compaction, and none of whose requests
+          reached that point, leaves `conversation-opened` and
+          `compaction-choice` 'not exercised' (3.2) … An attempt with a
+          request past that point and no compaction fails
+          `conversation-opened`, which is smith's."
+
+        This is the supervisor's first reading, "the attempt's largest prompt
+        against the compaction point", made exact. It is not "unjudged": the
+        stream shows that nothing was owed. The output reservation is counted
+        because 8.1's check counts it. A smith that failed to compact cannot
+        hide behind this rule:
+        - an attempt that reads the whole chain passes the point, because the
+          variant's window is "several times smaller than the reading";
+        - a not-exercised attempt is never a pass, so it uses up the
+          calibration's room for model failures (at most 2 of 12).
+
+     3. **What 07.3 does next** (07-compaction.md, 07.3, as landed):
+        1. **`04.s3` lands first.** Its text is a draft in `04-probes.md`, for
+           the supervisor to name and schedule. `threshold::reached` reads
+           whether any request's prompt plus its `output_tokens` passed
+           `window_tokens` × `policy.compaction_threshold`. Below that point,
+           with no compaction, `conversation-opened` (kind `compaction`) and
+           `compaction-choice` return unavailable "not exercised: no request
+           reached the compaction threshold". `model_deviation` and `count`
+           do not change: they already read "not exercised:" as the model's.
+           About 70 lines and four tests, from an excerpt of attempt 03; the
+           smoke.
+        2. **Ruling 123's base `history` run stands as ruled.** Base
+           `history` decides neither compaction check, so a block it writes
+           before 04.s3 stands.
+        3. **07.3 rebases on 04.s3 and keeps the version 3 arm** (`8a5bb9ec`).
+           04.s3 changes only `benchmarks/`, so the arm is not rebuilt. It
+           runs `calibrate probes/history/small-window --control <07.1's
+           parent> --arm <that arm's directory>` once, whole. The first run of
+           that command is spent: `calibrate` has no resume.
+        4. **If the base run stopped on model deviations alone,** the
+           small-window command does not run at medium. `effort` applies to
+           the task and its variant, so the task names `high`, and both
+           commands run once there (the fallback of ruling 121).
+        5. **Stopping is unchanged otherwise.** 07.3 stops on a question for
+           any failure that is smith's under 3.2, and for any unjudged
+           attempt. An attempt whose compaction checks are not exercised, and
+           whose other failures are the model's, is a deviation, and does not
+           stop.
+
+     4. **For the supervisor:**
+        - **Row 07.3's allowance** is 69 attempts, 23 spent. The worst case is
+          now 73:
+          - base at medium: 12;
+          - small-window again, with its control: 13;
+          - `high`, both commands with the control: 25.
+
+          If base goes to `high` at once (point 3.4), it is 60. At about $0.02
+          an attempt (23 for $0.446), $4 holds either way.
+        - **`04.s3` needs a README row** and a place in the order: before
+          07.3's small-window rerun, after `04.s2`, which landed as
+          `ca595dbc`.
