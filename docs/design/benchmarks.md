@@ -170,8 +170,8 @@ workspace, ending in one result (section 8). The kinds are a closed set:
   through its retry. A request that failed with no blocks made no calls,
   and its prompt is the one its retry sends (protocol/events.md, section
   3.11), so the failed request's missing usage leaves no check
-  unavailable. A failure smith did not recover from is the attempt's end
-  (8.3).
+  unavailable. Its tokens are a retried failure's (8.2). A failure smith
+  did not recover from is the attempt's end (8.3).
 - **An arm** is a binary, a configuration override or an agent. Two arms
   make an experiment: a **fix** (before and after), a **control** (the
   mechanism switched off), a **decision** left to measurement (section
@@ -361,7 +361,11 @@ suite may give one task repetitions of its own, as `parity` does (11.5).
 A task listed under `when_asked` runs only when a run names it
 (`--include`). A new schedule is a new file. An attempt whose every
 provider request was refused with a 4xx status before any output charges
-no tokens to the suite's `max_tokens`; its usage stays unavailable.
+no tokens to the suite's `max_tokens`; its usage stays unavailable. An
+attempt whose total tokens miss only retried failures (8.2) charges the
+total's lower bound, what the provider reported, and the suite goes on.
+Any other unknown in an attempt's total stops the suite as incomplete,
+since what it would charge is not known.
 
 ### 5.4 Agent configurations and results
 
@@ -534,6 +538,29 @@ convention is a tag on the record, with a fixed mapping:
 - **Once per response.** A response's usage counts once however many
   records repeat it: smith's by its `response`, the others' by message
   id. A retried attempt that was billed is a response of its own.
+- **A retried failure** is a response that the provider failed before
+  any block and smith retried, with none of its usage reported
+  (protocol/events.md, section 3.5). Its `response.completed` has
+  `outcome` `failed`, `blocks` 0, a failure whose `evidence` is
+  `response` or `unsent`, and every usage count null. A later
+  `response.started` of its conversation and `turn` has a higher
+  `attempt`.
+  - **Its usage is unknown, never zero.** A provider that answered with
+    a failure may have read the prompt first. skein's failed call
+    carries no usage, whatever the provider sent with it (skein's
+    `llm.md`, section 2: a completion carries the token usage).
+  - **Its scope's totals and the attempt's are lower bounds,** and each
+    names it as a retried failure, apart from any other gap. They miss
+    the failed request alone. Its prompt is its retry's (protocol/events.md,
+    section 3.11), and the retry's usage counts that prompt.
+  - **The common priced spend** (8.1) of an attempt whose totals miss
+    only retried failures prices what was reported. It is a lower bound
+    naming them. Any other gap in the tokens it prices leaves it
+    unavailable.
+  - **A failure whose `evidence` is `maybe_sent` is never one.** The
+    provider never answered it: a deadline of smith's cut it, or the
+    connection dropped, and the provider may have carried the request
+    to its end. What it cost is open.
 - **Scopes:** the root conversation; each child, under its parent;
   compactions; helper models; the total. A total is observed only when
   every scope is; otherwise it is a lower bound naming what is missing,
@@ -848,6 +875,10 @@ Each runs in milliseconds, within the focused and fuzzy budgets.
   and who audits them.
 - **Recording smoke runs:** whether a commit hook checks that a runtime
   change's body carries one.
+- **A failed response's usage:** skein's failed call carries none, so
+  usage a provider sends with its failure is told as null (8.2, a
+  retried failure). Whether a failure should carry it is skein's
+  `llm.md`'s question.
 
 ## 16. Parity with Codex
 
@@ -901,10 +932,22 @@ holds for one pinned Codex at one working tier.
   spend stay in the sums.
 - **Incomplete:** a `Refused(setup)` or a `HarnessError` attempt; an
   unavailable task wall or common priced spend; a lower bound of either
-  on smith's side; Codex without a pass on the fixtures or on
-  `shell-cwd`, since such a task tells the agents nothing. A lower bound
-  on Codex's side is taken as observed, which can only raise smith's
-  ratio, and is flagged.
+  on smith's side, other than a spend that misses only retried failures
+  (8.2); Codex without a pass on the fixtures or on `shell-cwd`, since
+  such a task tells the agents nothing. A lower bound on Codex's side is
+  taken as observed, which can only raise smith's ratio, and is flagged.
+- **smith's retried failures are taken as observed,** and flagged: a
+  spend that misses only retried failures counts as what was reported,
+  and the attempt's row keeps the lower bound that names them.
+  - The provider's failures are not the agent's. Both arms meet them,
+    interleaved on one account.
+  - Codex's tokens are its own running total, read as observed. The
+    harness sees none of Codex's provider attempts, so whatever a Codex
+    request that the provider failed and Codex retried added to that
+    total is read as observed too.
+  - Read the same way, smith's figure is what its provider reported to
+    it, as Codex's is. Holding smith's failed requests to more would
+    hold smith to an account that the harness cannot apply to Codex.
 - **Not on par:** smith without a pass on the fixtures or on `shell-cwd`.
 
 ### 16.4 The verdict
