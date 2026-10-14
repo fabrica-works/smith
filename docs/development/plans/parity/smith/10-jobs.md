@@ -75,7 +75,7 @@ Scope: tools.md 4 and 5 (a job's start, number, reading, bound, invalid
   calls, clamps); limits.md 3's session jobs.
 Needs: smith 08's `jobs` and `job_wait` [08.3]; smith 09's held jobs
   [09.2]; smith 11's transcript version 4 [11.1].
-Files: `crates/smith-domain-tools/src/` (`call.rs` `Call::Shell`
+Files: the ready check's corrections below, then `crates/smith-domain-tools/src/` (`call.rs` `Call::Shell`
   `:44-51`, `Tool`, `effect` `:212`, `Outcome` `:218`; `kit.rs` `admit`
   `:326`; `jobs.rs`, new; `flight.rs`; `command.rs`; `facts.rs`
   `Verdict` `:196`; `limits.rs`), `crates/smith-agent-service/src/calls.rs`
@@ -130,7 +130,7 @@ Removes: nothing.
 Scope: tools.md 5 (stopping, cancelled for another writer, ended with
   its session, one terminal each, within its activation) and 7.
 Needs: 10.1.
-Files: `crates/smith-domain-tools/src/` (`jobs.rs`, `kit.rs`, `boundary.rs`
+Files: the ready check's corrections below, then `crates/smith-domain-tools/src/` (`jobs.rs`, `kit.rs`, `boundary.rs`
   `Event`/`Request` for the cancel, `facts.rs`), `tests/tools/`
   (`tests/jobs.rs`, `tests/fuzzy_*.rs`, the referee).
 Shape: `job` with `stop` asks `JobAct::Stop` and answers `stopped`, or
@@ -156,7 +156,7 @@ Removes: nothing.
 ### 10.3 The session's jobs
 Scope: session.md 5 and 6, and its jobs stories (10); host.md 4.
 Needs: 10.2.
-Files: `crates/smith-domain-session/src/` (`session.rs` `advance`
+Files: the ready check's corrections below, then `crates/smith-domain-session/src/` (`session.rs` `advance`
   `:1459`, `joins` `:1616`, `close` `:467`, `settle` `:1170`, `:1202`;
   `facts.rs` `FactKind` `~:148`; `boundary.rs`; `domain.rs`; `record.rs`;
   `compaction.rs`, its restore), `crates/smith-domain-tools/src/jobs.rs`
@@ -187,7 +187,7 @@ Removes: nothing.
 Scope: run.md 5.3, 8.1, 9.1, 11 and 13 (its jobs list); transcript.md 4
   ("No job is resumed"); events.md 3.6 and 5; testing.md 6.
 Needs: 10.3.
-Files: `crates/smith-domain-run/src/` (`run.rs` `sub_agent` `:1898`,
+Files: the ready check's corrections below, then `crates/smith-domain-run/src/` (`run.rs` `sub_agent` `:1898`,
   `:1976`, `finish` `:1767`, `:1817`, `deliver` `:1830`, `:1871`,
   `close`/`closing` `:2129`, `:2149`; `land.rs` `begin` `:53`; `lease.rs`;
   `facts.rs`), `crates/smith-agent-service/src/` (`calls.rs`, `sinks/`:
@@ -213,6 +213,83 @@ Proof: world, those tests.
 Don't: change who holds the lease (run.md 15).
 Size: 250 lines.
 Removes: nothing.
+
+## The ready check's corrections
+
+Ruling 113, against smith `main` at `7aa4fa03`. Each increment's Files
+include these; where a line below and the text above differ, the line
+below holds.
+
+**10.1**
+- The sketch's `b"Compiling\n".into()` and `b"Finished\n".into()` do not
+  compile (no `From<&[u8; N]>` for `Box<[u8]>`): `.as_slice().into()`.
+  `JobNumber`, `Yield` and `Wait` derive `Clone, Copy, PartialEq, Eq,
+  Hash, Debug`.
+- `run` is private to `tests/tools/tests/simulation.rs:38-46` and takes
+  `(Settings, Grants, Vec<Step>)`; `Step` is `tests/tools/src/world.rs:101`.
+  `jobs.rs` has its own `run` over a checkout and grants (`World::new`,
+  world.rs:329; `session`, :391).
+- skein's `Program` (`testing/skein-fake-checkout/src/lib.rs:55`) has one
+  `output` and one `duration`: BUILD's timed second write is scheduled by
+  the tools world, as `translate::cut` (translate.rs:200) is. The world
+  answers job acts at `tests/tools/src/world.rs:573` (`unreachable!`
+  today).
+- `Call::Shell`'s new `after`, at each construction: production
+  `crates/smith-protocol-llm/src/decode.rs:172` (`Yield::Never` until
+  11.2); `smith-domain-tools/src/tests.rs` (10 sites),
+  `smith-domain-session/src/tests.rs:2960`, `smith-domain/src/tests.rs:2338`;
+  `tests/tools/src/calls.rs:72` (`shell`, the home for `shell_after` and
+  `job`), `tests/tools/tests/fuzzy_memory.rs:127`, `simulation.rs:1430-1440`;
+  `tests/agent/tests/fuzzy_memory.rs:584`, `tests/channel/tests/composed/long.rs:177`,
+  `tests/protocol-llm/tests/adapter_boundary.rs:397`, `production_tools.rs:341`,
+  `tests/session/tests/recorded.rs:789`.
+- The new variants' arms: `Call::Job` at `smith-domain-tools/src/authority.rs:164`,
+  `smith-domain-session/src/history.rs:222`, `tests/session/src/fixture.rs:105`;
+  `Tool::Job` at `smith-protocol-llm/src/descriptions.rs:62-98` (five
+  matches) and `:165`, `prompt.rs:293`, `:332`, `:349`,
+  `tests/session/src/world.rs:1686`; `Outcome::Running` and `Job` at
+  `smith-domain-session/src/session.rs:2606`, `smith-local-domain/src/person.rs:237`,
+  `tests/tools/src/names.rs:10-38`.
+- `record.rs` maps no outcome (`VERSION = 4` and `Turn.jobs`, :158, have
+  landed): the mapping is `smith-protocol-channel`'s, `turn.rs:367`
+  (encode) and `transcript.rs:381` (decode, which refuses wire `Running`
+  and `Job` as malformed today). `transcript.rs:381` takes `record.rs`'s
+  place in Files and Shape.
+- Lines: `call.rs` `effect` :209; `kit.rs` `admit` :262; `facts.rs`
+  `Verdict` :73; `verdict_kind` :427; `random_outcomes` :113; `world.rs`
+  `Work` :212, `deliver` :598, `start` :671.
+
+**10.2**
+- `tools::Request::JobsCancelled` needs arms at `smith-domain-session/src/session.rs:1098-1108`
+  (`tools_step`) and `tests/tools/tests/memory.rs:36-46`;
+  `tools::Event::CancelJobs` at `smith-domain-tools/src/domain.rs:91-98`.
+- A new `tools::FactKind` variant needs arms at `session.rs:1041`
+  (`kit_session`) and `smith-agent-service/src/calls.rs:177-208`, `:215-271`.
+  `tools::FactKind` is `Copy` (facts.rs:29): it carries no `Box<[u8]>`.
+- The tools domain never sees the provider's call id, only
+  `CallInfo.owner` (facts.rs:308-315): `jobs.rs` keeps the owner token,
+  and the session maps it to `ToolCall.id`.
+- `tests/tools` has no referee module: the checks go in
+  `tests/tools/src/world.rs`.
+
+**10.3**
+- The sketch's `FactKind::JobEnded { …, call: Box<[u8]>, … }` fails E0204
+  (session `FactKind` is `Copy`, facts.rs:51): drop `call`, and carry the
+  id in `Fact.call` (`ToolCall.id`, facts.rs:222), which smith-events'
+  `JobEnded.call` (records.rs:919) reads.
+- Arms for `JobEnded` and `Request::JobsCancelled`: `smith-agent-service`
+  `calls.rs:177`, `:215-271`, `children.rs:66`, `:88-121`,
+  `responses.rs:715-731`; `smith-protocol-channel/src/facts.rs:31`;
+  `smith-domain/src/route.rs:470-530`; `tests/session/src/recorded.rs:270-290`,
+  `tests/session/tests/memory.rs:194-202`, `:488-502`, `:865-875`.
+- Lines: `advance` :1463, `joins` :1619, `settle` :1171; `FactKind` :52.
+
+**10.4**
+- The run's ask and its answer: `smith-domain-run/src/boundary.rs`,
+  `smith-domain/src/route.rs:618-622` (beside `run::Request::Close`) and
+  `smith-domain/src/domain.rs:456-474` (an exhaustive `run::Request`
+  match). "Its referee" is the one of `tests/run/src/*_referee.rs` whose
+  story the increment's test runs; name it in the commit body.
 
 ## Interface sketches
 
