@@ -172,10 +172,11 @@ Removes: the summary glued with nothing between its blocks.
 Scope: run.md 3.3's four requirements and the preamble's words
   (findings K2, K4; decisions.md 4.3); benchmarks.md 4.2's before and
   after; `history` version 3 (benchmarks.md 3.2 and 11.1, as the
-  designer's answer to the question of 2026-10-14T20:18:45Z amended
-  them).
+  designer's answers to the questions of 2026-10-14T20:18:45Z and
+  21:00:40Z amended them).
 Needs: 07.2; smith 04's calibration blocks and `history` version 2 [04.1,
-  04.2]; 04.s2's `call-count` and `compaction-carried`; smith 03's
+  04.2]; 04.s2's `call-count` and `compaction-carried`; 04.s3's
+  compaction checks not exercised before the threshold; smith 03's
   summary version 3 [03.1].
 Files: `crates/smith-domain-run/src/prompt.rs` (`SUMMARY`, `:30`;
   `PREAMBLE`), its tests, `tests/local-process/src/world.rs` (`:1089`,
@@ -204,7 +205,9 @@ Shape: `SUMMARY` and `PREAMBLE` rewritten to say, in that order, what
 Test shape: `the_summary_instruction_and_its_preamble_fit_smiths_own_part`
   (their bytes within the bound the profile measures), under 20 ms.
 Proof: live, once each, through `heavy --gate`, on the branch rebased
-  on 04.s2 with the arm rebuilt, and the control 07.1's parent:
+  on 04.s3, with the version 3 arm already built (`8a5bb9ec`: 04.s3
+  changes only `benchmarks/`, so it is not rebuilt), and the control
+  07.1's parent:
   `calibrate probes/history/small-window --control <07.1's parent> --arm
   <dir>` (the control fails `compaction-choice`; the arm passes 10 within
   12), then `calibrate probes/history --arm <dir>`, with no control: base
@@ -215,7 +218,15 @@ Proof: live, once each, through `heavy --gate`, on the branch rebased
   - A failed check that is smith's (benchmarks.md 3.2), or an unjudged
     attempt, stops on a question quoting the attempt's failed checks and
     their evidence. A malformed end under `None` is smith's, and stops on
-    a question (decisions.md 4.4).
+    a question (decisions.md 4.4). An attempt whose compaction checks are
+    "not exercised" (benchmarks.md 3.2, 11.1), with its other failed
+    checks the model's, is a model deviation, and does not stop.
+  - The small-window command's first version 3 run
+    (`probes-history-small-window-8a5bb9ec-20261014T205416Z`) stopped
+    before 04.s3 and is spent: `calibrate` has no resume, so the command
+    runs again whole, control included. A base `history` block written
+    before 04.s3 stands: base `history` decides neither compaction
+    check.
   - If either command stops on model deviations alone (ten passes out of
     reach), the task names `effort = "high"`, its reason in the comment
     above it, and both commands run once more. An attempt that ends on its

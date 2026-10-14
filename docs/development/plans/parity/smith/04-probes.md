@@ -340,6 +340,63 @@ Don't: change `tool-call`, its count or its owner: other tasks keep it,
 Size: 150 lines.
 Removes: nothing.
 
+### 04.s3 Compaction checks not exercised before the threshold
+Scope: benchmarks.md 3.2 ("Not exercised") and 11.1's `history` row, as
+  the designer's answer to the question of 2026-10-14T21:00:40Z amended
+  them.
+Needs: 04.s2.
+Files: a new `benchmarks/src/agent/smith/events/threshold.rs` beside
+  `compaction_choice.rs`, `benchmarks/src/agent/smith/events.rs` (its
+  `mod`), `events/checks.rs` (`ConversationOpened`, `:316`),
+  `events/compaction_choice.rs` (`:60`),
+  `benchmarks/tests/events/compaction_choice.rs`,
+  `benchmarks/tests/probe_command.rs`, `benchmarks/tests/recorded/` (one
+  excerpt).
+Shape:
+  - `threshold::reached(observer) -> Measure<bool>`:
+    - true when a `conversation.opened` of kind `compaction` exists, or
+      when a `response.completed`'s prompt plus its request's
+      `output_tokens` is above its conversation's `model.window_tokens`
+      times `policy.compaction_threshold` from `session.started`'s
+      `limits`, in `u128`: `(prompt + output_tokens) * denominator >
+      window_tokens * numerator`;
+    - the prompt is input, cache reads and cache writes, summed as
+      `prompt_within_window` (`events/scopes.rs:13`) sums them, and a
+      failed response with no blocks that was retried is skipped as it
+      skips one;
+    - unavailable, naming what is missing, when a usage count or the
+      threshold is missing; false otherwise.
+  - `conversation-opened` of kind `compaction` with no opening: when
+    `reached` is false, unavailable "not exercised: no request reached
+    the compaction threshold"; when `reached` is unavailable, unavailable
+    with its reason; when true, false as today. Openings present, and
+    other kinds, as today.
+  - `compaction-choice` with no compaction request: when `reached` is
+    false, the same "not exercised: …" reason; otherwise "no compaction
+    request was observed", as today.
+  - `model_deviation` and `count` do not change: they read "not
+    exercised:" as the model's (`probe.rs:168`).
+Test shape: `tests/events/compaction_choice.rs`:
+  `compaction_checks_are_not_exercised_below_the_threshold` (an excerpt
+  of `probes-history-small-window-8a5bb9ec-20261014T205416Z` attempt 03:
+  six responses, largest prompt 11,168 tokens, window 65,536 at 4/5, no
+  compaction; both checks unavailable "not exercised: …"),
+  `conversation_opened_fails_a_request_past_the_threshold` (that excerpt,
+  with response 6's cache reads raised by 41,100, so that prompt plus
+  8,192 passes 52,428: `conversation-opened` observed false),
+  `conversation_opened_is_unavailable_without_the_threshold` (that
+  excerpt without `policy.compaction_threshold`); `probe_command.rs`:
+  `an_early_finish_before_the_threshold_is_a_model_deviation` (`answer`
+  and `call-count` false, both compaction checks not exercised).
+  `compaction_choice_is_unavailable_without_a_compaction` keeps its
+  expectation. Under 20 ms each.
+Proof: unit, those tests; the smoke (rule 8). The live proof is 07.3's
+  calibration.
+Don't: change `prompt-within-window`, `compaction-carried`,
+  `model_deviation` or `count`; change a task file.
+Size: 70 lines.
+Removes: nothing.
+
 ## Interface sketches
 
 ```rust
