@@ -886,3 +886,10 @@ changes what section 8.4 holds.
      - **A second failure** of the corrected arm stops 10.2 on a question with the term and its bytes, and the line goes on (rule 8, as amended).
      - The two refused attempts count in 10.2's `Live:` trailer (rule 10). They are $0, with no model request.
      - **README rule 8 now says,** until the run ends: a second failure refused at setup, before any model request, is followed by the coordinator's smoke of `origin/main`. If `main`'s smoke passes, the failure is the step's own: it stops its step on a question, and the line goes on. If `main`'s is refused too, the line stops (ruling 115). Every other second failure stops the line, as before.
+
+126. **probes' token cap rises to 20M; base history at high once more** (plan defect, smith 07's block of 2026-10-14T21:50:31Z).
+     Ruling 126. Yes. `benchmarks/suites/probes.toml`'s `max_tokens` rises from 8,000,000 to 20,000,000, as a one-line fix outside Files. Then base `history` at `high` runs once more, whole: `calibrate probes/history --arm <the version 3 arm's directory>`, with no control, as ruling 124 says. `calibrate` has no resume, so the six attempts already run are spent. The small-window block (`probes-history-small-window-8a5bb9ec-20261014T212649Z`, 10 passes and 1 model deviation) and its summary stand, committed. The cap is a token count, not a bound the design sets for this probe. Six attempts at `high` used 8,022,325 tokens, most of them cache reads, so twelve need about 16.1 million.
+
+     - Name it in the commit body under "Users outside Files:", with that arithmetic. `compare.toml`'s own 8,000,000 does not change.
+     - Stopping is ruling 124's: a smith failure or an unjudged attempt stops 07.3 on a question. If model deviations alone put ten passes out of reach at `high`, report the count and stop.
+     - Row 07.3 holds: 73 attempts and $4, of which 46 and $0.93 are spent; this rerun is at most 12 more.
