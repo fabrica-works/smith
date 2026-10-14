@@ -488,3 +488,10 @@ changes what section 8.4 holds.
      - README rule 7 now names this attribute as its one exception: its grep prints this line in 11.1's landing, and nothing else. Every other lint is fixed, as rule 7 says.
      - 11.1's Files now name `crates/smith-host-domain/src/process.rs` (`Event`).
      - If clippy reports `large_enum_variant` on a further enum that holds `process::Event`, `channel::Up` or `TurnValue` inline after `Turn` gains `jobs`, give it the same line, with the same reason, and list it in the commit body under "Lint exceptions by ruling 102:"; any other enum's lint is a question.
+
+103. **the line resumes; kache gc by hand below 40 GB** (infrastructure, smith 03's block of 2026-10-14T10:45:23Z).
+     Ruling 103. The line resumes: the disk has 64 GB available, above development.md 11.4's 40 GB below which new starts are held. kache's store had grown to 135.2 GiB against its 74.5 GiB cap because its timed eviction (`kache-gc.timer`, every 30 minutes) fails on a race, "Running eviction...Error: No such file or directory (os error 2)", and the daemon's own GC request times out; two hand runs of `kache gc` at 10:46 and 10:48 took it to 67.0 GiB.
+
+     - Until the run ends, the coordinator runs `kache gc` itself whenever its disk check (development.md 11.4) reads below 40 GB, before it holds any start; if that run ends with "No such file or directory", it runs `kache gc` once more. It logs each run's line from `kache stats` ("Store: …") in `log.md`.
+     - It still removes the `target/` of a session that is not running when that is not enough, as 11.4 allows.
+     - Nothing else changes: the 40 GB and 15 GB thresholds stay, and the user's primary checkouts are not touched.
