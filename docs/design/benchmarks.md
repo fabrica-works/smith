@@ -164,7 +164,10 @@ adapter's among that adapter's tests.
   only with its proof in its commit body (`docs/development/workflow.md`,
   section 5). Evidence is never left "pending".
 - **Every improvement names the probe that guards it** in its commit
-  body, with the runs the harness prints ready for it:
+  body, except one whose effect does not depend on a model
+  (`docs/development/workflow.md`, section 5), which names its counting
+  test instead. A probe comes with the runs the harness prints ready for
+  it:
   - **after,** on the change, passing;
   - **before,** on its parent, failing, wherever the parent can run the
     probe live;

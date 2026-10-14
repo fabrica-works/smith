@@ -148,6 +148,13 @@ it is complete,** by the kind of proof its kind of change needs:
 
   Tests show that a mechanism works. Only a real model shows that it helps.
   A fix without a probe adds one in the same change.
+- **An improvement whose effect does not depend on a model** (fewer loop
+  iterations, allocations or copies, a cheaper read, with what the model is
+  sent and returns unchanged) is proven by a deterministic test that counts
+  what it saves (iterations, deliveries, bytes) and fails on the parent.
+  The gate runs it, and `smoke-tools` runs as for every landing. No probe is
+  wanted: a probe sees only what a model does, and here the model's side
+  does not change.
 - **Every smith landing that changes code runs `smoke-tools` live,**
   with the cheapest model and effort, whatever the change touched: once,
   through `heavy --gate`, on the branch rebased on `origin/main` just
