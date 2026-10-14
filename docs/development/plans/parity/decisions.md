@@ -1032,3 +1032,10 @@ changes what section 8.4 holds.
         - **12.4 runs the suite "as 12.1"**, so it relies on 03.s1 as well.
         - **A retried `maybe_sent` failure still stops a suite.** If one stops
           12.1's new run, rule 9 runs it once more.
+
+132. **03.s1's dependents: a panic outside its increment, rerun once** (process, smith 03's block of 2026-10-14T22:58:44Z).
+     A process ruling: the panic is not 03.s1's, and 03.s1 does not fix it. `a_second_run_resumes_the_chat_from_its_files` (`tests/end-to-end/end_to_end.rs:151`) passed in 72 logs of this run since 05.3 last changed `crates/smith-local-domain/src/domain.rs` (`d6ebc102`, 18:14Z), and failed in one, 03.s1's dependents run of 22:57Z, with "Load has one terminal: phase Done, requested true" (`domain.rs:606`). 03.s1 changes only `benchmarks/`. So:
+
+     1. smith 03 reruns its dependents command once, as it ran at 22:57Z, on the saved commit `33346dbc`. If it passes, 03.s1 goes on as its session file says (the smoke, then `land`), and its commit body names the 22:57Z panic and its log, `logs/smith-03/03.s1-dependents.log`, in one line. `probe_command`'s "source repository is dirty" failure of the same run needs nothing more: the saved commit made the tree clean.
+     2. If the same test fails again with the same panic, 03.s1 stops and reports a block (kind: process) that quotes the second panic's lines; it changes nothing in `smith-local-domain`. Any other failure is reported as implementer.md 8.7 says.
+     3. Until the run's end, any session whose gate or dependents run fails only on this test, with this panic, reruns that command once in the same way, and names the panic in its commit body or report in one line; a second failure is a block, as in point 2. The supervisor then opens a step for it. later.md records the panic.

@@ -17,6 +17,7 @@ does not do, and when it should be done.
 | `large-write/oversized` proven by a deterministic world | findings F8 | the next probes plan |
 | Codex's turn-state routing | `protocol/README.md` 9; findings R2; the reliability plan's decision 4.4 | after the `affinity` experiment shows a material gain |
 | Writing to a job's standard input | `domain/tools.md` 8 | when a probe shows a model needs it |
+| `a_second_run_resumes_the_chat_from_its_files` (`tests/end-to-end/end_to_end.rs:151`) aborted once in about 73 runs since 05.3 (`d6ebc102`): `smith-local-domain/src/domain.rs:606`, "Load has one terminal: phase Done, requested true" (ruling 132; `tmp/smith/parity/logs/smith-03/03.s1-dependents.log`) | `domain/host.md`'s load of a chat | a step of its own if it comes back in this run (ruling 132); otherwise the next smith plan |
 | Recalibrating `smoke-tools`, `large-write`, `budget/child-quota`, `budget/wrap-up`, `failures/one-turn` and `credentials` in their task files | `benchmarks.md` 3.1, 11.5; `decisions.md` 10.6 and section 9, item 9 | the next run with live budget, before it relies on `suite smoke` |
 | The calibrations 12.3 could not run within the budget | `decisions.md` 7.1 and 10.2 | the next run with live budget |
 | jig's and temper's repins: smith's transcript version 4, and the tools domain's new `Call` and `Outcome` variants, reach temper (all three generated crates and `smith-domain-tools`) and jig (`smith-domain-tools`) | development.md 5.7; `decisions.md` 8.3 | jig's and temper's own plans |
