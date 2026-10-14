@@ -782,6 +782,11 @@ fn archive_preparation(
 fn source_arm(work: Work<'_>, identity: &Identity) -> Result<(crate::arm::ArmRef, String), String> {
     match identity.agent {
         crate::Agent::Codex => {
+            let pin = crate::read_configuration(work.prepared.configuration.as_ref().ok_or("Codex requires its pin")?)
+                .map_err(|error| error.to_string())?;
+            if pin.pin.sha256.as_deref() != Some(identity.binary_sha256.as_str()) {
+                return Err("Codex executable digest differs from its pin".into());
+            }
             let version = raw(
                 work.clock,
                 work.machine,

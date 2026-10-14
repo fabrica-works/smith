@@ -149,15 +149,14 @@ fn a_named_path_cannot_read_credentials_or_an_unrelated_file() {
 
 fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     use smith_bench::agent::{Context, Prepared};
-    use smith_bench::arm::ArmRef;
     use smith_bench::guard::Guard;
     use smith_bench::isolate::{SetupStep, empty};
-    use smith_bench::{Agent, ModelChoice, read_configuration, read_task};
+    use smith_bench::{Agent, ModelChoice, read_task};
 
     let root = private("prepare");
     let home = root.join("user/.codex");
     std::fs::create_dir_all(&home).expect("fake user home");
-    let configuration = b"model=\"user-choice\"\n[agents]\nmax_threads=99\n";
+    let configuration = b"model=\"user-choice\"\n";
     std::fs::write(home.join("config.toml"), configuration).expect("unrelated user configuration");
     let auth = synthetic_auth(500);
     std::fs::write(home.join("auth.json"), &auth).expect("synthetic source login");
@@ -166,11 +165,9 @@ fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
         .expect("guard");
     let private = empty(&guard, &root.join("scratch")).expect("private scratch");
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let pin_file = directory.join("agents/codex/standard.pin.toml");
-    let pin = read_configuration(&pin_file).expect("committed Codex pin");
+    let (pin_file, pin, arm) = codex_pin_fixture(&root);
     let task = read_task(&directory.join("tests/recorded/tasks/valid/task.toml")).expect("sample task");
     let model = ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
-    let arm = ArmRef::Installed { program: "/bin/false".into() };
     let mut context = Context {
         environment: &[],
         guard: &guard,
@@ -198,7 +195,6 @@ fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     assert!(proof.source_unchanged);
     assert!(!codex.credential.exists());
     assert_eq!(std::fs::read(home.join("auth.json")).expect("source unchanged"), auth);
-    assert!(codex.overrides.contains(&("agents.max_threads".into(), "6".into())));
     let invocation = prepared.command();
     let arguments: Vec<_> = invocation.arguments.iter().map(|argument| argument.to_str().expect("UTF-8")).collect();
     assert!(!arguments.contains(&"--ignore-user-config"));
@@ -423,7 +419,6 @@ fn pinned_adapters_usage_collection_and_private_credentials() {
 #[test]
 fn paths_use_the_declared_working_directory_and_refuse_escaped_paths_before_credentials() {
     use smith_bench::agent::Context;
-    use smith_bench::arm::ArmRef;
     use smith_bench::guard::Guard;
     use smith_bench::isolate::SetupStep;
     use std::os::unix::fs::PermissionsExt;
@@ -457,10 +452,8 @@ fn paths_use_the_declared_working_directory_and_refuse_escaped_paths_before_cred
     for path in [private.workspace.join("spec"), private.workspace.join("spec/rules.txt")] {
         assert_eq!(std::fs::metadata(path).expect("read-only layout").permissions().mode() & 0o222, 0);
     }
-    let pin_file = project.join("agents/codex/standard.pin.toml");
-    let pin = smith_bench::read_configuration(&pin_file).expect("committed Codex pin");
+    let (pin_file, pin, arm) = codex_pin_fixture(&root);
     let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
-    let arm = ArmRef::Installed { program: "/bin/false".into() };
     let context = Context {
         environment: &[],
         guard: &guard,
@@ -654,4 +647,139 @@ fn codex_responses_per_thread_come_from_token_counts() {
     let mut total = smith_bench::agent::codex::Observer::default().counts();
     rollouts.counts(&root, &mut total).expect("counts");
     assert_eq!(total.responses, Measure::Observed { value: 112 });
+}
+
+fn codex_pin_fixture(root: &Path) -> (PathBuf, smith_bench::PinnedConfiguration, smith_bench::arm::ArmRef) {
+    let directory = root.join("pin");
+    std::fs::create_dir(&directory).expect("fixture pin directory");
+    let metadata = include_str!("../agents/codex/standard.pin.toml").replace(
+        "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+        "0d63d62cbfd277a91299c0335296a03bcb6a02c2642a90e2b5815caf71726a8d",
+    );
+    let pin_file = directory.join("standard.pin.toml");
+    std::fs::write(&pin_file, metadata).expect("fixture pin");
+    std::fs::write(directory.join("overrides.toml"), include_str!("../agents/codex/overrides.toml"))
+        .expect("fixture overrides");
+    let program = root.join("tools/codex-0.160.0/bin/codex");
+    std::fs::create_dir_all(program.parent().expect("bin directory")).expect("fixture package");
+    std::fs::write(&program, b"unexecuted Codex fixture\n").expect("fixture executable bytes");
+    let pin = smith_bench::read_configuration(&pin_file).expect("fixture pin");
+    (pin_file, pin, smith_bench::arm::ArmRef::Installed { program })
+}
+
+struct CodexAttempt {
+    root: PathBuf,
+    guard: smith_bench::guard::Guard,
+    private: smith_bench::isolate::Private,
+    pin_file: PathBuf,
+    pin: smith_bench::PinnedConfiguration,
+    task: smith_bench::Task,
+    model: smith_bench::ModelChoice,
+    arm: smith_bench::arm::ArmRef,
+    home: PathBuf,
+}
+
+impl CodexAttempt {
+    fn new(name: &str) -> Self {
+        let root = private(name);
+        let home = root.join("user/.codex");
+        std::fs::create_dir_all(&home).expect("unissued login directory");
+        std::fs::write(home.join("auth.json"), synthetic_auth(500)).expect("unissued login");
+        let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+            .expect("fixture guard");
+        let private = smith_bench::isolate::empty(&guard, &root.join("scratch")).expect("fixture attempt");
+        let (pin_file, pin, arm) = codex_pin_fixture(&root);
+        let task = smith_bench::read_task(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/tasks/valid/task.toml"),
+        )
+        .expect("fixture task");
+        let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
+        Self { root, guard, private, pin_file, pin, task, model, arm, home }
+    }
+
+    fn context(&self) -> smith_bench::agent::Context<'_> {
+        smith_bench::agent::Context {
+            guard: &self.guard,
+            private: &self.private,
+            pin: &self.pin,
+            pin_file: &self.pin_file,
+            task: &self.task,
+            variant: None,
+            model: &self.model,
+            arm: &self.arm,
+            installed_version: "codex-cli 0.160.0",
+            home: &self.home,
+            wall: skein_lib::Wall::from_nanos(100_000_000_000),
+            lifetime: skein_lib::Duration::from_secs(20),
+            environment: &[],
+        }
+    }
+
+    fn finish(self, prepared: smith_bench::agent::codex::Prepared) {
+        prepared.borrowed.expect("private credential").finish(&self.guard).expect("settled cleanup");
+        std::fs::remove_dir_all(self.root).expect("fixture cleanup");
+    }
+}
+
+#[test]
+fn a_codex_binary_whose_digest_differs_from_its_pin_is_refused() {
+    let fixture = CodexAttempt::new("digest");
+    let smith_bench::arm::ArmRef::Installed { program } = &fixture.arm else {
+        panic!("fixture package");
+    };
+    std::fs::write(program, b"different executable\n").expect("changed executable");
+    let context = smith_bench::agent::Context { home: &fixture.root.join("absent-login"), ..fixture.context() };
+    let refusal = smith_bench::agent::codex::prepare(&context).expect_err("digest drift before credentials");
+    assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Configuration);
+    assert!(refusal.reason.contains("differs from its pin"));
+    assert!(!fixture.private.root.join("codex/auth.json").exists());
+    std::fs::remove_dir_all(fixture.root).expect("fixture cleanup");
+}
+
+#[test]
+fn the_codex_pin_names_only_the_keys_an_attempt_must_own() {
+    let pin_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("agents/codex/standard.pin.toml");
+    let pin = smith_bench::read_configuration(&pin_file).expect("shipped pin");
+    assert_eq!(pin.pin.sha256.as_deref(), Some("12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad"));
+    assert_eq!(pin.pin.package.as_deref(), Some(Path::new("tools/codex-0.160.0")));
+    let document: toml::Table =
+        toml::from_str(include_str!("../agents/codex/overrides.toml")).expect("shipped overrides");
+    let keys: Vec<_> = document.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["approval_policy", "check_for_update_on_startup", "harness", "mcp_servers", "sandbox_mode"]);
+}
+
+#[test]
+fn codex_writable_roots_hold_the_attempts_caches() {
+    let fixture = CodexAttempt::new("writable");
+    let prepared = smith_bench::agent::codex::prepare(&fixture.context()).expect("private preparation");
+    let (_, roots) = prepared
+        .overrides
+        .iter()
+        .find(|(key, _)| key == "sandbox_workspace_write.writable_roots")
+        .expect("cache roots");
+    let document: toml::Table = toml::from_str(&format!("roots={roots}")).expect("TOML roots");
+    let paths: Vec<_> = document["roots"]
+        .as_array()
+        .expect("root array")
+        .iter()
+        .map(|value| PathBuf::from(value.as_str().expect("root path")))
+        .collect();
+    assert_eq!(
+        paths,
+        [fixture.private.cargo_home.clone(), fixture.private.target.clone(), fixture.private.temporary.clone()]
+    );
+    fixture.finish(prepared);
+}
+
+#[test]
+fn codex_trusts_the_attempt_root() {
+    let fixture = CodexAttempt::new("trusted");
+    let prepared = smith_bench::agent::codex::prepare(&fixture.context()).expect("private preparation");
+    let (_, projects) = prepared.overrides.iter().find(|(key, _)| key == "projects").expect("trust table");
+    let document: toml::Table = toml::from_str(&format!("projects={projects}")).expect("TOML projects");
+    assert_eq!(
+        document["projects"][fixture.private.workspace.to_str().expect("attempt root")]["trust_level"].as_str(),
+        Some("trusted")
+    );
+    fixture.finish(prepared);
 }

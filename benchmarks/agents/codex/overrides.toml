@@ -1,12 +1,9 @@
-# Each dotted key is passed separately as -c KEY=VALUE. The adapter also
-# disables user config/rules, keeping authentication in the user's CODEX_HOME.
+# Each key is passed as -c KEY=VALUE in an attempt-owned CODEX_HOME.
+# Model, effort, trust and writable caches are supplied by the adapter.
 "approval_policy" = "never"
 "sandbox_mode" = "workspace-write"
 "check_for_update_on_startup" = false
 "mcp_servers" = {}
-"agents.max_threads" = 6
-"shell_environment_policy.inherit" = "all"
-"features.multi_agent" = true
 
 [harness]
 teardown_ms = 5000

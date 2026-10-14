@@ -65,6 +65,10 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
         if reread != *context.pin {
             return Err("Codex configuration changed since the attempt was planned".into());
         }
+        let digest = crate::arm::binary_digest(&program)?;
+        if Some(digest.as_str()) != context.pin.pin.sha256.as_deref() {
+            return Err(format!("Codex executable digest {digest} differs from its pin"));
+        }
         let overrides_path = context
             .pin_file
             .parent()
@@ -96,6 +100,11 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
         let project = toml::Table::from_iter([("trust_level".into(), toml::Value::String("trusted".into()))]);
         let projects = toml::Table::from_iter([(workspace.display().to_string(), toml::Value::Table(project))]);
         overrides.push(("projects".into(), toml::Value::Table(projects).to_string()));
+        let writable = [&context.private.cargo_home, &context.private.target, &context.private.temporary]
+            .into_iter()
+            .map(|path| toml::Value::String(path.display().to_string()))
+            .collect();
+        overrides.push(("sandbox_workspace_write.writable_roots".into(), toml::Value::Array(writable).to_string()));
         overrides.push((
             "model_reasoning_effort".into(),
             toml::Value::String(context.model.effort.clone().expect("validated effort")).to_string(),

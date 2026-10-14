@@ -295,7 +295,7 @@ fn task_requests(
         }
         let installed;
         let selected = if agent.agent == Agent::Codex && matches!(arm, ArmRef::Built(_)) {
-            installed = codex()?;
+            installed = codex(repository, &agent.config)?;
             &installed
         } else {
             arm
@@ -447,9 +447,16 @@ fn prepare(
     Ok(Planned { run, suite: suite_file, directory, requests })
 }
 
-fn codex() -> Result<ArmRef, String> {
-    let machine = crate::isolate::Machine::from_environment()?;
-    Ok(ArmRef::Installed { program: crate::isolate::program(&machine, Path::new("/"), Path::new("codex"))? })
+fn codex(repository: &Path, configuration: &str) -> Result<ArmRef, String> {
+    let pin = crate::read_configuration(
+        &repository.join("benchmarks/agents/codex").join(format!("{configuration}.pin.toml")),
+    )
+    .map_err(|error| error.to_string())?;
+    let guard = Guard::from_environment()?;
+    let program = crate::arm::state_root(&guard)?
+        .join(pin.pin.package.ok_or("Codex requires a private package")?)
+        .join("bin/codex");
+    Ok(ArmRef::Installed { program })
 }
 
 fn archived(repository: &Path, source: &Source) -> Result<ArmRef, String> {
@@ -505,7 +512,7 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().ok_or("workspace missing")?;
     crate::arm::resolve_commit(repository, "HEAD")?;
     let arm = if agent == Agent::Codex {
-        codex()?
+        codex(repository, "standard")?
     } else if let Some(directory) = options.get("--arm") {
         ArmRef::Built(crate::arm::read_build(&Path::new(directory).join("smith"))?)
     } else {

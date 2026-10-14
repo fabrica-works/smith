@@ -218,6 +218,10 @@ pub struct Configuration {
     pub agent: Agent,
     pub provider: Provider,
     pub version: String,
+    /// The private package executable's digest, required for Codex.
+    pub sha256: Option<String>,
+    /// Codex's whole package, relative to the harness state root.
+    pub package: Option<PathBuf>,
     pub configuration: PathBuf,
 }
 
@@ -241,6 +245,19 @@ pub fn read_configuration(file: &Path) -> Result<PinnedConfiguration, Refusal> {
             if pin.provider != Provider::Codex {
                 return Err(Refusal::new(file, "provider", "Codex requires its codex route"));
             }
+            let digest = pin
+                .sha256
+                .as_deref()
+                .ok_or_else(|| Refusal::new(file, "sha256", "Codex requires an executable digest"))?;
+            if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(Refusal::new(file, "sha256", "expected 64 lowercase hexadecimal digits"));
+            }
+            let package = pin
+                .package
+                .as_ref()
+                .ok_or_else(|| Refusal::new(file, "package", "Codex requires a private package"))?;
+            crate::check::check_path(file, "package", package)?;
         }
         Agent::ClaudeCode => {
             if pin.provider != Provider::Anthropic {
