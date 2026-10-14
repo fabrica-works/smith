@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 use core::mem::{self, size_of};
-use skein_lib::{List, Queue};
+use skein_lib::{List, Queue, Writer};
 
 use super::{Conversation, End, Limits, Request, content_cost, payload_cost, release_provider, spec_cost};
 use crate::llm::{Block, Cap, Evidence, Failure, Limit, Message, Role, Stop, Usage};
@@ -206,10 +206,11 @@ pub(super) fn open_window(
         Compaction::Asking { held, .. } => held,
         Compaction::Idle => unreachable!("a summary answers a compaction"),
     };
-    let count = held.len().checked_add(2).expect("held offer plus task and summary fits u32");
+    let count = held.len().checked_add(3).expect("held offer plus task, preamble and summary fits u32");
     let summary_bytes = u64::try_from(text.len()).expect("bounded summary bytes");
     let mut content = List::with_capacity(count);
     content.push(Block::Text { text: conversation.task.clone(), replay: None }).expect("task slot");
+    content.push(Block::Text { text: conversation.preamble.clone(), replay: None }).expect("preamble slot");
     content.push(Block::Text { text, replay: None }).expect("summary slot");
     for text in held.into_boxed() {
         content.push(Block::Text { text, replay: None }).expect("one held message per slot");
@@ -257,6 +258,7 @@ fn new_bytes(conversation: &Conversation, content: &[Block]) -> Option<u64> {
         .checked_add(conversation.final_turn.note_bytes()?)?
         .checked_add(u64::try_from(conversation.task.len()).ok()?)?
         .checked_add(u64::try_from(conversation.summary.len()).ok()?)?
+        .checked_add(u64::try_from(conversation.preamble.len()).ok()?)?
         .checked_add(match &conversation.effort {
             Some(effort) => u64::try_from(effort.len()).ok()?,
             None => 0,
@@ -338,8 +340,39 @@ pub(super) fn accept(
         super::clear_pending(conversation);
         return Some(End::NoSummary { fault });
     }
-    let text = super::text_of(&completion.content);
+    let text = summary_text(&completion.content);
     open_window(conversation, text, completion.usage, limits, out)
+}
+
+/// Join only summary text blocks, leaving other answer text policies unchanged.
+fn summary_text(content: &[Block]) -> Box<[u8]> {
+    let mut length = 0_usize;
+    let mut parts = 0_usize;
+    for block in content {
+        match block {
+            Block::Text { text, .. } => {
+                length = length.checked_add(text.len()).expect("bounded summary text");
+                parts = parts.checked_add(1).expect("bounded summary blocks");
+            }
+            Block::Refusal { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } | Block::Opaque { .. } => {}
+        }
+    }
+    let separators = parts.saturating_sub(1).checked_mul(2).expect("bounded summary separators");
+    let mut written = Writer::new(length.checked_add(separators).expect("bounded joined summary"));
+    let mut first = true;
+    for block in content {
+        match block {
+            Block::Text { text, .. } => {
+                if !first {
+                    written.put(b"\n\n").expect("measured separator");
+                }
+                written.put(text).expect("measured text");
+                first = false;
+            }
+            Block::Refusal { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } | Block::Opaque { .. } => {}
+        }
+    }
+    written.finish()
 }
 
 pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Facts, request: &Request) {
@@ -421,7 +454,7 @@ pub(super) fn restore(
     match first.kind {
         crate::record::Kind::Window { .. } if transcript.turns.len() == 1 => {
             conversation.window = Window::fresh(1, first.usage.output_tokens.unwrap_or(u64::from(conversation.output)));
-            match first.messages.first().expect("one window message").content.get(1) {
+            match first.messages.first().expect("one window message").content.get(2) {
                 Some(Block::Text { text, .. }) => {
                     conversation.window.summary_bytes = u64::try_from(text.len()).expect("bounded summary");
                 }

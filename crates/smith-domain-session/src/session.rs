@@ -184,6 +184,7 @@ struct Conversation {
     compaction: compaction::Compaction,
     task: Box<[u8]>,
     summary: Box<[u8]>,
+    preamble: Box<[u8]>,
     window_turn: bool,
     /// The conversation so far, oldest first, starting with the spec's prompt.
     transcript: List<Message>,
@@ -2026,6 +2027,7 @@ fn admit(
         .checked_add(final_turn.note_bytes()?)?
         .checked_add(len(&task)?)?
         .checked_add(len(&spec.summary)?)?
+        .checked_add(len(&spec.preamble)?)?
         .checked_add(match &spec.effort {
             Some(effort) => len(effort)?,
             None => 0,
@@ -2056,6 +2058,7 @@ fn admit(
         compaction: compaction::Compaction::Idle,
         task,
         summary: spec.summary,
+        preamble: spec.preamble,
         window_turn: false,
         transcript,
         bytes,

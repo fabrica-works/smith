@@ -281,6 +281,8 @@ pub struct Spec {
     pub window: u32,
     /// Run-owned instruction supplied to each compaction completion.
     pub summary: Box<[u8]>,
+    /// The run's text introducing the summary in a new window.
+    pub preamble: Box<[u8]>,
     /// The most tokens each answer may take, and fewer once the output budget
     /// has less left.
     pub output: u32,

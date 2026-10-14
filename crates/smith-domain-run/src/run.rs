@@ -2034,6 +2034,7 @@ fn child_opening(
         ),
         prompt: copy_of(prompt::BEGIN),
         summary: copy_of(prompt::SUMMARY),
+        preamble: copy_of(prompt::PREAMBLE),
         tools: plan.families.tools,
         workspace: run.workspace.clone(),
         budget: plan.budget,

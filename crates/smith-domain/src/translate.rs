@@ -65,6 +65,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         system,
         prompt,
         summary,
+        preamble,
         tools,
         workspace,
         budget,
@@ -119,6 +120,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         output: llm.output,
         window: llm.window,
         summary,
+        preamble,
         budget: Budget { turns, time, ..receiving },
     };
     Some((spec, offered))

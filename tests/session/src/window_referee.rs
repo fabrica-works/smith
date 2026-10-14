@@ -70,16 +70,15 @@ pub(super) fn recorded_window(session: &mut Session, turn: &agent::record::Turn,
     assert!(session.compacting.is_some(), "a window boundary follows one compaction");
     assert_eq!(turn.messages.len(), 1);
     assert_eq!(turn.messages[0].role, agent::llm::Role::User);
-    let text: Vec<u8> = session.accepted_content[index]
+    let text = session.accepted_content[index]
         .iter()
-        .flat_map(|block| match block {
-            Block::Text { text, .. } => text.to_vec(),
-            Block::Opaque { .. } | Block::Refusal { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } => {
-                Vec::new()
-            }
+        .filter_map(|block| match block {
+            Block::Text { text, .. } => Some(text.as_ref()),
+            Block::Opaque { .. } | Block::Refusal { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } => None,
         })
-        .collect();
-    assert_eq!(turn.messages[0].content[1], Block::Text { text: text.clone().into(), replay: None });
+        .collect::<Vec<&[u8]>>()
+        .join(b"\n\n".as_slice());
+    assert_eq!(turn.messages[0].content[2], Block::Text { text: text.clone().into(), replay: None });
     session.compacting = None;
     session.opening = Some(turn.messages.clone());
     session.ordinary = None;

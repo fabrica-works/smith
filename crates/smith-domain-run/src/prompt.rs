@@ -29,6 +29,9 @@ pub(crate) const BEGIN: &[u8] = b"Begin the work your brief describes.";
 /// The summary keeps the work ready to continue in a new window.
 pub(crate) const SUMMARY: &[u8] = b"Summarise the work so far so it can continue in a new context window. Keep the task, decisions, changes made, current results, pending work and constraints. Be concise and concrete.";
 
+/// The text introducing a summary in the new window.
+pub(crate) const PREAMBLE: &[u8] = b"Summary of the earlier context window, written by you before it was compacted:";
+
 /// The summary instruction's contribution to the compaction headroom.
 #[must_use]
 pub fn summary_bytes() -> u64 {
@@ -82,6 +85,7 @@ fn render_fixed(text: &mut Text) {
     text.put(&finish_now());
     text.put(&child_final_note());
     text.put(SUMMARY);
+    text.put(PREAMBLE);
 }
 
 fn render_fixed_budget(text: &mut Text) {

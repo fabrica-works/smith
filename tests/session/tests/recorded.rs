@@ -467,8 +467,10 @@ fn repeated_provider_ids_keep_distinct_origins_and_restore_includes_history_pref
 // rather than supplied answers as evidence. Contract: domain/session.md, 3/5.
 fn initial_owned(opening: &record::Opening) -> u64 {
     let spec = &opening.spec;
-    u64::try_from(spec.model.len() + spec.system.len() + 2 * spec.prompt.len() + spec.summary.len())
-        .expect("small fixture")
+    u64::try_from(
+        spec.model.len() + spec.system.len() + 2 * spec.prompt.len() + spec.summary.len() + spec.preamble.len(),
+    )
+    .expect("small fixture")
         + u64::try_from(core::mem::size_of::<llm::Block>()).expect("block size")
         + u64::try_from(spec.delegated.len() * core::mem::size_of::<llm::Descriptor>()).expect("descriptors")
 }
@@ -1200,6 +1202,7 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
         role: llm::Role::User,
         content: Box::new([
             llm::Block::Text { text: b"task".as_slice().into(), replay: None },
+            llm::Block::Text { text: b"Earlier window summary:".as_slice().into(), replay: None },
             llm::Block::Text { text: b"summary".as_slice().into(), replay: None },
         ]),
     }]);

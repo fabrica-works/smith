@@ -199,6 +199,7 @@ fn payload_at_edge(limits: &session::Limits, system: &[u8]) -> u64 {
             )
         })
         .and_then(|bytes| bytes.checked_sub(26)) // The fixture's retained summary instruction.
+        .and_then(|bytes| bytes.checked_sub(23)) // The retained preamble is beside the task.
         .and_then(|bytes| bytes.checked_div(2)) // The task is retained beside its history block.
         .expect("model holds one maximum history and receiving credit")
 }

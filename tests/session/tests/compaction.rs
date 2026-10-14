@@ -123,7 +123,8 @@ fn a_continue_past_the_threshold_compacts_and_holds_its_message_back() {
     assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
     let opened = world.prompts.last().expect("new window request");
     let [message] = &*opened.messages else { panic!("one opening message: {opened:?}") };
-    let expected = [b"wake".as_slice(), b"the summary".as_slice(), b"go on".as_slice()];
+    let expected =
+        [b"wake".as_slice(), b"Earlier window summary:".as_slice(), b"the summary".as_slice(), b"go on".as_slice()];
     let texts: Vec<&[u8]> = message
         .content
         .iter()
@@ -202,7 +203,7 @@ fn calls_in_a_compactions_answer_are_not_run() {
 fn a_cut_summary_opens_its_window_as_written() {
     let mut world = asked(4706);
     world.complete(said(b"cut here"), llm::Stop::MaxTokens, llm::Usage::ZERO);
-    assert_eq!(world.turns.last().expect("window turn").messages[0].content[1], said(b"cut here")[0]);
+    assert_eq!(world.turns.last().expect("window turn").messages[0].content[2], said(b"cut here")[0]);
     assert!(world.end.is_none());
     world.close();
 }
@@ -562,5 +563,62 @@ fn a_model_change_compaction_is_charged_at_the_windows_prices() {
     assert_eq!(world.turns[0].spent, 13);
     world.complete(said(b"new answer"), llm::Stop::EndTurn, usage);
     assert_eq!(world.spend, [13, 35]);
+    world.close();
+}
+
+#[test]
+fn a_summary_of_several_text_blocks_is_joined_by_blank_lines() {
+    let mut world = asked(4850);
+    world.complete(
+        Box::new([
+            llm::Block::Text { text: b"first notes".as_slice().into(), replay: None },
+            llm::Block::Opaque { bytes: b"reasoning".as_slice().into() },
+            llm::Block::Text { text: b"next steps".as_slice().into(), replay: None },
+            llm::Block::Text { text: b"exact values".as_slice().into(), replay: None },
+        ]),
+        llm::Stop::EndTurn,
+        llm::Usage { output_tokens: Some(40), ..usage() },
+    );
+    assert_eq!(
+        world.turns.last().expect("window turn").messages[0].content[2],
+        said(b"first notes\n\nnext steps\n\nexact values")[0]
+    );
+    world.close();
+}
+
+#[test]
+fn the_new_window_opens_with_the_task_the_preamble_and_the_summary() {
+    let mut world = asked(4851);
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage { output_tokens: Some(40), ..usage() });
+    assert_eq!(
+        world.turns.last().expect("window turn").messages,
+        Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([
+                llm::Block::Text { text: b"wake".as_slice().into(), replay: None },
+                llm::Block::Text { text: b"Earlier window summary:".as_slice().into(), replay: None },
+                llm::Block::Text { text: b"summary".as_slice().into(), replay: None },
+                llm::Block::Text { text: b"go on".as_slice().into(), replay: None },
+            ]),
+        }]) as Box<[llm::Message]>,
+    );
+    world.close();
+}
+
+#[test]
+fn a_restored_window_reads_its_summary_after_the_preamble() {
+    let mut old = asked(4852);
+    old.complete(said(&[b's'; 2_500]), llm::Stop::EndTurn, llm::Usage { output_tokens: Some(40), ..usage() });
+    old.close();
+    let mut world = World::new(4853, 256);
+    let mut history = transcript(&old);
+    history.turns = Box::new([old.turns.last().expect("window turn").clone()]);
+    let mut start = opening(Some(history), 10_000);
+    start.spec.window = 2_000;
+    start.spec.output = 512;
+    world.open(start);
+    assert_eq!(world.prompts.len(), 1);
+    assert_eq!(world.prompts[0].messages[0].content[2], said(&[b's'; 2_500])[0]);
+    assert!(!is_summary(&world));
     world.close();
 }

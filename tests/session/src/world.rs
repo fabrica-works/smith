@@ -286,6 +286,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
         final_turn: None,
         window: 65_536,
         summary: b"Summarise the work so far.".as_slice().into(),
+        preamble: b"Earlier window summary:".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },

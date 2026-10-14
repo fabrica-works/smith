@@ -301,6 +301,7 @@ fn spec() -> Spec {
         final_turn: None,
         window: 65_536,
         summary: b"Summarise the work so far.".as_slice().into(),
+        preamble: b"Earlier window summary:".as_slice().into(),
         affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -494,6 +495,8 @@ fn initial_bytes() -> u64 {
                 .checked_mul(2)
                 .expect("task copied")
                 .checked_add(u64::try_from(spec.summary.len()).expect("summary fits"))
+                .expect("summary fits")
+                .checked_add(u64::try_from(spec.preamble.len()).expect("preamble fits"))
                 .expect("retained instructions fit"),
         )
         .expect("fixture opening payload fits");

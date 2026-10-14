@@ -671,6 +671,8 @@ pub struct Opening {
     pub prompt: Box<[u8]>,
     /// The run's instruction for summarising this conversation.
     pub summary: Box<[u8]>,
+    /// The run's text introducing the summary in a new window.
+    pub preamble: Box<[u8]>,
     /// The tools the LLM may run on the checkout.
     pub tools: Tools,
     /// Immutable accepted mounts, git kinds and initial conflicts, copied to the

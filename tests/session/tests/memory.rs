@@ -109,7 +109,7 @@ fn pressure_limits(original: &Limits, route: Route, messages: u32) -> (Limits, u
     let pressure = original.history_bytes;
     let block = size(size_of::<Block>());
     let part = size(size_of::<Part>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let tooling_cost = block + 3 + part + 1 + block + 1;
     let output = pressure.checked_sub(spec_cost + tooling_cost).expect("original full Tool payload fits");
     let field =
@@ -416,6 +416,7 @@ fn fill_spec(limits: &Limits) -> Spec {
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
+        preamble: b"Earlier window summary:".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -457,7 +458,7 @@ fn a_domain_with_every_session_full_stays_within_its_worst_case() {
 fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
     use smith_domain_session::record;
     let block = size(size_of::<Block>());
-    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
+    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let turn_charge = block + 1 + block + 3 + block + 1;
     let output = 16_384 - spec_charge - turn_charge;
     let limits = Limits {
@@ -511,6 +512,7 @@ fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
+        preamble: b"Earlier window summary:".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -587,7 +589,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let meter = Meter::new();
     let mut domain = Domain::new(&limits, 78);
     let block = size(size_of::<Block>());
-    let charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
+    let charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
     let headroom = block + 256;
     let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve - headroom;
@@ -596,6 +598,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
+        preamble: b"Earlier window summary:".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -664,7 +667,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     let calls = 128_u32;
     let id_bytes = 8192_u64;
     let block = size(size_of::<Block>());
-    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
+    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let original = block + 1 + u64::from(calls) * (block + id_bytes + 2);
     let limits =
         Limits { history_messages: 4, history_bytes: spec_charge + original, spend: u64::MAX, tools, ..LIMITS };
@@ -699,6 +702,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
+        preamble: b"Earlier window summary:".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -941,7 +945,7 @@ fn read_completion(width: u32) -> Completion {
 #[test]
 fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls() {
     let block = size(size_of::<Block>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let completion_bytes = block + 3 + size(size_of::<Part>()) + 1;
     let base = Limits { completion_bytes, completion_blocks: 1, failure_bytes: 0, history_messages: 5, ..LIMITS };
     let reserve = smith_domain_session::completion_reserve(&base).expect("checked provider terminal");
@@ -1245,7 +1249,7 @@ fn the_four_message_cap_asks_for_compaction_before_provider_growth() {
             }
             Route::Talk => {
                 let block = size(size_of::<Block>());
-                let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
+                let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
                 let message = original.history_bytes - spec_cost - block - 1 - block;
                 let seen = measured_step(
                     &mut domain,
@@ -1292,7 +1296,7 @@ fn run_call(ticket: u64, effect: Effect) -> Decoded {
 #[test]
 fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() {
     let block = size(size_of::<Block>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let choice_cost = 2 * size(size_of::<Token>());
     let note_bytes = 8192;
     let original = Limits { history_messages: 5, ..LIMITS };
@@ -1352,7 +1356,7 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
 #[test]
 fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released() {
     let block = size(size_of::<Block>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
     let note_bytes = 8192;
     let original = Limits { history_messages: 5, ..LIMITS };
     let credit = smith_domain_session::completion_reserve(&original).expect("whole provider credit");
