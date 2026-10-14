@@ -123,24 +123,15 @@ pub fn prepare_checked(
     {
         registry.shape = super::events::Shape::Exec;
     }
-    match registry.shape {
-        super::events::Shape::LocalTrace
-        | super::events::Shape::LocalAgentTrace
-        | super::events::Shape::Exec
-        | super::events::Shape::Chat => {}
-    }
     let bytes = fs::read(directory.join(&pin.pin.configuration)).map_err(|error| configuration(error.to_string()))?;
     if bytes.len() > 65_536 {
-        return Err(configuration("Smith settings template exceeds its bound"));
+        return Err(configuration("Smith settings layer exceeds its bound"));
     }
     let text = std::str::from_utf8(&bytes).map_err(|error| configuration(error.to_string()))?;
     let base: toml::Value = toml::from_str(text).map_err(|error| configuration(error.to_string()))?;
     let base = serde_json::to_value(base).map_err(|error| configuration(error.to_string()))?;
     let root = context.private.root.join("smith");
     crate::run::private_parent(context.guard, &root).map_err(configuration)?;
-    if !matches!(registry.shape, super::events::Shape::Exec | super::events::Shape::Chat) {
-        return Err(configuration("Smith product settings require a product face"));
-    }
     exec(context, &base, program, registry, overrides)
 }
 
@@ -243,9 +234,6 @@ fn check_arguments(face: super::events::Shape, rendered: &serde_json::Value) -> 
     match face {
         super::events::Shape::Exec => arguments.push("--json".into()),
         super::events::Shape::Chat => {}
-        super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace => {
-            unreachable!("product preparation only")
-        }
     }
     arguments.extend(product_arguments(rendered));
     arguments.push("-".into());
@@ -260,11 +248,10 @@ fn exec_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
 }
 
 impl Prepared {
-    /// The product check's retained setup document; historical invocations have none.
+    /// The product check's retained setup document for the selected invocation.
     #[must_use]
     pub fn check_document(&self) -> Option<PathBuf> {
-        matches!(self.face, super::events::Shape::Exec | super::events::Shape::Chat)
-            .then(|| self.settings.with_file_name("check.json"))
+        Some(self.settings.with_file_name("check.json"))
     }
 
     /// Invoke the frozen native local front end with its own private state.
@@ -281,24 +268,11 @@ impl Prepared {
                 teardown: self.teardown,
             };
         }
-        if self.face == super::events::Shape::Exec {
-            return Invocation {
-                program: self.program.clone(),
-                arguments: exec_arguments(&self.rendered),
-                environment: Vec::new(),
-                mode: skein_world::end_to_end::Mode::Pipes,
-                teardown: self.teardown,
-            };
-        }
         Invocation {
             program: self.program.clone(),
-            arguments: vec![
-                "local".into(),
-                self.settings.clone().into_os_string(),
-                self.state.clone().into_os_string(),
-            ],
+            arguments: exec_arguments(&self.rendered),
             environment: Vec::new(),
-            mode: skein_world::end_to_end::Mode::Terminal,
+            mode: skein_world::end_to_end::Mode::Pipes,
             teardown: self.teardown,
         }
     }
@@ -325,7 +299,6 @@ mod tests {
                 commit: "0".repeat(40),
                 shape: face,
                 receiving: Receiving { string: 64, content: 4096, items: 32, encoded_line: 65536 },
-                session_ended_aborted: true,
             },
             rendered: json!({"trace":{"capture":"everything"},"invocation":["-C","/scratch/workspace","-m","codex/gpt-6-luna","--effort","low"]}),
             program: "/arm/smith".into(),

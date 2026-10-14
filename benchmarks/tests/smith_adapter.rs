@@ -47,7 +47,7 @@ fn root(name: &str) -> PathBuf {
 }
 
 fn observing(trace: &Path) -> Observing {
-    let face = smith_bench::agent::smith::events::Shape::LocalTrace;
+    let face = smith_bench::agent::smith::events::Shape::Chat;
     Observing::new(Prepared {
         face,
         settings: trace.with_extension("settings"),
@@ -56,7 +56,6 @@ fn observing(trace: &Path) -> Observing {
         registry: FaceSince {
             commit: "30259d89b88834ed3edaaa08b3f320d2252bbb9a".into(),
             shape: face,
-            session_ended_aborted: true,
             receiving: serde_json::from_value(serde_json::json!({"string":524_288,"content":4096,"items":32,"encoded_line":16384})).expect("fixture bounds"),
         },
         rendered: serde_json::json!({"models":[{"input_price":10,"cached_price":1,"output_price":80,"price_unit":8_000_000}]}),
@@ -87,7 +86,7 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
     let records = common::events::bytes(&common::events::balanced());
     std::fs::write(&trace, []).expect("empty append stream");
     std::fs::write(&replay, &records).expect("synthetic codec records");
-    let face = smith_bench::agent::smith::events::Shape::LocalTrace;
+    let face = smith_bench::agent::smith::events::Shape::Chat;
     let prepared = Prepared {
         face,
         settings: directory.join("settings.json"),
@@ -96,7 +95,6 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
         registry: FaceSince {
             commit: "30259d89b88834ed3edaaa08b3f320d2252bbb9a".into(),
             shape: face,
-            session_ended_aborted: true,
             receiving: serde_json::from_value(serde_json::json!({
                 "string":524_288,"content":4096,"items":32,
                 "encoded_line":records.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("record lines")
@@ -153,56 +151,6 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
     assert_eq!(spend.basis, smith_bench::SpendBasis::Notional);
     assert_eq!(spend.usd, Measure::Observed { value: 0.000_003 });
     std::fs::remove_dir_all(directory).expect("replay fixture removed");
-}
-
-#[test]
-fn an_earlier_event_face_keeps_the_absent_teardown_field_unknown() {
-    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let faces = smith_bench::agent::smith::read_faces(&directory.join("agents/smith/faces.toml"))
-        .expect("frozen face registry");
-    let before =
-        faces.iter().find(|face| face.commit == "b86b022a83c16194cf716015fe0dff4db9569163").expect("pre-aborted face");
-    let current = faces
-        .iter()
-        .find(|face| face.commit == "8d2ec9b878ae85240575788809c44fe0028e6a4a")
-        .expect("aborted field's first writer");
-    assert!(!before.session_ended_aborted);
-    assert!(current.session_ended_aborted);
-    let recording = include_str!("recorded/smith-before-aborted/terminal.jsonl");
-    assert!(!recording.contains("\"aborted\""));
-    let mut prepared = observing(Path::new("/unused-before-aborted")).prepared;
-    prepared.face = before.shape;
-    prepared.registry = before.clone();
-    let mut historical = Observing::new(prepared).expect("historical layout");
-    for line in recording.lines() {
-        historical.feed_line(line).expect("old writer's recording");
-    }
-    {
-        let observer = &historical.observer;
-        let records = &observer.sessions().last().expect("recorded session").records;
-        let smith_events::Event::SessionEnded(ended) = &records.last().expect("recorded terminal").event else {
-            panic!("recording ends its stream")
-        };
-        assert_eq!(ended.aborted, None);
-        assert_eq!(
-            smith_events::write_with_ceiling(
-                records.last().expect("terminal"),
-                &smith_events::Capture::Everything,
-                &before.receiving.limits().expect("semantic caps"),
-                before.receiving.encoded_line,
-            ),
-            Err(smith_events::Error::Shape)
-        );
-    }
-    historical.restart_trace().expect("restart retains the arm's layout");
-    for line in recording.lines() {
-        historical.feed_line(line).expect("same historical layout after restart");
-    }
-    historical.prepared.registry = current.clone();
-    historical.restart_trace().expect("current layout");
-    let mut lines = recording.lines();
-    historical.feed_line(lines.next().expect("startup")).expect("current startup");
-    assert!(historical.feed_line(lines.next().expect("terminal")).is_err());
 }
 
 #[test]
@@ -316,7 +264,7 @@ fn failed_recording() -> Vec<u8> {
 
 fn person_capture(trace: &Path) -> Capture {
     let mut prepared = observing(trace).prepared;
-    prepared.face = smith_bench::agent::smith::events::Shape::LocalTrace;
+    prepared.face = smith_bench::agent::smith::events::Shape::Chat;
     prepared.registry.shape = prepared.face;
     prepared.registry.receiving = serde_json::from_value(serde_json::json!({
         "string":128,"content":1024,"items":16,"encoded_line":4096
@@ -566,6 +514,26 @@ fn an_exec_arm_reads_its_prompt_to_eof_without_a_trace_file() {
 }
 
 #[test]
+fn a_binary_older_than_the_product_face_is_refused() {
+    let project = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repository = project.parent().expect("repository");
+    let arm = smith_bench::arm::BuiltArm {
+        version: 1,
+        commit: "4d06c1106b45b12280bad141cacb2806c514fe26".into(),
+        sha256: "0".repeat(64),
+        toolchain: "selection only".into(),
+        binaries: vec![],
+    };
+    let entries = smith_bench::agent::smith::read_faces(&project.join("agents/smith/faces.toml")).expect("registry");
+    let refusal = smith_bench::agent::smith::face(&arm, &entries, repository).expect_err("pre-product arm");
+    assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Configuration);
+    assert_eq!(
+        refusal.reason,
+        "Smith arm 4d06c1106b45b12280bad141cacb2806c514fe26 predates the first supported product face"
+    );
+}
+
+#[test]
 fn the_current_source_arm_selects_the_exec_face() {
     let project = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repository = project.parent().expect("repository");
@@ -585,7 +553,6 @@ fn the_current_source_arm_selects_the_exec_face() {
     let entries = smith_bench::agent::smith::read_faces(&project.join("agents/smith/faces.toml")).expect("registry");
     let selected = smith_bench::agent::smith::face(&arm, &entries, repository).expect("source face");
     assert_eq!(selected.shape, smith_bench::agent::smith::events::Shape::Chat);
-    assert_eq!(selected.credential(), smith_bench::agent::smith::CredentialShape::Borrowed);
 }
 
 fn product_rendered(context: &smith_bench::agent::Context<'_>) -> serde_json::Value {

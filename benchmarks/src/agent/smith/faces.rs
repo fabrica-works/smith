@@ -1,5 +1,5 @@
-//! A frozen source ancestry selects the native settings and token codec.
-//! The registry adds entries, never edits an earlier binary's invocation.
+//! Source ancestry selects the shipped product invocation and receiving bounds.
+//! The registry supports only binaries descended from the first product face.
 //! `face` reads only Git's ancestry, not an agent's private state
 //! (benchmarks.md, section 6.2; reliability-plan 00, Interface sketches).
 
@@ -9,15 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::arm::BuiltArm;
 use crate::isolate::{Setup, SetupStep};
-
-/// The credential arrangement selected by the arm's shipped invocation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CredentialShape {
-    /// Historical local invocations need a private access-only record.
-    Converted,
-    /// Product invocations read the caller's login file directly.
-    Borrowed,
-}
 
 /// Receiving bounds pinned with the face that writes the stream.
 /// The arm supplies semantic caps and the writer-derived aggregate line ceiling.
@@ -42,25 +33,12 @@ impl Receiving {
     }
 }
 
-/// A registry entry from which this native face applies.
+/// A registry entry from which this product face applies.
 #[derive(Clone, Debug, Serialize)]
 pub struct FaceSince {
     pub commit: String,
     pub shape: super::events::Shape,
     pub receiving: Receiving,
-    /// This writer's session terminal carries the teardown-aborted field.
-    pub session_ended_aborted: bool,
-}
-
-impl FaceSince {
-    /// Keep credential preparation paired with the invocation's source face.
-    #[must_use]
-    pub const fn credential(&self) -> CredentialShape {
-        match self.shape {
-            super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace => CredentialShape::Converted,
-            super::events::Shape::Exec | super::events::Shape::Chat => CredentialShape::Borrowed,
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -69,8 +47,6 @@ struct Entry {
     commit: String,
     shape: super::events::Shape,
     receiving: Receiving,
-    #[serde(default)]
-    session_ended_aborted: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -99,16 +75,9 @@ pub fn read(path: &Path) -> Result<Vec<FaceSince>, Setup> {
             }
         }
         let mut faces = Vec::new();
-        let mut session_ended_aborted = false;
         for entry in registry.face {
-            session_ended_aborted = entry.session_ended_aborted.unwrap_or(session_ended_aborted);
             entry.receiving.limits()?;
-            faces.push(FaceSince {
-                commit: entry.commit,
-                shape: entry.shape,
-                receiving: entry.receiving,
-                session_ended_aborted,
-            });
+            faces.push(FaceSince { commit: entry.commit, shape: entry.shape, receiving: entry.receiving });
         }
         Ok(faces)
     })();
@@ -143,7 +112,7 @@ pub fn face(arm: &BuiltArm, faces: &[FaceSince], repository: &Path) -> Result<Fa
                 Some(_) | None => return Err("cannot establish Smith arm source ancestry".into()),
             }
         }
-        selected.ok_or_else(|| "no native face supports this Smith arm".into())
+        selected.ok_or_else(|| format!("Smith arm {} predates the first supported product face", arm.commit))
     })();
     select.map_err(|reason| Setup { step: SetupStep::Configuration, reason })
 }

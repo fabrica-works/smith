@@ -65,7 +65,7 @@ impl ExecFixture {
         std::fs::write(built.join("arm.json"), serde_json::to_vec(&manifest).expect("arm manifest")).expect("manifest");
         let arm =
             smith_bench::arm::ArmRef::Built(smith_bench::arm::read_build(&built.join("smith")).expect("built fixture"));
-        std::fs::write(repository.join("faces.toml"), format!("[[face]]\ncommit='{commit}'\nshape='exec'\nsession_ended_aborted=true\nreceiving={{string=128,content=1024,items=16,encoded_line=16384}}\n")).expect("Exec registry");
+        std::fs::write(repository.join("faces.toml"), format!("[[face]]\ncommit='{commit}'\nshape='exec'\nreceiving={{string=128,content=1024,items=16,encoded_line=16384}}\n")).expect("Exec registry");
         std::fs::write(repository.join("settings.toml"), include_bytes!("../../agents/smith/standard.toml"))
             .expect("pin template");
         let pin_file = repository.join("exec.pin.toml");

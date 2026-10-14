@@ -335,7 +335,6 @@ fn run_exec(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bo
             items: 52_778,
             encoded_line: 19_817_472,
         },
-        session_ended_aborted: true,
     };
     let prepared = smith_bench::agent::smith::Prepared {
         face: registry.shape,

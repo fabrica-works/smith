@@ -1,7 +1,7 @@
 //! Access-only conversion keeps credential values only while preparing a record.
 //! The source login is read-only; no refresh field is deserialized or copied.
-//! `codex` and `smith` write guarded private records; `Borrowed::finish` removes
-//! it after genuine tree settlement and checks the source digest.
+//! `codex` writes a guarded private record; smith borrows the source file.
+//! `Borrowed::finish` settles the credential and checks the source digest.
 //! Contracts: benchmarks.md, section 10; reliability-plan Credentials (95a9807).
 
 use std::fs::{File, OpenOptions};
@@ -65,15 +65,7 @@ pub struct Borrowed {
 #[derive(Clone, Copy, Debug)]
 enum Shape {
     Codex,
-    Smith,
     SmithBorrowed,
-}
-
-/// A converted record and the nonsecret account identifier for local settings.
-#[derive(Debug)]
-pub struct SmithCredential {
-    pub borrowed: Borrowed,
-    pub account_id: String,
 }
 
 struct Login {
@@ -229,44 +221,6 @@ fn token_limits() -> skein_oauth::Limits {
     }
 }
 
-/// Convert a read-only Codex login into the selected Smith arm's private codec.
-pub fn smith(
-    guard: &Guard,
-    source_home: &Path,
-    home: &Path,
-    now: Wall,
-    lifetime: Duration,
-) -> Result<SmithCredential, Setup> {
-    let converted: Result<SmithCredential, String> = (|| {
-        // Local hosts renew sixty seconds before expiry. Include that lead so
-        // a converted record never reaches renewal during the supervised arm.
-        let lifetime = lifetime.checked_add(Duration::from_secs(60)).ok_or("credential renewal lifetime overflow")?;
-        let Login { source, auth, digest, expires } = login(source_home, now, lifetime)?;
-        let account_id = auth.tokens.account_id.filter(|id| !id.is_empty()).ok_or("Codex login has no account id")?;
-        let encoded = skein_oauth::encode_record(
-            &skein_oauth::SavedToken {
-                key: 0,
-                generation: 1,
-                access_token: auth.tokens.access_token.as_bytes().into(),
-                refresh_token: None,
-                metadata: None,
-                expires_at: expires,
-            },
-            &token_limits(),
-        )
-        .map_err(|_| "cannot encode bounded access-only Smith record")?;
-        let credential = write_record(guard, home, "0.json", &encoded)?;
-        Ok(SmithCredential {
-            borrowed: Borrowed { credential, expires, source, digest, shape: Shape::Smith },
-            account_id,
-        })
-    })();
-    converted.map_err(|reason| Setup {
-        step: SetupStep::Credentials,
-        reason: format!("{reason}; run `codex` once before retrying"),
-    })
-}
-
 impl Borrowed {
     /// Remove the private auth file after settlement and verify the user login.
     pub fn finish(&self, guard: &Guard) -> Result<Proof, String> {
@@ -294,16 +248,6 @@ impl Borrowed {
                     check_credential_record(&record)?;
                     if record.pointer("/tokens/refresh_token").and_then(serde_json::Value::as_str) != Some("") {
                         return Err("private Codex refresh field is no longer empty".into());
-                    }
-                }
-                Shape::Smith => {
-                    if bytes.get(4..6) != Some(2_u16.to_be_bytes().as_slice()) {
-                        return Err("private Smith token codec version changed".into());
-                    }
-                    let record = skein_oauth::decode_record(&bytes, &token_limits())
-                        .map_err(|_| "private Smith token record changed shape")?;
-                    if record.key != 0 || record.refresh_token.is_some() {
-                        return Err("private Smith refresh state is no longer unusable".into());
                     }
                 }
                 Shape::SmithBorrowed => unreachable!("borrowed source is never a private record"),

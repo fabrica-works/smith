@@ -71,12 +71,6 @@ enum Tree {
 }
 
 #[derive(Debug)]
-enum TraceSource {
-    Original,
-    Agent,
-}
-
-#[derive(Debug)]
 struct Output {
     input: Option<Fd>,
     stream: Option<Fd>,
@@ -85,7 +79,6 @@ struct Output {
     tree: Tree,
     trace: Option<Fd>,
     tracing: bool,
-    trace_source: TraceSource,
     trace_at: u64,
     trace_poll: Option<Time>,
     trace_bytes: Vec<u8>,
@@ -118,7 +111,6 @@ impl Output {
             tree: Tree::Running,
             trace: None,
             tracing: false,
-            trace_source: TraceSource::Original,
             trace_at: 0,
             trace_poll: None,
             trace_bytes: Vec::new(),
@@ -224,33 +216,6 @@ impl Output {
 
     fn terminal(&self) -> bool {
         self.input_close != InputClose::AfterPrompt
-    }
-
-    fn select_trace(&mut self) {
-        if !self.tracing && matches!(self.trace_source, TraceSource::Original) {
-            match trace_file(&self.capture, true) {
-                Ok(Some(file)) => {
-                    if let Some(fd) = self.trace.take() {
-                        self.close(fd);
-                    }
-                    self.trace = Some(Fd::new(file.into_raw_fd()));
-                    self.trace_source = TraceSource::Agent;
-                    self.trace_at = 0;
-                    self.trace_bytes.clear();
-                    self.line.clear();
-                    if let Capture::Agent(observing) = &mut self.capture
-                        && let crate::agent::Observing::Smith(observing) = observing.as_mut()
-                        && let Err(error) = observing.restart_trace()
-                    {
-                        self.error.get_or_insert(error.what);
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    self.error.get_or_insert(error);
-                }
-            }
-        }
     }
 
     fn trace_done(&mut self, buf: &[u8], result: Result<Done, skein_io::kernel::Error>, now: Time) {
@@ -396,7 +361,6 @@ impl Host for Output {
         {
             self.close(fd);
         }
-        self.select_trace();
         if !self.tracing
             && self.trace_poll.is_none_or(|deadline| deadline <= now)
             && let Some(fd) = self.trace
@@ -577,33 +541,20 @@ impl Referee<Process> for Policy {
     }
 }
 
-fn trace_file(capture: &Capture, agent: bool) -> Result<Option<std::fs::File>, String> {
-    Ok(match capture {
+fn trace_file(capture: &Capture) -> Result<Option<std::fs::File>, String> {
+    match capture {
         Capture::Agent(observing) => match observing.as_ref() {
-            crate::agent::Observing::Codex(_) => None,
-            crate::agent::Observing::Smith(observing) => {
-                if observing.prepared.face == crate::agent::smith::events::Shape::Exec {
-                    return Ok(None);
+            crate::agent::Observing::Codex(_) => Ok(None),
+            crate::agent::Observing::Smith(observing) => match observing.prepared.face {
+                crate::agent::smith::events::Shape::Exec => Ok(None),
+                crate::agent::smith::events::Shape::Chat => {
+                    let path = observing.prepared.trace.as_ref().ok_or("Smith Chat requires a trace path")?;
+                    std::fs::File::open(path).map(Some).map_err(|error| format!("trace open: {error}"))
                 }
-                let path = observing.prepared.trace.as_ref().ok_or("Smith native face requires a trace path")?;
-                if agent {
-                    if !matches!(observing.prepared.face, crate::agent::smith::events::Shape::LocalAgentTrace) {
-                        return Ok(None);
-                    }
-                    let mut split = path.as_os_str().to_os_string();
-                    split.push(".agent");
-                    match std::fs::File::open(std::path::Path::new(&split)) {
-                        Ok(file) => Some(file),
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-                        Err(error) => return Err(format!("agent trace open: {error}")),
-                    }
-                } else {
-                    Some(std::fs::File::open(path).map_err(|error| format!("trace open: {error}"))?)
-                }
-            }
+            },
         },
-        Capture::Raw | Capture::Codex => None,
-    })
+        Capture::Raw | Capture::Codex => Ok(None),
+    }
 }
 
 /// Run one prepared pipe invocation. Every tree signal and count comes from
@@ -647,7 +598,7 @@ pub fn execute_script(
     if bounds.stdout == 0 || bounds.stderr == 0 || bounds.hard == Duration::ZERO {
         return Err("invalid attempt prompt, log bound or hard deadline".into());
     }
-    let trace_file = trace_file(&capture, false)?;
+    let trace_file = trace_file(&capture)?;
     let started = clock.now();
     let start = started.now;
     let deadline = start.checked_add(bounds.hard).ok_or("hard deadline overflow")?;

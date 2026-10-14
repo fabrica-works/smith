@@ -1,5 +1,5 @@
 //! Native observations retain the event codec's scopes, terminals and usage.
-//! Receiving bounds and optional historical fields follow the frozen writer;
+//! Receiving bounds follow the selected product writer;
 //! no running domain state is known (benchmarks.md, sections 6 and 8).
 
 use crate::agent::{HarnessFault, Seen};
@@ -79,24 +79,8 @@ impl Observing {
     pub fn new(prepared: Prepared) -> Result<Self, HarnessFault> {
         let receiving = prepared.registry.receiving;
         let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
-        let observer = super::events::Observer::with_session_ended_aborted(
-            &limits,
-            receiving.encoded_line,
-            prepared.registry.session_ended_aborted,
-        )?;
+        let observer = super::events::Observer::with_ceiling(&limits, receiving.encoded_line)?;
         Ok(Self { prepared, observer })
-    }
-
-    /// Select the split agent stream once that file exists.
-    pub fn restart_trace(&mut self) -> Result<(), HarnessFault> {
-        let receiving = self.prepared.registry.receiving;
-        let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
-        self.observer = super::events::Observer::with_session_ended_aborted(
-            &limits,
-            receiving.encoded_line,
-            self.prepared.registry.session_ended_aborted,
-        )?;
-        Ok(())
     }
 
     /// Consume one complete event line and report its script cues.

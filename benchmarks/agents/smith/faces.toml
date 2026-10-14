@@ -1,50 +1,12 @@
-# Entries are appended when a binary's event layout or receiving bounds change.
-# The writer derives these bounds from the phase-one control's native declarations.
-# Larger emitted values refuse at the receiving boundary; no override range is implied.
-[[face]]
-commit = "4735d7228a8f37c11f70de5f9ef277c1ff7bf4c2"
-shape = "local-trace"
-receiving = { string = 256000, content = 4096, items = 32, encoded_line = 3148863 }
-
-# This writer validates the native request before capturing its new part.
-# The same phase-one/metadata task declarations derive this joint line ceiling;
-# the semantic caps remain independent and this entry declares no override range.
-[[face]]
-commit = "0486bcf3eacb4d63e931cf53333583ae43e4c740"
-shape = "local-trace"
-receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
-
-# Before the split writer, this base's descendants keep their unsplit trace.
-# When the writer creates .agent, the reader selects that process's run records.
-[[face]]
-commit = "b86b022a83c16194cf716015fe0dff4db9569163"
-shape = "local-agent-trace"
-receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
-
-# The writer added the required teardown-aborted field at this commit.
-[[face]]
-commit = "8d2ec9b878ae85240575788809c44fe0028e6a4a"
-shape = "local-agent-trace"
-session_ended_aborted = true
-receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
-
-# Reasoning ownership raises the producer's item and line bounds.
-[[face]]
-commit = "4d06c1106b45b12280bad141cacb2806c514fe26"
-shape = "local-agent-trace"
-session_ended_aborted = true
-receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }
-
+# Product faces and their writer-derived receiving bounds.
 # Product invocation, check-derived teardown and read-only source borrowing.
 [[face]]
 commit = "0d5604f94d9eb7f2aa6605634fd616e42f20d11e"
 shape = "exec"
-session_ended_aborted = true
 receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }
 
 # The complete interactive candidate types at a terminal and keeps Exec for headless.
 [[face]]
 commit = "55879f9cbc8dd6099edeaaf130fbc29f86b53777"
 shape = "chat"
-session_ended_aborted = true
 receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }
