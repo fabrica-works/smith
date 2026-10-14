@@ -427,6 +427,8 @@ fn deciding(
     allowed.extend(events.iter().map(|event| event.name().to_owned()));
     allowed.extend(
         [
+            "end",
+            "grade",
             "tree-ended",
             "protected-unchanged",
             "nothing-outside",

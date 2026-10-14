@@ -23,7 +23,7 @@ fn fixtures_freeze_their_seeds_and_keep_graders_outside_them() {
         assert_eq!(task.kind, smith_bench::Kind::Fixture);
         assert_eq!(task.tier, "working");
         assert_eq!(task.setup, [vec!["cargo", "build", "--offline", "--tests"]]);
-        assert_eq!(task.protected, ["tests", "Cargo.toml", "Cargo.lock", "AGENTS.md"].map(PathBuf::from));
+        assert_eq!(task.protected, ["Cargo.toml", "Cargo.lock", "AGENTS.md"].map(PathBuf::from));
         assert!(directory.join("grader/tests/hidden.rs").is_file());
         assert!(directory.join("grader/tests/regression.rs").is_file());
         assert!(directory.join("reference/src/lib.rs").is_file());
@@ -34,6 +34,55 @@ fn fixtures_freeze_their_seeds_and_keep_graders_outside_them() {
     let hidden = std::fs::read_to_string(root.join("02-line-decoder/grader/tests/hidden.rs")).expect("hidden test");
     assert!(hidden.contains("1u32 << 18"));
     assert!(!hidden.contains("i < 16"));
+}
+
+#[test]
+fn no_fixture_protects_a_path_its_prompt_asks_to_change() {
+    for id in ["01-backoff", "02-line-decoder", "03-planner"] {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks/fixtures").join(id).join("task.toml");
+        let task = smith_bench::read_task(&manifest).expect("fixture task");
+        assert!(!task.protected.iter().any(|path| path == std::path::Path::new("tests")), "{id} protects tests");
+    }
+}
+
+#[test]
+fn every_fixture_grader_holds_the_seeds_test_functions() {
+    let names = regex::Regex::new(r"#\[test\]\s*fn\s+(\w+)").expect("test function expression");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks/fixtures");
+    for id in ["01-backoff", "02-line-decoder", "03-planner"] {
+        let directory = root.join(id);
+        let grader = std::fs::read_dir(directory.join("grader/tests"))
+            .expect("grader tests")
+            .map(|entry| std::fs::read_to_string(entry.expect("entry").path()).expect("grader source"))
+            .collect::<String>();
+        for entry in std::fs::read_dir(directory.join("seed/tests")).expect("seed tests") {
+            let source = std::fs::read_to_string(entry.expect("entry").path()).expect("seed source");
+            for name in names.captures_iter(&source) {
+                assert!(names.captures_iter(&grader).any(|candidate| candidate[1] == name[1]), "{id}: {}", &name[1]);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_reference_that_changes_a_protected_path_fails_validation() {
+    let root = std::env::temp_dir().join(format!("smith-bench-protected-reference-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("seed")).expect("seed");
+    std::fs::create_dir(root.join("reference")).expect("reference");
+    std::fs::write(root.join("seed/Cargo.toml"), "seed").expect("protected seed");
+    std::fs::write(root.join("reference/Cargo.toml"), "changed").expect("changed reference");
+    let digest = smith_bench::seed_digest(&root.join("seed")).expect("seed digest");
+    let manifest = format!(
+        "id = 'protected-reference'\nversion = 1\nkind = 'fixture'\ntier = 'working'\n\
+         deadline_seconds = 10\nprompt = 'Fix the crate.\\n'\nseed_sha256 = '{digest}'\n\
+         protected = ['Cargo.toml']\ndeciding = ['end', 'grade', 'protected-unchanged', 'tree-ended']\n\
+         [[grade]]\ncommand = ['true']\ndeadline_seconds = 1\nmax_output_bytes = 1024\n"
+    )
+    .replace("'Fix the crate.\\n'", "\"Fix the crate.\\n\"");
+    std::fs::write(root.join("task.toml"), manifest).expect("manifest");
+    let error = smith_bench::validate::validate(&root, &[]).expect_err("changed protection refuses");
+    assert!(error.contains("reference changes Cargo.toml"), "{error}");
+    std::fs::remove_dir_all(root).expect("remove temporary task");
 }
 
 #[test]

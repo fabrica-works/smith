@@ -9,7 +9,7 @@ use skein_lib::Duration;
 use skein_shell::Clock;
 
 use crate::CatalogueTask;
-use crate::grade::{Entry, GradeEnd};
+use crate::grade::{Entry, GradeEnd, Snapshot};
 use crate::guard::Guard;
 use crate::isolate::{Machine, Private};
 use crate::process::Bounds;
@@ -104,6 +104,7 @@ fn candidate(
     let bundles = crate::arm::state_root(guard)?.join("bundles");
     let (seed, digest) = crate::seed_source(&entry.task, task_root, &bundles).map_err(|refusal| refusal.reason)?;
     let private: Private = crate::isolate::prepare(guard, &seed, &digest, root).map_err(|error| error.reason)?;
+    let before = crate::grade::snapshot(&private.workspace)?;
     if reference {
         let reference = task_root.join("reference");
         if reference.join("solution.patch").is_file() {
@@ -159,7 +160,32 @@ fn candidate(
             GradeEnd::Fault { reason } => end = GradeEnd::Fault { reason },
         }
     }
+    if reference {
+        reference_checks(&entry.task, &private.workspace, &before).map_err(|refusal| refusal.to_string())?;
+    }
     Ok(end)
+}
+
+fn reference_checks(task: &crate::Task, settled: &Path, before: &Snapshot) -> Result<(), crate::Refusal> {
+    let after = crate::grade::snapshot(settled).map_err(|reason| crate::Refusal::new(settled, "reference", reason))?;
+    for path in &task.protected {
+        if crate::grade::changed(before, &after, path) {
+            return Err(crate::Refusal::new(settled, "protected", format!("reference changes {}", path.display())));
+        }
+    }
+    let ended = crate::grade::Ended {
+        end: crate::End::Completed,
+        exit: crate::Measure::Observed { value: crate::Exit::Code(0) },
+        last_line: None,
+        answer: None,
+        login_unchanged: crate::Measure::Unavailable { reason: "reference runs without credentials".into() },
+    };
+    for check in crate::grade::checks(settled, before, &after, &task.outcome, &ended) {
+        if check.passed != (crate::Measure::Observed { value: true }) {
+            return Err(crate::Refusal::new(settled, "outcome", format!("reference fails {}", check.check)));
+        }
+    }
+    Ok(())
 }
 
 fn apply_patch(clock: &Clock, guard: &Guard, machine: &Machine, private: &Private, patch: &Path) -> Result<(), String> {

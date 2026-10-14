@@ -25,3 +25,21 @@ fn unknown_target() {
         Err(Error::UnknownTarget("x".into()))
     );
 }
+
+#[test]
+fn repeated_dependencies_are_scheduled_once() {
+    let nodes = vec![
+        Node {
+            name: "a".into(),
+            dependencies: vec![],
+        },
+        Node {
+            name: "b".into(),
+            dependencies: vec!["a".into(), "a".into()],
+        },
+    ];
+    assert_eq!(
+        plan(&nodes, &["b".into()]),
+        Ok(vec!["a".into(), "b".into()])
+    );
+}
