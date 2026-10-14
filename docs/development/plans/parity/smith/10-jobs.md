@@ -259,6 +259,28 @@ below holds.
   `Verdict` :73; `verdict_kind` :427; `random_outcomes` :113; `world.rs`
   `Work` :212, `deliver` :598, `start` :671.
 
+**10.5** (10.1's remainder; ruling 116)
+- The invalid job calls of tools.md 5 are invalid results with a problem
+  (transcript.md 2: "invalid, with the problem found in the call"), not
+  outcomes: no `Outcome` or `Verdict` variant for them.
+- `tools::Request` gains `Invalid { to: ReplyTo, problem: JobProblem }`,
+  `JobProblem` being `Full { jobs: u32 }` or `Unknown { job: JobNumber }`;
+  the session answers it with `Returned::Invalid`, and `llm::Problem`
+  (`smith-domain-session/src/llm.rs:186`) gains `JobsFull { jobs: u32 }`
+  and `UnknownJob { job: u32 }`.
+- Transcript version 4's `CallProblem` (`crates/smith-transcript/schema/transcript-v4.schema:67-71`)
+  gains `jobs_full` and `unknown_job`, each a record of one `u32`, with no
+  version bump (README rule 12): the schema, `src/generated/v4.rs` and
+  `golden/v4/` regenerated with skein-codegen, as `tests/codecs/tests/drift.rs`
+  checks.
+- Users: `llm::Problem`'s matches in `smith-protocol-channel/src/turn.rs:172`
+  and `transcript.rs:274`, `smith-protocol-llm/src/failure.rs` (the
+  rendered text), `completion.rs`, `tests.rs`, `smith-domain-session/src/session.rs`
+  (`problem_cost`), `smith-domain/src/llm.rs`, `smith-agent-service/src/responses.rs`,
+  `tests/protocol-llm/tests/adapter_continuation.rs`; `tools::Request`'s
+  in `smith-domain-session/src/session.rs:1103-1109`, `tests/tools/src/world.rs:488-557`
+  and `tests/tools/tests/memory.rs:36-46`.
+
 **10.2**
 - `tools::Request::JobsCancelled` needs arms at `smith-domain-session/src/session.rs:1098-1108`
   (`tools_step`) and `tests/tools/tests/memory.rs:36-46`;
