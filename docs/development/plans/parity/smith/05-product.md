@@ -60,7 +60,9 @@ Files: `crates/smith-local-shell/src/presets.rs` (`MODELS`, `:7-13`; the
   `crates/smith-local-shell/src/settings/built-in.golden`,
   `crates/smith-local-shell/src/settings/tests.rs` (`:93-101`, `:139-144`,
   and the memory tests at `:448-586` where a sixth model changes their
-  sums), `benchmarks/agents/models.toml`.
+  sums), `benchmarks/agents/models.toml`, `benchmarks/tests/smith_adapter.rs`
+  (the counts of rendered models and allowances, `:686-687`, `:765-766`,
+  `:853-854`: 2 becomes 3).
 Shape: `MODELS` gains `codex/gpt-6.1-sol`, declared as luna's block with
   its own name; `prices` gains its base and long-context arms (above);
   the built-in golden gains its keys (quoted, since the name holds a dot).

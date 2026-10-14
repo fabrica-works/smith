@@ -495,3 +495,9 @@ changes what section 8.4 holds.
      - Until the run ends, the coordinator runs `kache gc` itself whenever its disk check (development.md 11.4) reads below 40 GB, before it holds any start; if that run ends with "No such file or directory", it runs `kache gc` once more. It logs each run's line from `kache stats` ("Store: …") in `log.md`.
      - It still removes the `target/` of a session that is not running when that is not enough, as 11.4 allows.
      - Nothing else changes: the 40 GB and 15 GB thresholds stay, and the user's primary checkouts are not touched.
+
+104. **05.1's Files take the adapter's model counts** (cross-session scope, smith 05's block of 2026-10-14T10:55:33Z).
+     Ruling 104. Yes: 05.1 changes the six count assertions in `benchmarks/tests/smith_adapter.rs` from 2 to 3, because 05.1's Shape says "`MODELS` gains `codex/gpt-6.1-sol`" and these tests count the models and allowances that the startup derivation renders from the presets. The session file missed them; 05.1's Files now name them, so implementer.md 8.2's limit of 4 does not apply to them.
+
+     - The six lines: `smith_adapter.rs:686-687`, `:765-766` and `:853-854`, each `assert_eq!(local.models.len(), 2);` or `assert_eq!(allowances.len(), 2);`, become `3`. The tests' names, inputs and other assertions stay as they are.
+     - A further assertion, in any file, that counts the presets' rendered models or their allowances and expects the count before `gpt-6.1-sol`, takes the count after it; list each in the commit body under "Users outside Files:".
