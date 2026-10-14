@@ -14,7 +14,7 @@ pub struct Limits {
     /// This agent's bounded charter decoder allowances.
     pub charter: smith_charter::v2::Limits,
     /// This agent's bounded saved-turn decoder allowances.
-    pub transcript: smith_transcript::v3::Limits,
+    pub transcript: smith_transcript::v4::Limits,
     /// Saved turns admitted on resume, from one window's message capacity.
     pub resume_turns: u32,
     /// Hits admitted within one search outcome on resume.
@@ -54,7 +54,7 @@ pub enum Error {
     /// A concrete turn cannot be written to the durable transcript format.
     Transcript(smith_domain_session::record::Refusal),
     /// A concrete turn exceeds the transcript codec bounds.
-    TranscriptBody(smith_transcript::v3::Problem),
+    TranscriptBody(smith_transcript::v4::Problem),
     /// The service sent admission or an answer out of order.
     Order,
     /// A live host operation name is repeated, unknown, or beyond capacity.
@@ -77,8 +77,8 @@ impl From<smith_channel::v2::Problem> for Error {
     }
 }
 
-impl From<smith_transcript::v3::Problem> for Error {
-    fn from(problem: smith_transcript::v3::Problem) -> Error {
+impl From<smith_transcript::v4::Problem> for Error {
+    fn from(problem: smith_transcript::v4::Problem) -> Error {
         Error::TranscriptBody(problem)
     }
 }
@@ -236,8 +236,8 @@ fn charter_cells(limits: &smith_charter::v2::Limits) -> Option<u64> {
     smith_charter::Charter::worst_case_heap(&cells)
 }
 
-fn turn_cells(limits: &smith_transcript::v3::Limits) -> Option<u64> {
-    let cells = smith_transcript::v3::Limits {
+fn turn_cells(limits: &smith_transcript::v4::Limits) -> Option<u64> {
+    let cells = smith_transcript::v4::Limits {
         replay_dialect: 0,
         replay_bytes: 0,
         text_text: 0,
@@ -252,6 +252,10 @@ fn turn_cells(limits: &smith_transcript::v3::Limits) -> Option<u64> {
         read_content: 0,
         command_end_head: 0,
         command_end_last: 0,
+        command_running_head: 0,
+        command_running_last: 0,
+        job_read_head: 0,
+        job_read_last: 0,
         working_path_path: 0,
         other_path_directory: 0,
         other_path_path: 0,

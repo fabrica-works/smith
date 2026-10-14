@@ -118,7 +118,7 @@ pub fn save_turn(
     read: Option<Token>,
     opens_window: bool,
     turn: &smith_domain::Turn,
-    limits: &transcript::v3::Limits,
+    limits: &transcript::v4::Limits,
     endpoints: &Endpoints,
 ) -> Result<File, StoreError> {
     if place == 0 || place != turn.sequence {
@@ -158,7 +158,7 @@ pub fn turn_opens_window(bytes: &[u8]) -> Result<bool, StoreError> {
 /// Decode only the last window's ordered files before returning Loaded.
 pub fn decode_turns(
     files: &[Box<[u8]>],
-    limits: &transcript::v3::Limits,
+    limits: &transcript::v4::Limits,
     endpoints: &Endpoints,
 ) -> Result<(Option<Transcript>, Option<Token>), StoreError> {
     let mut start = None;
@@ -249,6 +249,7 @@ pub(crate) mod tests {
             sequence: 1,
             usage: smith_domain::session::llm::Usage::ZERO,
             spent: 0,
+            jobs: 0,
             messages: Box::new([]),
         };
         (endpoints, turn)

@@ -4,8 +4,8 @@
 use super::list::Inventory;
 use super::{Layer, Value};
 
-pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v3::Limits) -> Option<()> {
-    let smith_transcript::v3::Limits {
+pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v4::Limits) -> Option<()> {
+    let smith_transcript::v4::Limits {
         replay_dialect,
         replay_bytes,
         text_text,
@@ -22,6 +22,10 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
         found_hits,
         command_end_head,
         command_end_last,
+        command_running_head,
+        command_running_last,
+        job_read_head,
+        job_read_last,
         ambiguous_lines,
         working_path_path,
         other_path_directory,
@@ -54,6 +58,10 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
     inventory.value("found_hits", Value::Bytes(u64::from(found_hits)))?;
     inventory.value("command_end_head", Value::Bytes(u64::from(command_end_head)))?;
     inventory.value("command_end_last", Value::Bytes(u64::from(command_end_last)))?;
+    inventory.value("command_running_head", Value::Bytes(u64::from(command_running_head)))?;
+    inventory.value("command_running_last", Value::Bytes(u64::from(command_running_last)))?;
+    inventory.value("job_read_head", Value::Bytes(u64::from(job_read_head)))?;
+    inventory.value("job_read_last", Value::Bytes(u64::from(job_read_last)))?;
     inventory.value("ambiguous_lines", Value::Count(u64::from(ambiguous_lines)))?;
     inventory.value("working_path_path", Value::Bytes(u64::from(working_path_path)))?;
     inventory.value("other_path_directory", Value::Bytes(u64::from(other_path_directory)))?;

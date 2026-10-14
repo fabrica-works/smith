@@ -322,6 +322,7 @@ mod tests {
             sequence: 1,
             usage: session::llm::Usage::ZERO,
             spent: 0,
+            jobs: 0,
             messages: Box::new([session::llm::Message {
                 role: session::llm::Role::Assistant,
                 content: Box::new([

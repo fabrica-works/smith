@@ -179,13 +179,14 @@ mod tests {
         smith_domain::Turn {
             model: b"model".as_slice().into(),
             effort: None,
-            version: 3,
+            version: 4,
             kind: Kind::Ordinary,
             endpoint: llm::Endpoint(0),
             dialect: 0,
             sequence: 1,
             usage: llm::Usage::ZERO,
             spent: 0,
+            jobs: 0,
             messages: Box::new([llm::Message { role: llm::Role::Assistant, content }]),
         }
     }

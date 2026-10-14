@@ -349,6 +349,7 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
         sequence: 1,
         usage: smith_domain::session::llm::Usage::ZERO,
         spent: 0,
+        jobs: 0,
         messages: Box::default(),
     };
     crate::step(
@@ -624,6 +625,7 @@ fn saved_window_turn() -> smith_domain::Turn {
         sequence: 1,
         usage: smith_domain::session::llm::Usage::ZERO,
         spent: 0,
+        jobs: 0,
         messages: Box::default(),
     }
 }

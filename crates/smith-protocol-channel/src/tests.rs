@@ -110,6 +110,7 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
             )
             .expect("bounded usage"),
             spent: 7,
+            jobs: 0,
             messages,
         },
     )
@@ -261,7 +262,7 @@ fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths()
             }]),
         }]);
         let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded turn");
-        assert_eq!(&bytes[..2], &[0, 3]);
+        assert_eq!(&bytes[..2], &[0, 4]);
         let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("saved failure");
         assert_eq!(decoded.messages, turn.messages, "typed descriptors survive durable translation");
     }
@@ -377,6 +378,7 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
         sequence: 8,
         usage: llm::Usage::ZERO,
         spent: 9,
+        jobs: 0,
         messages: Box::new([llm::Message {
             role: llm::Role::User,
             content: Box::new([llm::Block::Text { text: b"task and summary".as_slice().into(), replay: None }]),
@@ -514,7 +516,7 @@ fn an_endpoint_number_resolves_its_name_or_is_absent() {
 
 fn decode_saved_transcript(
     bodies: &[Box<[u8]>],
-    limits: &smith_transcript::v3::Limits,
+    limits: &smith_transcript::v4::Limits,
     endpoints: &crate::Endpoints,
 ) -> Result<Option<smith_domain_session::record::Transcript>, smith_domain_session::record::Refusal> {
     crate::decode_transcript(

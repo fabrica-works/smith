@@ -5,7 +5,7 @@ use skein_heap::{Counting, Meter};
 use skein_lib::{List, Reader, Writer};
 
 use smith_charter::v2 as charter;
-use smith_transcript::v3 as transcript;
+use smith_transcript::v4 as transcript;
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -64,6 +64,10 @@ fn transcript_limits() -> transcript::Limits {
         found_hits: 0,
         command_end_head: 0,
         command_end_last: 0,
+        command_running_head: 0,
+        command_running_last: 0,
+        job_read_head: 0,
+        job_read_last: 0,
         ambiguous_lines: 0,
         working_path_path: 0,
         other_path_directory: 0,
@@ -157,6 +161,7 @@ fn turn_at_its_largest_text_payload_stays_within_the_configured_heap_bound() {
             place: 1,
             usage,
             spent: 0,
+            jobs: 0,
             messages,
         },
     )

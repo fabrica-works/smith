@@ -1213,6 +1213,7 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
         sequence: 19,
         usage: llm::Usage::ZERO,
         spent: 0,
+        jobs: 0,
         messages: messages.clone(),
     };
     let history = record::Transcript {

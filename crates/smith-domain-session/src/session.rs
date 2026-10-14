@@ -3180,6 +3180,7 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
         sequence: next,
         usage,
         spent,
+        jobs: 0,
         messages: messages.into_boxed(),
     };
     out.push(Request::Turn { opener: conversation.opener, turn });

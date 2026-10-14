@@ -757,6 +757,7 @@ fn restored_tail_turn(messages: Box<[smith_domain_session::llm::Message]>) -> sm
         sequence: 1,
         usage: Usage::ZERO,
         spent: 0,
+        jobs: 0,
         messages,
     }
 }

@@ -19,7 +19,7 @@ pub fn decode_transcript(
     piece: &[u8],
     resume_turns: u32,
     search_hits: u32,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     endpoints: &Endpoints,
 ) -> Result<Option<record::Transcript>, record::Refusal> {
     if piece.is_empty() {
@@ -46,7 +46,7 @@ pub fn decode_transcript(
     for _ in 0..count {
         let length = reader.u32().ok_or(record::Refusal::Malformed)?;
         let body = reader.bytes(length).ok_or(record::Refusal::Malformed)?;
-        if body.get(..2) != Some(&[0, 3][..]) {
+        if body.get(..2) != Some(&[0, 4][..]) {
             return Err(record::Refusal::Version);
         }
         let place = match previous {
@@ -109,7 +109,7 @@ pub fn transcript_piece(bodies: &[Box<[u8]>]) -> Option<Box<[u8]>> {
 pub fn decode_turn(
     bytes: &[u8],
     number: u32,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     endpoints: &Endpoints,
 ) -> Result<record::Turn, record::Refusal> {
     if number == 0 {
@@ -121,11 +121,11 @@ pub fn decode_turn(
 fn saved_turn(
     bytes: &[u8],
     number: Option<u32>,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     endpoints: &Endpoints,
     search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
-    if bytes.get(..2) != Some(&[0, 3][..]) {
+    if bytes.get(..2) != Some(&[0, 4][..]) {
         return Err(record::Refusal::Version);
     }
     let Ok(source) = wire::Turn::decode(limits, &mut Reader::new(bytes)) else {
@@ -150,7 +150,7 @@ fn translate_turn(
     source: wire::Turn,
     endpoint: u32,
     dialect: u32,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
     let affinity = match source.affinity() {
@@ -201,6 +201,7 @@ fn translate_turn(
             reasoning_tokens: *source.usage().reasoning(),
         },
         spent: source.spent(),
+        jobs: source.jobs(),
         messages: messages.into_boxed(),
     })
 }
@@ -208,7 +209,7 @@ fn translate_turn(
 fn decode_block(
     source: &wire::Block,
     dialect: u32,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     search_hits: u32,
 ) -> Result<llm::Block, record::Refusal> {
     let value = match source {
@@ -253,7 +254,7 @@ fn replay(source: Option<&wire::Replay>, dialect: u32) -> Result<Option<llm::Rep
 
 fn returned(
     source: &wire::Returned,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     search_hits: u32,
 ) -> Result<llm::Returned, record::Refusal> {
     let value = match source {
@@ -288,7 +289,7 @@ fn problem(source: &wire::CallProblem) -> llm::Problem {
 
 fn outcome(
     source: &wire::Outcome,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     search_hits: u32,
 ) -> Result<tools::Outcome, record::Refusal> {
     let value = match source {
@@ -377,6 +378,7 @@ fn outcome(
         wire::Outcome::Cancelled => tools::Outcome::Cancelled,
         wire::Outcome::Busy => tools::Outcome::Busy,
         wire::Outcome::NulByte => tools::Outcome::NulByte,
+        wire::Outcome::Running(_) | wire::Outcome::Job(_) => return Err(record::Refusal::Malformed),
     };
     Ok(value)
 }
@@ -481,7 +483,7 @@ fn hit_length(bytes: &[u8]) -> Result<u32, record::Refusal> {
 
 fn found_piece(
     piece: &[u8],
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     search_hits: u32,
 ) -> Result<Box<[tools::Hit]>, record::Refusal> {
     let mut reader = Reader::new(piece);

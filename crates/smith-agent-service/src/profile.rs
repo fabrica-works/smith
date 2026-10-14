@@ -163,7 +163,7 @@ pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools:
 fn transcript(
     domain: &domain::Limits,
     client: &shared::client::Limits,
-) -> Result<smith_transcript::v3::Limits, Refusal> {
+) -> Result<smith_transcript::v4::Limits, Refusal> {
     let session = domain.session;
     let tools = session.tools;
     let run = domain.run;
@@ -198,6 +198,10 @@ fn transcript(
         .ok_or(derived(Layer::Transcript, "found_hits"))?;
     limits.command_end_head = tools.shell_head;
     limits.command_end_last = tools.shell_tail;
+    limits.command_running_head = tools.shell_head;
+    limits.command_running_last = tools.shell_tail;
+    limits.job_read_head = tools.shell_head;
+    limits.job_read_last = tools.shell_tail;
     limits.ambiguous_lines = tools.match_lines;
     limits.working_path_path = tools.path_bytes;
     limits.other_path_directory = run.directory_name_bytes;
@@ -348,7 +352,7 @@ fn channel_limits(
     policy: &Policy,
     bodies: smith_channel::Limits,
     charter: smith_charter::v2::Limits,
-    transcript: smith_transcript::v3::Limits,
+    transcript: smith_transcript::v4::Limits,
     io: &io::Limits,
 ) -> Result<channel::Limits, Refusal> {
     let refusal = derived(Layer::Channel, "output_frames");

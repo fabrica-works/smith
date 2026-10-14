@@ -1,4 +1,4 @@
-family smith-transcript 3
+family smith-transcript 4
 
 # The aggregate turn is limited again by the receiving session's
 # Limits.session_bytes. These member ceilings cover its default fixtures and
@@ -35,6 +35,10 @@ enum Exit { code: ExitCode, signal: ExitSignal, timed_out }
 record DurationClamp { asked_ns: u64 ceiling_ns: u64 }
 enum TimeoutClamp { within, clamped: DurationClamp }
 record CommandEnd { exit: Exit head: bytes 1048576 last: bytes 1048576 dropped: u64 timeout: TimeoutClamp output: BytesClamp }
+record JobExit { exit: Exit }
+enum JobEnd { running, ended: JobExit, stopped, cancelled }
+record CommandRunning { job: u32 head: bytes 1048576 last: bytes 1048576 dropped: u64 output: BytesClamp after: TimeoutClamp }
+record JobRead { job: u32 head: bytes 1048576 last: bytes 1048576 dropped: u64 output: BytesClamp wait: TimeoutClamp end: JobEnd }
 enum SizePart { file, write_content, edit_old, edit_new, edit_items, edit_result, edit_replacements, list_glob }
 record TooLarge { what: SizePart size: u64 bound: u32 }
 record Ambiguous { count: u32 lines: list 1024 LineNumber }
@@ -53,7 +57,7 @@ enum Outcome {
     too_long, not_found: ResolvedFailure, not_file, linked, protected, not_directory: ResolvedFailure,
     too_large: TooLarge, not_read, stale, edit_failed: EditFailed,
     failed: Failed, timed_out,
-    cancelled, busy, nul_byte
+    cancelled, busy, nul_byte, running: CommandRunning, job: JobRead
 }
 
 # The problem variants mirror smith-domain-session::llm::Problem.
@@ -90,6 +94,7 @@ versioned record Turn {
     place: u32
     usage: Usage
     spent: u64
+    jobs: u32
     # One completion plus its surrounding messages; window openings use one.
     # Keeping this envelope separate from whole-window history preserves u32.
     messages: list 16 Message

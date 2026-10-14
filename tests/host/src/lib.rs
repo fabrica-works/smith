@@ -483,6 +483,7 @@ pub fn turn_value(bytes: u64) -> host::TurnValue {
             sequence: 1,
             usage: llm::Usage::ZERO,
             spent: 0,
+            jobs: 0,
             messages,
         },
         bytes,

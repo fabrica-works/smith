@@ -180,6 +180,7 @@ fn a_parent_turn_moves_its_concrete_value_to_the_durable_store() {
         sequence: 1,
         usage: session::llm::Usage::NONE,
         spent: 29,
+        jobs: 0,
         messages: Box::default(),
     };
     let expected = turn.clone();

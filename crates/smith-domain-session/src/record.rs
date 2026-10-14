@@ -8,7 +8,7 @@ use crate::{
 use alloc::boxed::Box;
 
 /// Concrete session transcript version emitted and accepted at the domain boundary.
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 
 /// Session-issued position of an opener call in its concrete logical transcript.
 /// This fixed name survives ticket translation; provider ids and callback tokens
@@ -154,6 +154,8 @@ pub struct Turn {
     pub usage: Usage,
     /// Cumulative spend of this activation, children included.
     pub spent: u64,
+    /// Highest job number issued across the conversation; zero before its first.
+    pub jobs: u32,
     /// Oldest-first conversation messages, with provider call/result pairing preserved.
     pub messages: Box<[Message]>,
 }

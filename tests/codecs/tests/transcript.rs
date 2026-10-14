@@ -2,11 +2,11 @@
 
 use skein_codec::Reason;
 use skein_lib::Reader;
-use smith_transcript::v3::{CEILINGS, Path, Turn};
+use smith_transcript::v4::{CEILINGS, Path, Turn};
 
 #[test]
 fn turn_goldens_decode_at_their_measured_length() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v3");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v4");
     for name in ["record_turn_smallest.bin", "record_turn_full.bin"] {
         let bytes = std::fs::read(root.join(name)).expect("turn golden");
         let value = Turn::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("turn decodes");
@@ -22,10 +22,10 @@ fn turn_rejects_an_unsupported_version_before_fields() {
 
 #[test]
 fn nesting_problem_goldens_have_their_own_wire_tag() {
-    use smith_transcript::v3::CallProblem;
+    use smith_transcript::v4::CallProblem;
     for bytes in [
-        include_bytes!("../../../crates/smith-transcript/golden/v3/enum_call_problem_nesting_full.bin").as_slice(),
-        include_bytes!("../../../crates/smith-transcript/golden/v3/enum_call_problem_nesting_smallest.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v4/enum_call_problem_nesting_full.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v4/enum_call_problem_nesting_smallest.bin").as_slice(),
     ] {
         let mut reader = Reader::new(bytes);
         assert_eq!(CallProblem::decode(&CEILINGS, &mut reader).expect("nesting problem"), CallProblem::Nesting);
@@ -45,7 +45,7 @@ fn failure_goldens_keep_their_tags_and_now_require_a_resolved_path_payload() {
         },
     )
     .expect("bounded failure");
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v3");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v4");
     for (name, tag, expected) in [
         ("outside", 7, Outcome::Outside(failure.clone())),
         ("read_only", 8, Outcome::ReadOnly(failure.clone())),
@@ -87,4 +87,72 @@ fn indexed_edit_failure_goldens_keep_the_first_failure_and_matching_reason() {
     let bytes = writer.finish();
     assert_eq!(bytes.as_ref(), &[18, 0, 0, 0, 2, 1, 0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 7]);
     assert_eq!(Outcome::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("decode"), value);
+}
+
+#[test]
+fn a_turn_round_trips_its_highest_job_number() {
+    use skein_lib::Writer;
+    let smallest = include_bytes!("../../../crates/smith-transcript/golden/v4/record_turn_smallest.bin");
+    let mut parts = Turn::decode(&CEILINGS, &mut Reader::new(smallest)).expect("smallest turn").into_parts();
+    parts.jobs = 37;
+    let turn = Turn::new(&CEILINGS, parts).expect("turn with jobs");
+    let mut writer = Writer::new(usize::try_from(turn.measure()).expect("turn length"));
+    turn.encode(&mut writer).expect("sized encoding");
+    let bytes = writer.finish();
+    let decoded = Turn::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("turn decodes");
+    assert_eq!(decoded.jobs(), 37);
+    assert_eq!(decoded, turn);
+}
+
+#[test]
+fn a_running_result_round_trips() {
+    use smith_transcript::{BytesClamp, CommandRunning, CommandRunningParts, Outcome, TimeoutClamp};
+    let running = CommandRunning::new(
+        &CEILINGS,
+        CommandRunningParts {
+            job: 12,
+            head: b"before yield".as_slice().into(),
+            last: b"latest".as_slice().into(),
+            dropped: 19,
+            output: BytesClamp::Within,
+            after: TimeoutClamp::Within,
+        },
+    )
+    .expect("bounded running result");
+    round_trip_outcome(&Outcome::Running(running));
+}
+
+#[test]
+fn a_job_result_round_trips_each_end() {
+    use smith_transcript::{
+        BytesClamp, Exit, JobEnd, JobExit, JobExitParts, JobRead, JobReadParts, Outcome, TimeoutClamp,
+    };
+    let exited = JobExit::new(&CEILINGS, JobExitParts { exit: Exit::TimedOut }).expect("ended job");
+    for end in [JobEnd::Running, JobEnd::Ended(exited), JobEnd::Stopped, JobEnd::Cancelled] {
+        let read = JobRead::new(
+            &CEILINGS,
+            JobReadParts {
+                job: 12,
+                head: b"after yield".as_slice().into(),
+                last: b"last".as_slice().into(),
+                dropped: 7,
+                output: BytesClamp::Within,
+                wait: TimeoutClamp::Within,
+                end,
+            },
+        )
+        .expect("bounded job result");
+        round_trip_outcome(&Outcome::Job(read));
+    }
+}
+
+fn round_trip_outcome(value: &smith_transcript::Outcome) {
+    use skein_lib::Writer;
+    let mut writer = Writer::new(usize::try_from(value.measure()).expect("result length"));
+    value.encode(&mut writer).expect("sized encoding");
+    let bytes = writer.finish();
+    let mut reader = Reader::new(&bytes);
+    let decoded = smith_transcript::Outcome::decode(&CEILINGS, &mut reader).expect("result decodes");
+    assert_eq!(&decoded, value, "result {value:?}");
+    assert!(reader.is_empty(), "the result consumed all bytes");
 }

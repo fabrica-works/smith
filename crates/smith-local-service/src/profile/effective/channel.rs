@@ -6,8 +6,8 @@ use smith_agent_service::profile::{Layer, Limit, Value};
 
 use super::entry;
 
-pub(super) fn transcript(limits: &smith_transcript::v3::Limits) -> Box<[Limit]> {
-    let smith_transcript::v3::Limits {
+pub(super) fn transcript(limits: &smith_transcript::v4::Limits) -> Box<[Limit]> {
+    let smith_transcript::v4::Limits {
         replay_dialect,
         replay_bytes,
         text_text,
@@ -24,6 +24,10 @@ pub(super) fn transcript(limits: &smith_transcript::v3::Limits) -> Box<[Limit]> 
         found_hits,
         command_end_head,
         command_end_last,
+        command_running_head,
+        command_running_last,
+        job_read_head,
+        job_read_last,
         ambiguous_lines,
         working_path_path,
         other_path_directory,
@@ -56,6 +60,18 @@ pub(super) fn transcript(limits: &smith_transcript::v3::Limits) -> Box<[Limit]> 
         entry(Layer::Host, "process.channel.transcript.found_hits", Value::Bytes(u64::from(found_hits))),
         entry(Layer::Host, "process.channel.transcript.command_end_head", Value::Bytes(u64::from(command_end_head))),
         entry(Layer::Host, "process.channel.transcript.command_end_last", Value::Bytes(u64::from(command_end_last))),
+        entry(
+            Layer::Host,
+            "process.channel.transcript.command_running_head",
+            Value::Bytes(u64::from(command_running_head)),
+        ),
+        entry(
+            Layer::Host,
+            "process.channel.transcript.command_running_last",
+            Value::Bytes(u64::from(command_running_last)),
+        ),
+        entry(Layer::Host, "process.channel.transcript.job_read_head", Value::Bytes(u64::from(job_read_head))),
+        entry(Layer::Host, "process.channel.transcript.job_read_last", Value::Bytes(u64::from(job_read_last))),
         entry(Layer::Host, "process.channel.transcript.ambiguous_lines", Value::Count(u64::from(ambiguous_lines))),
         entry(Layer::Host, "process.channel.transcript.working_path_path", Value::Bytes(u64::from(working_path_path))),
         entry(

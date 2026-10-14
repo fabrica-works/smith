@@ -372,6 +372,7 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
             )
             .expect("usage"),
             spent: 3,
+            jobs: 0,
             messages: skein_lib::List::with_capacity(0),
         },
     )
@@ -455,6 +456,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
             reasoning_tokens: None,
         },
         spent: 3,
+        jobs: 0,
         messages: Box::default(),
     };
     let mut one = World::new(CEILINGS, CEILINGS, StreamMode::Two);
@@ -615,6 +617,7 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
             reasoning_tokens: Some(2),
         },
         spent: 11,
+        jobs: 0,
         messages: Box::from([llm::Message {
             role: llm::Role::Assistant,
             content: Box::from([
@@ -1187,6 +1190,7 @@ fn window_turn_fixture() -> smith_domain_session::record::Turn {
         sequence: 1,
         usage: llm::Usage::ZERO,
         spent: 0,
+        jobs: 0,
         messages: Box::new([llm::Message {
             role: llm::Role::User,
             content: Box::new([llm::Block::Text { text: b"the task and summary".as_slice().into(), replay: None }]),

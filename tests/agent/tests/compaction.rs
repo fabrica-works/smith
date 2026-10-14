@@ -25,6 +25,7 @@ fn history(input: u64) -> smith_domain::Transcript {
             sequence: 1,
             usage: llm::Usage { input_tokens: Some(input), ..llm::Usage::ZERO },
             spent: 0,
+            jobs: 0,
             messages: Box::new([
                 llm::Message { role: llm::Role::User, content: content(&[b't'; 200]) },
                 llm::Message { role: llm::Role::Assistant, content: content(b"saved answer") },

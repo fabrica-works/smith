@@ -120,6 +120,7 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
         sequence: 1,
         usage: smith::session::llm::Usage::ZERO,
         spent: 0,
+        jobs: 0,
         messages: Box::default(),
     };
     agent.lower.push(smith::Request::Turn {
