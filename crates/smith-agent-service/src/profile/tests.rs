@@ -341,6 +341,7 @@ fn zero_model_idle_is_a_named_deadline_refusal() {
 fn shell_default_cannot_pass_its_tool_deadline() {
     let mut profile = profile();
     profile.policy.shell_timeout = Duration::from_secs(11);
+    profile.policy.job_wait = Duration::from_secs(10);
     profile.policy.tool_deadline = Duration::from_secs(10);
     let refusal = super::derive(&profile, &declarations()).expect_err("shell exceeds tool deadline");
     assert_eq!(
@@ -368,7 +369,7 @@ fn composed_machine_refuses_a_file_cap_below_the_tools() {
     let limits = super::derive(&profile, &declarations()).expect("valid declarations");
     let mut machine = limits.machine;
     machine.file_bytes = limits.domain.session.tools.file_bytes.checked_sub(1).expect("positive payload");
-    let refusal = validate::machine(&machine, &limits.domain.session.tools).expect_err("file cap");
+    let refusal = validate::machine(&machine, &limits.domain).expect_err("file cap");
     assert_eq!(refusal.check(), Some(Check::MachineHoldsTools));
     assert_eq!(
         words(&refusal).as_ref(),
@@ -433,7 +434,7 @@ fn random_declarations_refuse_by_name_or_hold_the_checked_relationships() {
                 )
                 .expect("turn fits channel");
                 assert!(limits.channel.transcript.listed_entries >= limits.domain.session.tools.list_entries);
-                validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
+                validate::machine(&limits.machine, &limits.domain).expect("machine holds tools");
             }
             Err(Refusal::Llm { endpoint, violation: _ }) => assert_eq!(endpoint, 7, "native refusal retains its scope"),
             Err(refusal) => assert!(refusal.check().is_some(), "smith refusals retain their relationship"),
@@ -653,4 +654,165 @@ fn tool_batches_use_the_smaller_of_policy_and_response_calls() {
         assert_eq!(limits.domain.session.parallel_tools, width);
         assert_eq!(limits.domain.session.tools.calls, width);
     }
+}
+
+fn job_profile(parallel_tools: u32, calls_per_response: u32, jobs: u32) -> crate::Limits {
+    let mut selected = profile();
+    selected.declared.conversations = 3;
+    selected.declared.calls_per_response = calls_per_response;
+    selected.declared.jobs = jobs;
+    selected.policy.parallel_tools = parallel_tools;
+    super::derive(&selected, &declarations()).expect("batches, checks and jobs derive")
+}
+
+#[test]
+fn the_machines_processes_hold_every_batch_check_and_job() {
+    assert_eq!(job_profile(4, 16, 4).machine.processes, 26);
+}
+
+#[test]
+fn without_jobs_the_processes_hold_single_calls_and_checks() {
+    assert_eq!(job_profile(1, 16, 0).machine.processes, 5);
+}
+
+#[test]
+fn response_calls_reduce_the_process_capacity_beside_held_jobs() {
+    assert_eq!(job_profile(8, 2, 2).machine.processes, 14);
+}
+
+fn smaller_process_refusal(parallel_tools: u32, calls_per_response: u32, jobs: u32) -> Box<[u8]> {
+    let limits = job_profile(parallel_tools, calls_per_response, jobs);
+    let mut machine = limits.machine;
+    machine.processes = machine.processes.checked_sub(1).expect("positive process count");
+    words(&validate::machine(&machine, &limits.domain).expect_err("processes below required count"))
+}
+
+#[test]
+fn a_machine_missing_one_batch_check_or_job_refuses() {
+    assert_eq!(
+        smaller_process_refusal(4, 16, 4).as_ref(),
+        b"machine-holds-tools: machine.processes_required=26 items; machine.processes=25 items"
+    );
+}
+
+#[test]
+fn a_machine_without_jobs_still_holds_calls_and_checks() {
+    assert_eq!(
+        smaller_process_refusal(1, 16, 0).as_ref(),
+        b"machine-holds-tools: machine.processes_required=5 items; machine.processes=4 items"
+    );
+}
+
+#[test]
+fn a_response_limited_batch_still_requires_every_job_slot() {
+    assert_eq!(
+        smaller_process_refusal(8, 2, 2).as_ref(),
+        b"machine-holds-tools: machine.processes_required=14 items; machine.processes=13 items"
+    );
+}
+
+#[test]
+fn a_job_wait_above_the_tool_deadline_is_refused() {
+    let mut selected = profile();
+    selected.policy.tool_deadline = Duration::from_secs(10);
+    selected.policy.shell_timeout = Duration::from_secs(10);
+    selected.policy.job_wait = Duration::from_secs(11);
+    assert_eq!(
+        super::derive(&selected, &declarations()).expect_err("job wait exceeds tool deadline"),
+        Refusal::Broken {
+            check: Check::Deadlines,
+            left: LimitName::deployment(Layer::Policy, "job_wait").value(Value::Duration(Duration::from_secs(11))),
+            right: LimitName::deployment(Layer::Policy, "tool_deadline")
+                .value(Value::Duration(Duration::from_secs(10))),
+        }
+    );
+}
+
+#[test]
+fn a_zero_job_wait_is_refused_before_deriving_limits() {
+    let mut selected = profile();
+    selected.policy.job_wait = Duration::ZERO;
+    assert_eq!(
+        super::derive(&selected, &declarations()).expect_err("zero job wait"),
+        Refusal::Broken {
+            check: Check::Deadlines,
+            left: LimitName::deployment(Layer::Policy, "job_wait").value(Value::Duration(Duration::ZERO)),
+            right: LimitName::deployment(Layer::Policy, "deadline_minimum").value(Value::Duration(Duration::ZERO)),
+        }
+    );
+}
+
+#[test]
+fn the_worst_case_counts_each_sessions_jobs_at_their_kept_output() {
+    let mut selected = profile();
+    selected.declared.conversations = 3;
+    selected.declared.jobs = 0;
+    let without = super::derive(&selected, &declarations()).expect("no jobs");
+    selected.declared.jobs = 4;
+    let with = super::derive(&selected, &declarations()).expect("four jobs per session");
+    assert_eq!(without.machine.processes, 8);
+    assert_eq!(with.machine.processes, 20);
+    assert_eq!(with.domain.session.tools.jobs, 4);
+    assert_eq!(with.domain.session.tools.job_wait, Duration::from_secs(30));
+    let mut without_machine = without.machine;
+    let mut with_machine = with.machine;
+    without_machine.search_bytes = 0;
+    with_machine.search_bytes = 0;
+    let before = smith_protocol_machine::worst_case(&without_machine).expect("bounded machine");
+    let after = smith_protocol_machine::worst_case(&with_machine).expect("bounded machine");
+    without_machine.output_bytes = 0;
+    with_machine.output_bytes = 0;
+    let before_records = smith_protocol_machine::worst_case(&without_machine).expect("bounded records");
+    let after_records = smith_protocol_machine::worst_case(&with_machine).expect("bounded records");
+    assert!(after_records > before_records, "each job also owns its process and pipe bookkeeping");
+    // Twelve jobs keep two 48 KiB windows, above their 16 + 48 KiB kept output.
+    assert_eq!((after - before) - (after_records - before_records), 1_179_648);
+}
+
+#[test]
+fn listing_filter_translation_is_counted_once_per_step() {
+    let mut selected = profile();
+    selected.declared.conversations = 3;
+    let mut machine = super::derive(&selected, &declarations()).expect("job profile").machine;
+    assert_eq!((machine.operations, machine.processes), (2, 20));
+    machine.file_bytes = 0;
+    machine.tool_payload = 0;
+    let smaller = smith_protocol_machine::worst_case(&machine).expect("bounded machine");
+    machine.file_bytes = 1024;
+    machine.tool_payload = 1024;
+    let larger = smith_protocol_machine::worst_case(&machine).expect("bounded machine");
+    // Two guide buffers, twenty retained filters and four translation buffers.
+    assert_eq!(larger - smaller, 26_624);
+}
+
+#[test]
+fn composed_machine_refuses_an_argument_cap_below_the_tools() {
+    let limits = super::derive(&profile(), &declarations()).expect("valid declarations");
+    let mut machine = limits.machine;
+    machine.tool_payload = 255;
+    let refusal = validate::machine(&machine, &limits.domain).expect_err("argument cap");
+    assert_eq!(refusal.check(), Some(Check::MachineHoldsTools));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"machine-holds-tools: tools.tool_payload=256 bytes; machine.tool_payload=255 bytes"
+    );
+}
+
+fn pathname_growth(processes: u32) -> u64 {
+    let mut machine = super::derive(&profile(), &declarations()).expect("job profile").machine;
+    machine.processes = processes;
+    machine.search_line_bytes = 0;
+    let smaller = smith_protocol_machine::worst_case(&machine).expect("bounded machine");
+    machine.search_line_bytes = 1024;
+    smith_protocol_machine::worst_case(&machine)
+        .expect("bounded machine")
+        .checked_sub(smaller)
+        .expect("a larger line grows the bound")
+}
+
+#[test]
+fn pathname_translation_copies_are_counted_only_for_one_step() {
+    // Seven more processes retain three listing paths and one search line,
+    // while the two pathname translation copies belong to one step.
+    assert_eq!(pathname_growth(8) - pathname_growth(1), 28_672);
 }

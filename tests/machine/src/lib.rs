@@ -30,6 +30,7 @@ fn machine_limits() -> Limits {
         roots: 1,
         path_bytes: 128,
         file_bytes: 128,
+        tool_payload: 128,
         entries: 16,
         entry_bytes: 2048,
         processes: 2,

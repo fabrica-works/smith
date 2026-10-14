@@ -184,3 +184,34 @@ fn parallel_tools_is_printed_as_a_policy_count() {
     let header = header(&named, &names(), &declarations()).expect("names fit");
     assert_eq!(value(&header, b"policy.parallel_tools"), Some(LimitValue::Integer(4)));
 }
+
+#[test]
+fn jobs_print_their_declared_and_derived_tools_counts() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named =
+        effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    for name in [b"declared.jobs".as_slice(), b"tools.jobs".as_slice()] {
+        assert_eq!(value(&header, name), Some(LimitValue::Integer(4)));
+    }
+}
+
+#[test]
+fn job_wait_prints_its_policy_and_derived_tools_durations() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named =
+        effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    for name in [b"policy.job_wait".as_slice(), b"tools.job_wait".as_slice()] {
+        assert_eq!(value(&header, name), Some(LimitValue::Integer(30_000)));
+    }
+}
+
+#[test]
+fn the_machine_argument_payload_prints_its_derived_byte_bound() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named =
+        effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    assert_eq!(value(&header, b"machine.tool_payload"), Some(LimitValue::Integer(256)));
+}

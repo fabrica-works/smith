@@ -136,6 +136,8 @@ const LIMITS: Limits = Limits {
             list_bytes: 4096,
             match_lines: 4,
             file_timeout: Duration::from_secs(60),
+            jobs: 4,
+            job_wait: Duration::from_secs(30),
             shell_timeout: Duration::from_secs(60),
             tool_deadline: Duration::from_secs(600),
             shell_head: 64,

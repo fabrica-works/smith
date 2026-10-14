@@ -10,6 +10,7 @@ pub(super) fn machine(inventory: &mut Inventory, limits: &smith_protocol_machine
         roots,
         path_bytes,
         file_bytes,
+        tool_payload,
         entries,
         entry_bytes,
         processes,
@@ -25,6 +26,7 @@ pub(super) fn machine(inventory: &mut Inventory, limits: &smith_protocol_machine
     inventory.value("roots", Value::Count(u64::from(roots)))?;
     inventory.value("path_bytes", Value::Bytes(u64::from(path_bytes)))?;
     inventory.value("file_bytes", Value::Bytes(u64::from(file_bytes)))?;
+    inventory.value("tool_payload", Value::Bytes(u64::from(tool_payload)))?;
     inventory.value("entries", Value::Count(u64::from(entries)))?;
     inventory.value("entry_bytes", Value::Bytes(entry_bytes))?;
     inventory.value("processes", Value::Count(u64::from(processes)))?;

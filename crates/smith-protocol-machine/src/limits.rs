@@ -21,6 +21,8 @@ pub struct Limits {
     pub path_bytes: u32,
     /// Maximum content bytes for load or store.
     pub file_bytes: u32,
+    /// Maximum combined command, pattern or filter argument bytes.
+    pub tool_payload: u32,
     /// Maximum entries retained from a tree listing.
     pub entries: u32,
     /// Maximum retained entry cells and names.
@@ -67,17 +69,26 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let operations = Map::<Token, Pending>::worst_case(limits.operations)?;
     let guides = Map::<Token, crate::guide::Guide>::worst_case(limits.operations)?
         .checked_add(u64::from(limits.file_bytes).checked_mul(u64::from(limits.operations))?)?;
+    // Each pending listing retains one encoded glob, its line, previous
+    // pathname and cutoff. Decoding a path and retaining an entry overlap
+    // only in the current step, like the argument translation buffers.
     let listing = List::<Option<smith_domain::tools::Entry>>::worst_case(limits.entries)?
         .checked_mul(2)?
         .checked_add(limits.entry_bytes)?
-        .checked_add(u64::from(limits.file_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(limits.tool_payload))?
         .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?
         .checked_add(512)?
-        .checked_add(u64::from(limits.search_line_bytes).checked_mul(5)?)?
-        .checked_mul(u64::from(limits.processes))?;
+        .checked_add(u64::from(limits.search_line_bytes).checked_mul(3)?)?
+        .checked_mul(u64::from(limits.processes))?
+        .checked_add(u64::from(limits.search_line_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(limits.tool_payload).checked_mul(4)?)?;
+    // The process bound includes every conversation's jobs beside its batch
+    // and the checks (protocol/limits.md, sections 3.5 and 5).
     let processes = Map::<Token, Process>::worst_case(limits.processes)?;
     let pipes = Map::<Token, Token>::worst_case(limits.processes.checked_mul(2)?)?;
     let window = limits.output_bytes.max(limits.search_bytes);
+    // Each process, jobs included, keeps two windows at least as large as
+    // shell_head + shell_tail in total. Their records are counted above.
     let output = u64::from(window).checked_mul(2)?.checked_mul(u64::from(limits.processes))?;
     let search = u64::from(limits.search_bytes)
         .checked_add(u64::from(limits.search_line_bytes))?
@@ -127,9 +138,11 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Derivation {
     pub operations: u32,
+    pub processes: u32,
     pub roots: u32,
     pub path_bytes: u32,
     pub file_bytes: u32,
+    pub tool_payload: u32,
     pub entries: u32,
     pub entry_bytes: u64,
     pub shell_head: u32,
@@ -165,9 +178,10 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         roots: inputs.roots,
         path_bytes: inputs.path_bytes,
         file_bytes: inputs.file_bytes,
+        tool_payload: inputs.tool_payload,
         entries: inputs.entries,
         entry_bytes: inputs.entry_bytes,
-        processes: inputs.operations.min(8),
+        processes: inputs.processes,
         output_bytes: inputs.shell_head.max(inputs.shell_tail).max(inputs.search_bytes),
         search_hits: inputs.search_hits,
         search_bytes: inputs.search_bytes,
@@ -184,4 +198,157 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         env_bytes: inputs.environment_bytes,
         group_stop: inputs.group_stop,
     })
+}
+
+#[cfg(test)]
+mod memory {
+    use super::{Limits, worst_case};
+    use crate::{Below, BelowEvent, Component, Environment, FromDomain, ToDomain};
+    use alloc::boxed::Box;
+    use skein_io::{file, kernel};
+    use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
+    use skein_world::domain::heap::{Counting, Meter};
+    use smith_domain::{run, tools};
+
+    #[global_allocator]
+    static HEAP: Counting = Counting;
+
+    fn caps() -> Limits {
+        Limits {
+            operations: 0,
+            roots: 1,
+            path_bytes: 1,
+            file_bytes: 65_536,
+            tool_payload: 65_536,
+            entries: 0,
+            entry_bytes: 0,
+            processes: 8,
+            output_bytes: 0,
+            search_hits: 0,
+            search_bytes: 0,
+            search_line_bytes: 1,
+            env_bytes: 0,
+            group_stop: Duration::from_secs(1),
+        }
+    }
+
+    fn workspace() -> run::Workspace {
+        run::Workspace {
+            directories: Box::new([run::Directory {
+                host: b"/host".as_slice().into(),
+                name: b"r".as_slice().into(),
+                root: Token::new(1),
+                writable: false,
+                git: false,
+                conflicts: Box::new([]),
+            }]),
+        }
+    }
+
+    #[test]
+    fn every_pending_listing_keeps_its_largest_filter_within_the_bound() {
+        let limits = caps();
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+        let bound = worst_case(&limits).expect("bounded listing ownership");
+        let workspace = workspace();
+        let mut terminals = Queue::<ToDomain>::with_capacity(1);
+        let mut below = Queue::<Below>::with_capacity(1);
+        let meter = Meter::new();
+        meter.start();
+        let mut component = Component::new(&limits, Environment::encode(&[], &limits).expect("empty environment"));
+        component.workspace(&workspace);
+        meter.check(meter.end(), bound, &"component and root");
+        for index in 0..limits.processes {
+            meter.start();
+            component.from_domain(&env, listing(index), &mut terminals, &mut below);
+            let measured = meter.end();
+            assert!(terminals.is_empty());
+            assert_eq!(below.pop(), Some(directory(index)));
+            meter.check(measured, bound, &index);
+        }
+        assert_eq!(component.next_deadline(), Some(Time::from_nanos(100)));
+        for index in 0..limits.processes {
+            finish_listing(&mut component, &env, index, &mut terminals, &mut below);
+        }
+        assert_eq!(component.next_deadline(), None);
+        component.close(&mut below);
+        assert!(component.closed());
+    }
+
+    fn directory(index: u32) -> Below {
+        Below::OpenDirectory {
+            owner: Token::new(u64::from(index) + 10),
+            root: Token::new(1),
+            path: b".".as_slice().into(),
+            deadline: Time::from_nanos(100),
+        }
+    }
+
+    fn finish_listing(
+        component: &mut Component,
+        env: &Env<Limits>,
+        index: u32,
+        terminals: &mut Queue<ToDomain>,
+        below: &mut Queue<Below>,
+    ) {
+        let owner = Token::new(u64::from(index) + 10);
+        component.from_below(
+            env,
+            BelowEvent::File(file::Event::Failed {
+                owner,
+                error: kernel::Error::NotFound,
+                committed: false,
+                residue: None,
+            }),
+            terminals,
+            below,
+        );
+        assert_eq!(terminals.pop(), Some(ToDomain::Done { owner, done: tools::Done::Missing }));
+    }
+
+    fn listing(index: u32) -> FromDomain {
+        let mut filter = skein_lib::bytes::zeroed(65_536);
+        filter.fill(b'x');
+        FromDomain::Op {
+            owner: Token::new(u64::from(index) + 10),
+            op: tools::Op::List {
+                at: tools::Place { root: Token::new(1), path: Box::new([]) },
+                depth: tools::Depth::Whole,
+                glob: Some(filter),
+                max: 0,
+                max_bytes: 0,
+            },
+            deadline: Time::from_nanos(100),
+        }
+    }
+
+    #[test]
+    fn saturated_listings_keep_their_pathname_copies_within_the_bound() {
+        let mut limits = caps();
+        limits.file_bytes = 0;
+        limits.tool_payload = 0;
+        limits.search_line_bytes = 16_384;
+        let bound = worst_case(&limits).expect("bounded pathname ownership");
+        let meter = Meter::new();
+        meter.start();
+        let mut listings: [Option<crate::Listing>; 8] = [const { None }; 8];
+        for listing in &mut listings {
+            *listing = Some(crate::Listing::new(0, 0, tools::Depth::Whole, 16_384));
+        }
+        meter.check(meter.end(), bound, &"eight record buffers");
+        let mut peak = 0;
+        for listing in &mut listings {
+            let listing = listing.as_mut().expect("eight saturated listings");
+            for byte in [b'a', b'b'] {
+                meter.start();
+                for _ in 0_u32..16_384 {
+                    listing.push(byte);
+                }
+                listing.push(0);
+                peak = peak.max(meter.check(meter.end(), bound, &byte));
+            }
+        }
+        assert_eq!(meter.held(), 393_216);
+        assert_eq!(peak, 425_984);
+    }
 }

@@ -21,6 +21,8 @@ pub struct Limits {
     pub kits: u32,
     /// Calls a kit runs at once. A call beyond them is answered `Busy`.
     pub calls: u32,
+    /// Jobs held by a kit until their end is reported.
+    pub jobs: u32,
     /// Repositories an authority may name.
     pub repos: u32,
     /// The longest path the tools take, in bytes, as an absolute path's names
@@ -52,6 +54,8 @@ pub struct Limits {
     pub file_timeout: Duration,
     /// The command duration when its call asks for no deadline.
     pub shell_timeout: Duration,
+    /// Default and ceiling of a job wait, and ceiling of a shell yield.
+    pub job_wait: Duration,
     /// Maximum duration any tool call may ask for; larger command requests are clamped.
     pub tool_deadline: Duration,
     /// Retained command bytes when the caller asks for no budget.
@@ -191,6 +195,7 @@ fn authority(limits: &Limits) -> Option<u64> {
 pub struct Derivation {
     pub conversations: u32,
     pub calls_per_response: u32,
+    pub jobs: u32,
     pub parallel_tools: u32,
     pub tool_payload: u32,
     pub file_bytes: u32,
@@ -203,6 +208,8 @@ pub struct Derivation {
     pub list_entries: u32,
     pub tool_deadline: Duration,
     pub shell_timeout: Duration,
+    /// Default and ceiling of a job wait, and ceiling of a shell yield.
+    pub job_wait: Duration,
 }
 
 /// The first field this layer cannot derive, returned to its parent before effects.
@@ -246,6 +253,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     Ok(Limits {
         kits: inputs.conversations,
         calls: inputs.parallel_tools.min(inputs.calls_per_response),
+        jobs: inputs.jobs,
         repos: 2,
         path_bytes: 256,
         host_path_bytes: 4096,
@@ -260,6 +268,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         match_lines: 8,
         file_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
         shell_timeout: inputs.shell_timeout,
+        job_wait: inputs.job_wait,
         tool_deadline: inputs.tool_deadline,
         shell_output: inputs.shell_output,
         shell_head: inputs.shell_head,

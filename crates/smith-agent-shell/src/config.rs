@@ -64,6 +64,7 @@ struct DeclaredOverrides {
     tool_payload: Option<u32>,
     file_bytes: Option<u32>,
     calls_per_response: Option<u32>,
+    jobs: Option<u32>,
     read_window: Option<u32>,
     shell_output: Option<u32>,
     shell_head: Option<u32>,
@@ -95,6 +96,7 @@ struct PolicyOverrides {
     connection_keep: Option<u64>,
     tool_deadline: Option<u64>,
     shell_timeout: Option<u64>,
+    job_wait: Option<u64>,
     check_timeout: Option<u64>,
     wrap_up: Option<u64>,
     group_stop: Option<u64>,
@@ -592,6 +594,9 @@ fn apply_declared(
         }
         profile.declared.calls_per_response = value;
     }
+    if let Some(value) = overrides.jobs {
+        profile.declared.jobs = value;
+    }
     if let Some(value) = overrides.read_window {
         if value == 0 {
             return Err("profile.declared.read_window must be positive".into());
@@ -750,6 +755,9 @@ fn apply_durations(
     }
     if let Some(value) = overrides.shell_timeout {
         profile.policy.shell_timeout = duration(value, LimitName::deployment(Layer::Policy, "shell_timeout"))?;
+    }
+    if let Some(value) = overrides.job_wait {
+        profile.policy.job_wait = duration(value, LimitName::deployment(Layer::Policy, "job_wait"))?;
     }
     if let Some(value) = overrides.group_stop {
         profile.policy.group_stop = duration(value, LimitName::deployment(Layer::Policy, "group_stop"))?;
@@ -1591,7 +1599,7 @@ mod tests {
             };
             validate::declarations(&profile, &declarations).expect("all drawn declaration comparisons");
             validate::window_first(&profile, &declarations, &limits.domain.session).expect("whole window and batch");
-            validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
+            validate::machine(&limits.machine, &limits.domain).expect("machine holds tools");
             assert!(limits.file_bytes >= limits.domain.session.tools.file_bytes);
             let effort = smith_charter::CEILINGS.llm_effort_some;
             let events = service::EventLimits::derive(

@@ -66,6 +66,7 @@ fn seeded_selected_paths_keep_the_exact_tree_prefix_and_omitted_count_within_mem
             roots: 0,
             path_bytes: 32,
             file_bytes: 0,
+            tool_payload: 0,
             entries: maximum,
             entry_bytes: bytes,
             processes: 1,

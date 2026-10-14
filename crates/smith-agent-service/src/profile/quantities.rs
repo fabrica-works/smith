@@ -31,6 +31,8 @@ pub struct Declared {
     pub file_bytes: u32,
     /// Tool calls one response may make.
     pub calls_per_response: u32,
+    /// Jobs held by one session, including ended jobs not yet read.
+    pub jobs: u32,
     /// Default read window, in bytes.
     pub read_window: u32,
     /// Default kept command output, in bytes.
@@ -88,6 +90,8 @@ pub struct Policy {
     pub tool_deadline: Duration,
     /// Default command duration.
     pub shell_timeout: Duration,
+    /// Default and ceiling for job waits and the ceiling for shell yields.
+    pub job_wait: Duration,
     /// Check deadline that a change-capable charter's finishing reserve must hold.
     pub check_timeout: Duration,
     /// Maximum time retained for a child's final answer.
@@ -160,6 +164,7 @@ pub const fn standard() -> Profile {
             tool_payload: 40_960,
             file_bytes: 1_048_576,
             calls_per_response: 16,
+            jobs: 4,
             read_window: 32_768,
             shell_output: 16_384,
             shell_head: 16_384,
@@ -188,6 +193,7 @@ pub const fn standard() -> Profile {
             connection_keep: Duration::from_secs(30),
             tool_deadline: Duration::from_secs(20 * 60),
             shell_timeout: Duration::from_secs(2 * 60),
+            job_wait: Duration::from_secs(30),
             check_timeout: Duration::from_secs(5 * 60),
             wrap_up: Duration::from_secs(60),
             group_stop: Duration::from_secs(1),

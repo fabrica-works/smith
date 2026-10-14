@@ -2529,6 +2529,7 @@ mod tests {
                 roots: 1,
                 path_bytes: 64,
                 file_bytes: 16,
+                tool_payload: smith_agent_world::LIMITS.session.tools.tool_payload,
                 entries: 2,
                 entry_bytes: 512,
                 processes: 2,

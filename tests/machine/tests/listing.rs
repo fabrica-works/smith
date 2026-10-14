@@ -11,6 +11,7 @@ fn limits() -> Limits {
         roots: 1,
         path_bytes: 64,
         file_bytes: 16,
+        tool_payload: 64,
         entries: 2,
         entry_bytes: 512,
         processes: 2,

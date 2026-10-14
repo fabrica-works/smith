@@ -54,8 +54,7 @@ fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
                         profile.policy.fields <= smith_charter::CEILINGS.run_result_fields,
                         "seed={seed}, case={case}: fields fit vocabulary"
                     );
-                    profile::validate::machine(&limits.machine, &limits.domain.session.tools)
-                        .expect("machine holds tools");
+                    profile::validate::machine(&limits.machine, &limits.domain).expect("machine holds tools");
                 }
                 Err(refusal) => {
                     assert!(

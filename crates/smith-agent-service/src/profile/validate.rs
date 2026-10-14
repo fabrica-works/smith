@@ -90,6 +90,7 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
         duration("tool_deadline", policy.tool_deadline),
         duration("check_timeout", policy.check_timeout),
         duration("shell_timeout", policy.shell_timeout),
+        duration("job_wait", policy.job_wait),
         duration("wrap_up", policy.wrap_up),
         duration("group_stop", policy.group_stop),
         duration("close", policy.close),
@@ -117,6 +118,13 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
             check: Check::GraceOverTeardown,
             left: duration("exit_grace", policy.exit_grace),
             right: teardown_name.value(Value::Duration(teardown)),
+        });
+    }
+    if policy.job_wait > policy.tool_deadline {
+        return Err(Refusal::Broken {
+            check: Check::Deadlines,
+            left: duration("job_wait", policy.job_wait),
+            right: duration("tool_deadline", policy.tool_deadline),
         });
     }
     if policy.shell_timeout > policy.tool_deadline {
@@ -230,8 +238,15 @@ struct CountPair {
 }
 
 /// Check that each machine ownership bound holds the matching tools bound.
-pub fn machine(machine: &machine::Limits, tools: &tools::Limits) -> Result<(), Refusal> {
+pub fn machine(machine: &machine::Limits, domain: &smith_domain::Limits) -> Result<(), Refusal> {
+    let tools = &domain.session.tools;
     let comparisons = [
+        BytePair {
+            field: "tool_payload",
+            lower: "tool_payload",
+            tools: u64::from(tools.tool_payload),
+            machine: u64::from(machine.tool_payload),
+        },
         BytePair {
             field: "file_bytes",
             lower: "file_bytes",
@@ -280,6 +295,13 @@ pub fn machine(machine: &machine::Limits, tools: &tools::Limits) -> Result<(), R
         Check::MachineHoldsTools,
         count(Layer::Tools, "search_hits", tools.search_hits),
         count(Layer::Machine, "search_hits", machine.search_hits),
+    )?;
+    let processes = super::machine_processes(domain)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Machine, "processes") })?;
+    at_most(
+        Check::MachineHoldsTools,
+        count(Layer::Machine, "processes_required", processes),
+        count(Layer::Machine, "processes", machine.processes),
     )
 }
 

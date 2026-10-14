@@ -12,5 +12,8 @@ skein-io.workspace = true
 skein-json.workspace = true
 smith-domain.workspace = true
 
+[dev-dependencies]
+skein-world.workspace = true
+
 [lints]
 workspace = true

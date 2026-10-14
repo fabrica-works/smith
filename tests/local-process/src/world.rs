@@ -789,12 +789,18 @@ impl World {
             referee.controlled(controls)
         })
         .with_machine(machine);
+        let lower = process::lower_configuration();
+        let local_operations =
+            smith_local_shell::local_host::Local::kernel_operations(&lower.limits.io, lower.limits.routes, true)
+                .expect("local shell and handed accounts fit")
+                .checked_add(5)
+                .expect("four result-file operations and diagnostic pipe fit");
         world.host_startup(
             HostedProgram {
                 program: b"smith-local".as_slice().into(),
                 make: process::make_local,
                 instances: 1,
-                operations: 2048,
+                operations: local_operations,
             },
             process::local_roots,
             process::local_appends,

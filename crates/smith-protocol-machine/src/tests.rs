@@ -1,5 +1,7 @@
 //! Entry-point tests for file admission and translation.
 
+mod admission;
+
 use alloc::boxed::Box;
 use skein_io::{digest, file, kernel};
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
@@ -13,6 +15,7 @@ fn limits() -> Limits {
         roots: 1,
         path_bytes: 64,
         file_bytes: 16,
+        tool_payload: 64,
         entries: 2,
         entry_bytes: 512,
         processes: 2,

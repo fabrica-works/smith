@@ -519,7 +519,11 @@ pub(crate) fn shell(
     deadline: Time,
     limits: &Limits,
 ) -> Option<(Process, Below)> {
-    if head > limits.output_bytes || tail > limits.output_bytes || command.contains(&0) {
+    if head > limits.output_bytes
+        || tail > limits.output_bytes
+        || command.contains(&0)
+        || command.len() > usize::try_from(limits.tool_payload).ok()?
+    {
         return None;
     }
     let env = environment.for_process(Purpose::Shell);
@@ -544,9 +548,13 @@ pub(crate) fn search(
     if hits > limits.search_hits || bytes > limits.search_bytes || pattern.contains(&0) {
         return None;
     }
-    match &glob {
+    let filter_bytes = match &glob {
         Some(filter) if filter.contains(&0) => return None,
-        Some(_) | None => {}
+        Some(filter) => filter.len(),
+        None => 0,
+    };
+    if pattern.len().checked_add(filter_bytes)? > usize::try_from(limits.tool_payload).ok()? {
+        return None;
     }
     let count = if glob.is_some() { 6 } else { 5 };
     let mut args = List::with_capacity(count);
@@ -648,7 +656,9 @@ pub(crate) fn list(
         tools::Depth::Levels(_) | tools::Depth::Whole => {}
     }
     match &glob {
-        Some(filter) if filter.contains(&0) || filter.len() > usize::try_from(limits.file_bytes).ok()? => return None,
+        Some(filter) if filter.contains(&0) || filter.len() > usize::try_from(limits.tool_payload).ok()? => {
+            return None;
+        }
         Some(_) | None => {}
     }
     let mut args = List::with_capacity(9);

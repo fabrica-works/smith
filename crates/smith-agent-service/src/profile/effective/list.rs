@@ -89,6 +89,7 @@ fn declared(inventory: &mut Inventory, limits: &super::super::Declared) -> Optio
         tool_payload,
         file_bytes,
         calls_per_response,
+        jobs,
         read_window,
         shell_output,
         shell_head,
@@ -105,6 +106,7 @@ fn declared(inventory: &mut Inventory, limits: &super::super::Declared) -> Optio
     inventory.value("tool_payload", Value::Bytes(u64::from(tool_payload)))?;
     inventory.value("file_bytes", Value::Bytes(u64::from(file_bytes)))?;
     inventory.value("calls_per_response", Value::Count(u64::from(calls_per_response)))?;
+    inventory.value("jobs", Value::Count(u64::from(jobs)))?;
     inventory.value("read_window", Value::Bytes(u64::from(read_window)))?;
     inventory.value("shell_output", Value::Bytes(u64::from(shell_output)))?;
     inventory.value("shell_head", Value::Bytes(u64::from(shell_head)))?;
@@ -136,6 +138,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
         connection_keep: _,
         tool_deadline,
         shell_timeout,
+        job_wait,
         check_timeout,
         wrap_up,
         group_stop,
@@ -160,6 +163,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
     inventory.value("parallel_tools", Value::Count(u64::from(parallel_tools)))?;
     inventory.value("tool_deadline", Value::Duration(tool_deadline))?;
     inventory.value("shell_timeout", Value::Duration(shell_timeout))?;
+    inventory.value("job_wait", Value::Duration(job_wait))?;
     inventory.value("check_timeout", Value::Duration(check_timeout))?;
     inventory.value("wrap_up", Value::Duration(wrap_up))?;
     inventory.value("group_stop", Value::Duration(group_stop))?;
@@ -339,6 +343,7 @@ fn tools(inventory: &mut Inventory, limits: &smith_domain::tools::Limits) -> Opt
     let smith_domain::tools::Limits {
         kits,
         calls,
+        jobs,
         repos,
         path_bytes,
         host_path_bytes,
@@ -351,6 +356,7 @@ fn tools(inventory: &mut Inventory, limits: &smith_domain::tools::Limits) -> Opt
         match_lines,
         file_timeout,
         shell_timeout,
+        job_wait,
         tool_deadline,
         shell_output,
         shell_head,
@@ -363,6 +369,7 @@ fn tools(inventory: &mut Inventory, limits: &smith_domain::tools::Limits) -> Opt
     inventory.layer = Layer::Tools;
     inventory.value("kits", Value::Count(u64::from(kits)))?;
     inventory.value("calls", Value::Count(u64::from(calls)))?;
+    inventory.value("jobs", Value::Count(u64::from(jobs)))?;
     inventory.value("repos", Value::Count(u64::from(repos)))?;
     inventory.value("path_bytes", Value::Bytes(u64::from(path_bytes)))?;
     inventory.value("host_path_bytes", Value::Bytes(u64::from(host_path_bytes)))?;
@@ -375,6 +382,7 @@ fn tools(inventory: &mut Inventory, limits: &smith_domain::tools::Limits) -> Opt
     inventory.value("match_lines", Value::Count(u64::from(match_lines)))?;
     inventory.value("file_timeout", Value::Duration(file_timeout))?;
     inventory.value("shell_timeout", Value::Duration(shell_timeout))?;
+    inventory.value("job_wait", Value::Duration(job_wait))?;
     inventory.value("tool_deadline", Value::Duration(tool_deadline))?;
     inventory.value("shell_output", Value::Bytes(u64::from(shell_output)))?;
     inventory.value("shell_head", Value::Bytes(u64::from(shell_head)))?;

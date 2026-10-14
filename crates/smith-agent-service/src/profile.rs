@@ -136,7 +136,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         memory,
         events: None,
     };
-    validate::machine(&limits.machine, &limits.domain.session.tools)?;
+    validate::machine(&limits.machine, &limits.domain)?;
     validate::resume_holds_window(u64::from(domain.session.history_messages), u64::from(limits.channel.resume_turns))?;
     Ok(limits)
 }
@@ -460,6 +460,7 @@ fn derive_tools(profile: &Profile) -> Result<tools::Limits, Refusal> {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         parallel_tools: policy.parallel_tools,
+        jobs: declared.jobs,
         tool_payload: declared.tool_payload,
         file_bytes: declared.file_bytes,
         read_window: declared.read_window,
@@ -471,6 +472,7 @@ fn derive_tools(profile: &Profile) -> Result<tools::Limits, Refusal> {
         list_entries: declared.list_entries,
         tool_deadline: policy.tool_deadline,
         shell_timeout: policy.shell_timeout,
+        job_wait: policy.job_wait,
     }) {
         Ok(limits) => Ok(limits),
         Err(field) => Err(derived(Layer::Tools, field.name())),
@@ -626,6 +628,13 @@ fn derived(layer: Layer, field: &'static str) -> Refusal {
     Refusal::Derived { limit: LimitName::deployment(layer, field) }
 }
 
+// protocol/limits.md, section 3.5: each conversation's batch and jobs
+// coexist with one check per directory.
+fn machine_processes(domain: &domain::Limits) -> Option<u32> {
+    let tools = domain.session.tools;
+    tools.kits.checked_mul(tools.calls.checked_add(tools.jobs)?)?.checked_add(domain.run.directories)
+}
+
 fn derive_machine(
     profile: &Profile,
     configuration: &Configuration,
@@ -634,9 +643,11 @@ fn derive_machine(
     let policy = profile.policy;
     match machine::derive(&machine::Derivation {
         operations: domain.run.calls,
+        processes: machine_processes(domain).ok_or(derived(Layer::Machine, "processes"))?,
         roots: domain.session.tools.repos,
         path_bytes: domain.run.conflict_path_bytes.max(domain.session.tools.path_bytes),
         file_bytes: domain.session.tools.file_bytes,
+        tool_payload: domain.session.tools.tool_payload,
         entries: domain.session.tools.list_entries,
         entry_bytes: domain.session.tools.list_bytes,
         shell_head: domain.session.tools.shell_head,

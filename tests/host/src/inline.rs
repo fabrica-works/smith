@@ -189,6 +189,7 @@ impl World {
                     roots: 1,
                     path_bytes: 4096,
                     file_bytes: 1_048_576,
+                    tool_payload: smith_agent_world::LIMITS.session.tools.tool_payload,
                     entries: 256,
                     entry_bytes: 65_536,
                     processes: 2,
