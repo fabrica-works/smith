@@ -4,6 +4,8 @@
 //! and answers. It cannot inspect agent state or source fixtures.
 //! The shared referee owns deadlines and reports the first broken expectation.
 
+mod jobs;
+
 use std::collections::BTreeSet;
 
 use skein_lib::{Duration, Token};
@@ -22,6 +24,14 @@ use smith_domain::run::{
     reason = "observed push terminals retain the copied fixed diagnostic tail without changing their boundary value"
 )]
 pub enum Seen {
+    /// Actual tool/session observations before a conversation's close.
+    Jobs { fact: smith_domain::session::FactKind },
+    /// A yielded command still holds write authority.
+    JobLive { owner: Token },
+    /// The lower command has settled, before its reader or closer hears it.
+    JobSettled { owner: Token },
+    /// A writing child begins only after every earlier writer settled.
+    WritingChild,
     /// Exact typed fake-provider request observed for one conversation.
     Prompt { owner: Token, query: skein_fake_llm_domain::api::Query },
     /// The actual replacement opening authorises one matching prompt boundary.
@@ -172,6 +182,8 @@ enum Phase {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
 #[derive(Debug)]
 pub struct Meeting {
+    jobs: std::collections::BTreeMap<(Token, u32), bool>,
+    live_jobs: BTreeSet<Token>,
     prompts: std::collections::BTreeMap<Token, skein_fake_llm_domain::api::Query>,
     windows: Vec<(skein_fake_llm_domain::api::Caching, Vec<skein_fake_llm_domain::api::Message>)>,
     turns: u32,
@@ -193,6 +205,8 @@ pub struct Meeting {
 impl Default for Meeting {
     fn default() -> Self {
         Self {
+            jobs: std::collections::BTreeMap::new(),
+            live_jobs: BTreeSet::new(),
             prompts: std::collections::BTreeMap::new(),
             windows: Vec::new(),
             turns: 0,
@@ -222,26 +236,18 @@ impl Expectations for Meeting {
 
     fn observe(&mut self, seen: Seen, judge: &mut Judge<Self::Name, Self::Stimulus>) {
         match seen {
-            Seen::Window { caching, messages } => self.windows.push((caching, messages)),
-            Seen::Prompt { owner, query } => {
-                let window = self
-                    .windows
-                    .iter()
-                    .position(|(caching, messages)| *caching == query.caching && query.messages.starts_with(messages));
-                if let Some(index) = window {
-                    self.windows.remove(index);
-                }
-                if let Some(previous) = self.prompts.get(&owner) {
-                    judge.check(previous.caching == query.caching, "a session keeps its affinity");
-                    judge.check(previous.system == query.system, "a session keeps its system text");
-                    judge.check(previous.tools == query.tools, "a session keeps its offered tools");
-                    judge.check(
-                        window.is_some() || query.messages.starts_with(&previous.messages),
-                        "a session extends its history within a window",
-                    );
-                }
-                self.prompts.insert(owner, query);
+            Seen::Jobs { fact } => self.job_fact(fact, judge),
+            Seen::JobLive { owner } => {
+                judge.check(self.live_jobs.insert(owner), "one live command per job owner");
             }
+            Seen::JobSettled { owner } => {
+                judge.check(self.live_jobs.remove(&owner), "only a live job settles");
+            }
+            Seen::WritingChild => {
+                judge.check(self.live_jobs.is_empty(), "jobs settle before a writing child opens");
+            }
+            Seen::Window { caching, messages } => self.windows.push((caching, messages)),
+            Seen::Prompt { owner, query } => self.prompt(owner, query, judge),
             Seen::Turn { number } => {
                 judge.check(
                     self.turns.checked_add(1) == Some(number),
@@ -250,6 +256,7 @@ impl Expectations for Meeting {
                 self.turns = number;
             }
             Seen::Checking { owner, tree } => {
+                judge.check(self.live_jobs.is_empty(), "jobs settle before checks start");
                 judge.check(self.checking.insert(owner, tree).is_none(), "one check request per pending owner");
             }
             Seen::Started { contract, outcome_bytes, checks, within, delivery } => {
@@ -286,6 +293,7 @@ impl Expectations for Meeting {
                 }
             }
             Seen::Pushing { owner, tree, name, finishing } => {
+                judge.check(self.live_jobs.is_empty(), "jobs settle before delivery starts");
                 judge.check(
                     self.phase == Phase::Running
                         && if finishing {
@@ -315,6 +323,26 @@ impl Expectations for Meeting {
 }
 
 impl Meeting {
+    fn prompt(&mut self, owner: Token, query: skein_fake_llm_domain::api::Query, judge: &mut Judge<&'static str, ()>) {
+        let window = self
+            .windows
+            .iter()
+            .position(|(caching, messages)| *caching == query.caching && query.messages.starts_with(messages));
+        if let Some(index) = window {
+            self.windows.remove(index);
+        }
+        if let Some(previous) = self.prompts.get(&owner) {
+            judge.check(previous.caching == query.caching, "a session keeps its affinity");
+            judge.check(previous.system == query.system, "a session keeps its system text");
+            judge.check(previous.tools == query.tools, "a session keeps its offered tools");
+            judge.check(
+                window.is_some() || query.messages.starts_with(&previous.messages),
+                "a session extends its history within a window",
+            );
+        }
+        self.prompts.insert(owner, query);
+    }
+
     /// Check one delivery terminal against its observed submission.
     /// Contract: domain/run.md, sections 8.2 and 8.4; testing-strategy.md, section 7.
     fn delivered(&mut self, owner: Token, push: &Delivery, tree: &[u8], judge: &mut Judge<&'static str, ()>) {

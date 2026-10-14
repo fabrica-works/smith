@@ -471,6 +471,7 @@ fn opening(domain: &Domain, fact: &run::facts::Fact) -> Option<crate::Opening> {
             | run::Request::Admitted { .. }
             | run::Request::Answer { .. }
             | run::Request::Say { .. }
+            | run::Request::CancelJobs { .. }
             | run::Request::Close { .. }
             | run::Request::Read { .. }
             | run::Request::Probe { .. }

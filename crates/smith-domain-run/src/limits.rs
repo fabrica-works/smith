@@ -175,7 +175,20 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let held = u64::from(limits.runs).checked_mul(run)?;
     // A call landing a change holds it; a sub-agent's call, its answer.
     let host = limits.run_bytes.checked_add(u64::from(limits.host_input_bytes))?;
+    let opening = limits
+        .host_part
+        .checked_add(limits.run_bytes)?
+        .checked_add(crate::prompt::budget_prompt_bytes()?)?
+        .checked_add(u64::try_from(size_of::<crate::Opening>()).ok()?)?
+        .checked_add(crate::prompt::BEGIN.len().try_into().ok()?)?
+        .checked_add(crate::prompt::SUMMARY.len().try_into().ok()?)?
+        .checked_add(crate::prompt::PREAMBLE.len().try_into().ok()?)?
+        .checked_add(crate::prompt::CHILD_FINAL.len().try_into().ok()?)?;
     let call = limits.outcome_bytes.max(u64::from(limits.answer_bytes)).max(host);
+    // The lease admits one writing child per run. Only that child's call
+    // retains an opening while its parent's jobs settle; other calls keep
+    // their ordinary payload. Replace one payload per run by the larger one.
+    let waiting = u64::from(limits.runs.min(limits.calls)).checked_mul(opening.saturating_sub(call))?;
     let calls = Calls::worst_case(limits.calls)?.checked_add(u64::from(limits.calls).checked_mul(call)?)?;
     let facts = Queue::<Fact>::worst_case(limits.facts)?;
     runs.checked_add(ready)?
@@ -183,6 +196,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(alarms)?
         .checked_add(held)?
         .checked_add(calls)?
+        .checked_add(waiting)?
         .checked_add(facts)
 }
 

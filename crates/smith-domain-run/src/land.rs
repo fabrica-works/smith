@@ -2,7 +2,7 @@
 //! sections 8 and 10). State keeps opaque fields, durable name, caller deadline
 //! and whether this is a finishing Change. It never knows receipt encoding,
 //! provider ids, callback identity or host delivery policy. Main's write batch
-//! waits throughout checks and submission; children have already returned.
+//! waits while jobs settle, through checks and submission; children have already returned.
 //! Before submission withdrawal aborts checks. Afterwards no cancellation is
 //! emitted: the bounded host terminal settles even during shutdown.
 //! A stopped check returns its retained withdrawal cause to the run for its terminal fact.
@@ -30,6 +30,7 @@ pub(crate) struct Landing {
 
 #[derive(Debug)]
 enum Stage {
+    Cancelling { why: Option<Withdrawal> },
     Checking { check: u32 },
     Aborting { why: Withdrawal },
     Delivering,
@@ -48,6 +49,35 @@ pub(crate) enum Settled {
 
 pub(crate) fn landing(change: Change, name: CallName, deadline: Time, finish: bool) -> Landing {
     Landing { change, name, deadline, finish, stage: Stage::Closed }
+}
+
+pub(crate) fn cancel_jobs(landing: &mut Landing, peer: Token, out: &mut Queue<Request>) {
+    landing.stage = Stage::Cancelling { why: None };
+    out.push(Request::CancelJobs { peer });
+}
+
+pub(crate) fn jobs_cancelled(
+    landing: &mut Landing,
+    id: Id<Call>,
+    call: Token,
+    run: &Run,
+    env: &Env<Limits>,
+    out: &mut Queue<Request>,
+) -> Settled {
+    match mem::replace(&mut landing.stage, Stage::Closed) {
+        Stage::Cancelling { why: Some(why) } => back(call, call::stopped(why), Settled::Cancelled, out),
+        Stage::Cancelling { why: None } => {
+            if env.now >= landing.deadline {
+                back(call, Returned::TimedOut, Settled::Cancelled, out)
+            } else {
+                begin(landing, id, run, env, out);
+                Settled::Going
+            }
+        }
+        Stage::Checking { .. } | Stage::Aborting { .. } | Stage::Delivering | Stage::Closed => {
+            unreachable!("job settlement precedes checks and submission")
+        }
+    }
 }
 
 pub(crate) fn begin(landing: &mut Landing, id: Id<Call>, run: &Run, env: &Env<Limits>, out: &mut Queue<Request>) {
@@ -91,7 +121,7 @@ pub(crate) fn checked(
             }
         }
         Stage::Aborting { why } => back(owner, call::stopped(why), Settled::Cancelled, out),
-        Stage::Delivering | Stage::Closed => unreachable!("checks end only while they run"),
+        Stage::Cancelling { .. } | Stage::Delivering | Stage::Closed => unreachable!("checks end only while they run"),
     }
 }
 
@@ -105,7 +135,9 @@ pub(crate) fn aborted(landing: &mut Landing, owner: Token, out: &mut Queue<Reque
                 Withdrawal::Expired => Exit::TimedOut,
             }
         }
-        Stage::Checking { .. } | Stage::Delivering | Stage::Closed => unreachable!("terminal follows an abort"),
+        Stage::Cancelling { .. } | Stage::Checking { .. } | Stage::Delivering | Stage::Closed => {
+            unreachable!("terminal follows an abort")
+        }
     }
 }
 
@@ -119,7 +151,9 @@ pub(crate) fn delivered(
     let stage = mem::replace(&mut landing.stage, Stage::Closed);
     match stage {
         Stage::Delivering => {}
-        Stage::Checking { .. } | Stage::Aborting { .. } | Stage::Closed => unreachable!("terminal follows submission"),
+        Stage::Cancelling { .. } | Stage::Checking { .. } | Stage::Aborting { .. } | Stage::Closed => {
+            unreachable!("terminal follows submission")
+        }
     }
     match delivery {
         Delivery::Delivered(receipts) => {
@@ -178,6 +212,7 @@ fn writable(run: &Run, directory: u32) -> bool {
 pub(crate) fn withdraw(landing: &mut Landing, id: Id<Call>, why: Withdrawal, out: &mut Queue<Request>) {
     let stage = mem::replace(&mut landing.stage, Stage::Closed);
     landing.stage = match stage {
+        Stage::Cancelling { why: first } => Stage::Cancelling { why: first.or(Some(why)) },
         Stage::Checking { .. } => {
             out.push(Request::Abort { owner: id.token() });
             Stage::Aborting { why }

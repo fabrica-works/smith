@@ -2,6 +2,9 @@
 //! a counting allocator: the run child domain with every run holding a charter
 //! of exactly its byte limit, and every conversation started and spending.
 
+#[path = "memory/jobs.rs"]
+mod jobs;
+
 use std::mem::size_of;
 
 use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
@@ -57,7 +60,7 @@ const LIMITS: Limits = Limits {
     conversations: 2,
     run_bytes: 1024,
     brief_sections: 4,
-    host_part: u64::MAX,
+    host_part: 1 << 20,
     room: 0,
     compaction_threshold: [4, 5],
     schema_costs: smith_domain_run::SchemaCosts::NONE,
@@ -261,6 +264,7 @@ fn observed_request(request: Request, selected: Option<&smith_domain_run::Conven
         | Request::Waiting { .. }
         | Request::Admitted { .. }
         | Request::Say { .. }
+        | Request::CancelJobs { .. }
         | Request::Close { .. }
         | Request::Abort { .. }
         | Request::Checking { .. }
@@ -302,8 +306,42 @@ fn selected_charter(run_bytes: u64, selected: Option<&smith_domain_run::Conventi
     charter
 }
 
+fn measured_step(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    out: &mut Queue<Request>,
+    meter: &Meter,
+    event: Event,
+    selected: Option<&smith_domain_run::Conventions>,
+) -> Vec<Asked> {
+    let bound = worst_case(&env.limits).expect("test limits fit");
+    let caller = if let Event::Delegated { conversation, .. } = &event { Some(*conversation) } else { None };
+    meter.start();
+    while domain.pop_fact().is_some() {}
+    smith_domain_run::step(domain, env, event, out);
+    let mut measured = meter.end();
+    let mut asked = Vec::new();
+    while let Some(request) = out.pop() {
+        if let Request::CancelJobs { .. } = request {
+            while domain.pop_fact().is_some() {}
+            meter.check(measured, bound, &env.limits);
+            meter.start();
+            smith_domain_run::step(
+                domain,
+                env,
+                Event::JobsCancelled { conversation: caller.expect("writer caller") },
+                out,
+            );
+            measured = meter.end();
+        } else {
+            asked.push(observed_request(request, selected));
+        }
+    }
+    meter.check(measured, bound, &env.limits);
+    asked
+}
+
 fn fill_selected(limits: &Limits, selected: Option<&smith_domain_run::Conventions>) {
-    let bound = worst_case(limits).expect("the test limits fit");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits };
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
@@ -311,18 +349,7 @@ fn fill_selected(limits: &Limits, selected: Option<&smith_domain_run::Convention
     // The requests are the parent's to route and their receivers' to count:
     // each is dropped, keeping only what it asked for, and the step's peak
     // checked less them.
-    let mut step = |event: Event| -> Vec<Asked> {
-        meter.start();
-        while domain.pop_fact().is_some() {}
-        smith_domain_run::step(&mut domain, &env, event, &mut out);
-        let measured = meter.end();
-        let mut asked = Vec::new();
-        while let Some(request) = out.pop() {
-            asked.push(observed_request(request, selected));
-        }
-        meter.check(measured, bound, limits);
-        asked
-    };
+    let mut step = |event| measured_step(&mut domain, &env, &mut out, &meter, event, selected);
     let spend = Spend {
         units: 0,
         turns: 1,
@@ -504,14 +531,27 @@ fn delivery_memory_step(
     meter: &Meter,
     event: Event,
 ) -> (Option<Token>, bool) {
+    let caller = if let Event::Delegated { conversation, .. } = &event { Some(*conversation) } else { None };
     meter.start();
     while domain.pop_fact().is_some() {}
     smith_domain_run::step(domain, env, event, out);
-    let measured = meter.end();
+    let mut measured = meter.end();
     let mut token = None;
     let mut answered = false;
     while let Some(request) = out.pop() {
         match request {
+            Request::CancelJobs { .. } => {
+                while domain.pop_fact().is_some() {}
+                meter.check(measured, worst_case(&env.limits).expect("limits fit"), &"writer ask");
+                meter.start();
+                smith_domain_run::step(
+                    domain,
+                    env,
+                    Event::JobsCancelled { conversation: caller.expect("writer caller") },
+                    out,
+                );
+                measured = meter.end();
+            }
             Request::Read { owner, .. }
             | Request::Probe { owner, .. }
             | Request::Check { owner, .. }
@@ -555,7 +595,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
         conflict_path_bytes: 4096,
         run_bytes: 65_536,
         brief_sections: 4,
-        host_part: u64::MAX,
+        host_part: 1 << 20,
         room: 0,
         compaction_threshold: [4, 5],
         schema_costs: smith_domain_run::SchemaCosts::NONE,
@@ -740,6 +780,7 @@ fn host_memory_take(
             | Request::Waiting { .. }
             | Request::Admitted { .. }
             | Request::WithdrawHost { .. }
+            | Request::CancelJobs { .. }
             | Request::Close { .. }
             | Request::Answer { .. } => {}
             unexpected @ (Request::CompletionReady { .. }

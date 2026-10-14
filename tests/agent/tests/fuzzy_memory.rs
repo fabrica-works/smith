@@ -51,7 +51,7 @@ const LIMITS: Limits = Limits {
         conversations: 4,
         run_bytes: 2048,
         brief_sections: 4,
-        host_part: u64::MAX,
+        host_part: 1 << 20,
         room: 0,
         compaction_threshold: [4, 5],
         schema_costs: run::SchemaCosts::NONE,

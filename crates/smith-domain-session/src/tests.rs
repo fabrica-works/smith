@@ -1004,6 +1004,7 @@ fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
                 verdict: tools::Verdict::Read,
                 bytes: 1,
                 omitted_bytes: 0,
+                job: None,
                 clamped: false,
             },
         ),
@@ -1867,6 +1868,7 @@ fn a_session_tells_what_happens_as_facts() {
                 verdict,
                 bytes: 7,
                 omitted_bytes: 0,
+                job: None,
                 clamped: false,
             },
         ),
@@ -2442,6 +2444,7 @@ fn a_workspace_refusal_keeps_its_provider_identity_without_starting_work() {
                 verdict: tools::Verdict::Outside,
                 bytes: 0,
                 omitted_bytes: 0,
+                job: None,
                 clamped: false
             }
         }
@@ -2874,6 +2877,7 @@ fn delayed_workspace_terminal_facts_keep_tool_caps_before_any_render() {
                 verdict: tools::Verdict::Read,
                 bytes: 8,
                 omitted_bytes: 2,
+                job: None,
                 clamped: true,
             }
         )

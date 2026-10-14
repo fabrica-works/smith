@@ -8,6 +8,8 @@
 
 #![expect(clippy::manual_let_else, reason = "bounded production entries keep explicit Option terminals")]
 
+mod jobs;
+
 use alloc::boxed::Box;
 use skein_lib::{List, Map, Time, Token};
 use smith_domain::{session, tools};
@@ -182,7 +184,8 @@ impl Book {
             | session::FactKind::DelegateStarted { opener, .. }
             | session::FactKind::DelegateAnswered { opener, .. }
             | session::FactKind::DelegateCancelled { opener }
-            | session::FactKind::DelegateWithheld { opener } => opener,
+            | session::FactKind::DelegateWithheld { opener }
+            | session::FactKind::JobEnded { opener, .. } => opener,
             session::FactKind::Ended { opener, .. } => {
                 self.inputs.ended(opener);
                 return;
@@ -195,7 +198,6 @@ impl Book {
             | session::FactKind::CompletionFailed { .. }
             | session::FactKind::CompletionCancelled { .. }
             | session::FactKind::CompletionRetried { .. }
-            | session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Yielded { .. }
             | session::FactKind::Used { .. }
@@ -220,7 +222,7 @@ impl Book {
                 sinks.record(&self.started(origin, fact.at, opener, scope, metadata));
             }
             session::FactKind::Tools {
-                fact: tools::FactKind::Answered { verdict, bytes, omitted_bytes, clamped, .. },
+                fact: tools::FactKind::Answered { verdict, bytes, job, omitted_bytes, clamped, .. },
                 ..
             } => {
                 // An entrance refusal settles the session's actual call in
@@ -230,6 +232,7 @@ impl Book {
                 }
                 let terminal = Terminal {
                     verdict: verdict_kind(verdict),
+                    job: jobs::number(job),
                     exit: command_exit(verdict),
                     bytes,
                     omitted_bytes,
@@ -237,18 +240,19 @@ impl Book {
                 };
                 sinks.record(&self.completed(origin, fact.at, metadata, terminal));
             }
+            session::FactKind::JobEnded { .. } => sinks.record(&jobs::ended(origin, fact, scope, metadata)),
             session::FactKind::DelegateAnswered { bytes, error, .. } => {
                 let verdict = if error { smith_events::Verdict::Error } else { smith_events::Verdict::Result };
                 sinks.record(&self.completed(
                     origin,
                     fact.at,
                     metadata,
-                    Terminal { verdict, exit: None, bytes, omitted_bytes: 0, clamped: false },
+                    Terminal { job: None, verdict, exit: None, bytes, omitted_bytes: 0, clamped: false },
                 ));
             }
             session::FactKind::DelegateCancelled { .. } | session::FactKind::DelegateWithheld { .. } => {
                 let verdict = smith_events::Verdict::Withdrawn;
-                let terminal = Terminal { verdict, exit: None, bytes: 0, omitted_bytes: 0, clamped: false };
+                let terminal = Terminal { job: None, verdict, exit: None, bytes: 0, omitted_bytes: 0, clamped: false };
                 sinks.record(&self.completed(origin, fact.at, metadata, terminal));
             }
             session::FactKind::CompactionStarted { .. }
@@ -259,7 +263,6 @@ impl Book {
             | session::FactKind::CompletionFailed { .. }
             | session::FactKind::CompletionCancelled { .. }
             | session::FactKind::CompletionRetried { .. }
-            | session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Yielded { .. }
             | session::FactKind::Used { .. }
@@ -327,7 +330,7 @@ impl Book {
                 tool: call.metadata.name,
                 verdict: terminal.verdict,
                 exit: terminal.exit,
-                job: None,
+                job: terminal.job,
                 bytes: terminal.bytes,
                 omitted_bytes: terminal
                     .omitted_bytes
@@ -343,6 +346,7 @@ impl Book {
 }
 
 struct Terminal {
+    job: Option<u64>,
     verdict: smith_events::Verdict,
     exit: Option<smith_events::CommandExit>,
     bytes: u64,
@@ -561,12 +565,75 @@ mod tests {
                     verdict: tools::Verdict::Exited { exit: tools::Exit::TimedOut },
                     bytes: 0,
                     omitted_bytes: 0,
+                    job: None,
                     clamped: true,
                 },
             },
             call: Some(metadata),
             response: None,
         }
+    }
+
+    fn running_fact(opener: Token, metadata: session::ToolCall) -> session::Fact {
+        session::Fact {
+            at: Time::from_nanos(1_000_000_000),
+            kind: session::FactKind::Tools {
+                opener,
+                fact: tools::FactKind::Answered {
+                    session: Token::new(88),
+                    tool: tools::Tool::Shell,
+                    verdict: tools::Verdict::Running,
+                    bytes: 0,
+                    job: Some(tools::JobNumber(7)),
+                    omitted_bytes: 0,
+                    clamped: false,
+                },
+            },
+            call: Some(metadata),
+            response: None,
+        }
+    }
+
+    #[test]
+    fn a_running_shell_terminal_names_its_actual_job() {
+        let source = source();
+        let (mut book, mut sinks, destination, opener, metadata) = fixture(&source, Capture::None);
+        book.fact(Time::ZERO, &running_fact(opener, metadata), &mut sinks);
+        let records = drain_ready(&mut sinks, destination);
+        let Event::ToolCompleted(completed) = &records[1].event else { panic!("shell terminal") };
+        assert_eq!(completed.job, Some(7));
+        assert_eq!(completed.verdict, smith_events::Verdict::Running);
+    }
+
+    #[test]
+    fn an_unreported_job_end_keeps_its_shell_identity() {
+        let source = source();
+        let (mut book, mut sinks, destination, opener, metadata) = fixture(&source, Capture::None);
+        book.fact(Time::ZERO, &running_fact(opener, metadata.clone()), &mut sinks);
+        let mut records = drain_ready(&mut sinks, destination);
+        book.fact(
+            Time::ZERO,
+            &session::Fact {
+                at: Time::from_nanos(11_000_000_000),
+                kind: session::FactKind::JobEnded {
+                    opener,
+                    job: tools::JobNumber(7),
+                    end: tools::JobEnd::Cancelled,
+                    unread_bytes: 13,
+                    started: Time::from_nanos(1_000_000_000),
+                },
+                call: Some(metadata),
+                response: None,
+            },
+            &mut sinks,
+        );
+        records.extend(drain_ready(&mut sinks, destination));
+        let Event::JobEnded(ended) = &records[2].event else { panic!("unreported job terminal") };
+        assert_eq!(ended.call.as_ref(), b"provider-\"id");
+        assert_eq!(ended.job, 7);
+        assert_eq!(ended.verdict, smith_events::Verdict::Cancelled);
+        assert_eq!(ended.unread_bytes, 13);
+        assert_eq!(ended.duration_ms, 10_000);
     }
 
     #[test]
@@ -594,6 +661,32 @@ mod tests {
         assert!(completed.clamped);
         assert_eq!(completed.duration_ms, 100);
         assert!(book.calls.is_empty());
+    }
+
+    fn workspace_fact(
+        opener: Token,
+        metadata: session::ToolCall,
+        verdict: tools::Verdict,
+        omitted: u64,
+        clamped: bool,
+    ) -> session::Fact {
+        session::Fact {
+            at: Time::from_nanos(14_000_000),
+            kind: session::FactKind::Tools {
+                opener,
+                fact: tools::FactKind::Answered {
+                    session: Token::new(88),
+                    tool: tools::Tool::Read,
+                    verdict,
+                    bytes: 13,
+                    omitted_bytes: omitted,
+                    job: None,
+                    clamped,
+                },
+            },
+            call: Some(metadata),
+            response: None,
+        }
     }
 
     #[test]
@@ -641,26 +734,7 @@ mod tests {
                     },
                     &mut sinks,
                 );
-                book.fact(
-                    Time::ZERO,
-                    &session::Fact {
-                        at: Time::from_nanos(14_000_000),
-                        kind: session::FactKind::Tools {
-                            opener,
-                            fact: tools::FactKind::Answered {
-                                session: Token::new(88),
-                                tool: tools::Tool::Read,
-                                verdict,
-                                bytes: 13,
-                                omitted_bytes: omitted,
-                                clamped,
-                            },
-                        },
-                        call: Some(metadata.clone()),
-                        response: None,
-                    },
-                    &mut sinks,
-                );
+                book.fact(Time::ZERO, &workspace_fact(opener, metadata.clone(), verdict, omitted, clamped), &mut sinks);
                 assert!(book.calls.is_empty());
                 assert_eq!(book.bytes, 0);
                 sinks.ended(

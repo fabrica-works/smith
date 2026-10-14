@@ -1292,9 +1292,14 @@ dependencies = [
 name = "smith-run-world"
 version = "0.0.0"
 dependencies = [
+ "skein-fake-checkout",
+ "skein-fake-llm-domain",
  "skein-lib",
  "skein-world",
+ "smith-agent-world",
+ "smith-domain",
  "smith-domain-run",
+ "smith-tools-world",
 ]
 
 [[package]]

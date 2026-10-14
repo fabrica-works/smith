@@ -8,6 +8,12 @@ use std::collections::BTreeMap;
 /// One actual opening, operation or terminal at the run boundary.
 #[derive(Clone, Copy, Debug)]
 pub enum Seen {
+    /// A shell answer names its conversation's new job.
+    JobStarted { conversation: Token, job: u32 },
+    /// An answer or close reports that job's one end.
+    JobTerminal { conversation: Token, job: u32 },
+    /// Each job terminal precedes its conversation's close.
+    ConversationClosed { conversation: Token },
     /// An admitted child opens with its effective authority.
     ChildOpened { call: Token, writing: bool },
     /// The child's terminal returns its calling session's call.
@@ -33,6 +39,7 @@ enum Holder {
 /// Effective child authorities and the one external holder for an admitted run.
 #[derive(Default)]
 pub struct Meeting {
+    jobs: BTreeMap<(Token, u32), bool>,
     children: BTreeMap<Token, bool>,
     holder: Option<Holder>,
     answered: bool,
@@ -46,6 +53,20 @@ impl Expectations for Meeting {
     fn observe(&mut self, seen: Seen, judge: &mut Judge<Self::Name, Self::Stimulus>) {
         judge.check(!self.answered, "no lease observation follows the run's answer");
         match seen {
+            Seen::JobStarted { conversation, job } => {
+                judge.check(self.jobs.insert((conversation, job), false).is_none(), "a job number names one start");
+            }
+            Seen::JobTerminal { conversation, job } => {
+                let ended = self.jobs.get_mut(&(conversation, job)).expect("job terminal follows its start");
+                judge.check(!*ended, "one terminal per job");
+                *ended = true;
+            }
+            Seen::ConversationClosed { conversation } => {
+                judge.check(
+                    self.jobs.iter().all(|((owner, _), ended)| *owner != conversation || *ended),
+                    "each job's terminal precedes conversation close",
+                );
+            }
             Seen::ChildOpened { call, writing } => {
                 judge.check(self.holder.is_none(), "a child opens only without another write holder");
                 judge.check(!writing || self.children.is_empty(), "a writing child runs alone");

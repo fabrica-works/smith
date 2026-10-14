@@ -44,6 +44,7 @@ fn a_running_commands_fact_keeps_its_loss_and_clamp() {
             verdict: Verdict::Running,
             bytes: 5,
             omitted_bytes: 7,
+            job: Some(JobNumber(2)),
             clamped: true
         }
     );
@@ -59,6 +60,7 @@ fn a_running_jobs_fact_keeps_its_loss_and_clamp() {
             verdict: Verdict::Running,
             bytes: 5,
             omitted_bytes: 7,
+            job: Some(JobNumber(2)),
             clamped: true
         }
     );
@@ -74,6 +76,7 @@ fn an_exited_jobs_fact_keeps_its_observed_exit() {
             verdict: Verdict::Exited { exit: Exit::Code { code: 17 } },
             bytes: 5,
             omitted_bytes: 7,
+            job: Some(JobNumber(2)),
             clamped: true
         }
     );
@@ -89,6 +92,7 @@ fn a_stopped_jobs_fact_keeps_its_loss_and_clamp() {
             verdict: Verdict::Stopped,
             bytes: 5,
             omitted_bytes: 7,
+            job: Some(JobNumber(2)),
             clamped: true
         }
     );
@@ -104,6 +108,7 @@ fn a_cancelled_jobs_fact_keeps_its_loss_and_clamp() {
             verdict: Verdict::Cancelled,
             bytes: 5,
             omitted_bytes: 7,
+            job: Some(JobNumber(2)),
             clamped: true
         }
     );
@@ -133,6 +138,7 @@ fn a_running_commands_fact_preserves_its_deadline_clamp_alone() {
             verdict: Verdict::Running,
             bytes: 0,
             omitted_bytes: 0,
+            job: Some(JobNumber(2)),
             clamped: true
         }
     );

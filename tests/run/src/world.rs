@@ -197,7 +197,7 @@ const fn calm_run_limits() -> run::Limits {
         conversations: 16,
         run_bytes: 1 << 16,
         brief_sections: 4,
-        host_part: u64::MAX,
+        host_part: 1 << 20,
         room: 0,
         compaction_threshold: [4, 5],
         schema_costs: smith_domain_run::SchemaCosts::NONE,
@@ -626,6 +626,7 @@ pub struct World {
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     just_answered: Option<Token>,
     asked: Option<(Token, run::Budget, run::Share, Duration)>,
+    pending_asks: BTreeMap<Token, (Token, run::Budget, run::Share, Duration)>,
     child_of_call: BTreeMap<Token, Token>,
 
     stats: Stats,
@@ -702,6 +703,7 @@ impl World {
             fact_holds: 0,
             just_answered: None,
             asked: None,
+            pending_asks: BTreeMap::new(),
             child_of_call: BTreeMap::new(),
             stats: Stats::default(),
             trace: Trace::default(),
@@ -903,6 +905,8 @@ impl World {
                 if let run::Event::Delegated { call, ask: run::Ask::SubAgent { share, .. }, deadline, .. } = &event {
                     let left = run.map(|run| self.views[&run].budget_left(self.now));
                     left.map(|left| (*call, left, *share, deadline.saturating_since(self.now)))
+                } else if let run::Event::JobsCancelled { conversation } = &event {
+                    self.pending_asks.remove(conversation)
                 } else {
                     None
                 };
@@ -1044,6 +1048,7 @@ impl World {
                 self.stats.says += 1;
                 self.send(Lane::Conversations, Delivery::Say { peer });
             }
+            run::Request::CancelJobs { peer } => self.cancel_jobs(peer),
             run::Request::Close { peer } => self.close_conversation(peer),
             run::Request::Return { call, result, spent } => {
                 let ledger = self.calls.get_mut(&call).expect("a return is of a call that was made");
@@ -1102,6 +1107,14 @@ impl World {
             }
         }
         current
+    }
+
+    fn cancel_jobs(&mut self, peer: Token) {
+        let conversation = self.conversation_of_peer[&peer];
+        if let Some(asked) = self.asked.take() {
+            assert!(self.pending_asks.insert(conversation, asked).is_none(), "one exclusive child ask awaits jobs");
+        }
+        self.run_stage.push(run::Event::JobsCancelled { conversation });
     }
 
     fn host_call(&mut self, request: run::Request) {
@@ -1338,6 +1351,7 @@ impl World {
             | run::Request::Answer { .. }
             | run::Request::Open { .. }
             | run::Request::Say { .. }
+            | run::Request::CancelJobs { .. }
             | run::Request::Close { .. }
             | run::Request::Return { .. }
             | run::Request::Check { .. }
@@ -1359,7 +1373,8 @@ impl World {
                 Some(*run)
             }
             run::Event::Read { owner, .. } | run::Event::Probed { owner, .. } => Some(*owner),
-            run::Event::Started { conversation, .. }
+            run::Event::JobsCancelled { conversation }
+            | run::Event::Started { conversation, .. }
             | run::Event::Turn { conversation, .. }
             | run::Event::Yielded { conversation, .. }
             | run::Event::Priced { conversation, .. }
@@ -1436,7 +1451,8 @@ impl World {
             | run::Event::Delegated { .. }
             | run::Event::Withdraw { .. }
             | run::Event::Read { .. }
-            | run::Event::Probed { .. } => {}
+            | run::Event::Probed { .. }
+            | run::Event::JobsCancelled { .. } => {}
         }
         None
     }
@@ -1741,6 +1757,7 @@ impl World {
                 run::Event::HostReturned { .. }
                 | run::Event::Turn { .. }
                 | run::Event::Acknowledge { .. }
+                | run::Event::JobsCancelled { .. }
                 | run::Event::Started { .. }
                 | run::Event::Yielded { .. }
                 | run::Event::Priced { .. }
@@ -1855,6 +1872,7 @@ impl World {
                         | run::Event::Turn { .. }
                         | run::Event::Start { .. }
                         | run::Event::Cancel { .. }
+                        | run::Event::JobsCancelled { .. }
                         | run::Event::Started { .. }
                         | run::Event::Yielded { .. }
                         | run::Event::Priced { .. }
@@ -2075,7 +2093,8 @@ impl World {
         let (conversation, started, ended) = match event {
             run::Event::Started { conversation, .. } => (conversation, true, false),
             run::Event::Ended { conversation, .. } => (conversation, false, true),
-            run::Event::Yielded { conversation, .. }
+            run::Event::JobsCancelled { conversation }
+            | run::Event::Yielded { conversation, .. }
             | run::Event::Turn { conversation, .. }
             | run::Event::Priced { conversation, .. }
             | run::Event::Used { conversation, .. } => (conversation, false, false),

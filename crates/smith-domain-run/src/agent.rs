@@ -49,6 +49,13 @@ use crate::run::Conversation;
 /// A sub-agent's call.
 #[derive(Debug)]
 pub(crate) enum Child {
+    /// A writing child's opening waits for its parent's jobs to settle.
+    Cancelling {
+        child: Id<Conversation>,
+        opening: Box<crate::Opening>,
+        deadline: skein_lib::Time,
+        why: Option<Withdrawal>,
+    },
     /// The sub-agent `child` is at work.
     Working { child: Id<Conversation> },
     /// It yielded `text`, the first of `cut` more bytes, for `stop`, and is
@@ -150,7 +157,9 @@ pub(crate) fn yielded(call: &mut Child, text: &[u8], stop: Stop, limits: &Limits
         }
         // Stopped already, and being closed.
         Child::Closing { child, why } => (Child::Closing { child, why }, None),
-        Child::Answering { .. } | Child::Closed => unreachable!("a child yields at most once before it is closed"),
+        Child::Cancelling { .. } | Child::Answering { .. } | Child::Closed => {
+            unreachable!("a child yields at most once before it is closed")
+        }
     };
     *call = next;
     close
@@ -161,6 +170,9 @@ pub(crate) fn yielded(call: &mut Child, text: &[u8], stop: Stop, limits: &Limits
 pub(crate) fn withdraw(call: &mut Child, why: Withdrawal) -> Option<Id<Conversation>> {
     let state = mem::replace(call, Child::Closed);
     let (next, close) = match state {
+        Child::Cancelling { child, opening, deadline, why: first } => {
+            (Child::Cancelling { child, opening, deadline, why: first.or(Some(why)) }, None)
+        }
         Child::Working { child } => (Child::Closing { child, why }, Some(child)),
         // It has answered, and is being closed: the answer stands.
         Child::Answering { child, text, cut, stop } => (Child::Answering { child, text, cut, stop }, None),
@@ -181,7 +193,7 @@ pub(crate) fn ended(call: &mut Child, end: End, used: crate::facts::Used, left: 
         Child::Working { child: _ } => Returned::Unanswered { end, used, left },
         Child::Answering { child: _, text, cut, stop } => Returned::Answered { text, cut, stop, used, left },
         Child::Closing { child: _, why } => call::stopped(why),
-        Child::Closed => unreachable!("a child ends once"),
+        Child::Cancelling { .. } | Child::Closed => unreachable!("only an opened child ends"),
     }
 }
 

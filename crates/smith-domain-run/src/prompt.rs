@@ -40,10 +40,11 @@ pub fn summary_bytes() -> u64 {
 }
 
 /// The child's last prompt, independent of provider and host vocabulary.
+pub(crate) const CHILD_FINAL: &[u8] =
+    b"Your share is ending. This is your final turn. Answer now with what you have. No tool calls will run.";
+
 pub(crate) fn child_final_note() -> Box<[u8]> {
-    skein_lib::bytes::copy_of(
-        b"Your share is ending. This is your final turn. Answer now with what you have. No tool calls will run.",
-    )
+    skein_lib::bytes::copy_of(CHILD_FINAL)
 }
 
 const WAIT: &[u8] = b"Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n";

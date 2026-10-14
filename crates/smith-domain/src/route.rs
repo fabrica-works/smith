@@ -505,7 +505,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             return out.push(Request::Job { owner, act });
         }
         session::Request::CancelIo { owner } => return out.push(Request::CancelIo { owner }),
-        session::Request::JobsCancelled { .. } => return,
+        session::Request::JobsCancelled { opener } => run::Event::JobsCancelled { conversation: opener },
         session::Request::Opened { opener, session } => {
             let id = peer(domain, opener);
             domain.peers.get_mut(id).expect("found above").session = Some(session);
@@ -623,6 +623,7 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             return open(domain, env, conversation, opening);
         }
         run::Request::Say { peer, text } => session::Event::Continue { session: peer, content: text },
+        run::Request::CancelJobs { peer } => session::Event::CancelJobs { session: peer },
         run::Request::Close { peer } => {
             // A close of a session that has ended is stale.
             if let Some(id) = domain.sessions.get(&peer) {

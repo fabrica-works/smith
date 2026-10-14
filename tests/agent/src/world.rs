@@ -4,7 +4,9 @@
 //! charter, drive the typed fake LLM, inject parent input, and return host
 //! terminals. Only public counters are read for final quiescence checks.
 
-use std::collections::{BTreeMap, hash_map::DefaultHasher};
+mod jobs;
+
+use std::collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 
 use skein_fake_checkout::Checkout;
@@ -248,6 +250,7 @@ enum Delivery {
     Command { owner: Token, process: skein_fake_checkout::Process, head: u32, tail: u32, timed_out: bool },
     Check { owner: Token, passed: bool, output: Vec<u8>, timed_out: bool, tail: u32 },
     Host { relay: run::RelayName, reply: run::HostReply },
+    Job { owner: Token },
     Cancel,
 }
 
@@ -370,6 +373,8 @@ pub enum CompletionTerminal {
 /// sections 1 and 5; testing-strategy.md, section 7.
 #[derive(Debug)]
 pub struct World {
+    jobs: BTreeMap<Token, jobs::Held>,
+    writing_opened: BTreeSet<u32>,
     settings: Settings,
     failure: Option<(agent::llm::Failure, agent::llm::Evidence)>,
     now: Time,
@@ -708,6 +713,8 @@ impl World {
             waiting: Vec::new(),
             facts: Vec::new(),
             agent_facts_not_written: 0,
+            jobs: BTreeMap::new(),
+            writing_opened: BTreeSet::new(),
             trace: Trace::default(),
             referee,
             stimuli,
@@ -1147,6 +1154,10 @@ impl World {
 
     fn gather(&mut self) {
         while let Some(fact) = self.agent.pop_fact() {
+            match &fact {
+                Fact::Session { fact } => self.observe(Seen::Jobs { fact: fact.kind }),
+                Fact::Run { .. } => {}
+            }
             if self.settings.drain_facts {
                 self.facts.push(fact);
             } else {
@@ -1240,6 +1251,12 @@ impl World {
                 }
             }
             Request::Complete { owner, prompt, .. } => {
+                if prompt.asker == llm::Asker::Child
+                    && (prompt.tools.modify || prompt.tools.shell)
+                    && self.writing_opened.insert(prompt.affinity.thread)
+                {
+                    self.observe(Seen::WritingChild);
+                }
                 self.host_history.prompt(&prompt).expect("exact feedback for observed provider host call");
                 self.observe(Seen::Completing { owner });
                 let starts = u64::from(self.settings.limits.run.budget.turns)
@@ -1289,6 +1306,9 @@ impl World {
                 Backend::Typed { .. } => self.cancel(Family::Completion, owner, Event::Cancelled { owner }),
             },
             Request::Io { owner, op, deadline } => {
+                if self.start_job(owner, &op, deadline) {
+                    return;
+                }
                 self.boundaries.push((self.now, Boundary::Io { op: op.clone() }));
                 self.flights.open(
                     (Family::Io, owner),
@@ -1329,8 +1349,11 @@ impl World {
                 };
                 self.schedule_flight(Family::Io, owner, delivery);
             }
-            Request::Job { .. } => unreachable!("the tools issue no job act yet"),
+            Request::Job { owner, act } => self.job_act(owner, act),
             Request::CancelIo { owner } => {
+                if self.cancel_job(owner) {
+                    return;
+                }
                 self.cancel(Family::Io, owner, Event::Done { owner, done: tools::Done::Cancelled });
             }
             Request::Read { owner, at, max, deadline } => {
@@ -1614,6 +1637,7 @@ impl World {
                 let done = io::exited(exit, &process.program.output, head, tail);
                 self.terminal(Family::Io, owner, Event::Done { owner, done });
             }
+            Delivery::Job { owner } => self.job_tick(owner),
             Delivery::Check { owner, passed, output, timed_out, tail } => {
                 let exit = if timed_out { run::Exit::TimedOut } else { run::Exit::Code { code: u8::from(!passed) } };
                 let keep = usize::try_from(tail).expect("fixture output bound fits").min(output.len());

@@ -38,7 +38,7 @@ pub(crate) const LIMITS: Limits = Limits {
     conversations: 4,
     run_bytes: 4096,
     brief_sections: 4,
-    host_part: u64::MAX,
+    host_part: 1 << 20,
     room: 0,
     compaction_threshold: [4, 5],
     schema_costs: crate::SchemaCosts::NONE,
@@ -85,6 +85,7 @@ struct Harness {
     out: Queue<Request>,
     prices: alloc::collections::BTreeMap<Token, u64>,
     checks_ended: u32,
+    peers: alloc::collections::BTreeMap<Token, Token>,
 }
 
 impl Harness {
@@ -113,11 +114,15 @@ impl Harness {
             out: Queue::with_capacity(MAX_OUT),
             prices: alloc::collections::BTreeMap::new(),
             checks_ended: 0,
+            peers: alloc::collections::BTreeMap::new(),
         }
     }
 
     /// Steps `event`, returning what it emitted, oldest first.
     fn step(&mut self, event: Event) -> Box<[Request]> {
+        if let Event::Started { conversation, peer } = &event {
+            self.peers.insert(*peer, *conversation);
+        }
         // Legacy controls supply own units alongside raw usage; the         // run receives the two independent session notices in protocol order.
         if let Event::Used { conversation, spend } = &event {
             let previous = self.prices.get(conversation).copied().unwrap_or(0);
@@ -151,9 +156,14 @@ impl Harness {
 
     fn drain(&mut self) -> Box<[Request]> {
         let mut requests = List::with_capacity(MAX_OUT);
-        for _ in 0..MAX_OUT {
+        for _ in 0..MAX_OUT.saturating_mul(2) {
             let Some(request) = self.out.pop() else { break };
             match request {
+                Request::CancelJobs { peer } => {
+                    let conversation = self.peers[&peer];
+                    self.keep_facts();
+                    step(&mut self.domain, &self.env, Event::JobsCancelled { conversation }, &mut self.out);
+                }
                 Request::ChecksEnded { .. } => {
                     self.checks_ended = self.checks_ended.checked_add(1).expect("bounded checks");
                 }

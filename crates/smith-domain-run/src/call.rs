@@ -111,6 +111,18 @@ impl Calls {
         self.named.get(&(conversation, owner)).copied()
     }
 
+    /// The sole write waiting for this conversation's jobs to settle.
+    pub(crate) fn exclusive(&self, conversation: Id<Conversation>) -> Option<Id<Call>> {
+        let mut found = None;
+        for (name, id) in &self.named {
+            if name.0 == conversation {
+                assert!(found.is_none(), "a job cancellation belongs to one exclusive call");
+                found = Some(*id);
+            }
+        }
+        found
+    }
+
     /// Retires a call that has returned: its name is forgotten at once, its
     /// slot freed at the reclaim point.
     pub(crate) fn retire(&mut self, id: Id<Call>) {

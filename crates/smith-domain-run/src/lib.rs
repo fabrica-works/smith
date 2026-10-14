@@ -21,7 +21,7 @@
 
 //! The retained state is each admitted charter, conversation binding, shared
 //! usage, preparation/check/delivery phase, the write lease and its pending terminal rights.
-//! The lease names the existing exclusive call schedule; it adds no waiting
+//! The lease names the exclusive call schedule; each writer first settles session jobs
 //! (domain/run.md, sections 5.3 and 8.1).
 //! It also keeps the bounded labelled-message FIFO, current/offered read fence,
 //! settled wait/park state and activation-local turn numbering

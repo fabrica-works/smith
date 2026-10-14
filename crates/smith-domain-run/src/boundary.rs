@@ -148,6 +148,8 @@ pub enum Event {
         /// Conversation-issued opaque handle used after admission.
         peer: Token,
     },
+    /// The addressed session has settled every job cancelled for a writer.
+    JobsCancelled { conversation: Token },
     /// The LLM stopped calling tools, `text` being its last message. The
     /// conversation waits for `Say` or `Close`, and its time keeps running.
     Yielded { conversation: Token, stop: Stop, text: Box<[u8]> },
@@ -342,6 +344,8 @@ pub enum Request {
         peer: Token,
         text: Box<[u8]>,
     },
+    /// Cancel the addressed session's jobs; `JobsCancelled` follows settlement.
+    CancelJobs { peer: Token },
     /// Close `peer`, in any state: it stops what is in flight, then ends.
     Close {
         /// Conversation-issued opaque handle used after admission.

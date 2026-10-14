@@ -75,7 +75,10 @@
 //! the operations it started have settled.
 
 use alloc::boxed::Box;
+
+mod jobs;
 use core::mem;
+pub(crate) use jobs::cancelled as jobs_cancelled;
 
 use skein_lib::bytes::copy_of;
 use skein_lib::{Deadlines, Duration, Env, Id, Queue, ReplyTo, Slab, Time, Token};
@@ -1816,7 +1819,7 @@ fn finish(
             let id = begin_call(calls, alarms, Call { run: run_id, conversation: main, owner: call, work }, deadline);
             run.lease.workspace(id.token());
             match &mut calls.get_mut(id).expect("inserted above").work {
-                Work::Landing(landing) => land::begin(landing, id, run, env, out),
+                Work::Landing(landing) => land::cancel_jobs(landing, jobs::peer(conversations, main), out),
                 Work::Child(_) | Work::Host(_) => unreachable!("inserted as a landing"),
             }
             let conversation = conversations.get_mut(main).expect("main lives while its run works");
@@ -1870,7 +1873,7 @@ fn deliver(
     let id = begin_call(calls, alarms, Call { run: run_id, conversation: main, owner: call, work }, deadline);
     run.lease.workspace(id.token());
     match &mut calls.get_mut(id).expect("inserted above").work {
-        Work::Landing(landing) => land::begin(landing, id, run, env, out),
+        Work::Landing(landing) => land::cancel_jobs(landing, jobs::peer(conversations, main), out),
         Work::Child(_) | Work::Host(_) => unreachable!("inserted as delivery"),
     }
     let main = conversations.get_mut(main).expect("main lives");
@@ -1998,7 +2001,18 @@ fn sub_agent(
     run.conversations = run.conversations.saturating_add(1);
     run.next_ordinal = next_ordinal;
     let opening = child_opening(run, &wanted.brief, plan, ordinal, env.limits.answer_bytes, env.limits.wrap_up);
-    out.push(Request::Open { conversation: child.token(), opening });
+    if plan_writing(conversations, child) {
+        calls.get_mut(id).expect("admitted child call").work =
+            Work::Child(Child::Cancelling { child, opening: Box::new(opening), deadline, why: None });
+        out.push(Request::CancelJobs { peer: jobs::peer(conversations, asker) });
+    } else {
+        out.push(Request::Open { conversation: child.token(), opening });
+    }
+}
+
+fn plan_writing(conversations: &Slab<Conversation>, child: Id<Conversation>) -> bool {
+    let families = conversations.get(child).expect("admitted child").families;
+    families.tools.modify || families.tools.shell
 }
 
 /// Render an admitted child's immutable opening from its effective grant.

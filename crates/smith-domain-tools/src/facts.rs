@@ -53,6 +53,8 @@ pub enum FactKind {
         verdict: Verdict,
         /// Owned payload bytes charged against the enclosing session limit.
         bytes: u64,
+        /// Number named by a running shell or a valid job answer.
+        job: Option<crate::JobNumber>,
         /// Bytes omitted by the tool's own read window or command capture, before rendering.
         omitted_bytes: u64,
         /// Whether the tool lowered a requested byte budget or deadline to its ceiling.
@@ -248,12 +250,40 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome, observatio
         Outcome::Busy => (Verdict::Busy, 0),
         Outcome::NulByte => (Verdict::NulByte, 0),
     };
+    let job = match outcome {
+        Outcome::Running { job, .. } | Outcome::Job { job, .. } => Some(*job),
+        Outcome::Exited { .. }
+        | Outcome::Read { .. }
+        | Outcome::Listed { .. }
+        | Outcome::Found { .. }
+        | Outcome::Written { .. }
+        | Outcome::Edited { .. }
+        | Outcome::NotGranted
+        | Outcome::Outside { .. }
+        | Outcome::ReadOnly { .. }
+        | Outcome::TooLong
+        | Outcome::NotFound { .. }
+        | Outcome::NotFile
+        | Outcome::Linked
+        | Outcome::Protected
+        | Outcome::NotDirectory { .. }
+        | Outcome::TooLarge { .. }
+        | Outcome::NotRead
+        | Outcome::Stale
+        | Outcome::EditFailed { .. }
+        | Outcome::Failed { .. }
+        | Outcome::TimedOut
+        | Outcome::Cancelled
+        | Outcome::Busy
+        | Outcome::NulByte => None,
+    };
     let observed = observed(outcome, observation);
     FactKind::Answered {
         session,
         tool,
         verdict,
         bytes,
+        job,
         omitted_bytes: observed.omitted_bytes,
         clamped: observed.clamped,
     }

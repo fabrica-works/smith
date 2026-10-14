@@ -304,6 +304,7 @@ pub(crate) fn tell(
             | Request::HostCall { .. }
             | Request::WithdrawHost { .. }
             | Request::Say { .. }
+            | Request::CancelJobs { .. }
             | Request::Close { .. }
             | Request::Read { .. }
             | Request::Probe { .. }

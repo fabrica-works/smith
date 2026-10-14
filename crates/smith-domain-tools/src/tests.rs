@@ -1389,6 +1389,7 @@ fn a_kit_tells_what_happens_as_facts() {
             verdict: Verdict::Outside,
             bytes: 0,
             omitted_bytes: 0,
+            job: None,
             clamped: false,
         },
         Fact::Started { session, tool: Tool::Read },
@@ -1398,6 +1399,7 @@ fn a_kit_tells_what_happens_as_facts() {
             verdict: Verdict::Read,
             bytes: 8,
             omitted_bytes: 0,
+            job: None,
             clamped: false,
         },
         Fact::Started { session, tool: Tool::List },
@@ -1451,6 +1453,7 @@ fn the_last_cancelled_operation_fills_the_complete_two_fact_reserve() {
                 verdict: Verdict::Cancelled,
                 bytes: 0,
                 omitted_bytes: 0,
+                job: None,
                 clamped: false
             },
             Fact::Closed { session: Token::new(5) },
@@ -1517,6 +1520,7 @@ fn fact_emission_times_and_call_context_survive_a_delayed_drain() {
             verdict: Verdict::Cancelled,
             bytes: 0,
             omitted_bytes: 0,
+            job: None,
             clamped: false
         }
     );
@@ -1915,6 +1919,7 @@ fn read_terminal_facts_preserve_window_omission_and_applied_clamps() {
         assert_eq!(
             told(&mut h).as_slice(),
             &[Fact::Answered {
+                job: None,
                 session: Token::new(5),
                 tool: Tool::Read,
                 verdict: Verdict::Read,
@@ -1976,6 +1981,7 @@ fn command_terminal_facts_preserve_capture_loss_and_clamps_across_all_terminals(
             assert_eq!(
                 told(&mut h).as_slice(),
                 &[Fact::Answered {
+                    job: None,
                     session: Token::new(5),
                     tool: Tool::Shell,
                     verdict,
@@ -2006,6 +2012,7 @@ fn a_clamped_read_retains_its_applied_cap_when_cancelled_or_timed_out() {
                 verdict,
                 bytes: 0,
                 omitted_bytes: 0,
+                job: None,
                 clamped: true,
             }]
         );

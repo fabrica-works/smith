@@ -72,6 +72,7 @@ fn fake_version(version: Version) -> u64 {
 /// what runs, its first bytes and its last.
 ///
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
+#[derive(Debug)]
 pub struct Started {
     /// Contained fake process handle, consumed only by its one terminal.
     ///
