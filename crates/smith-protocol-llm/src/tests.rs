@@ -73,6 +73,8 @@ fn tools() -> tools::Limits {
 #[test]
 fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
     let mut rng = Rng::new(941);
+    let mut smallest_bound = u32::MAX;
+    let mut read_cuts = Vec::new();
     for case in 0_usize..256 {
         let mut caps = tools();
         caps.read_bytes = u32::try_from(rng.next_u64() % 1024).unwrap();
@@ -81,63 +83,93 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
         caps.search_hits = u32::try_from(rng.next_u64() % 32).unwrap();
         caps.search_bytes = u32::try_from(rng.next_u64() % 1024).unwrap();
         let bound = render_worst_case(&caps, 1024, 2048).unwrap();
-        let entries = (0..caps.list_entries)
-            .map(|_| tools::Entry { name: vec![0xff; 8].into(), kind: tools::Kind::Directory })
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let hits = (0..caps.search_hits)
-            .map(|_| tools::Hit { path: Box::new([]), line: u32::MAX, text: Box::new([]) })
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let cases = [
-            tools::Outcome::Read {
-                content: vec![b'\n'; usize::try_from(caps.tool_payload).unwrap()].into(),
-                first: u32::MAX,
-                lines: u32::MAX,
-                total: u32::MAX,
-                cut: tools::Cut::Line,
-                next: tools::Next::Line(u32::MAX),
-                window: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: caps.tool_payload },
-            },
-            tools::Outcome::Listed { entries, more: u64::MAX },
-            tools::Outcome::Found { hits, more: u64::MAX, timed_out: true },
-            tools::Outcome::EditFailed {
-                edit: 1,
-                why: tools::Mismatch::Ambiguous {
-                    count: u32::MAX,
-                    lines: vec![u32::MAX; usize::try_from(caps.match_lines).unwrap()].into(),
-                },
-            },
-            tools::Outcome::Exited {
-                exit: tools::Exit::Code { code: u8::MAX },
-                head: vec![0xff; usize::try_from(caps.shell_head).unwrap()].into(),
-                tail: vec![0; usize::try_from(caps.shell_tail).unwrap()].into(),
-                dropped: u64::MAX,
-                timeout: tools::TimeoutClamp::Clamped {
-                    asked: Duration::from_nanos(u64::MAX),
-                    ceiling: Duration::from_nanos(1),
-                },
-                output: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: 1 },
-            },
-        ];
-        for outcome in cases {
-            let (full, _) = render_outcome(&outcome, &tools::Namespace::One, bound).unwrap();
-            if case % 8 == 0 {
-                assert_eq!(
-                    render_outcome(&outcome, &tools::Namespace::One, bound).unwrap().0,
-                    full,
-                    "same outcome renders identical bytes"
-                );
-                let cap = CUT_MARKER_BYTES + u32::try_from(rng.next_u64() % 128).unwrap();
-                assert_eq!(
-                    render_outcome(&outcome, &tools::Namespace::One, cap),
-                    render_outcome(&outcome, &tools::Namespace::One, cap),
-                    "cut rendering is deterministic too"
-                );
-            }
-            assert!(full.len() <= usize::try_from(bound).unwrap());
-            assert!(!full.ends_with(b" bytes omitted]"));
+        smallest_bound = smallest_bound.min(bound);
+        if case % 8 == 0 {
+            read_cuts.push(CUT_MARKER_BYTES + u32::try_from(rng.next_u64() % 128).unwrap());
         }
+        for outcome in random_outcomes(&caps) {
+            let cut = (case % 8 == 0).then(|| CUT_MARKER_BYTES + u32::try_from(rng.next_u64() % 128).unwrap());
+            assert_rendering(&outcome, bound, cut);
+        }
+    }
+    let caps = tools();
+    let read = tools::Outcome::Read {
+        content: vec![b'\n'; usize::try_from(caps.tool_payload).unwrap()].into(),
+        first: u32::MAX,
+        lines: u32::MAX,
+        total: u32::MAX,
+        cut: tools::Cut::Line,
+        next: tools::Next::Line(u32::MAX),
+        window: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: caps.tool_payload },
+    };
+    assert_rendering(&read, smallest_bound, read_cuts.first().copied());
+    for cut in read_cuts.into_iter().skip(1) {
+        assert_cut_replays(&read, cut);
+    }
+}
+
+fn random_outcomes(caps: &tools::Limits) -> [tools::Outcome; 4] {
+    let entries = (0..caps.list_entries)
+        .map(|_| tools::Entry { name: vec![0xff; 8].into(), kind: tools::Kind::Directory })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    let hits = (0..caps.search_hits)
+        .map(|_| tools::Hit { path: Box::new([]), line: u32::MAX, text: Box::new([]) })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    [
+        tools::Outcome::Listed { entries, more: u64::MAX },
+        tools::Outcome::Found { hits, more: u64::MAX, timed_out: true },
+        tools::Outcome::EditFailed {
+            edit: 1,
+            why: tools::Mismatch::Ambiguous {
+                count: u32::MAX,
+                lines: vec![u32::MAX; usize::try_from(caps.match_lines).unwrap()].into(),
+            },
+        },
+        tools::Outcome::Exited {
+            exit: tools::Exit::Code { code: u8::MAX },
+            head: vec![0xff; usize::try_from(caps.shell_head).unwrap()].into(),
+            tail: vec![0; usize::try_from(caps.shell_tail).unwrap()].into(),
+            dropped: u64::MAX,
+            timeout: tools::TimeoutClamp::Clamped {
+                asked: Duration::from_nanos(u64::MAX),
+                ceiling: Duration::from_nanos(1),
+            },
+            output: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: 1 },
+        },
+    ]
+}
+
+fn assert_rendering(outcome: &tools::Outcome, bound: u32, cut: Option<u32>) {
+    let (full, _) = render_outcome(outcome, &tools::Namespace::One, bound).unwrap();
+    if let Some(cut) = cut {
+        assert_eq!(
+            render_outcome(outcome, &tools::Namespace::One, bound).unwrap().0,
+            full,
+            "same outcome renders identical bytes"
+        );
+        assert_cut_replays(outcome, cut);
+    }
+    assert!(full.len() <= usize::try_from(bound).unwrap());
+    assert!(!full.ends_with(b" bytes omitted]"));
+}
+
+fn assert_cut_replays(outcome: &tools::Outcome, cap: u32) {
+    assert_eq!(
+        render_outcome(outcome, &tools::Namespace::One, cap),
+        render_outcome(outcome, &tools::Namespace::One, cap),
+        "cut rendering is deterministic too"
+    );
+}
+
+#[test]
+fn each_tools_framing_starts_from_the_same_empty_object() {
+    let limits = skein_llm::DocumentLimits { bytes: 2, strings: 1, tokens: 2, depth: 2 };
+    for tool in &crate::framing::offered_tools(3).unwrap() {
+        assert_eq!(tool.name.as_ref(), b"a");
+        assert_eq!(tool.description.as_ref(), b"");
+        assert_eq!(tool.schema.to_bytes(&limits).unwrap().as_ref(), b"{}");
     }
 }
 
