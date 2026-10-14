@@ -1,6 +1,6 @@
 //! Offline checks keep no process state and never execute setup or graders.
 //! `check_tree` finds task manifests; `check_task` verifies prompts, frozen
-//! seeds and design guards, following benchmarks.md, sections 5.2 and 14.
+//! seeds and design guards, following benchmarks.md, sections 5.2, 6.1 and 14.
 
 mod events;
 
@@ -12,6 +12,9 @@ use std::path::{Component, Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::task::{Kind, OutcomeCheck, Refusal, Task, read_task};
+
+// The shipped run budget in shell.md, section 6.4.
+const RUN_DEFAULT_SECONDS: u64 = 3_600;
 
 /// Verify all task documents below a directory without running an agent.
 pub fn check_tree(directory: &Path, design: &Path) -> Result<usize, Refusal> {
@@ -197,6 +200,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
     match task.kind {
         Kind::Probe => {}
         Kind::Fixture | Kind::Repository => {
+            comparison_limits(file, &task)?;
             if task.grade.is_empty() {
                 return Err(Refusal::new(file, "grade", "graded task requires a grader"));
             }
@@ -223,6 +227,30 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         ));
     }
     Ok(task)
+}
+
+fn comparison_limits(file: &Path, task: &Task) -> Result<(), Refusal> {
+    if task.deadline_seconds >= RUN_DEFAULT_SECONDS {
+        return Err(Refusal::new(
+            file,
+            "deadline_seconds",
+            "comparison deadline must be below the run default of 3600 seconds",
+        ));
+    }
+    let document: toml::Table = crate::formats::read_document(file)?;
+    if document.contains_key("budget") {
+        return Err(Refusal::new(file, "budget", "comparison task must not name a budget"));
+    }
+    for (index, variant) in task.variant.iter().enumerate() {
+        if variant.budget.is_some() {
+            return Err(Refusal::new(
+                file,
+                &format!("variant[{index}].budget"),
+                "comparison task must not name a budget",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn calibration(file: &Path, key: &str, task: &Task) -> Result<(), Refusal> {

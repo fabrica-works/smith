@@ -85,6 +85,62 @@ fn a_reference_that_changes_a_protected_path_fails_validation() {
     std::fs::remove_dir_all(root).expect("remove temporary task");
 }
 
+fn comparison_document(name: &str) -> (PathBuf, String) {
+    let directory = std::env::temp_dir().join(format!("smith-bench-{name}-{}", std::process::id()));
+    std::fs::create_dir(&directory).expect("temporary task");
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks/fixtures/01-backoff/task.toml");
+    (directory.join("task.toml"), std::fs::read_to_string(manifest).expect("fixture document"))
+}
+
+#[test]
+fn a_comparison_task_with_a_budget_is_refused() {
+    let (file, document) = comparison_document("comparison-budget");
+    for kind in ["fixture", "repository"] {
+        for budget in ["[budget]\n", "[budget]\nseconds = 1\n"] {
+            let document = document.replace("kind = \"fixture\"", &format!("kind = \"{kind}\""));
+            std::fs::write(&file, format!("{document}\n{budget}")).expect("budget document");
+            let error = check_task(&file, &design()).expect_err("comparison budget refuses");
+            assert_eq!(error.key, "budget", "{kind}: {budget}");
+            assert_eq!(error.reason, "comparison task must not name a budget", "{kind}: {budget}");
+        }
+    }
+    std::fs::remove_dir_all(file.parent().expect("task directory")).expect("remove temporary task");
+}
+
+#[test]
+fn a_comparison_variant_with_a_budget_is_refused() {
+    let (file, document) = comparison_document("comparison-variant-budget");
+    for kind in ["fixture", "repository"] {
+        let document = document.replace("kind = \"fixture\"", &format!("kind = \"{kind}\""));
+        std::fs::write(&file, format!("{document}\n[[variant]]\nname = 'budget'\n[variant.budget]\n"))
+            .expect("variant budget document");
+        let error = check_task(&file, &design()).expect_err("comparison variant budget refuses");
+        assert_eq!(error.key, "variant[0].budget", "{kind}");
+        assert_eq!(error.reason, "comparison task must not name a budget", "{kind}");
+    }
+    std::fs::remove_dir_all(file.parent().expect("task directory")).expect("remove temporary task");
+}
+
+#[test]
+fn a_comparison_deadline_at_the_run_defaults_is_refused() {
+    let (file, document) = comparison_document("comparison-deadline");
+    for kind in ["fixture", "repository"] {
+        for deadline in [3_600, 3_601, u64::MAX] {
+            let document = document
+                .replace("kind = \"fixture\"", &format!("kind = \"{kind}\""))
+                .replace("deadline_seconds = 900", &format!("deadline_seconds = {deadline}"));
+            std::fs::write(&file, document).expect("deadline document");
+            let error = check_task(&file, &design()).expect_err("comparison deadline refuses");
+            assert_eq!(error.key, "deadline_seconds", "{kind}: {deadline}");
+            assert_eq!(
+                error.reason, "comparison deadline must be below the run default of 3600 seconds",
+                "{kind}: {deadline}"
+            );
+        }
+    }
+    std::fs::remove_dir_all(file.parent().expect("task directory")).expect("remove temporary task");
+}
+
 #[test]
 fn the_compare_suite_names_both_fixtures_and_both_agents() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
