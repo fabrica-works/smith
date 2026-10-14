@@ -5,6 +5,8 @@ use skein_io::{self as io, kernel};
 use skein_lib::{Env, List, Queue, Time, Token, Wall, stream};
 use skein_shell::{Clock, Host, Kernel};
 
+const PROMPT_READ: u32 = 4096;
+
 struct Input {
     io: io::Io,
     env: Env<io::Limits>,
@@ -55,7 +57,7 @@ impl Input {
     fn demand(&mut self) {
         self.requests.push(io::Request::Stream {
             stream: self.owner,
-            down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 },
+            down: stream::Down::Demand { read: stream::Read::Arrived { max: PROMPT_READ }, room: 0 },
         });
     }
 }
@@ -72,11 +74,11 @@ impl Host for Input {
         while let Some(event) = self.events.pop() {
             match event {
                 io::Event::Stream { up: stream::Up::Bytes(bytes), .. } => {
-                    if bytes.iter().any(|byte| self.bytes.push(*byte).is_err()) {
+                    if append_prompt(&mut self.bytes, &bytes) {
+                        self.demand();
+                    } else {
                         self.failure = Some(Usage("the prompt exceeds the message bound".into()));
                         self.requests.push(io::Request::Close { entity: self.owner });
-                    } else {
-                        self.demand();
                     }
                 }
                 io::Event::Stream { up: stream::Up::End, .. } => {
@@ -138,8 +140,31 @@ fn footprint(limits: &io::Limits, maximum: u32) -> Option<u64> {
     io::worst_case(limits)
         .and_then(|bytes| bytes.checked_add(u64::try_from(size_of::<Input>()).ok()?))
         .and_then(|bytes| bytes.checked_add(List::<u8>::worst_case(maximum)?))
+        // lib.md, section 7: the prompt owns one maximum delivery.
+        .and_then(|bytes| bytes.checked_add(u64::from(PROMPT_READ)))
         .and_then(|bytes| bytes.checked_add(Queue::<io::Event>::worst_case(64)?))
         .and_then(|bytes| bytes.checked_add(Queue::<io::Request>::worst_case(64)?))
         .and_then(|bytes| bytes.checked_add(Queue::<kernel::Complete>::worst_case(64)?))
         .and_then(|bytes| bytes.checked_add(Queue::<kernel::Submit>::worst_case(64)?))
+}
+
+fn append_prompt(prompt: &mut List<u8>, bytes: &[u8]) -> bool {
+    bytes.iter().all(|byte| prompt.push(*byte).is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_prompt;
+    use skein_lib::List;
+
+    #[test]
+    fn a_prompt_read_as_it_arrives_is_the_same_whatever_its_cuts() {
+        for cut in [20, 1] {
+            let mut prompt = List::with_capacity(32);
+            for delivery in b"abcdefghijklmnopqrst".chunks(cut) {
+                assert!(append_prompt(&mut prompt, delivery), "prompt fits its bound");
+            }
+            assert_eq!(prompt.as_slice(), b"abcdefghijklmnopqrst");
+        }
+    }
 }

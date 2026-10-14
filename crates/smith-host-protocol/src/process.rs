@@ -14,6 +14,8 @@ use smith_host_domain::channel;
 
 use crate::{Component, Error, Limits, OpenEvent, Values};
 
+const STDERR_READ: u32 = 4096;
+
 /// The executable, arguments, credential-free environment and prepared view.
 #[derive(Debug)]
 pub struct Launch {
@@ -80,6 +82,8 @@ pub struct Process {
 pub fn process_worst_case(limits: &Limits, detail_bytes: u32) -> Option<u64> {
     crate::worst_case(limits)?
         .checked_add(List::<u8>::worst_case(detail_bytes)?)?
+        // lib.md, section 7: one maximum standard-error delivery.
+        .checked_add(u64::from(STDERR_READ))?
         .checked_add(Queue::<OpenEvent>::worst_case(8)?)?
         .checked_add(Queue::<Lower>::worst_case(16)?)?
         .checked_add(u64::try_from(size_of::<Process>()).ok()?)
@@ -478,7 +482,7 @@ impl Process {
             self.stderr_demanded = true;
             below.push(IoRequest::Stream {
                 stream: error,
-                down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 },
+                down: stream::Down::Demand { read: stream::Read::Arrived { max: STDERR_READ }, room: 0 },
             });
         }
     }

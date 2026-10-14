@@ -239,7 +239,10 @@ fn expired_opening_kills_child_and_keeps_errors_tail() {
     assert_eq!(below.pop(), Some(IoRequest::Abort { entity: output }));
     assert_eq!(
         below.pop(),
-        Some(IoRequest::Stream { stream: error, down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 } })
+        Some(IoRequest::Stream {
+            stream: error,
+            down: stream::Down::Demand { read: stream::Read::Arrived { max: 4096 }, room: 0 }
+        })
     );
     process.from_io(
         Time::from_nanos(102),
@@ -518,5 +521,45 @@ fn the_answer_carries_budget_usage_and_bound_in_the_runs_unit() {
                 failure: host::RunFailure::Budget { exhausted: expected, used: Some(1073), bound: Some(1000) },
             }
         );
+    }
+}
+
+#[test]
+fn a_hosts_standard_error_keeps_its_last_bytes_whatever_its_deliveries() {
+    use skein_io::{Event as IoEvent, Request as IoRequest};
+    use skein_lib::{Time, Token, stream};
+    for cut in [20, 1] {
+        let mut process = crate::Process::new(Token::new(7), &process_limits(), 8, endpoints()).expect("channel");
+        let owner = process.io_owner();
+        let mut below = Queue::with_capacity(16);
+        let mut above = Queue::with_capacity(8);
+        process.spawn(launch(), Time::ZERO, &mut below);
+        below.pop();
+        let event = IoEvent::Spawned {
+            owner,
+            child: Token::new(8),
+            pipes: Box::new([Token::new(9), Token::new(10), Token::new(11)]),
+        };
+        process.from_io(Time::ZERO, event, &mut above, &mut below);
+        while below.pop().is_some() {}
+        for bytes in b"abcdefghijklmnopqrst".chunks(cut) {
+            let up = stream::Up::Bytes(Box::from(bytes));
+            process.from_io(Time::ZERO, IoEvent::Stream { owner: Token::new(11), up }, &mut above, &mut below);
+            assert_eq!(
+                below.pop(),
+                Some(IoRequest::Stream {
+                    stream: Token::new(11),
+                    down: stream::Down::Demand { read: stream::Read::Arrived { max: 4096 }, room: 0 }
+                })
+            );
+        }
+        for closed in [Token::new(9), Token::new(10), Token::new(11), owner] {
+            process.from_io(Time::ZERO, IoEvent::Closed { owner: closed }, &mut above, &mut below);
+        }
+        assert_eq!(
+            above.pop(),
+            Some(crate::ProcessEvent::Unspawned { agent: Token::new(7), detail: Box::from(&b"mnopqrst"[..]) })
+        );
+        assert!(above.is_empty());
     }
 }
