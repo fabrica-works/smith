@@ -208,6 +208,65 @@ Don't: infer significance from three attempts.
 Size: 60 lines.
 Removes: nothing.
 
+### 03.s1 A retried failure's tokens
+Scope: benchmarks.md 5.3, 8.2 ("A retried failure") and 16.3, as the
+  designer's answer to the question of 2026-10-14T22:34:35Z amended
+  them.
+Needs: nothing (03.1 and 04.4 landed).
+Files: `benchmarks/src/agent/smith/events/usage.rs` (`run_tokens`,
+  `:29`; its `ledger.record`, `:79`), `benchmarks/src/tokens.rs`
+  (`TokenLedger::record`, `:249`), `benchmarks/src/batch.rs`
+  (`known_tokens`, `:124`), `benchmarks/src/result.rs` (`priced_spend`,
+  `:315`; its lower-bound arm, `:342`), `benchmarks/src/parity.rs`
+  (`measured`, `:73`), `benchmarks/tests/smith_adapter.rs`,
+  `benchmarks/tests/parity.rs`, `benchmarks/tests/recorded/` (one
+  excerpt).
+Shape:
+  - A retried failure, in `run_tokens`: a `response.completed` with
+    `outcome` `failed`, `blocks` 0, a failure whose `evidence` is
+    `response` or `unsent`, and all five usage counts null, with a later
+    `response.started` of its conversation and `turn` at a higher
+    `attempt`. The test is 04.s2's for `prompt_within_window`, plus
+    `evidence` and the null counts. Its ledger entry is every count
+    unavailable with the reason `retried failure`, so that the total's
+    lower bound names it as `<scope>: <response>: retried failure`. Every
+    other response is recorded as today.
+  - `tokens::reported(&Measure<u64>) -> Option<u64>`: an observed value;
+    a lower bound whose every `missing` reason ends with `: retried
+    failure`; `None` otherwise.
+  - `known_tokens` reads the total's fresh, cache-read and output counts
+    through `reported`. A total that misses only retried failures is
+    charged its lower bound, and the stop at `:533-537` fires only for
+    another gap.
+  - `priced_spend`: when each of the four counts it prices is
+    `reported`, and one is a lower bound, it prices those values and
+    returns `LowerBound` with their `missing` reasons, deduplicated. Any
+    other lower bound stays unavailable, as today.
+  - `measured`, for cost: a smith row's `LowerBound` whose every reason
+    ends with `: retried failure` is read as its value. Task wall, and
+    Codex's rows, as today. The row keeps its lower bound: that is the
+    flag (16.3).
+Test shape: `smith_adapter.rs`:
+  `a_retried_failure_leaves_a_lower_bound_that_names_it` (an excerpt of
+  `parity-17d63afd-20261014T222044Z` attempt 02, responses 1 to 7: total
+  fresh a lower bound of 8783 whose one reason ends `response-3: retried
+  failure`; the priced spend a lower bound),
+  `a_failure_the_provider_never_answered_is_not_a_retried_failure` (that
+  excerpt, response 3's `evidence` `maybe_sent`: the reasons as today,
+  the priced spend unavailable). `batch.rs`'s tests:
+  `a_total_missing_only_retried_failures_charges_its_lower_bound` (a
+  literal), `a_total_missing_another_count_charges_nothing_known` (`None`).
+  `parity.rs`: `a_smith_spend_missing_only_retried_failures_counts_as_reported`.
+  `missing_reference_passes_and_smith_lower_bounds_are_incomplete` keeps
+  its expectation. Under 20 ms each.
+Proof: unit, those tests; the smoke (rule 8). The live proof is 12.1's
+  run.
+Don't: write a zero for a retried failure, or leave it out of the
+  ledger; change the 4xx rule (`rejected_before_output`), Codex's
+  reading, or a format's version (rule 12).
+Size: 80 lines.
+Removes: nothing.
+
 ## Interface sketches
 
 ```rust

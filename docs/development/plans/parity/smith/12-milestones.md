@@ -57,7 +57,8 @@ Scope: benchmarks.md 16.1 to 16.4 on `main` as it then stands
 Needs: smith 01's graded tasks [01.1, 01.2, 01.3]; smith 02's pins
   [02.1, 02.2, 02.3]; smith 03's priced spend, attempt rows and time
   record [03.1, 03.2, 03.3]; smith 04's `parity` suite and command [04.3,
-  04.4]; smith 05's working tier [05.1]; smith 07's compaction [07.3].
+  04.4]; smith 05's working tier [05.1]; smith 07's compaction [07.3];
+  smith 03's retried failures [03.s1].
 Files: `benchmarks/summaries/parity-*.json`.
 Shape: no code. `heavy cargo run -p smith-bench -- build HEAD`, then
   `heavy --gate cargo run -p smith-bench -- suite parity --arm <dir>`,
@@ -65,10 +66,23 @@ Shape: no code. `heavy cargo run -p smith-bench -- build HEAD`, then
   <SHA>`, where `<SHA>` is the full 40-hex `git rev-parse HEAD`, taken
   before the summary is committed (a short SHA or `HEAD` exits 2,
   `parity.rs:243-256`); commit the summary.
+  - The two runs on `17d63afd` are spent, and neither summary is
+    committed. `parity-17d63afd-20261014T222044Z` was stopped by the
+    harness's token rule after 4 attempts, on a retried failure.
+    `parity-17d63afd-20261014T222621Z` was stopped by the supervisor's
+    hold at its sixth. Together: 10 attempts and $0.18 notional, counted
+    in the step's `Live:` trailer.
+  - Once 03.s1 is on `main`, the step rebases and runs the three commands
+    above once, as a new run, from a new build of `HEAD`. Rule 9 applies
+    to that run as to a first one: the harness's rule, which 03.s1
+    changes, ended the first command, not the provider.
 Test shape: none.
 Proof: live, once: the run, 58 attempts, about $12 and 4 hours; its five
   criteria lines, the verdict's exit, and each arm's time-record medians
-  go in the commit body and the report.
+  go in the commit body and the report. So does the count of smith
+  attempts whose priced spend misses only retried failures: `jq
+  '[.attempts[] | select(.agent == "smith" and .priced_usd.state ==
+  "lower-bound")] | length' <its summary>`.
 Don't: rerun an attempt, or change a task, a pin or a margin.
 Size: none.
 Removes: nothing.
