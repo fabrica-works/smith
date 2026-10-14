@@ -78,16 +78,17 @@ workspace, ending in one result (section 8). The kinds are a closed set:
   ("with one `write` call", "delegate with `max_turns` 3"); its seed is
   tiny and its outcome exact. One that cannot be calibrated on the small
   tier at low effort names a higher effort and says why. Its outcome
-  checks hold for any agent; its event checks hold smith to its
-  contracts.
+  checks hold for any agent; its event checks read smith's stream, and
+  hold smith to its contracts or count what the prompt asks of the
+  model (3.2 says whose a failure is).
 - **A probe is calibrated** before it gates anything: before it joins
   `smoke`, and before its failure in `probes` counts as a regression
   (section 9). `probes` lists every probe and variant, calibrated or not
   (11.5); its task file's `[calibration]` block, one per task and one per
   variant, says which (5.2). Calibrated means ten passes within at
   most twelve attempts on the binary it guards, the other attempts failed
-  only by the model, never by smith (a model deviation; section 8.3's
-  ends), and a failure on the binary before the fix or,
+  only by the model, never by smith (a model deviation, 3.2; section
+  8.3's ends), and a failure on the binary before the fix or,
   for a behaviour already in place, on a control arm. Where neither can
   run, as for a behaviour older than the oldest binary the harness runs
   (6.2) that no setting turns off, the block says why, and the
@@ -131,6 +132,33 @@ workspace, ending in one result (section 8). The kinds are a closed set:
   observed for an agent, such as reads of the benchmark tree or writes
   outside the workspace before contained trees, is reported beside and
   audited, and decides nothing.
+- **Whose failure.** A failed deciding check is the model's when it
+  judges what the prompt asks of the model: the answer, the files, a
+  report of what the model was told (`budget-report`), and how many
+  calls of a tool it makes where the prompt prescribes the number
+  (`call-count`). It is smith's when it judges smith's contracts: its
+  records, a call's verdict, a request's tool choice or content, a
+  bound, the window. An attempt that completed, and whose failed
+  deciding checks are all the model's, is a model deviation; any other
+  failure is smith's. A deciding check of smith's contracts left
+  unavailable, other than "not exercised" (11.1), leaves the attempt
+  unjudged: neither smith's failure nor a deviation (section 1).
+- **A count is the model's only where smith's side is checked.** A call
+  is made again, or skipped, as readily when smith lost what the model
+  had as when the model did: a result missing from a compaction's
+  request, or a summary missing from the next window. So a task whose
+  windows compact also decides on `compaction-carried`: each
+  compaction's request holds a result for each call its window owes it,
+  and the window after it opens with that compaction's summary
+  (domain/session.md, sections 8.1 and 8.2). With that check passing, a
+  summary that misstates or drops what it was given is the model's, and
+  so is the count that follows from it.
+- **A request smith retried** (domain/session.md, section 4) is judged
+  through its retry. A request that failed with no blocks made no calls,
+  and its prompt is the one its retry sends (protocol/events.md, section
+  3.11), so the failed request's missing usage leaves no check
+  unavailable. A failure smith did not recover from is the attempt's end
+  (8.3).
 - **An arm** is a binary, a configuration override or an agent. Two arms
   make an experiment: a **fix** (before and after), a **control** (the
   mechanism switched off), a **decision** left to measurement (section
@@ -638,7 +666,7 @@ Code.
 | `smoke-tools` | the commands' environment; one path namespace, the directory as `.`; a complete stream; teardown; exit evidence (domain/tools.md, sections 2 and 5; protocol/events.md, section 5) | list `.`, read the README, `printenv` a nonce variable and `command -v cargo` into a file through the shell, answer with a README token. `child`: one child first, so two pooled connections are open at the answer | `.` listed; one shell call, exit 0; tool records paired by `call`; the responses' `spent` and `usage` sum to `run.completed`'s; nothing lost; `teardown_ms` within bound, not forced | ten seconds, ten thousand tokens |
 | `follow-up` | message terminals, the fence, the unread report, a finish crossing a message, deferred `wait` (domain/run.md, section 6); the local host's unread lines (domain/host.md, section 8) | interactive: a greeting, then, once `finish` shows, a file asked for through the shell. `eof`: two lines, then end of input. `chat`: three exchanges with wait authority | exit 0; each `message.received` has one terminal; the request handled once, in the run it crossed or the next one's opening; in `chat`, one completion per exchange. When the local host shows "waiting" has no record in the stream, so the local worlds check it (domain/host.md, section 8), not the probe | thirty seconds |
 | `large-write` | the declared tool payload, per-call outcomes, each model's `output`, the truncated Anthropic `tool_use` (domain/tools.md, section 3; protocol/limits.md, section 6) | one `write` of tens of kilobytes within the payload: a seed file of non-repetitive plain prose, a little larger than the size asked, copied, so that the content has an obvious end. A model asked to count out a repeated character neither counts nor stops reliably. What is judged is smith: the saved file equals what the call sent. How faithfully the model copied is recorded, not judged. Where the small tier will not copy reliably, the content may instead be numbered lines the prompt specifies (`Line 0001: <a fixed sentence>`, and so on, to a stated last number): no read, and an end the model can see. `oversized`: a call past the bound on one call's input, which arrives as an oversize block (protocol/llm.md, section 4). With the production payload that bound, six payloads and more, is past what one response can write, so the variant declares a small payload, such as 2 KiB, and the bound follows from it. Its prompt says the first call is meant to be refused: one `write` of numbered lines past the call's bound; then a smaller file, past the payload, in pieces: a `write`, then an `edit` that extends it | one `write` of at least the size asked, `written`; no `max_tokens` stop. `oversized`: one call past the call's bound, as an `oversized` block, then the file in pieces, accepted. A refusal by the tool's payload instead (a `write` past the payload, within the call's bound) is not this variant's: domain/tools.md section 4's size refusal is proven by its deterministic test. An attempt that makes no call past the bound, and otherwise makes the file in pieces, accepted, is "not exercised (bound honoured)": neither a pass nor a fail, since a model honouring a bound smith states is what smith asks of it. The variant is proven by three exercised passes within forty-eight attempts (the plan's proving rules) | under a minute, ten thousand output tokens |
-| `history` | the window, compaction, derived limits, selective decoding (domain/session.md, section 8; protocol/limits.md, section 3) | sum values held in many small files, read one call at a time, the values out of order so that a summary must carry them, and the answer's form stated whole in the prompt. `small-window`: a window several times smaller than the reading, with a compaction due just before the last read | `request_bytes` and prompt tokens per request recorded. `small-window`: a `conversation.opened` of kind `compaction`; every compaction request at tool choice `none` (`compaction-choice`); no prompt above the window; cache reuse around it recorded | two minutes, up to a million input tokens; weekly |
+| `history` | the window, compaction, derived limits, selective decoding (domain/session.md, section 8; protocol/limits.md, section 3) | sum values held in many small files, read one call at a time, the values out of order so that a summary must carry them, and the answer's form stated whole in the prompt. The running sum and the next file are written as text beside each read, so that what a summary must carry is in the window's history, not only in the model's reasoning. `small-window`: a window several times smaller than the reading, with a compaction due just before the last read | `request_bytes` and prompt tokens per request recorded. Each read's verdict is smith's; the number of reads is the model's (`call-count`, 3.2). Each compaction's request holds the results owed to it, and the next window opens with its summary (`compaction-carried`). `small-window`: a `conversation.opened` of kind `compaction`; every compaction request at tool choice `none` (`compaction-choice`); no prompt above the window; cache reuse around it recorded. With those passing, a summary that drops or misstates a read it was given, so that the read is made again or skipped, is a model deviation | two minutes, up to a million input tokens; weekly |
 | `cache-reuse` | affinity, the stable prefix, Anthropic breakpoints, usage (protocol/llm.md, section 2) | pointer chasing over a dozen files, one read each, a fixed number of requests. `children`: two children in turn. `crossing`: a message part way, at medium effort, so reasoning crosses a user turn. `idle-gap`: a gap past the cache's lifetime before a message | reuse R, the cache read over the previous request's prompt, summed where the predecessor can be cached: median of three at least 0.85, and full misses (under half) at most one per ten requests over the three, until calibration sets them; the three repetitions are one attempt (11.5's `probes` suite). On `anthropic`, cache writes about each turn's addition. A control arm without affinity falls clearly below: one attempt of it fails these criteria, which makes it the probe's before (section 4.2) | a minute each; `idle-gap` weekly |
 | `budget` | the reserve, wind-down, the final turn, budget text, the clamped share, real spend (domain/run.md, sections 5.3 and 9) | `starvation`: a tight budget and a delegated survey. `wrap-up`: a child given `max_turns` 3. `child-quota`: a child given `max_turns` 2. `visibility`: a report of what is left. `spend`: notional prices, a ceiling about twice a calibrated spend | `starvation`: accepted, main's last completion after the child's return, turns within budget. `wrap-up`: under `everything`, `stop: budget` and text, the last request at `tool_choice` `none`. `child-quota`: the child answers within two turns, its `share` in `conversation.opened`. `visibility`: main reports what is left as it was last told before the report (with a child, the last child's usage line, domain/run.md 9.2). The told turns and time equal the `budget` record of the step that wrote them, time in whole seconds rounded down; a mismatch there is smith's. The report repeats the told values; a mismatch there is the model's. No child opens into the reserve. `spend`: never past the ceiling | under a minute each |
 | `parallel-read` | calls per response and the reads run at once (protocol/limits.md, sections 2.2 and 2.3) | twenty files read in one step | the reads in one response's calls; no `limit` failure; no failed send | thirty seconds |
