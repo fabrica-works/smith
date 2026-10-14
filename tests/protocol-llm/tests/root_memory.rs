@@ -984,6 +984,7 @@ impl Counted {
                 | Request::Exhausted { .. }
                 | Request::MessageRefused { .. }
                 | Request::Io { .. }
+                | Request::Job { .. }
                 | Request::CancelIo { .. }
                 | Request::Check { .. }
                 | Request::Abort { .. } => {

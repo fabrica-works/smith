@@ -500,6 +500,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             crate::operation::command(domain, owner, &op, deadline, out);
             return out.push(Request::Io { owner, op, deadline });
         }
+        session::Request::Job { owner, act } => return out.push(Request::Job { owner, act }),
         session::Request::CancelIo { owner } => return out.push(Request::CancelIo { owner }),
         session::Request::Opened { opener, session } => {
             let id = peer(domain, opener);

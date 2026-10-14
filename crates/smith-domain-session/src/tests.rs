@@ -164,6 +164,7 @@ impl Harness {
                 | Request::Complete { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
+                | Request::Job { .. }
                 | Request::CancelIo { .. }
                 | Request::Delegate { .. }
                 | Request::Withdraw { .. }) => {
@@ -204,6 +205,7 @@ impl Harness {
                 | Request::Complete { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
+                | Request::Job { .. }
                 | Request::CancelIo { .. }
                 | Request::Delegate { .. }
                 | Request::Withdraw { .. }) => return Some(other),
@@ -222,6 +224,7 @@ impl Harness {
             match request {
                 Request::Turn { .. } | Request::Priced { .. } => unreachable!("next observes records"),
                 Request::Io { owner, .. }
+                | Request::Job { owner, .. }
                 | Request::CancelIo { owner }
                 | Request::Delegate { owner, .. }
                 | Request::Withdraw { owner } => {
@@ -2010,6 +2013,7 @@ fn completion_name_exhaustion_ends_before_any_owned_or_delegated_effect() {
                 | Request::Complete { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
+                | Request::Job { .. }
                 | Request::CancelIo { .. }
                 | Request::Delegate { .. }
                 | Request::Withdraw { .. }

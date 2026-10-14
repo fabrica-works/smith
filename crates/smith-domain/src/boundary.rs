@@ -382,6 +382,8 @@ pub enum Request {
     /// Abandon the `Io` in flight for `owner`. Its terminal event still comes:
     /// `Done` with `Cancelled`, or whichever outcome won the race.
     CancelIo { owner: Token },
+    /// Read or stop a machine-held command; ends in one `Done`.
+    Job { owner: Token, act: tools::JobAct },
     /// Read the first `max` bytes of the regular file at `at`, following
     /// symbolic links within its root, giving up at `deadline`.
     Read {

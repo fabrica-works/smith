@@ -226,7 +226,7 @@ pub(crate) fn start(
         }
         Work::Shell { cwd, command, timed, kept } => {
             let place = cwd.clone();
-            let op = Op::Spawn { cwd, command, head: kept.head, tail: kept.tail };
+            let op = Op::Spawn { cwd, command, head: kept.head, tail: kept.tail, after: None };
             (State::Running { reply_to, place, timeout: timed.clamp, output: kept.clamp }, op)
         }
         Work::Search { place, pattern, glob } => {
@@ -359,6 +359,7 @@ fn loaded(kit: &mut Kit, reply_to: ReplyTo, place: Place, span: Span, done: Done
         Done::Escapes => Outcome::Outside { path: authority::resolved(&kit.checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
+        Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
         Done::Listed { .. }
         | Done::Stored { .. }
@@ -379,6 +380,7 @@ fn scanned(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> 
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
+        Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
         | Done::Stored { .. }
@@ -409,6 +411,7 @@ fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Ne
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
+        Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
         | Done::Listed { .. }
@@ -463,6 +466,7 @@ fn to_edit(
         Done::Escapes => Outcome::Outside { path: authority::resolved(&kit.checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
+        Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
         Done::Listed { .. }
         | Done::Stored { .. }
@@ -507,6 +511,7 @@ fn stored(
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
+        Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
         | Done::Listed { .. }
@@ -535,6 +540,7 @@ fn exited(
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
+        Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
         | Done::Listed { .. }

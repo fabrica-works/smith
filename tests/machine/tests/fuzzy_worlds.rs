@@ -73,7 +73,13 @@ fn run(seed: u64) -> (usize, ToDomain, Vec<String>) {
             let command = if mode == 2 { b"fail".as_slice() } else { b"hang".as_slice() };
             let done = world.request(FromDomain::Op {
                 owner,
-                op: tools::Op::Spawn { cwd: place(root, b""), command: Box::from(command), head: 8, tail: 8 },
+                op: tools::Op::Spawn {
+                    cwd: place(root, b""),
+                    command: Box::from(command),
+                    head: 8,
+                    tail: 8,
+                    after: None,
+                },
                 deadline,
             });
             let exit = if mode == 2 { tools::Exit::Code { code: 1 } } else { tools::Exit::TimedOut };
@@ -144,6 +150,7 @@ fn configured_environment_spawns_replay_and_searches_keep_none() {
                             command: b"true".as_slice().into(),
                             head: 8,
                             tail: 8,
+                            after: None,
                         },
                         deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
                     },

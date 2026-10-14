@@ -8,12 +8,14 @@ use skein_lib::{Time, Token};
 use smith_domain::{run, tools};
 
 /// A domain request sent by the agent service to the machine.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FromDomain {
     /// One tools operation, ending in `ToDomain::Done`.
     Op { owner: Token, op: tools::Op, deadline: Time },
     /// Withdraw one operation; its terminal remains owed.
     Cancel { owner: Token },
+    /// Read or stop a held command; ends in one `ToDomain::Done`.
+    Job { owner: Token, act: tools::JobAct },
     /// Read a bounded UTF-8 guide prefix; ends in `ToDomain::Read`.
     Read { owner: Token, at: run::Place, max: u32, deadline: Time },
     /// Check whether one root-relative path names an executable file.

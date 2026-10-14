@@ -325,6 +325,7 @@ impl Driver {
                     };
                     self.ask(Asked::Io { owner, op, cancelled: false });
                 }
+                Request::Job { .. } => unreachable!("the tools issue no job act yet"),
                 Request::CancelIo { owner } => self.cancel(Family::Io, owner),
                 Request::Read { owner, .. } => {
                     self.seen[2] += 1;

@@ -92,6 +92,7 @@ impl LongWorld {
                 }
                 AgentRequest::Complete { owner, .. } => self.completion = Some(owner),
                 AgentRequest::Io { owner, op: agent::tools::Op::Spawn { .. }, .. } => self.command = Some(owner),
+                AgentRequest::Job { .. } => unreachable!("the tools issue no job act yet"),
                 AgentRequest::CancelIo { owner } => {
                     assert_eq!(Some(owner), self.command);
                     self.cancelled = true;

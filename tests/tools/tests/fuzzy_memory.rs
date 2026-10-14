@@ -106,7 +106,11 @@ fn drain(out: &mut Queue<Request>, kits: &mut Vec<Token>, ops: &mut Vec<(Token, 
                 seen[kind] += 1;
                 ops.push((owner, asked));
             }
-            Request::Refused { .. } | Request::Answer { .. } | Request::Closed { .. } | Request::CancelIo { .. } => {}
+            Request::Refused { .. }
+            | Request::Answer { .. }
+            | Request::Closed { .. }
+            | Request::Job { .. }
+            | Request::CancelIo { .. } => {}
         }
     }
 }

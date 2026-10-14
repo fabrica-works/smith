@@ -402,6 +402,7 @@ impl Harness {
                 | Request::Exhausted { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
+                | Request::Job { .. }
                 | Request::CancelIo { .. }
                 | Request::Read { .. }
                 | Request::Probe { .. }
@@ -1238,6 +1239,7 @@ fn assert_no_provider_completion(emitted: &[Request]) {
             | Request::Exhausted { .. }
             | Request::Cancel { .. }
             | Request::Io { .. }
+            | Request::Job { .. }
             | Request::CancelIo { .. }
             | Request::Read { .. }
             | Request::Probe { .. }

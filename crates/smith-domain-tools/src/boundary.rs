@@ -26,7 +26,7 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{ReplyTo, Time, Token};
+use skein_lib::{Duration, ReplyTo, Time, Token};
 
 use crate::authority::Authority;
 use crate::call::{Call, Depth, Entry, Exit, Fault, Hit, Outcome};
@@ -97,6 +97,17 @@ pub enum Request {
     /// Abandon the `Io` in flight for `owner`. Its terminal event still comes:
     /// `Cancelled`, or whichever outcome won the race.
     CancelIo { owner: Token },
+    /// Read or stop a held command; ends in one `Event::Done`.
+    Job { owner: Token, act: JobAct },
+}
+
+/// One act on the command held under its original spawn token.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum JobAct {
+    /// Read unread output, answering at its end or once the wait passes.
+    Read { head: u32, tail: u32, wait: Duration },
+    /// Stop its group, then answer its end and unread output.
+    Stop { head: u32, tail: u32 },
 }
 
 /// Why a kit was not opened.
@@ -181,6 +192,8 @@ pub enum Op {
         head: u32,
         /// Last output bytes retained under the caller's cap.
         tail: u32,
+        /// Yield after this span; `None` waits for the command's end.
+        after: Option<Duration>,
     },
     /// Search the files at and beneath `at` for lines matching `pattern`, in
     /// those whose names match `glob` if given, with rg leading its own
@@ -273,6 +286,10 @@ pub enum Done {
         /// Bytes omitted between the retained process output head and tail.
         dropped: u64,
     },
+    /// Spawn: still running at its yield, now held under its owner token.
+    Held { head: Box<[u8]>, tail: Box<[u8]>, dropped: u64 },
+    /// A job act's answer, draining unread output and reporting its end.
+    Job { head: Box<[u8]>, tail: Box<[u8]>, dropped: u64, end: crate::JobEnd },
     /// Search: the lines found, and how many more matched; `timed_out` if
     /// the deadline cut it short, and these are what it had found.
     Found {

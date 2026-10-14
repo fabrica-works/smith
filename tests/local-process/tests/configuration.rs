@@ -32,6 +32,7 @@ fn declared_read_search_shell_and_check_bounds_reach_the_machine() {
                 command: b"printf ran".as_slice().into(),
                 head: tool_limits.shell_head,
                 tail: tool_limits.shell_tail,
+                after: None,
             },
             deadline,
         },

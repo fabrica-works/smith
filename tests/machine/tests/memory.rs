@@ -204,6 +204,7 @@ fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bo
                         command: b"true".as_slice().into(),
                         head: 0,
                         tail: 0,
+                        after: None,
                     },
                     deadline: Time::from_nanos(100),
                 }

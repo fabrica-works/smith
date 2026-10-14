@@ -197,7 +197,11 @@ fn observe_fill(out: &mut Queue<Request>, observed: &mut [(bool, u32, u32, u32, 
                 }
             }
             Request::Ended { .. } => panic!("maximum payload is held for compaction, not ended"),
-            Request::Cancel { .. } | Request::CancelIo { .. } | Request::Delegate { .. } | Request::Withdraw { .. } => {
+            Request::Cancel { .. }
+            | Request::Job { .. }
+            | Request::CancelIo { .. }
+            | Request::Delegate { .. }
+            | Request::Withdraw { .. } => {
                 panic!("the maximum-payload driver has no other terminal rights")
             }
         }
@@ -494,6 +498,7 @@ fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
                 | Request::Used { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
+                | Request::Job { .. }
                 | Request::CancelIo { .. }
                 | Request::Withdraw { .. } => {}
             }
@@ -862,7 +867,11 @@ fn memory_seen(out: &mut Queue<Request>) -> MemorySeen {
                 assert_eq!(usage, Usage::ZERO);
                 assert!(seen.end.replace(end).is_none());
             }
-            Request::Cancel { .. } | Request::CancelIo { .. } | Request::Delegate { .. } | Request::Withdraw { .. } => {
+            Request::Cancel { .. }
+            | Request::Job { .. }
+            | Request::CancelIo { .. }
+            | Request::Delegate { .. }
+            | Request::Withdraw { .. } => {
                 panic!("the measured owned-provider controls have no other terminal rights")
             }
         }

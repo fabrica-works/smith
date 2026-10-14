@@ -45,6 +45,7 @@ pub struct Component {
     processes: Map<Token, Process>,
     routes: Map<Token, Token>,
     environment: crate::Environment,
+    closing: bool,
 }
 
 impl Component {
@@ -59,6 +60,7 @@ impl Component {
             processes: Map::with_capacity(limits.processes),
             routes: Map::with_capacity(limits.processes.checked_mul(2).expect("pipe route count fits")),
             environment,
+            closing: false,
         }
     }
 
@@ -83,6 +85,11 @@ impl Component {
         to_domain: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
     ) {
+        assert!(!self.closed(), "a closed machine accepts no further requests");
+        if self.closing && starts(&request) {
+            refuse(request, to_domain);
+            return;
+        }
         match request {
             FromDomain::Op { owner, op, deadline } => {
                 self.admit_tool(env, owner, op, deadline, to_domain, below);
@@ -91,11 +98,26 @@ impl Component {
                 if self.pending.contains_key(&owner) {
                     below.push(Below::CancelFile { owner });
                 } else if let Some(process) = self.processes.get_mut(&owner) {
+                    process.cancel_job();
                     process.stop(env.now, env.limits.group_stop, crate::process::Why::Cancel, below);
+                    self.advance(owner, env.now, to_domain, below);
                 } else if let Some(guide) = self.guides.get(&owner)
                     && guide.cancellable()
                 {
                     below.push(Below::CancelFile { owner });
+                }
+            }
+            FromDomain::Job { owner, act } => {
+                let (head, tail) = match act {
+                    tools::JobAct::Read { head, tail, .. } | tools::JobAct::Stop { head, tail } => (head, tail),
+                };
+                if head > env.limits.output_bytes || tail > env.limits.output_bytes {
+                    to_domain.push(ToDomain::Done { owner, done: other() });
+                    return;
+                }
+                if let Some(process) = self.processes.get_mut(&owner) {
+                    process.job(env.now, env.limits.group_stop, act, below);
+                    self.advance(owner, env.now, to_domain, below);
                 }
             }
             FromDomain::Read { owner, at, max, deadline } => {
@@ -202,12 +224,28 @@ impl Component {
                     below,
                 );
             }
-            tools::Op::Spawn { cwd, command, head, tail } => {
+            tools::Op::Spawn { cwd, command, head, tail, after } => {
                 let admissible = crate::files::check(&self.roots, &env.limits, cwd.root, &cwd.path, false);
                 self.start_tool(
                     owner,
                     admissible,
-                    crate::process::shell(owner, cwd, command, &self.environment, head, tail, deadline, &env.limits),
+                    yielding(
+                        crate::process::shell(
+                            owner,
+                            cwd,
+                            command,
+                            &self.environment,
+                            head,
+                            tail,
+                            deadline,
+                            &env.limits,
+                        ),
+                        env.now,
+                        after,
+                        head,
+                        tail,
+                        env.limits.output_bytes,
+                    ),
                     to_domain,
                     below,
                 );
@@ -305,7 +343,7 @@ impl Component {
     /// Consume one file or process event and release its owner on completion.
     pub fn from_below(
         &mut self,
-        _env: &Env<Limits>,
+        env: &Env<Limits>,
         event: BelowEvent,
         to_domain: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
@@ -322,20 +360,23 @@ impl Component {
                     }
                 } else if let Some(process) = self.processes.get_mut(&owner) {
                     process.directory_event(owner, event, below);
-                    if process.ready() {
-                        let process = self.processes.remove(&owner).expect("listing directory settled");
-                        to_domain.push(process.answer(owner));
-                    }
+                    self.advance(owner, env.now, to_domain, below);
                 } else {
                     let pending = self.pending.remove(&owner).expect("file terminal has admitted owner");
                     to_domain.push(ToDomain::Done { owner, done: crate::files::terminal(pending.kind, event) });
                 }
             }
-            BelowEvent::Process(event) => self.process_event(event, to_domain, below),
+            BelowEvent::Process(event) => self.process_event(env.now, event, to_domain, below),
         }
     }
 
-    fn process_event(&mut self, event: io::Event, to_domain: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
+    fn process_event(
+        &mut self,
+        now: Time,
+        event: io::Event,
+        to_domain: &mut Queue<ToDomain>,
+        below: &mut Queue<Below>,
+    ) {
         let owner = match &event {
             io::Event::Spawned { owner, .. }
             | io::Event::Exited { owner, .. }
@@ -386,14 +427,11 @@ impl Component {
             | io::Event::Window { .. }
             | io::Event::Shutdown { .. } => unreachable!("no sockets or signal source requested"),
         }
-        if process.ready() {
-            let process = self.processes.remove(&process_owner).expect("ready process");
-            to_domain.push(process.answer(process_owner));
-        }
+        self.advance(process_owner, now, to_domain, below);
     }
 
     /// Advance the group deadline, termination, kill and close stages.
-    pub fn fire(&mut self, env: &Env<Limits>, _to_domain: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
+    pub fn fire(&mut self, env: &Env<Limits>, to_domain: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
         let mut owners = List::with_capacity(self.processes.capacity());
         for (owner, _) in &self.processes {
             owners.push(*owner).expect("one key per process");
@@ -401,7 +439,52 @@ impl Component {
         for owner in &owners {
             let process = self.processes.get_mut(owner).expect("retained process");
             process.fire(env.now, env.limits.group_stop, below);
+            self.advance(*owner, env.now, to_domain, below);
         }
+    }
+
+    fn advance(&mut self, owner: Token, now: Time, above: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
+        let process = self.processes.get_mut(&owner).expect("retained process");
+        match process.advance(now, owner) {
+            crate::process::Advance::Waiting => {}
+            crate::process::Advance::Answer { terminal, retire } => {
+                above.push(terminal);
+                if retire {
+                    drop(self.processes.remove(&owner));
+                } else if self.closing {
+                    self.processes.get_mut(&owner).expect("held process").close_job(below);
+                }
+            }
+            crate::process::Advance::Finished => {
+                let process = self.processes.remove(&owner).expect("finished process");
+                above.push(process.answer(owner));
+            }
+            crate::process::Advance::Closed => {
+                drop(self.processes.remove(&owner));
+            }
+        }
+    }
+
+    /// Close held jobs through io's child close; in-flight calls still drain.
+    pub fn close(&mut self, below: &mut Queue<Below>) {
+        self.closing = true;
+        let mut owners = List::with_capacity(self.processes.capacity());
+        for (owner, _) in &self.processes {
+            owners.push(*owner).expect("one owner per process");
+        }
+        for owner in &owners {
+            let process = self.processes.get_mut(owner).expect("retained process");
+            process.close_job(below);
+            if process.closing_ready() {
+                drop(self.processes.remove(owner));
+            }
+        }
+    }
+
+    /// Whether every file and child retained at close has settled.
+    #[must_use]
+    pub fn closed(&self) -> bool {
+        self.closing && self.pending.is_empty() && self.guides.is_empty() && self.processes.is_empty()
     }
 
     /// First armed process deadline; file deadlines belong to `FileIo`.
@@ -427,4 +510,44 @@ fn other() -> tools::Done {
 fn failed_check(owner: Token, to_domain: &mut Queue<ToDomain>) {
     to_domain
         .push(ToDomain::Checked { owner, ran: run::Ran { exit: run::Exit::Unstarted, output: Box::new([]), cut: 0 } });
+}
+
+fn refuse(request: FromDomain, above: &mut Queue<ToDomain>) {
+    match request {
+        FromDomain::Op { owner, .. } | FromDomain::Job { owner, .. } => {
+            above.push(ToDomain::Done { owner, done: other() });
+        }
+        FromDomain::Read { owner, .. } => above.push(ToDomain::Read { owner, read: run::Read::Failed }),
+        FromDomain::Probe { owner, .. } => above.push(ToDomain::Probed { owner, executable: false }),
+        FromDomain::Check { owner, .. } => failed_check(owner, above),
+        FromDomain::Cancel { .. } | FromDomain::Abort { .. } => {}
+    }
+}
+
+fn yielding(
+    request: Option<(Process, Below)>,
+    now: Time,
+    after: Option<skein_lib::Duration>,
+    head: u32,
+    tail: u32,
+    kept: u32,
+) -> Option<(Process, Below)> {
+    match request {
+        Some((mut process, below)) => {
+            process.yielding(now, after, head, tail, kept);
+            Some((process, below))
+        }
+        None => None,
+    }
+}
+
+fn starts(request: &FromDomain) -> bool {
+    match request {
+        FromDomain::Cancel { .. } | FromDomain::Abort { .. } => false,
+        FromDomain::Op { .. }
+        | FromDomain::Job { .. }
+        | FromDomain::Read { .. }
+        | FromDomain::Probe { .. }
+        | FromDomain::Check { .. } => true,
+    }
 }

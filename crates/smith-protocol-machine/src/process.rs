@@ -1,6 +1,6 @@
 //! Process-group execution until skein supplies contained trees
 //! (protocol/agent.md, sections 2 and 3; domain/tools.md, section 5).
-//! A call is answered only after exit, both pipe closures and child closure.
+//! Commands may yield; their ends are answered after both pipes and the child close.
 
 use alloc::boxed::Box;
 
@@ -13,6 +13,11 @@ use crate::boundary::{Below, Spawn, ToDomain};
 use crate::limits::Limits;
 use crate::listing::Listing;
 use crate::search::Search;
+
+mod jobs;
+
+pub(crate) use jobs::Advance;
+use jobs::Response;
 
 pub(crate) const OUTPUT_READ: u32 = 4096;
 
@@ -60,6 +65,8 @@ pub(crate) enum Why {
     Deadline,
     /// The domain cancelled or aborted the operation.
     Cancel,
+    /// A job act asked to stop its group.
+    Stop,
 }
 
 /// Bounded first and last bytes of a process's combined output.
@@ -95,27 +102,51 @@ impl Capture {
         }
     }
 
-    pub(crate) fn finish(self) -> (Box<[u8]>, Box<[u8]>, u64) {
+    pub(crate) fn finish(mut self) -> (Box<[u8]>, Box<[u8]>, u64) {
+        self.take(self.head.capacity(), self.tail.capacity())
+    }
+
+    pub(crate) fn take(&mut self, head: u32, tail: u32) -> (Box<[u8]>, Box<[u8]>, u64) {
+        let kept = self.head.len().checked_add(self.tail.len()).expect("kept output fits");
+        let gap = self.total > u64::from(kept);
+        let first = head.min(if gap { self.head.len() } else { kept });
+        let last = tail.min(if gap { self.tail.len() } else { kept.checked_sub(first).expect("head within kept") });
+        let mut leading = Writer::new(usize::try_from(first).expect("head fits"));
+        let mut trailing = Writer::new(usize::try_from(last).expect("tail fits"));
+        for at in 0..first {
+            leading.put(&[self.kept(at)]).expect("head room");
+        }
+        for at in kept.checked_sub(last).expect("tail within kept")..kept {
+            trailing.put(&[self.kept(at)]).expect("tail room");
+        }
         let dropped = self
             .total
-            .checked_sub(u64::from(self.head.len()))
-            .expect("head is within total")
-            .checked_sub(u64::from(self.tail.len()))
-            .expect("tail is within total");
-        let mut tail = List::with_capacity(self.tail.len());
-        for at in 0..self.tail.len() {
-            let index = if self.tail.len() == self.tail.capacity() {
-                self.next
-                    .checked_add(at)
-                    .expect("ring index fits")
-                    .checked_rem(self.tail.len())
-                    .expect("tail length positive")
-            } else {
-                at
-            };
-            tail.push(*self.tail.get(index).expect("ring index valid")).expect("tail room");
+            .checked_sub(u64::from(first))
+            .expect("head within total")
+            .checked_sub(u64::from(last))
+            .expect("tail within total");
+        self.head.clear();
+        self.tail.clear();
+        self.next = 0;
+        self.total = 0;
+        (leading.finish(), trailing.finish(), dropped)
+    }
+
+    fn kept(&self, at: u32) -> u8 {
+        if at < self.head.len() {
+            return *self.head.get(at).expect("head byte");
         }
-        (self.head.into_boxed(), tail.into_boxed(), dropped)
+        let at = at.checked_sub(self.head.len()).expect("tail offset");
+        let index = if self.tail.len() == self.tail.capacity() {
+            self.next
+                .checked_add(at)
+                .expect("ring index fits")
+                .checked_rem(self.tail.len())
+                .expect("tail length positive")
+        } else {
+            at
+        };
+        *self.tail.get(index).expect("tail byte")
     }
 }
 
@@ -146,6 +177,7 @@ pub(crate) struct Process {
     stop: Stop,
     output: Capture,
     search: Option<Search>,
+    response: Response,
 }
 
 impl Process {
@@ -167,6 +199,7 @@ impl Process {
             stop: Stop::Running,
             output: Capture::new(head, tail),
             search,
+            response: Response::Final,
         }
     }
 
@@ -357,19 +390,27 @@ impl Process {
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Time> {
-        if self.child_closed {
-            return None;
-        }
-        match self.stop {
-            Stop::Running => {
-                if self.exit.is_none() {
-                    Some(self.deadline)
-                } else {
-                    None
+        let process = if self.child_closed {
+            None
+        } else {
+            match self.stop {
+                Stop::Running => {
+                    if self.exit.is_none() {
+                        Some(self.deadline)
+                    } else {
+                        None
+                    }
                 }
+                Stop::Terminating { next, .. } | Stop::Killing { next, .. } => Some(next),
+                Stop::Closing { .. } => None,
             }
-            Stop::Terminating { next, .. } | Stop::Killing { next, .. } => Some(next),
-            Stop::Closing { .. } => None,
+        };
+        match self.answer_deadline() {
+            Some(answer) => match process {
+                Some(process) => Some(process.min(answer)),
+                None => Some(answer),
+            },
+            None => process,
         }
     }
 

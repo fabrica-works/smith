@@ -375,7 +375,13 @@ fn command_output_waits_for_both_pipes_and_child_close() {
         &env(),
         FromDomain::Op {
             owner,
-            op: tools::Op::Spawn { cwd: place(b"."), command: Box::from(&b"printf abcdef"[..]), head: 2, tail: 2 },
+            op: tools::Op::Spawn {
+                cwd: place(b"."),
+                command: Box::from(&b"printf abcdef"[..]),
+                head: 2,
+                tail: 2,
+                after: None,
+            },
             deadline: Time::from_nanos(100),
         },
         &mut to_domain,
@@ -514,58 +520,50 @@ fn deadline_sends_group_term_kill_close_and_answers_after_reap() {
     );
 }
 
+fn directory_request(operation: u32, path: &[u8]) -> FromDomain {
+    let owner = Token::new(1);
+    let deadline = Time::from_nanos(u64::MAX);
+    let at = run::Place { root: Token::new(10), path: Box::from(path) };
+    match operation {
+        0 => FromDomain::Op { owner, op: tools::Op::Load { at: place(path), max: 16 }, deadline },
+        1 => FromDomain::Op {
+            owner,
+            op: tools::Op::Store { at: place(path), content: Box::new([]), expect: tools::Expect::Absent },
+            deadline,
+        },
+        2 => FromDomain::Op {
+            owner,
+            op: tools::Op::List { at: place(path), depth: tools::Depth::Whole, glob: None, max: 2, max_bytes: 512 },
+            deadline,
+        },
+        3 => FromDomain::Op {
+            owner,
+            op: tools::Op::Spawn { cwd: place(path), command: Box::from(&b"true"[..]), head: 4, tail: 4, after: None },
+            deadline,
+        },
+        4 => FromDomain::Op {
+            owner,
+            op: tools::Op::Search { at: place(path), pattern: Box::from(&b"x"[..]), glob: None, hits: 2, bytes: 16 },
+            deadline,
+        },
+        5 => FromDomain::Read { owner, at, max: 16, deadline },
+        6 => FromDomain::Probe { owner, at, deadline },
+        7 => FromDomain::Check {
+            owner,
+            program: run::Place { root: Token::new(10), path: Box::from(&b"check"[..]) },
+            deadline,
+            tail: 4,
+        },
+        _ => unreachable!(),
+    }
+}
+
 #[test]
 fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
     for path in [&b""[..], &b"src/file"[..]] {
         let expected = if path.is_empty() { &b"."[..] } else { path };
         for operation in 0_u32..8 {
-            let owner = Token::new(1);
-            let deadline = Time::from_nanos(u64::MAX);
-            let at = run::Place { root: Token::new(10), path: Box::from(path) };
-            let request = match operation {
-                0 => FromDomain::Op { owner, op: tools::Op::Load { at: place(path), max: 16 }, deadline },
-                1 => FromDomain::Op {
-                    owner,
-                    op: tools::Op::Store { at: place(path), content: Box::new([]), expect: tools::Expect::Absent },
-                    deadline,
-                },
-                2 => FromDomain::Op {
-                    owner,
-                    op: tools::Op::List {
-                        at: place(path),
-                        depth: tools::Depth::Whole,
-                        glob: None,
-                        max: 2,
-                        max_bytes: 512,
-                    },
-                    deadline,
-                },
-                3 => FromDomain::Op {
-                    owner,
-                    op: tools::Op::Spawn { cwd: place(path), command: Box::from(&b"true"[..]), head: 4, tail: 4 },
-                    deadline,
-                },
-                4 => FromDomain::Op {
-                    owner,
-                    op: tools::Op::Search {
-                        at: place(path),
-                        pattern: Box::from(&b"x"[..]),
-                        glob: None,
-                        hits: 2,
-                        bytes: 16,
-                    },
-                    deadline,
-                },
-                5 => FromDomain::Read { owner, at, max: 16, deadline },
-                6 => FromDomain::Probe { owner, at, deadline },
-                7 => FromDomain::Check {
-                    owner,
-                    program: run::Place { root: Token::new(10), path: Box::from(&b"check"[..]) },
-                    deadline,
-                    tail: 4,
-                },
-                _ => unreachable!(),
-            };
+            let request = directory_request(operation, path);
             let mut component = component();
             let mut to_domain = Queue::with_capacity(2);
             let mut below = Queue::with_capacity(2);
@@ -630,7 +628,13 @@ fn configured_variables_are_encoded_once_for_commands_and_checks_and_absent_for_
                 0 => FromDomain::Op {
                     owner,
                     deadline,
-                    op: tools::Op::Spawn { cwd: place(b""), command: Box::from(&b"true"[..]), head: 4, tail: 4 },
+                    op: tools::Op::Spawn {
+                        cwd: place(b""),
+                        command: Box::from(&b"true"[..]),
+                        head: 4,
+                        tail: 4,
+                        after: None,
+                    },
                 },
                 1 => FromDomain::Check {
                     owner,
@@ -711,7 +715,7 @@ fn a_cancel_before_spawn_reaches_group_close_and_waits_for_every_terminal() {
         &env(),
         FromDomain::Op {
             owner,
-            op: tools::Op::Spawn { cwd: place(b""), command: b"hang".as_slice().into(), head: 4, tail: 4 },
+            op: tools::Op::Spawn { cwd: place(b""), command: b"hang".as_slice().into(), head: 4, tail: 4, after: None },
             deadline: Time::from_nanos(u64::MAX),
         },
         &mut to_domain,

@@ -260,6 +260,7 @@ impl Effects {
             request @ (domain::Request::Complete { .. }
             | domain::Request::Cancel { .. }
             | domain::Request::Io { .. }
+            | domain::Request::Job { .. }
             | domain::Request::CancelIo { .. }
             | domain::Request::Read { .. }
             | domain::Request::Probe { .. }
@@ -1065,7 +1066,12 @@ fn lower_events(service: &mut Service) {
 }
 
 fn close_roots(service: &mut Service) {
-    if service.owners.is_empty()
+    if service.machine_below.room() < machine::max_out(&service.limits.machine).below {
+        return;
+    }
+    service.machine.close(&mut service.machine_below);
+    if service.machine.closed()
+        && service.owners.is_empty()
         && service.pipe_routes.is_empty()
         && service.files.takes()
         && !service.root_close_pending
@@ -2028,6 +2034,14 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             service.machine.from_domain(
                 &service.machine_env,
                 machine::FromDomain::Op { owner, op, deadline },
+                &mut service.machine_events,
+                &mut service.machine_below,
+            );
+        }
+        domain::Request::Job { owner, act } => {
+            service.machine.from_domain(
+                &service.machine_env,
+                machine::FromDomain::Job { owner, act },
                 &mut service.machine_events,
                 &mut service.machine_below,
             );

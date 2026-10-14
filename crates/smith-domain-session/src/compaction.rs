@@ -382,6 +382,7 @@ pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Fa
         | Request::Priced { .. }
         | Request::Cancel { .. }
         | Request::Io { .. }
+        | Request::Job { .. }
         | Request::CancelIo { .. }
         | Request::Delegate { .. }
         | Request::Withdraw { .. } => {}

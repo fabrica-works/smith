@@ -1193,6 +1193,7 @@ dependencies = [
  "skein-fake-machine",
  "skein-io",
  "skein-lib",
+ "skein-shell",
  "skein-sim",
  "skein-world",
  "smith-domain",

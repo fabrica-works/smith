@@ -1155,7 +1155,7 @@ impl World {
                     Flight { key: None, cancelled: false, completion_message: None, completion_index: None },
                 );
                 let delivery = match op {
-                    tools::Op::Spawn { cwd, command, head, tail } => {
+                    tools::Op::Spawn { cwd, command, head, tail, after: _ } => {
                         match io::spawn(&self.disk, &cwd, &command, &[], (head, tail)) {
                             Ok(started) => {
                                 let duration = Duration::from_nanos(
@@ -1189,6 +1189,7 @@ impl World {
                 };
                 self.schedule_flight(Family::Io, owner, delivery);
             }
+            Request::Job { .. } => unreachable!("the tools issue no job act yet"),
             Request::CancelIo { owner } => {
                 self.cancel(Family::Io, owner, Event::Done { owner, done: tools::Done::Cancelled });
             }

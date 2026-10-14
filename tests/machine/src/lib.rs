@@ -4,8 +4,10 @@
 //! The component never knows fake filesystem state. Requests enter through
 //! `World::request`; IO completion routing remains the application's pass.
 
+mod jobs;
+
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use skein_fake_machine::{How, Item, Machine, Opened, step as machine_step};
@@ -237,7 +239,10 @@ impl World {
         let root = self.machine.borrow_mut().open(self.root_handle, b".", How::Directory).expect("fresh run root");
         let mut config = Config::calm();
         config.wall = Wall::from_nanos(self.now.as_nanos());
-        let referee = Expectations::new(self.seed, vec![Terminal { owner: job.owner() }]);
+        let referee = Expectations::new(
+            self.seed,
+            vec![Terminal { owner: job.owner(), expected: 1, deadline: Time::from_nanos(2_000_000_000) }],
+        );
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory)
             .with_machine(Adapter { files: Rc::clone(&self.machine), spawns: Rc::clone(&self.spawns) });
         world.spawn_root(Handle::new(root.raw()), |root| {
@@ -269,6 +274,7 @@ impl Drop for World {
 }
 
 enum Job {
+    Sequence { requests: Vec<FromDomain>, delays: Vec<Duration> },
     Request(FromDomain, bool),
     AbortedCheck { owner: Token, after_spawn: bool },
     Flood { owner: Token, bytes: Box<[u8]>, head: u32, tail: u32 },
@@ -278,8 +284,12 @@ enum Job {
 impl Job {
     fn owner(&self) -> Token {
         match self {
+            Self::Sequence { requests, .. } => {
+                Self::Request(requests.first().expect("one spawn").clone(), false).owner()
+            }
             Self::Request(request, _) => match request {
                 FromDomain::Op { owner, .. }
+                | FromDomain::Job { owner, .. }
                 | FromDomain::Cancel { owner }
                 | FromDomain::Read { owner, .. }
                 | FromDomain::Probe { owner, .. }
@@ -291,11 +301,15 @@ impl Job {
     }
     fn copy(&self) -> Self {
         match self {
+            Self::Sequence { requests, delays } => {
+                Self::Sequence { requests: requests.clone(), delays: delays.clone() }
+            }
             Self::Request(request, cancel) => Self::Request(
                 match request {
                     FromDomain::Op { owner, op, deadline } => {
                         FromDomain::Op { owner: *owner, op: op.clone(), deadline: *deadline }
                     }
+                    FromDomain::Job { owner, act } => FromDomain::Job { owner: *owner, act: *act },
                     FromDomain::Cancel { owner } => FromDomain::Cancel { owner: *owner },
                     FromDomain::Read { owner, at, max, deadline } => {
                         FromDomain::Read { owner: *owner, at: at.clone(), max: *max, deadline: *deadline }
@@ -343,12 +357,14 @@ fn copy_terminal(terminal: &ToDomain) -> ToDomain {
 #[derive(Debug)]
 struct Terminal {
     owner: Token,
+    expected: usize,
+    deadline: Time,
 }
 
 impl Expectation<Application> for Terminal {
     fn check(&self, _now: Time, procs: &[Application]) -> Result<bool, String> {
         let terminals = &procs[0].terminals;
-        if terminals.len() > 1 {
+        if terminals.len() > self.expected {
             return Err("duplicate domain terminal".into());
         }
         if let Some(terminal) = terminals.first() {
@@ -362,19 +378,19 @@ impl Expectation<Application> for Terminal {
             if owner != self.owner {
                 return Err("terminal changed its owner".into());
             }
-            return Ok(true);
+            return Ok(terminals.len() == self.expected);
         }
         Ok(false)
     }
     fn deadline(&self) -> Time {
-        Time::from_nanos(2_000_000_000)
+        self.deadline
     }
 }
 
 impl Referee<Application> for Expectations<Application, Terminal> {
     fn act(&mut self, _now: Time, _procs: &mut [Application]) {}
     fn observe(&mut self, now: Time, procs: &[Application]) {
-        assert!(procs[0].terminals.len() <= 1, "one terminal throughout settlement");
+        assert!(procs[0].terminals.len() <= procs[0].expected, "one terminal per act throughout settlement");
         Expectations::observe(self, now, procs);
     }
     fn next_deadline(&self) -> Option<Time> {
@@ -468,6 +484,10 @@ struct Application {
     completions: Queue<Complete>,
     file_flights: BTreeSet<Token>,
     terminals: Vec<ToDomain>,
+    following: VecDeque<FromDomain>,
+    delays: VecDeque<Duration>,
+    following_at: Option<Time>,
+    expected: usize,
     deliveries: usize,
 }
 
@@ -521,7 +541,11 @@ impl Application {
             submissions: Queue::with_capacity(128),
             completions: Queue::with_capacity(128),
             file_flights: BTreeSet::new(),
-            terminals: Vec::with_capacity(1),
+            terminals: Vec::with_capacity(8),
+            following: VecDeque::new(),
+            delays: VecDeque::new(),
+            following_at: None,
+            expected: 1,
             deliveries: 0,
         }
     }
@@ -532,6 +556,7 @@ impl Application {
             command: Box::from(b"flood".as_slice()),
             head,
             tail,
+            after: None,
         };
         self.child_output(owner, op, bytes)
     }
@@ -760,9 +785,26 @@ impl Application {
         }
         while let Some(event) = self.to_domain.pop() {
             self.terminals.push(event);
+            if !self.following.is_empty() {
+                let delay = self.delays.pop_front().unwrap_or(Duration::ZERO);
+                if delay == Duration::ZERO {
+                    let request = self.following.pop_front().expect("next act");
+                    self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
+                } else {
+                    self.following_at = Some(self.machine_env.now.saturating_add(delay));
+                }
+            }
+        }
+        if self.following_at.is_some_and(|at| at <= self.machine_env.now) {
+            self.following_at = None;
+            let request = self.following.pop_front().expect("scheduled act");
+            self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
+        }
+        if self.terminals.len() == self.expected {
+            self.component.close(&mut self.below);
         }
         self.process_io.reclaim();
-        if !self.terminals.is_empty()
+        if self.terminals.len() == self.expected
             && !self.root_closing
             && self.below.is_empty()
             && self.file_flights.is_empty()
@@ -799,10 +841,18 @@ impl Host for Application {
         self.process_env.wall = wall;
         if let Some(job) = self.job.take() {
             match job {
+                Job::Sequence { requests, delays } => {
+                    self.expected = requests.len();
+                    self.following = requests.into();
+                    self.delays = delays.into();
+                    let first = self.following.pop_front().expect("sequence starts with one spawn");
+                    self.component.from_domain(&self.machine_env, first, &mut self.to_domain, &mut self.below);
+                }
                 Job::Request(request, cancel) => {
                     if cancel {
                         self.cancel_after_spawn = Some(match &request {
                             FromDomain::Op { owner, .. }
+                            | FromDomain::Job { owner, .. }
                             | FromDomain::Cancel { owner }
                             | FromDomain::Read { owner, .. }
                             | FromDomain::Probe { owner, .. }
@@ -871,19 +921,26 @@ impl Host for Application {
             || self.next_deadline().is_some_and(|deadline| deadline <= now)
     }
     fn next_deadline(&self) -> Option<Time> {
-        [self.file_io.next_deadline(), self.process_io.next_deadline(), self.component.next_deadline()]
+        [
+            self.file_io.next_deadline(),
+            self.process_io.next_deadline(),
+            self.component.next_deadline(),
+            self.following_at,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        .map(|deadline| Time::from_nanos(deadline.as_nanos().saturating_sub(self.offset.as_nanos())))
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        [self.component.next_deadline(), self.following_at]
             .into_iter()
             .flatten()
             .min()
             .map(|deadline| Time::from_nanos(deadline.as_nanos().saturating_sub(self.offset.as_nanos())))
     }
-    fn next_policy_deadline(&self) -> Option<Time> {
-        self.component
-            .next_deadline()
-            .map(|deadline| Time::from_nanos(deadline.as_nanos().saturating_sub(self.offset.as_nanos())))
-    }
     fn is_empty(&self) -> bool {
-        self.terminals.len() == 1
+        self.terminals.len() == self.expected
             && self.root_closed
             && self.file_io.open_files() == 0
             && self.process_io.is_empty()

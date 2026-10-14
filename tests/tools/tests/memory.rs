@@ -37,7 +37,10 @@ fn fill(limits: Limits) {
                 Request::Opened { kit, .. } => named.push(kit),
                 Request::Io { owner, .. } => named.push(owner),
                 Request::Answer { .. } => {}
-                request @ (Request::Refused { .. } | Request::Closed { .. } | Request::CancelIo { .. }) => {
+                request @ (Request::Refused { .. }
+                | Request::Closed { .. }
+                | Request::Job { .. }
+                | Request::CancelIo { .. }) => {
                     panic!("{limits:?}: unexpected {request:?}")
                 }
             }

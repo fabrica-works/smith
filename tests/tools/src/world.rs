@@ -486,6 +486,7 @@ impl World {
                         | tools::Request::Refused { .. }
                         | tools::Request::Answer { .. }
                         | tools::Request::Closed { .. }
+                        | tools::Request::Job { .. }
                         | tools::Request::CancelIo { .. } => {}
                     }
                 }
@@ -567,6 +568,7 @@ impl World {
                 self.ops.open(owner, pending);
                 self.stats.ops += 1;
             }
+            tools::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
             tools::Request::CancelIo { owner } => {
                 // An operation that has ended has its terminal on the way: the
                 // cancel lost the race and changes nothing.
@@ -667,7 +669,7 @@ impl World {
     fn start(&mut self, owner: Token, op: Op) -> (Work, Time) {
         let latency = self.now.saturating_add(self.settings.io.draw(&mut self.rng));
         match op {
-            Op::Spawn { cwd, command, head, tail } => {
+            Op::Spawn { cwd, command, head, tail, after: _ } => {
                 self.stats.commands += 1;
                 let started = if self.rng.chance(self.settings.faults) {
                     self.stats.faults += 1;
@@ -756,6 +758,8 @@ impl World {
             | Done::Missing
             | Done::NotFile
             | Done::Linked
+            | Done::Held { .. }
+            | Done::Job { .. }
             | Done::Exited { .. }
             | Done::Found { .. }
             | Done::NotDirectory

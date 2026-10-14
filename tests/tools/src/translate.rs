@@ -206,7 +206,9 @@ pub fn cut(done: Done, ran: u128, whole: u128) -> Done {
         }
         // rg could not read the pattern, or the path is not there: that is
         // said at once, before any deadline.
-        done @ (Done::Exited { .. }
+        done @ (Done::Held { .. }
+        | Done::Job { .. }
+        | Done::Exited { .. }
         | Done::Missing
         | Done::NotDirectory
         | Done::Escapes

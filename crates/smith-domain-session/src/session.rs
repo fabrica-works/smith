@@ -1097,6 +1097,7 @@ fn tools_step(calls: &mut Calls, env: &Env<Limits>, event: tools::Event, out: &m
         };
         match request {
             tools::Request::Io { owner, op, deadline } => out.push(Request::Io { owner, op, deadline }),
+            tools::Request::Job { owner, act } => out.push(Request::Job { owner, act }),
             tools::Request::CancelIo { owner } => out.push(Request::CancelIo { owner }),
             tools::Request::Answer { to, outcome } => {
                 assert!(heard.answer.is_none(), "a step of the tools answers one call at most");
@@ -1257,6 +1258,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &mut Session, out: &Queue<
             | Request::Cancel { .. }
             | Request::Withdraw { .. }
             | Request::Io { .. }
+            | Request::Job { .. }
             | Request::CancelIo { .. } => {
                 continue;
             }
@@ -1277,6 +1279,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &mut Session, out: &Queue<
             | Request::Cancel { .. }
             | Request::Withdraw { .. }
             | Request::Io { .. }
+            | Request::Job { .. }
             | Request::CancelIo { .. } => unreachable!("requests without facts were skipped"),
         }
     }

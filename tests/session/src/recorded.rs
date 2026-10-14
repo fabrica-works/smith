@@ -280,6 +280,7 @@ impl World {
                 assert!(!self.operations.iter().any(|(pending, _)| pending == &owner));
                 self.operations.push((owner, op));
             }
+            session::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
             session::Request::CancelIo { owner } => {
                 assert!(self.operations.iter().any(|(pending, _)| pending == &owner));
                 self.cancelled_operations.push(owner);

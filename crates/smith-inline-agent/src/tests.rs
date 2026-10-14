@@ -470,6 +470,7 @@ fn a_dropped_slot_keeps_a_command_right_until_its_terminal() {
             command: b"sleep".as_slice().into(),
             head: 1,
             tail: 1,
+            after: None,
         },
         deadline: Time::from_nanos(100),
     });

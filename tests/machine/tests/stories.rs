@@ -119,7 +119,7 @@ fn a_command_that_hangs_is_stopped_at_its_deadline_and_answered_once_gone() {
     let root = world.root();
     let done = world.request(FromDomain::Op {
         owner: Token::new(30),
-        op: tools::Op::Spawn { cwd: place(root, b""), command: Box::from(&b"hang"[..]), head: 4, tail: 4 },
+        op: tools::Op::Spawn { cwd: place(root, b""), command: Box::from(&b"hang"[..]), head: 4, tail: 4, after: None },
         deadline: Time::from_nanos(1_000_000),
     });
     assert_eq!(
@@ -305,6 +305,7 @@ fn the_configured_environment_is_seen_by_commands_and_checks_and_none_by_searche
                 command: b"true".as_slice().into(),
                 head: 8,
                 tail: 8,
+                after: None,
             },
             deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
         });
@@ -353,6 +354,7 @@ fn a_deadline_stops_both_the_leader_and_its_pipe_holding_group_child() {
             command: Box::from(b"fork".as_slice()),
             head: 4,
             tail: 4,
+            after: None,
         },
         deadline: Time::from_nanos(1_000_000),
     });
@@ -371,6 +373,7 @@ fn a_stop_reaches_the_group_and_settles_both_output_pipes_before_cancelled() {
             command: Box::from(b"fork".as_slice()),
             head: 4,
             tail: 4,
+            after: None,
         },
         deadline: far(),
     });
@@ -389,6 +392,7 @@ fn a_naturally_exited_leader_closes_the_group_while_its_child_still_holds_the_pi
             command: Box::from(b"fork-exit".as_slice()),
             head: 4,
             tail: 4,
+            after: None,
         },
         deadline: far(),
     });

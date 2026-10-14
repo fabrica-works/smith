@@ -376,6 +376,19 @@ pub enum Exit {
     TimedOut,
 }
 
+/// How a held command stands when the machine answers an act on it.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum JobEnd {
+    /// Still running; the machine keeps it for another act.
+    Running,
+    /// Exited, signalled or timed out; the machine releases it.
+    Ended(Exit),
+    /// Its group was stopped by a job act; the machine releases it.
+    Stopped,
+    /// Its group was cancelled by its owner; the machine releases it.
+    Cancelled,
+}
+
 /// Why io failed, as the protocol layer classifies the error.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Fault {

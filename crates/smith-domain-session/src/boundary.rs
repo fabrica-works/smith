@@ -230,6 +230,8 @@ pub enum Request {
     /// Abandon the `Io` in flight for `owner`. Its terminal event still comes:
     /// `Done` with `Cancelled`, or whichever outcome won the race.
     CancelIo { owner: Token },
+    /// Read or stop a machine-held command; ends in one `Done`.
+    Job { owner: Token, act: tools::JobAct },
     /// Ask the opener to serve the delegated call `call`, a ticket, and to
     /// answer it by `deadline`, when the session's time runs out: the opener
     /// runs the race, within limits of its own if it has shorter ones, and

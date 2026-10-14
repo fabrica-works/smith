@@ -1170,6 +1170,7 @@ fn a_command_runs_in_the_working_directory_with_the_kits_output_bounds() {
         command: bytes(b"cargo test"),
         head: LIMITS.shell_head,
         tail: LIMITS.shell_tail,
+        after: None,
     };
     assert_eq!((op, deadline), (expected, at(60)), "the tools' default limit for a command");
     let exited =
@@ -1431,7 +1432,7 @@ fn a_command_grant_does_not_depend_on_a_file_modify_grant() {
     let kit = h.open(1, authority(Grants { inspect: true, modify: false, shell: true }));
     let (_, op, _) = spawned(&mut h, kit, None);
     match op {
-        Op::Spawn { cwd, command, head, tail } => {
+        Op::Spawn { cwd, command, head, tail, after: _ } => {
             assert_eq!(cwd, place(1, b""));
             assert_eq!(command, bytes(b"cargo test"));
             assert_eq!((head, tail), (LIMITS.shell_head, LIMITS.shell_tail));
@@ -1822,7 +1823,7 @@ fn a_command_retains_its_requested_deadline_and_output_clamps_at_the_terminal() 
     let request = h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(30) });
     let Some(Request::Io { owner, op, deadline }) = request else { panic!("command spawn") };
     assert_eq!(deadline, at(10));
-    assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head: 9, tail: 3 });
+    assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head: 9, tail: 3, after: None });
     let terminal = Done::Exited { exit: Exit::TimedOut, head: bytes(b"first"), tail: bytes(b"end"), dropped: 7 };
     let expected = Outcome::Exited {
         exit: Exit::TimedOut,
@@ -1847,7 +1848,7 @@ fn a_requested_command_capture_is_split_in_the_deployments_proportion() {
         let reply_to = ReplyTo::new(Token::new(1));
         let request = h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(3600) });
         let Some(Request::Io { owner, op, .. }) = request else { panic!("command spawn") };
-        assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head, tail });
+        assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head, tail, after: None });
         drop(h.end(owner, Done::Cancelled));
     }
 }

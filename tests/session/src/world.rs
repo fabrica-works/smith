@@ -1125,6 +1125,7 @@ impl World {
                 agent::Request::Complete { .. }
                 | agent::Request::Cancel { .. }
                 | agent::Request::Io { .. }
+                | agent::Request::Job { .. }
                 | agent::Request::CancelIo { .. } => {}
             }
         }
@@ -1200,6 +1201,7 @@ impl World {
                 }
             }
             agent::Request::Io { owner, op, deadline } => self.start_op(owner, op, deadline),
+            agent::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
             agent::Request::CancelIo { owner } => self.cancel_op(owner),
             agent::Request::Delegate { owner, opener, call, deadline, origin } => {
                 let session = self.sessions.get(&opener.raw()).and_then(|session| session.session);
@@ -1550,7 +1552,7 @@ impl World {
             Work::Ending(Done::Failed { fault: Fault::Other })
         } else {
             match op {
-                Op::Spawn { cwd, command, head, tail } => {
+                Op::Spawn { cwd, command, head, tail, after: _ } => {
                     match io::spawn(&self.checkout, &cwd, &command, &[], (head, tail)) {
                         Ok(started) => Work::Command(started),
                         Err(done) => Work::Ending(done),
@@ -2119,6 +2121,7 @@ fn describe_agent_request(request: &agent::Request) -> String {
         }
         agent::Request::Cancel { owner } => format!("cancel {}", owner.raw()),
         agent::Request::Io { owner, op, deadline } => format!("io {} {op:?} by {}", owner.raw(), deadline.as_nanos()),
+        agent::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
         agent::Request::CancelIo { owner } => format!("cancel io {}", owner.raw()),
         agent::Request::Delegate { owner, opener, call, deadline, origin } => {
             format!(

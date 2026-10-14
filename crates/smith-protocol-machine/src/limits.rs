@@ -50,11 +50,12 @@ pub struct MaxOut {
     pub below: u32,
 }
 
-/// One terminal or one request per entry point.
+/// A terminal per process and room for its stop followed by close.
 #[must_use]
 pub const fn max_out(limits: &Limits) -> MaxOut {
-    let below = if limits.processes > 3 { limits.processes } else { 3 };
-    MaxOut { to_domain: 1, below }
+    let stopping = limits.processes.checked_mul(2).expect("process emission count fits");
+    let below = if stopping > 3 { stopping } else { 3 };
+    MaxOut { to_domain: if limits.processes == 0 { 1 } else { limits.processes }, below }
 }
 
 /// Heap retained by the component, plus its largest transient translation.
@@ -104,7 +105,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Stack::<u8>::worst_case(8)?)?
         .checked_add(u64::from(limits.search_line_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.search_bytes).checked_mul(2)?)?;
-    let scratch = List::<Token>::worst_case(limits.processes)?.checked_add(u64::from(window))?.checked_add(parse)?;
+    let scratch = List::<Token>::worst_case(limits.processes)?
+        .checked_add(u64::from(window).checked_mul(2)?)?
+        .checked_add(parse)?;
     roots
         .checked_add(operations)?
         .checked_add(guides)?
