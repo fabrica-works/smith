@@ -255,7 +255,7 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 | 02.1, 02.3 | `first-request`, and Codex on `smoke-tools`, each at most 2 | 4 | $0.02 |
 | 04.6 | `first-request` calibrated, no control (rulings 112, 114: 11 spent, 12 fresh) | 23 | $0.05 |
 | 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 30 | $3 |
-| 07.3 | `history` and `history/small-window` calibrated, with their control: 9 spent at low effort, then both again at medium (ruling 118) | 37 | $4 |
+| 07.3 | `history` and `history/small-window` calibrated: 19 spent at low and medium (rulings 118, 119); version 3 at medium, at most 25 (small-window 12 and its control, base 12 with no control); 25 more at `high` only if model deviations alone put ten passes out of reach (ruling 121) | 69 | $4 |
 | 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 24 | $7 |
 | 12.1 | the baseline `parity` run | 58 | $12 |
 | 12.2 | the `compaction` experiment, 10 per arm | 20 | $1 |
@@ -307,7 +307,7 @@ Each command runs once, on `main` (`~/src/rust/smith`, after `git -C
    cd ~/src/rust/smith && for t in history first-request tool-output; do git show origin/main:benchmarks/tasks/probes/$t/task.toml | awk -v t=$t '/^\[\[variant\]\]/ { v = ""; named = 1; next } named && /^name *=/ { gsub(/[" ]/, "", $3); v = "/" $3; named = 0 } /^\[calibration\]/ { print t } /^\[variant\.calibration\]/ { print t v }'; done | grep -cxE 'history|history/small-window|first-request|tool-output/background'
    ```
 
-   prints 4: `history` and `history/small-window` (version 2),
+   prints 4: `history` and `history/small-window` (version 3, ruling 121),
    `first-request`, and `tool-output/background`.
 5. **Both gates pass within their budgets:** in each repository, `git log
    origin/main --format='%(trailers:key=Gate-Result,valueonly)' | grep -v

@@ -98,7 +98,7 @@ The owner defines the interface; the others use it by name.
 |---|---|---|
 | the formats' version 3: result and summary, the price basis, `SUMMARY_VERSION` | smith 03.1 | 03.2 to 03.5, 04, 07.3, 11.3, 12 |
 | the `[calibration]` and `[variant.calibration]` block (`Calibration`) | smith 04.1 | 04.6, 07.3, 11.3, 12.3 |
-| `history` version 2 and its `compaction-choice` check | smith 04.2 | 07.3, 12.2 |
+| `history` version 2 and its `compaction-choice` check; version 3 and its `call-count` and `compaction-carried` (04.s2), in 07.3 (ruling 121) | smith 04.2 | 07.3, 12.2 |
 | a summary's attempt rows (`AttemptRow`), a suite's `reference` | smith 03.2 | 04.4, 06.2, 12 |
 | the `parity` section and `smith-bench parity` | smith 04.4 | 12.1, 12.4, the README's "Done when" |
 | `presets::list_prices` | smith 03.1 | 05.1 adds a model to the presets' table, under whichever name it has when 05.1 lands |

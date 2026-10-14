@@ -629,3 +629,123 @@ changes what section 8.4 holds.
      - **Further copies:** where a later test fails on a literal derived from the same receiving layout (a history-item count, or a ceiling built from it), refresh it to the value the product limits derive, and list each in the commit body with its old and new values. A test that fails on a bound the design states (a preset, `declared.memory`, a window) stops on a question instead.
      - `benchmarks/tests/recorded/smith-time.jsonl`'s `"events.observation_line":19849728` is a recorded run's limits, so it stays as recorded.
      - The smoke (rule 8) and 08.s1's guard over every probe task's overrides run as usual. A smaller derived ceiling only lowers the worst case.
+
+121. **the designer's answer on whose failure; 04.s2, then history version 3** (design gap, smith 07's blocks of 2026-10-14T20:17:56Z and 20:25:12Z).
+     Ruling 121. The designer's answer, landed as smith `62376cb8` (benchmarks.md 3.1, 3.2, 11.1) and `070efc75` (07.3 amended, `04.s2` drafted), follows. `smith-04.s2` is a new step in session 04. 07.3 needs it. Row 07.3 becomes 69 attempts and $4: the 19 spent, at most 25 for version 3 at medium, and 25 more at `high` only under the answer's fallback. The answer's text:
+
+
+     1. **Attempt 05 at medium, and attempt 01 at low, are the model's: model
+        deviations, once the probe checks smith's side of the compaction.** The
+        defect is not 07.3's words. smith asked each compaction with `none`. It
+        gave the second compaction read 32's result whole, and opened the next
+        window with the summary as written. That summary misadded (443 for 501)
+        and listed the read it had been given as "One read remains". The model
+        then read it again. The words say what run.md 3.3 lists ("what was done
+        and found, with exact values, names and paths as they were read; what
+        remains"). In the same attempt they gave a correct first summary, and 4
+        of the 5 medium attempts passed. `SUMMARY` and `PREAMBLE` do not change
+        to suit `history`.
+
+     2. **The defect is benchmarks.md's.**
+        - 3.1 said "its event checks hold smith to its contracts". The harness
+          took that to make every failed event check smith's. But the read
+          count counts what the prompt asks of the model.
+        - Nothing checked the one smith contract that a lost state could hide
+          behind that count: the compaction holds the results owed to it, and
+          the next window opens with its summary.
+
+        benchmarks.md 3.2 now says:
+        - **"Whose failure."** "A failed deciding check is the model's when it
+          judges what the prompt asks of the model: the answer, the files, a
+          report of what the model was told (`budget-report`), and how many
+          calls of a tool it makes where the prompt prescribes the number
+          (`call-count`). It is smith's when it judges smith's contracts: its
+          records, a call's verdict, a request's tool choice or content, a
+          bound, the window."
+        - **"A count is the model's only where smith's side is checked."** "A
+          task whose windows compact also decides on `compaction-carried`: each
+          compaction's request holds a result for each call its window owes it,
+          and the window after it opens with that compaction's summary
+          (domain/session.md, sections 8.1 and 8.2). With that check passing, a
+          summary that misstates or drops what it was given is the model's, and
+          so is the count that follows from it."
+
+        Of the supervisor's options this is (a), made safe by
+        `compaction-carried`, and not (c). `tool-call` stays deciding, and each
+        read's verdict stays smith's. Option (b) is ruled out by point 1.
+        Option (d), a higher effort, is point 3's fallback.
+
+     3. **Base `history`'s wrong sums (2 of 3 at medium, 3 of 6 at low) are
+        the model's arithmetic, and the prompt now makes it written arithmetic.**
+        The model writes nothing beside its reads. In base attempt 03, none of
+        the 34 responses holds a text block, only calls and opaque reasoning.
+        So it adds 32 values
+        that live only in its reasoning, or none at all. Raising the effort
+        does not touch that: low and medium miss alike, at about 50 s an
+        attempt.
+        - benchmarks.md 11.1's `history` row now forces: "The running sum and
+          the next file are written as text beside each read, so that what a
+          summary must carry is in the window's history, not only in the
+          model's reasoning."
+        - `history` goes to version 3, still at `effort = "medium"`. The prompt
+          adds "In each completion, before its read call, write one line of
+          text: the sum of the values read so far, and the file you are
+          reading."
+        - If model deviations alone still put ten passes out of reach, the task
+          names `high` with its reason, and both calibrations run once more
+          (benchmarks.md 3.1: "names a higher effort and says why").
+
+     4. **The deciding checks left unavailable after the recovered 503 are
+        neither smith's nor the model's: the harness misread the stream.**
+        benchmarks.md 3.2: "A request smith retried (domain/session.md, section
+        4) is judged through its retry. A request that failed with no blocks
+        made no calls, and its prompt is the one its retry sends
+        (protocol/events.md, section 3.11), so the failed request's missing
+        usage leaves no check unavailable."
+        - Under that rule, base attempt 03 failed only `answer`, so it is a
+          model deviation.
+        - In general: "A deciding check of smith's contracts left unavailable,
+          other than 'not exercised' (11.1), leaves the attempt unjudged:
+          neither smith's failure nor a deviation (section 1)."
+
+     5. **What 07.3 does next** (07-compaction.md, 07.3, as landed):
+        1. **`04.s2` lands first.** Its text is a draft in `04-probes.md`, for
+           the supervisor to name and schedule. It adds `call-count` (the
+           model's) and `compaction-carried` (smith's). `calls-per-response`
+           and `prompt-within-window` read a failed request through its retry.
+           `count` puts a model failure beside an unavailable contract check
+           under `unjudged`. About 150 lines and six tests; the smoke.
+        2. **07.3 rebases on 04.s2 and writes `history` version 3.** It
+           changes:
+           - the prompt's added sentence;
+           - `tool-call` without its count;
+           - `call-count` exactly 32;
+           - `compaction-carried`;
+           - `completions` removed: 32 reads, at most one per response, imply
+             its 33 completions;
+           - `deciding = ["end", "exit-code", "answer", "tool-call",
+             "call-count", "calls-per-response", "prompt-within-window",
+             "compaction-carried"]`.
+
+           `small-window`'s own list and window are unchanged. 07.3 then
+           rebuilds the arm.
+        3. **The two calibrations run once each.** First `calibrate
+           probes/history/small-window --control <07.1's parent> --arm <dir>`.
+           Then `calibrate probes/history --arm <dir>`, with no control: base
+           `history` never compacts, so 07.1's parent can fail it only by the
+           model's errors. If that control passed, `calibrate` would write no
+           block. The commit body says why.
+        4. **Stopping.** 07.3 stops on a question for any failure that is
+           smith's under 3.2, and for any unjudged attempt. For model
+           deviations alone, step 3's fallback applies: `high`, both commands
+           once more. An attempt that ends on its budget at `high`, or a second
+           stop, also stops on a question.
+
+     6. **For the supervisor:**
+        - **Row 07.3's allowance.** Version 3 needs at most 25 more attempts
+          at medium (12 and a control for `small-window`, 12 for base), and as
+          many again if `high` is needed. At about $0.02 an attempt, that is
+          within the $4.
+        - **README "Done when" item 4** says "(version 2)". It is version 3
+          now.
+        - **code-organization.md:101** names "`history` version 2".
