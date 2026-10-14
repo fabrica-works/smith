@@ -502,7 +502,8 @@ fn run_suite(
             break;
         }
         let result = dispatch(&guard, &machine, &state, &clock, &executable, &request, remaining)?;
-        incomplete |= crate::cache::repetition(&result) == crate::Judgment::Incomplete;
+        let deviation = calibration.is_some() && crate::probe::model_deviation(&result);
+        incomplete |= !deviation && crate::cache::repetition(&result) == crate::Judgment::Incomplete;
         let key = format!("{}/{}", request.identity.task, request.identity.arm);
         if request.identity.task.starts_with("probes/") && !crate::cache::selected(&result) {
             if let Some(passed) = crate::summary::passed(&result) {
@@ -518,7 +519,7 @@ fn run_suite(
                         requests.push_front(retry);
                     }
                 }
-            } else {
+            } else if !deviation {
                 incomplete = true;
             }
         }

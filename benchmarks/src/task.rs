@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// A task's judgment, supplied by its author to the runner.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -21,7 +22,7 @@ pub enum Kind {
 }
 
 /// An agent-neutral outcome the task author asks the harness to inspect.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "check", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum OutcomeCheck {
     /// The named file must have exactly these UTF-8 bytes.
@@ -49,7 +50,7 @@ pub enum OutcomeCheck {
 }
 
 /// A typed check over smith records, supplied by a task author.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "check", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum EventCheck {
     /// A captured path call has its exact joined successful terminal.
@@ -195,7 +196,7 @@ impl EventCheck {
 }
 
 /// A task author's bound on one event cardinality.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Count {
     /// Exactly this cardinality.
@@ -219,7 +220,7 @@ impl Count {
 }
 
 /// The boundary up to which a task counts completions.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Before {
     /// Every completion up to the authoritative answer.
@@ -229,7 +230,7 @@ pub enum Before {
 }
 
 /// A command the author gives the grader after the agent's tree has ended.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Grade {
     pub command: Vec<String>,
@@ -255,19 +256,31 @@ pub struct Estimate {
     pub tokens: u64,
 }
 
-/// The ten passing runs and failing control recorded by a probe's author.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+/// The binary, attempts and frozen inputs written by calibrate (benchmarks.md, section 5.2).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Calibration {
     pub binary: String,
+    pub binary_sha256: String,
+    pub date: String,
+    /// A committed path relative to the benchmarks directory.
+    pub summary: String,
+    pub attempts: u32,
     pub passes: Vec<String>,
-    pub failed_before: String,
+    pub deviations: Vec<String>,
+    /// The failing control's commit, or `none: <why>`.
+    pub control: String,
+    pub failed_before: Vec<String>,
+    pub prompt_sha256: String,
+    pub seed_sha256: String,
+    pub checks_sha256: String,
 }
 
 /// A named prompt, settings or check change supplied by a task's author.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Variant {
+    pub calibration: Option<Calibration>,
     /// Replace the base checks and deciding names; absent keeps historical additions.
     #[serde(default)]
     pub replace_checks: bool,
@@ -343,6 +356,28 @@ pub struct Task {
 }
 
 impl Task {
+    /// Digest effective checks and deciding names in their authored order.
+    pub fn checks_sha256(&self) -> Result<String, String> {
+        #[derive(Serialize)]
+        struct Checks<'a> {
+            outcome: &'a [OutcomeCheck],
+            event: &'a [EventCheck],
+            grade: &'a [Grade],
+            deciding: &'a [String],
+        }
+        let checks =
+            Checks { outcome: &self.outcome, event: &self.event, grade: &self.grade, deciding: &self.deciding };
+        Ok(format!("{:x}", Sha256::digest(toml::to_string(&checks).map_err(|error| error.to_string())?)))
+    }
+
+    /// A block gates only the effective prompt, seed and checks it calibrated.
+    pub fn calibrated(&self) -> Result<bool, String> {
+        let Some(block) = &self.calibration else { return Ok(false) };
+        Ok(block.prompt_sha256 == format!("{:x}", Sha256::digest(self.prompt.as_bytes()))
+            && block.seed_sha256 == self.seed_sha256
+            && block.checks_sha256 == self.checks_sha256()?)
+    }
+
     /// Keep a Smith task's deliberate model override in its frozen identity.
     pub(crate) fn requested_model<'a>(&'a self, agent: crate::Agent, default: &'a str) -> Result<&'a str, String> {
         if agent == crate::Agent::Smith
@@ -360,6 +395,7 @@ impl Task {
     pub fn with_variant(&self, name: &str) -> Result<Self, String> {
         let variant = self.variant.iter().find(|variant| variant.name == name).ok_or("unknown task variant")?;
         let mut task = self.clone();
+        task.calibration.clone_from(&variant.calibration);
         if let Some(prompt) = &variant.prompt {
             task.prompt.clone_from(prompt);
         }

@@ -158,3 +158,124 @@ fn replay_arm(directory: &Path) -> PathBuf {
     std::fs::rename(&build.directory, &arm).expect("rename frozen arm");
     arm
 }
+
+fn recorded_passes() -> Vec<smith_bench::AttemptResult> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let result = smith_bench::read_result(&root.join("tests/recorded/results/attempt.json")).expect("recorded");
+    (1..=10)
+        .map(|index| {
+            let mut result = result.clone();
+            result.identity.attempt = format!("{index:02}");
+            result
+        })
+        .collect()
+}
+
+fn block(task: &smith_bench::Task) -> smith_bench::Calibration {
+    use sha2::{Digest, Sha256};
+    smith_bench::Calibration {
+        binary: "a".repeat(40),
+        binary_sha256: "b".repeat(64),
+        date: "2026-10-14".into(),
+        summary: "summaries/calibration.json".into(),
+        attempts: 10,
+        passes: (1..=10).map(|index| format!("recorded-run/{index:02}")).collect(),
+        deviations: vec![],
+        control: "c".repeat(40),
+        failed_before: vec!["control-run/01".into()],
+        prompt_sha256: format!("{:x}", Sha256::digest(task.prompt.as_bytes())),
+        seed_sha256: task.seed_sha256.clone(),
+        checks_sha256: task.checks_sha256().expect("checks digest"),
+    }
+}
+
+fn calibration_files(name: &str) -> (PathBuf, PathBuf) {
+    let directory = root(name);
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
+    std::fs::create_dir_all(directory.join("benchmarks/agents")).expect("prices directory");
+    std::fs::copy(repository.join("agents/prices.toml"), directory.join("benchmarks/agents/prices.toml"))
+        .expect("recorded prices");
+    let file = directory.join("task.toml");
+    std::fs::copy(repository.join("tasks/probes/smoke-tools/task.toml"), &file).expect("task");
+    (directory, file)
+}
+
+#[test]
+fn a_calibration_block_names_its_summary_and_failing_control() {
+    let (directory, file) = calibration_files("block");
+    let task = smith_bench::read_task(&file).expect("task");
+    let block = block(&task);
+    smith_bench::probe::record_calibration(&directory, &file, "probes/smoke-tools", &block, &recorded_passes(), 7)
+        .expect("record calibration");
+    let task = smith_bench::read_task(&file).expect("persisted task");
+    assert_eq!(task.calibration, Some(block.clone()));
+    assert_eq!(block.failed_before, ["control-run/01"]);
+    assert_eq!(block.control, "c".repeat(40));
+    let summary = smith_bench::read_summary(&directory.join("benchmarks").join(&block.summary)).expect("summary");
+    assert_eq!(summary.groups[0].attempts.len(), 10);
+    assert!(task.calibrated().expect("current inputs"));
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[test]
+fn a_variant_carries_its_own_calibration() {
+    let (directory, file) = calibration_files("variant");
+    let task = smith_bench::read_task(&file).expect("task").with_variant("child").expect("child");
+    let block = block(&task);
+    smith_bench::probe::record_calibration(
+        &directory,
+        &file,
+        "probes/smoke-tools/child",
+        &block,
+        &recorded_passes(),
+        7,
+    )
+    .expect("variant calibration");
+    let task = smith_bench::read_task(&file).expect("persisted task");
+    assert_eq!(task.calibration, None);
+    let variant = task.with_variant("child").expect("child");
+    assert_eq!(variant.calibration, Some(block));
+    assert!(variant.calibrated().expect("current inputs"));
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[test]
+fn ten_passes_within_twelve_attempts_is_calibrated() {
+    let mut results = recorded_passes();
+    let mut deviation = results[0].clone();
+    deviation.outcome.checks.push(smith_bench::CheckVerdict {
+        check: "answer".into(),
+        passed: Measure::Observed { value: false },
+        evidence: vec!["wrong sum".into()],
+    });
+    results.extend([deviation.clone(), deviation]);
+    let counted = smith_bench::probe::count(&results, 10, 12);
+    assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (10, 0, 2, 0));
+    assert!(counted.calibrated());
+}
+
+#[test]
+fn a_model_deviation_is_counted_apart_from_smiths_failures() {
+    let mut results = recorded_passes();
+    results.truncate(2);
+    results[0].outcome.checks.push(smith_bench::CheckVerdict {
+        check: "answer".into(),
+        passed: Measure::Observed { value: false },
+        evidence: vec!["wrong sum".into()],
+    });
+    results[1].outcome.end =
+        smith_bench::End::Failed { reason: smith_bench::FailureReason::Model, detail: "malformed compaction".into() };
+    let counted = smith_bench::probe::count(&results, 10, 12);
+    assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (0, 1, 1, 0));
+    assert!(!counted.calibrated());
+}
+
+#[test]
+fn a_block_whose_prompt_digest_differs_gates_nothing() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut task = smith_bench::read_task(&repository.join("tasks/probes/smoke-tools/task.toml")).expect("task");
+    task.calibration = Some(block(&task));
+    assert!(task.calibrated().expect("unchanged inputs"));
+    task.prompt.push_str("Read another file.\n");
+    assert!(!task.calibrated().expect("changed prompt"));
+}

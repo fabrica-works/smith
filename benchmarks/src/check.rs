@@ -196,20 +196,10 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
             }
         }
     }
-    if let Some(calibration) = &task.calibration {
-        let unique: BTreeSet<&String> = calibration.passes.iter().collect();
-        if calibration.passes.len() != 10
-            || unique.len() != 10
-            || calibration.binary.is_empty()
-            || calibration.failed_before.is_empty()
-            || calibration.passes.iter().any(String::is_empty)
-        {
-            return Err(Refusal::new(
-                file,
-                "calibration",
-                "requires a binary, ten distinct passing run IDs and a failing run ID",
-            ));
-        }
+    calibration(file, "calibration", &task)?;
+    for (index, variant) in task.variant.iter().enumerate() {
+        let selected = task.with_variant(&variant.name).map_err(|reason| Refusal::new(file, "variant", reason))?;
+        calibration(file, &format!("variant[{index}].calibration"), &selected)?;
     }
     for (index, guard) in task.guards.iter().enumerate() {
         check_guard(file, &format!("guards[{index}]"), guard, design)?;
@@ -227,6 +217,37 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         ));
     }
     Ok(task)
+}
+
+fn calibration(file: &Path, key: &str, task: &Task) -> Result<(), Refusal> {
+    let Some(block) = &task.calibration else { return Ok(()) };
+    let ids: BTreeSet<_> = block.passes.iter().chain(&block.deviations).collect();
+    if block.passes.len() < 10
+        || !(10..=12).contains(&block.attempts)
+        || ids.len() != block.attempts as usize
+        || block.passes.len() + block.deviations.len() != ids.len()
+        || ids.iter().any(|id| id.is_empty())
+        || block.binary.is_empty()
+        || block.date.is_empty()
+        || !block.summary.starts_with("summaries/")
+        || block.control.is_empty()
+        || (block.control.starts_with("none: ") && !block.failed_before.is_empty())
+        || (!block.control.starts_with("none: ") && block.failed_before.is_empty())
+        || block.failed_before.iter().any(String::is_empty)
+        || [&block.binary_sha256, &block.prompt_sha256, &block.seed_sha256, &block.checks_sha256]
+            .iter()
+            .any(|digest| !valid_digest(digest))
+    {
+        return Err(Refusal::new(
+            file,
+            key,
+            "requires ten distinct passes within twelve, deviations only, binary and control evidence, and input digests",
+        ));
+    }
+    if !task.calibrated().map_err(|reason| Refusal::new(file, key, reason))? {
+        eprintln!("{}: {key}: input digests differ; gates nothing", file.display());
+    }
+    Ok(())
 }
 
 fn person(file: &Path, key: &str, cues: &[crate::agent::Cue]) -> Result<(), Refusal> {

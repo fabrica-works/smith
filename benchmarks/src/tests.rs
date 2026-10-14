@@ -154,8 +154,17 @@ tokens = 1000
 BENCH_MARKER = "nonce"
 [calibration]
 binary = "digest"
+binary_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+date = "2026-10-14"
+summary = "summaries/test.json"
+attempts = 10
 passes = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
-failed_before = "before"
+deviations = []
+control = "before"
+failed_before = ["before/01"]
+prompt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+seed_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+checks_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 "#
     );
     let task = parse_task(Path::new("task.toml"), &document).expect("complete task parses");
@@ -250,6 +259,7 @@ fn sample_catalogue() -> Vec<crate::CatalogueTask> {
     let mut task = check_task(&manifest, &root.join("../docs/design")).expect("recorded task");
     task.behaviours.push("read".into());
     task.variant.push(crate::Variant {
+        calibration: None,
         replace_checks: false,
         deciding: Vec::new(),
         name: "short".into(),

@@ -10,11 +10,6 @@ use crate::{AttemptResult, End, Judgment, judge_suite};
 
 mod prepare;
 
-/// Select the probe's committed pin without overriding another probe's instructions.
-pub(crate) fn calibration_suite(_probe: &str) -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("suites/probes.toml")
-}
-
 /// One verified arm's actual probe run, supplied by the common dispatcher.
 #[derive(Clone, Debug)]
 pub struct ProbeRun {

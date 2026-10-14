@@ -38,10 +38,14 @@ Exit codes are 0 for passed or calibrated, 1 for failed or not calibrated,
 and 2 for incomplete evidence, setup refusal or a harness error.
 
 Calibration defaults to ten passes within twelve logical attempts. A
-cache probe's triplet is one logical attempt; oversized writes require
-three passes. A control runs first. The changed arm stops when enough
+cache probe's triplet is one logical attempt. A control runs first, up to
+two attempts, stopping at its first failure; two passes write no block.
+The changed arm stops when enough
 passes arrive or the remaining attempts cannot attain them. Successful
-calibration prints a copyable task calibration block. `fix` prints both
+calibration writes the task or variant block and its summary under
+`benchmarks/summaries/`, and never commits. Model deviations count apart
+from smith failures, and changed prompt, seed or check digests gate nothing.
+`fix` prints both
 arms' runs and the finding for a commit body. Suites use their pinned
 agents, budgets and seeded ordering; the seed is printed.
 

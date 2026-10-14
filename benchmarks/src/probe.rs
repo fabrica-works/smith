@@ -93,6 +93,7 @@ pub fn line(result: &AttemptResult) -> Line<'_> {
 pub struct Counted {
     pub passed: u32,
     pub failed: u32,
+    pub deviations: u32,
     pub unjudged: u32,
     pub required: u32,
     pub ceiling: u32,
@@ -103,29 +104,58 @@ impl Counted {
     #[must_use]
     pub const fn calibrated(&self) -> bool {
         self.passed >= self.required
+            && self.failed == 0
+            && self.unjudged == 0
+            && self.passed + self.deviations <= self.ceiling
     }
 
     /// Remaining attempts can still attain the required number of passes.
     #[must_use]
     pub fn reachable(&self) -> bool {
-        self.ceiling.saturating_sub(self.failed).saturating_sub(self.unjudged) >= self.required
-            && self.passed + self.failed + self.unjudged < self.ceiling
+        self.failed == 0
+            && self.unjudged == 0
+            && self.ceiling.saturating_sub(self.deviations) >= self.required
+            && self.passed + self.failed + self.deviations + self.unjudged < self.ceiling
     }
 }
 
 /// Count each logical attempt, including cache triplets, without passing missing evidence.
 #[must_use]
 pub fn count(results: &[AttemptResult], required: u32, ceiling: u32) -> Counted {
-    let mut counted = Counted { passed: 0, failed: 0, unjudged: 0, required, ceiling };
+    let mut counted = Counted { passed: 0, failed: 0, deviations: 0, unjudged: 0, required, ceiling };
     let physical = if results.first().is_some_and(crate::cache::selected) { 3 } else { 1 };
     for attempt in results.chunks(physical) {
         match crate::judge_suite(attempt, attempt.len() != physical) {
             Judgment::Pass => counted.passed += 1,
+            Judgment::Fail | Judgment::Incomplete if attempt.iter().all(model_deviation) => counted.deviations += 1,
             Judgment::Fail => counted.failed += 1,
             Judgment::Incomplete => counted.unjudged += 1,
         }
     }
     counted
+}
+
+/// A completed answer may deviate from the task while smith's contracts hold.
+#[must_use]
+pub fn model_deviation(result: &AttemptResult) -> bool {
+    if result.outcome.end != End::Completed {
+        return false;
+    }
+    let mut deviation = false;
+    for check in &result.outcome.checks {
+        if check.passed == (Measure::Observed { value: true }) {
+            continue;
+        }
+        let model = check.check == "answer"
+            || check.check == "budget-report"
+            || ["file-content:", "file-digest:", "pattern:"].iter().any(|prefix| check.check.starts_with(prefix))
+            || matches!(&check.passed, Measure::Unavailable { reason } if reason.starts_with("not exercised:"));
+        if !model {
+            return false;
+        }
+        deviation = true;
+    }
+    deviation
 }
 
 fn write(guard: &Guard, path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -326,7 +356,7 @@ pub fn plan(repository: &Path, order: &Order, arm: &ArmRef) -> Result<Planned, S
     if !order.probe.starts_with("probes/") || order.attempts == 0 {
         return Err("invalid probe order".into());
     }
-    let value = narrowed(&crate::fix::calibration_suite(&order.probe), order)?;
+    let value = narrowed(&repository.join("benchmarks/suites/probes.toml"), order)?;
     prepare(repository, &order.probe, &value, arm, true, &[])
 }
 
@@ -519,13 +549,10 @@ fn comparison(
     options: &std::collections::BTreeMap<&str, &str>,
     seed: u64,
 ) -> Result<Judgment, String> {
-    let required = options
-        .get("--passes")
-        .map_or(Ok(if order.probe == "probes/large-write/oversized" { 3 } else { 10 }), |passes| {
-            passes.parse::<u32>().map_err(|error| error.to_string())
-        })?;
-    if command == "calibrate" && (required == 0 || required > order.attempts) {
-        return Err("passes must fit the attempt ceiling".into());
+    let required =
+        options.get("--passes").map_or(Ok(10), |passes| passes.parse::<u32>().map_err(|error| error.to_string()))?;
+    if command == "calibrate" && (required != 10 || required > order.attempts) {
+        return Err("calibration requires ten passes within twelve attempts".into());
     }
     let control = options.get(if command == "fix" { "--parent" } else { "--control" });
     if command == "fix" && control.is_none() {
@@ -541,11 +568,13 @@ fn comparison(
             {
                 return Err("control must differ from the changed arm".into());
             }
-            let one = Order { probe: order.probe.clone(), agent: Agent::Smith, attempts: 1, source: Source::Head };
+            let ceiling = if command == "calibrate" { 2 } else { 1 };
+            let one =
+                Order { probe: order.probe.clone(), agent: Agent::Smith, attempts: ceiling, source: Source::Head };
             let planned = plan(repository, &one, &before_arm)?;
-            let before_build = crate::fix::prepared(&planned.suite, &planned.directory, seed, &order.probe, 1)?;
+            let before_build = crate::fix::prepared(&planned.suite, &planned.directory, seed, &order.probe, ceiling)?;
             let batch = if command == "calibrate" {
-                crate::batch::run_calibration(&planned.suite, &planned.directory, seed, &order.probe, 1, 1)?
+                crate::batch::run_calibration(&planned.suite, &planned.directory, seed, &order.probe, 2, 2)?
             } else {
                 crate::batch::run_probe(&planned.suite, &planned.directory, seed, &order.probe, 1)?
             };
@@ -567,7 +596,22 @@ fn comparison(
             crate::fix::Shown::BeforeRefused | crate::fix::Shown::Unjudged => Judgment::Incomplete,
         });
     }
-    let task = crate::read_task(&planned.requests[0].task).map_err(|error| error.to_string())?;
+    if before.as_ref().is_some_and(|(_, _, batch)| judgment(batch) == Judgment::Pass) {
+        println!("control passed both attempts; no calibration written");
+        return Ok(Judgment::Fail);
+    }
+    finish_calibration(repository, order, &planned, before.as_ref(), required, seed)
+}
+
+fn finish_calibration(
+    repository: &Path,
+    order: &Order,
+    planned: &Planned,
+    before: Option<&(crate::arm::Build, Planned, crate::batch::Batch)>,
+    required: u32,
+    seed: u64,
+) -> Result<Judgment, String> {
+    let task = selected_task(&planned.requests[0].task, &order.probe)?;
     let physical = usize::try_from(task.repetitions.unwrap_or(1)).map_err(|error| error.to_string())?;
     let batch = crate::batch::run_calibration(
         &planned.suite,
@@ -583,27 +627,64 @@ fn comparison(
     }
     let counted = count(&results, required, order.attempts);
     println!(
-        "summary {} passed={} failed={} unjudged={} required={} ceiling={}",
-        planned.run, counted.passed, counted.failed, counted.unjudged, counted.required, counted.ceiling
+        "summary {} passed={} failed={} deviations={} unjudged={} required={} ceiling={}",
+        planned.run,
+        counted.passed,
+        counted.failed,
+        counted.deviations,
+        counted.unjudged,
+        counted.required,
+        counted.ceiling
     );
     let control_failed = before.as_ref().is_none_or(|(_, _, batch)| {
         judgment(batch) == Judgment::Fail
             && (!batch.results.iter().any(crate::cache::selected) || crate::cache::control_failure(&batch.results))
     });
     if counted.calibrated() && control_failed && !batch.incomplete {
-        let failed_before = before
-            .as_ref()
-            .map_or_else(|| "none: no runnable control was named".into(), |(_, plan, _)| plan.run.clone());
+        let failed_before = before.as_ref().map_or_else(Vec::new, |(_, _, batch)| {
+            batch
+                .results
+                .iter()
+                .filter(|result| crate::judge(result) == Judgment::Fail)
+                .map(|result| format!("{}/{}", result.identity.run, result.identity.attempt))
+                .collect()
+        });
         let passes: Vec<_> = results
             .chunks(physical)
             .filter(|attempt| crate::judge_suite(attempt, false) == Judgment::Pass)
             .map(|attempt| format!("{}/{}", planned.run, attempt[0].identity.attempt))
             .collect();
-        let binary = match arm {
-            ArmRef::Built(build) => build.arm.commit.clone(),
-            ArmRef::Installed { program } => program.display().to_string(),
+        let deviations = results
+            .chunks(physical)
+            .filter(|attempt| attempt.iter().all(model_deviation))
+            .map(|attempt| format!("{}/{}", planned.run, attempt[0].identity.attempt))
+            .collect();
+        let first = &results[0].identity;
+        let block = crate::Calibration {
+            binary: first.agent_version.clone(),
+            binary_sha256: first.binary_sha256.clone(),
+            date: first.started_utc.clone(),
+            summary: format!("summaries/{}.json", planned.run),
+            attempts: counted.passed + counted.deviations,
+            passes,
+            deviations,
+            control: before.as_ref().map_or_else(
+                || {
+                    if order.probe == "probes/first-request" {
+                        "none: the behaviour predates the oldest runnable face".into()
+                    } else {
+                        "none: no runnable control was named".into()
+                    }
+                },
+                |(build, _, _)| build.arm.commit.clone(),
+            ),
+            failed_before,
+            prompt_sha256: first.prompt_sha256.clone(),
+            seed_sha256: first.seed_sha256.clone(),
+            checks_sha256: task.checks_sha256()?,
         };
-        println!("[calibration]\nbinary = {binary:?}\npasses = {passes:?}\nfailed_before = {failed_before:?}");
+        record_calibration(repository, &planned.requests[0].task, &order.probe, &block, &results, seed)?;
+        println!("{}", toml::to_string(&block).map_err(|error| error.to_string())?);
         Ok(Judgment::Pass)
     } else if counted.unjudged > 0
         || batch.incomplete
@@ -613,6 +694,45 @@ fn comparison(
     } else {
         Ok(Judgment::Fail)
     }
+}
+
+fn selected_task(file: &Path, name: &str) -> Result<crate::Task, String> {
+    let task = crate::read_task(file).map_err(|error| error.to_string())?;
+    name.splitn(3, '/').nth(2).map_or(Ok(task.clone()), |variant| task.with_variant(variant))
+}
+
+/// Persist settled calibration evidence and its task or variant block, without committing.
+pub fn record_calibration(
+    repository: &Path,
+    file: &Path,
+    name: &str,
+    block: &crate::Calibration,
+    results: &[AttemptResult],
+    seed: u64,
+) -> Result<(), String> {
+    let mut document: toml::Value = crate::formats::read_document(file).map_err(|error| error.to_string())?;
+    let target = if let Some(name) = name.splitn(3, '/').nth(2) {
+        document
+            .get_mut("variant")
+            .and_then(toml::Value::as_array_mut)
+            .and_then(|variants| variants.iter_mut().find(|variant| variant["name"].as_str() == Some(name)))
+            .ok_or("missing calibration variant")?
+    } else {
+        &mut document
+    };
+    target
+        .as_table_mut()
+        .ok_or("task table required")?
+        .insert("calibration".into(), toml::Value::try_from(block).map_err(|error| error.to_string())?);
+    let text = toml::to_string(&document).map_err(|error| error.to_string())?;
+    let task = selected_task(file, name)?;
+    let prices =
+        crate::read_prices(&repository.join("benchmarks/agents/prices.toml")).map_err(|error| error.to_string())?;
+    let summary = crate::summarise(results, "calibrate", &task.tier, crate::Design::Single, seed, None, &prices)?;
+    let path = repository.join("benchmarks").join(&block.summary);
+    fs::create_dir_all(path.parent().ok_or("summary directory required")?).map_err(|error| error.to_string())?;
+    crate::write_summary(&path, &summary)?;
+    fs::write(file, text).map_err(|error| error.to_string())
 }
 
 pub(crate) fn judgment(batch: &crate::batch::Batch) -> Judgment {

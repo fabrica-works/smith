@@ -9,5 +9,14 @@ seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
 
 [calibration]
 binary = "digest"
+binary_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+date = "2026-10-14"
+summary = "summaries/test.json"
+attempts = 10
 passes = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
-failed_before = "before"
+deviations = []
+control = "before"
+failed_before = ["before/01"]
+prompt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+seed_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+checks_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
