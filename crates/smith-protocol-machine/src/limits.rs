@@ -73,13 +73,14 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // pathname and cutoff. Decoding a path and retaining an entry overlap
     // only in the current step, like the argument translation buffers.
     let listing = List::<Option<smith_domain::tools::Entry>>::worst_case(limits.entries)?
-        .checked_mul(2)?
         .checked_add(limits.entry_bytes)?
         .checked_add(u64::from(limits.tool_payload))?
         .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?
         .checked_add(512)?
         .checked_add(u64::from(limits.search_line_bytes).checked_mul(3)?)?
         .checked_mul(u64::from(limits.processes))?
+        // Only the listing finishing in this step allocates its terminal's cells.
+        .checked_add(List::<smith_domain::tools::Entry>::worst_case(limits.entries)?)?
         .checked_add(u64::from(limits.search_line_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.tool_payload).checked_mul(4)?)?;
     // The process bound includes every conversation's jobs beside its batch
@@ -350,5 +351,36 @@ mod memory {
         }
         assert_eq!(meter.held(), 393_216);
         assert_eq!(peak, 425_984);
+    }
+
+    #[test]
+    fn saturated_listings_allocate_terminal_cells_only_in_the_finishing_step() {
+        let mut limits = caps();
+        limits.entries = 512;
+        limits.entry_bytes = 13_312;
+        limits.search_line_bytes = 2;
+        let bound = worst_case(&limits).expect("bounded listing terminals");
+        let meter = Meter::new();
+        meter.start();
+        let mut listings: [Option<crate::Listing>; 8] = [const { None }; 8];
+        for slot in &mut listings {
+            let mut listing = crate::Listing::new(512, 13_312, tools::Depth::Whole, 2);
+            for index in 0_u16..512 {
+                listing.push(b'a' + u8::try_from(index / 26).expect("first letter"));
+                listing.push(b'a' + u8::try_from(index % 26).expect("second letter"));
+                listing.push(0);
+            }
+            *slot = Some(listing);
+        }
+        meter.check(meter.end(), bound, &"eight full entry lists");
+        assert_eq!(meter.held(), 106_528);
+        let mut terminals: [Option<tools::Done>; 8] = [const { None }; 8];
+        let mut peak = 0;
+        for (listing, terminal) in listings.iter_mut().zip(&mut terminals) {
+            meter.start();
+            *terminal = Some(listing.take().expect("full listing").finish(Some(kernel::Exit::Code(0)), false));
+            peak = peak.max(meter.check(meter.end(), bound, &"one terminal list"));
+        }
+        assert_eq!(peak, 118_816);
     }
 }

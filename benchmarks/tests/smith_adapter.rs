@@ -427,6 +427,29 @@ fn mount_refusals(context: &smith_bench::agent::Context<'_>, task: &mut smith_be
 }
 
 #[test]
+fn every_probe_tasks_overrides_pass_the_actual_public_startup_derivation() {
+    let fixture = exec::ExecFixture::new("all-probe-settings", 0);
+    for name in ["app", "spec"] {
+        std::fs::create_dir_all(fixture.context().private.workspace.join(name)).expect("probe mount");
+    }
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("tasks/probes");
+    let mut paths = std::fs::read_dir(directory)
+        .expect("probe tasks")
+        .map(|entry| entry.expect("probe directory").path().join("task.toml"))
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    paths.sort();
+    assert!(!paths.is_empty());
+    for path in paths {
+        let task = smith_bench::read_task(&path).expect("authored probe");
+        let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+        let resolved = resolved_product(&context);
+        resolved.local.validate(&resolved.limits).expect("probe product policy");
+    }
+    fixture.clean();
+}
+
+#[test]
 fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
     let fixture = exec::ExecFixture::new("tool-output-settings", 0);
     let task = authored_task("tool-output");
