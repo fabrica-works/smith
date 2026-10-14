@@ -3,6 +3,8 @@
 //!
 //! Contract: domain/run.md, section 13; programming-model.md, sections 4.4, 4.5 and 6.3.
 
+use alloc::boxed::Box;
+
 use skein_lib::{Id, Map, Queue, Set, Slab, Token};
 use smith_domain_run::{self as run, Ask};
 use smith_domain_session as session;
@@ -326,12 +328,17 @@ pub(crate) fn prompt_payload(limits: &Limits) -> Option<u64> {
     let descriptors = u64::from(limits.run.host_tools)
         .checked_add(4)?
         .checked_mul(u64::try_from(size_of::<crate::llm::Served>()).ok()?)?;
+    // Every retained result has its call beside it; a wind-down names finish and deliver only.
+    let names = u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?.checked_add(13)?;
+    let served = u64::try_from(size_of::<crate::llm::Served>()).ok()?;
+    let choices = blocks.checked_div(2)?.checked_mul(names)?.checked_add(served.checked_mul(2)?)?;
     limits
         .session
         .history_bytes
         .checked_add(blocks.checked_mul(extra_block)?)?
         .checked_add(messages)?
         .checked_add(descriptors)?
+        .checked_add(choices)?
         .checked_add(limits.run.run_bytes)
 }
 

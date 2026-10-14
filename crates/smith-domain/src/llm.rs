@@ -18,8 +18,8 @@ use smith_domain_run as run;
 use smith_domain_tools as tools;
 
 pub use smith_domain_session::llm::{
-    Affinity, Cap, CompletionName, Endpoint, Evidence, Failure, Limit, NotRun, Phase, Problem, Purpose, Replay, Role,
-    Stop, Usage,
+    Affinity, Cap, CompletionName, Endpoint, Evidence, Failure, Limit, Phase, Problem, Purpose, Replay, Role, Stop,
+    Usage,
 };
 
 /// One call to an LLM: everything it needs to produce the next assistant
@@ -71,6 +71,18 @@ pub enum ToolChoice {
     None,
     /// Only these resolved opener descriptors.
     Only(Box<[Served]>),
+}
+
+/// Why a session's concrete call ran nothing, with its choice resolved by the root.
+#[derive(PartialEq, Eq, Hash, Debug)]
+pub enum NotRun {
+    /// The provider stopped without asking for execution.
+    Stopped,
+    /// The call was outside the choice retained when the session answered it.
+    OutsideChoice {
+        /// None forbids calls; Some holds the served names allowed when this result was answered.
+        choice: Option<Box<[Box<[u8]>]>>,
+    },
 }
 
 /// A tool the run serves, which a prompt offers the LLM, and which the

@@ -2539,7 +2539,11 @@ fn a_call_outside_the_choice_is_not_run_and_needs_no_result_credit() {
         prompt.messages.last().unwrap().content.as_ref(),
         &[Block::ToolResult {
             id: bytes(b"outside"),
-            result: Returned::NotRun { why: crate::llm::NotRun::OutsideChoice },
+            result: Returned::NotRun {
+                why: crate::llm::NotRun::OutsideChoice {
+                    choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket]))
+                }
+            },
         }]
     );
     assert_eq!(prompt.choice, crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])));
@@ -2671,7 +2675,10 @@ fn a_childs_last_turn_has_one_note_no_effects_and_yields_its_answer_for_budget()
         let Block::ToolResult { result, .. } = &record.messages.last().unwrap().content[0] else {
             panic!("actual tool result is retained");
         };
-        assert_eq!(result, &Returned::NotRun { why: crate::llm::NotRun::OutsideChoice });
+        assert_eq!(
+            result,
+            &Returned::NotRun { why: crate::llm::NotRun::OutsideChoice { choice: crate::llm::ToolChoice::None } }
+        );
         let ended = harness.step(Event::Continue { session: owner, content: bytes(b"Again.") });
         let Some(Request::Ended { end: End::Budget { spent: Dimension::Turns }, .. }) = ended else {
             panic!("the final answer cannot be continued: {ended:?}");

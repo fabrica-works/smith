@@ -263,22 +263,12 @@ impl Peer {
             let tool = self.descriptor(descriptor.ticket);
             served.push(tool).expect("room for every descriptor");
         }
-        let choice = match choice {
-            sllm::ToolChoice::Auto => llm::ToolChoice::Auto,
-            sllm::ToolChoice::None => llm::ToolChoice::None,
-            sllm::ToolChoice::Only(tickets) => {
-                let mut selected = List::with_capacity(u32::try_from(tickets.len()).expect("bounded choice"));
-                for ticket in tickets {
-                    selected.push(self.descriptor(ticket)).expect("one choice cell per ticket");
-                }
-                llm::ToolChoice::Only(selected.into_boxed())
-            }
-        };
+        let choice = self.choice(choice);
         let mut resolved = List::with_capacity(u32::try_from(messages.len()).expect("a transcript fits its limit"));
         for sllm::Message { role, content } in messages {
             let mut blocks = List::with_capacity(u32::try_from(content.len()).expect("a message fits in memory"));
             for block in content {
-                blocks.push(Self::block(block)).expect("room for every block");
+                blocks.push(self.block(block)).expect("room for every block");
             }
             resolved.push(Message { role, content: blocks.into_boxed() }).expect("room for every message");
         }
@@ -326,7 +316,21 @@ impl Peer {
         Some(bytes)
     }
 
-    fn block(block: sllm::Block) -> Block {
+    fn choice(&self, choice: sllm::ToolChoice) -> llm::ToolChoice {
+        match choice {
+            sllm::ToolChoice::Auto => llm::ToolChoice::Auto,
+            sllm::ToolChoice::None => llm::ToolChoice::None,
+            sllm::ToolChoice::Only(tickets) => {
+                let mut selected = List::with_capacity(u32::try_from(tickets.len()).expect("bounded choice"));
+                for ticket in tickets {
+                    selected.push(self.descriptor(ticket)).expect("one choice cell per ticket");
+                }
+                llm::ToolChoice::Only(selected.into_boxed())
+            }
+        }
+    }
+
+    fn block(&self, block: sllm::Block) -> Block {
         match block {
             sllm::Block::Text { text, replay } => Block::Text { text, replay },
             sllm::Block::Refusal { text, replay } => Block::Refusal { text, replay },
@@ -336,11 +340,39 @@ impl Peer {
                 let result = match result {
                     sllm::Returned::Owned { outcome } => Returned::Owned { outcome },
                     sllm::Returned::Invalid { problem } => Returned::Invalid { problem },
-                    sllm::Returned::NotRun { why } => Returned::NotRun { why },
+                    sllm::Returned::NotRun { why } => Returned::NotRun {
+                        why: match why {
+                            sllm::NotRun::Stopped => llm::NotRun::Stopped,
+                            sllm::NotRun::OutsideChoice { choice } => {
+                                llm::NotRun::OutsideChoice { choice: self.retained_choice(choice) }
+                            }
+                        },
+                    },
                     sllm::Returned::Text { text, error, replay } => Returned::Text { text, error, replay },
                     sllm::Returned::Withdrawn => Returned::Withdrawn,
                 };
                 Block::ToolResult { id, result }
+            }
+        }
+    }
+
+    fn retained_choice(&self, choice: sllm::ToolChoice) -> Option<Box<[Box<[u8]>]>> {
+        match choice {
+            sllm::ToolChoice::Auto => unreachable!("automatic choices reject no call"),
+            sllm::ToolChoice::None => None,
+            sllm::ToolChoice::Only(tickets) => {
+                let mut names = List::with_capacity(u32::try_from(tickets.len()).expect("bounded choice"));
+                for ticket in tickets {
+                    let name = match self.descriptor(ticket) {
+                        Served::Wait => Box::from(b"wait".as_slice()),
+                        Served::Deliver => Box::from(b"deliver".as_slice()),
+                        Served::Finish => Box::from(b"finish".as_slice()),
+                        Served::SubAgent => Box::from(b"sub_agent".as_slice()),
+                        Served::Host(tool) => tool.name,
+                    };
+                    names.push(name).expect("one name per retained ticket");
+                }
+                Some(names.into_boxed())
             }
         }
     }

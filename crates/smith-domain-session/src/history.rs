@@ -60,13 +60,15 @@ fn pending_blocks(limits: &Limits, summary: bool) -> Option<u32> {
 
 fn wanted_bytes(conversation: &Conversation, limits: &Limits, summary: bool) -> Option<u64> {
     let future = if summary { minimum(limits).checked_mul(u64::from(limits.completion_blocks))? } else { 0 };
+    let choices = super::choice_bytes(&conversation.choice).checked_mul(u64::from(limits.completion_blocks))?;
     let instruction = if summary { summary_cost()? } else { 0 };
+    // A call retains its rejecting choice or runs with result credit; those payloads never coexist.
     conversation
         .bytes
         .checked_add(conversation.reserved)?
         .checked_add(super::provider_reserve(limits)?)?
         .checked_add(instruction)?
-        .checked_add(future)
+        .checked_add(future.max(choices))
 }
 
 pub(super) fn start(conversation: &mut Conversation, limits: &Limits, bound: u64) -> Option<End> {

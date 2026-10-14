@@ -2102,7 +2102,7 @@ fn answer_unchosen(conversation: &Conversation, block: &Block, index: u32, slots
     }
     let result = Block::ToolResult {
         id: call_id(conversation, index),
-        result: Returned::NotRun { why: crate::llm::NotRun::OutsideChoice },
+        result: Returned::NotRun { why: crate::llm::NotRun::OutsideChoice { choice: conversation.choice.clone() } },
     };
     slots.push(Slot::Done { result }).expect("one slot per call");
     true
@@ -2201,7 +2201,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, retry: u32, limits: &L
         tools: conversation.tools,
         namespace: conversation.namespace.clone(),
         delegated: conversation.delegated.clone(),
-        choice: conversation.choice.clone(),
+        choice: if conversation.compaction.asking() { ToolChoice::None } else { conversation.choice.clone() },
         messages: conversation.transcript.to_boxed(),
         max_tokens,
     };
@@ -2405,6 +2405,11 @@ fn blocks_fit(conversation: &Conversation, added: u32, limits: &Limits) -> bool 
     held <= limits.history_blocks
 }
 
+fn receiving_reserve(conversation: &Conversation, limits: &Limits) -> Option<u64> {
+    let choices = choice_bytes(&conversation.choice).checked_mul(u64::from(limits.completion_blocks))?;
+    provider_reserve(limits)?.checked_add(choices)
+}
+
 fn provider_room(conversation: &Conversation, limits: &Limits) -> bool {
     if conversation.compaction.asking() {
         return provider_reserve(limits).is_some();
@@ -2415,7 +2420,7 @@ fn provider_room(conversation: &Conversation, limits: &Limits) -> bool {
     if !blocks_fit(conversation, pending, limits) {
         return false;
     }
-    let Some(reserve) = provider_reserve(limits) else {
+    let Some(reserve) = receiving_reserve(conversation, limits) else {
         return false;
     };
     if conversation.transcript.room() < 2 {
@@ -2436,8 +2441,11 @@ fn reserve_provider(conversation: &mut Conversation, limits: &Limits) -> bool {
     }
     // A summary replaces the old window; its input is covered by staging,
     // and no completion or result skeleton is appended to that history.
-    let credit =
-        if conversation.compaction.asking() { 0 } else { provider_reserve(limits).expect("checked receiving bounds") };
+    let credit = if conversation.compaction.asking() {
+        0
+    } else {
+        receiving_reserve(conversation, limits).expect("checked receiving bounds")
+    };
     assert!(conversation.provider_credit.is_none(), "one provider right at a time");
     conversation.reserved = conversation.reserved.checked_add(credit).expect("checked receiving room");
     conversation.provider_credit = Some(credit);
@@ -2451,7 +2459,7 @@ fn release_provider(conversation: &mut Conversation) {
 }
 
 fn receive_completion(conversation: &mut Conversation, content: &[Block], calls: u32, limits: &Limits) -> bool {
-    let cost = if calls == 0 { content_cost(content) } else { held(content, calls) };
+    let cost = if calls == 0 { content_cost(content) } else { held(content, calls, &conversation.choice) };
     let credit = conversation.provider_credit.take().expect("actual completion owns receiving credit");
     conversation.reserved = conversation.reserved.checked_sub(credit).expect("provider credit was reserved");
     let Some(content_bytes) = content_cost(content) else {
@@ -2505,10 +2513,13 @@ fn spec_cost(model: &[u8], system: &[u8], delegated: &[Descriptor], content: &[B
 /// before effects. The terminal transfers its credit into held bytes.
 /// Slot containers and their transient coexistence with assembled Block arrays
 /// are independently priced by `worst_case`; no Slot/Block size inequality is assumed.
-fn held(content: &[Block], calls: u32) -> Option<u64> {
+fn held(content: &[Block], calls: u32, choice: &ToolChoice) -> Option<u64> {
     let slots = u64::try_from(size_of::<Block>()).ok()?.checked_mul(u64::from(calls))?;
     let mut cost = content_cost(content)?.checked_add(slots)?;
     for block in content {
+        if !chosen(choice, block) {
+            cost = cost.checked_add(choice_bytes(choice))?;
+        }
         match block {
             Block::ToolCall { id, name: _, input: _, call: Decoded::Invalid { problem, .. }, .. } => {
                 cost = cost.checked_add(len(id)?)?.checked_add(problem_cost(problem)?)?;
@@ -2579,7 +2590,11 @@ fn returned_cost(result: &Returned) -> Option<u64> {
     match result {
         Returned::Owned { outcome } => outcome_cost(outcome),
         Returned::Invalid { problem } => problem_cost(problem),
-        Returned::NotRun { .. } | Returned::Withdrawn => Some(0),
+        Returned::NotRun { why } => match why {
+            crate::llm::NotRun::Stopped => Some(0),
+            crate::llm::NotRun::OutsideChoice { choice } => Some(choice_bytes(choice)),
+        },
+        Returned::Withdrawn => Some(0),
         Returned::Text { text, replay, .. } => len(text)?.checked_add(replay_cost(replay.as_ref())?),
     }
 }

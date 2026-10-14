@@ -47,6 +47,73 @@ fn is_summary(world: &World) -> bool {
 }
 
 #[test]
+fn a_compaction_is_asked_with_none_and_the_windows_tools() {
+    let mut world = World::new(4840, 256);
+    let mut start = opening(None, world.env.limits.spend);
+    start.spec.window = 2_000;
+    start.spec.output = 512;
+    start.spec.authority.grants.inspect = true;
+    world.open(start);
+    world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
+    continue_with(&mut world, b"go on");
+    let before = &world.prompts[0];
+    let summary = world.prompts.last().expect("compaction");
+    assert!(is_summary(&world));
+    assert_eq!(summary.choice, llm::ToolChoice::None);
+    assert_eq!(summary.system, before.system);
+    assert_eq!(summary.tools, before.tools);
+    assert_eq!(summary.namespace, before.namespace);
+    assert_eq!(summary.delegated, before.delegated);
+    assert_eq!(summary.messages[0], before.messages[0]);
+    world.close();
+}
+
+#[test]
+fn a_conversation_narrowed_to_only_asks_only_again_after_its_compaction() {
+    let mut world = started(4841);
+    world.step(session::Event::Narrowed {
+        owner: world.completing.expect("first request"),
+        note: b"Finish now.".as_slice().into(),
+        choice: llm::ToolChoice::Only(Box::new([Token::new(19)])),
+    });
+    world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
+    continue_with(&mut world, b"go on");
+    assert!(is_summary(&world));
+    assert_eq!(world.prompts.last().expect("compaction").choice, llm::ToolChoice::None);
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert_eq!(world.prompts.last().expect("new window").choice, llm::ToolChoice::Only(Box::new([Token::new(19)])));
+    world.close();
+}
+
+#[test]
+fn a_childs_final_turn_falling_due_during_a_compaction_waits_for_it() {
+    let mut world = World::new(4842, 256);
+    let mut start = opening(None, world.env.limits.spend);
+    start.spec.window = 2_000;
+    start.spec.output = 512;
+    start.spec.budget.time = skein_lib::Duration::from_secs(4);
+    start.spec.final_turn = Some(session::FinalTurn {
+        note: b"Answer now.".as_slice().into(),
+        allowance: skein_lib::Duration::from_secs(1),
+    });
+    world.open(start);
+    world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
+    continue_with(&mut world, b"go on");
+    world.env.now = skein_lib::Time::ZERO.saturating_add(skein_lib::Duration::from_secs(3));
+    assert_eq!(world.prompts.len(), 2);
+    let compaction = world.prompts.last().expect("compaction");
+    assert_eq!(compaction.choice, llm::ToolChoice::None);
+    assert!(!compaction.messages.iter().any(|message| message.content == said(b"Answer now.")));
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    let final_prompt = world.prompts.last().expect("final answer");
+    assert_eq!(final_prompt.choice, llm::ToolChoice::None);
+    assert_eq!(final_prompt.messages.last().expect("final note").content, said(b"Answer now."));
+    world.complete(said(b"done"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert_eq!(world.yielded.last().expect("final yield").0, session::Yield::Budget);
+    world.close();
+}
+
+#[test]
 fn a_continue_past_the_threshold_compacts_and_holds_its_message_back() {
     let mut world = asked(4701);
     assert!(is_summary(&world));
@@ -381,6 +448,7 @@ fn a_final_note_due_during_a_compaction_retry_waits_for_the_new_window() {
     world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
     continue_with(&mut world, b"go on");
     assert!(is_summary(&world));
+    assert_eq!(world.prompts.last().expect("compaction").choice, llm::ToolChoice::None);
     world.env.now = skein_lib::Time::ZERO.saturating_add(skein_lib::Duration::from_secs(2));
     world.step(session::Event::Failed {
         owner: world.completing.expect("compaction"),
@@ -392,6 +460,7 @@ fn a_final_note_due_during_a_compaction_retry_waits_for_the_new_window() {
     world.fire();
     assert!(is_summary(&world));
     let request = world.prompts.last().expect("retry");
+    assert_eq!(request.choice, llm::ToolChoice::None);
     assert!(!request.messages.iter().any(|message| message.content == said(b"Answer now.")));
     world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
     let request = world.prompts.last().expect("final answer request");

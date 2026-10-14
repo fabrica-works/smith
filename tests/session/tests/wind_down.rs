@@ -45,7 +45,9 @@ fn a_wind_down_offering_only_some_tools_answers_a_call_outside_them_as_not_run()
         result,
         &llm::Block::ToolResult {
             id: b"outside".as_slice().into(),
-            result: llm::Returned::NotRun { why: llm::NotRun::OutsideChoice }
+            result: llm::Returned::NotRun {
+                why: llm::NotRun::OutsideChoice { choice: llm::ToolChoice::Only(Box::new([Token::new(19)])) }
+            }
         }
     );
     assert_eq!(world.prompts.last().expect("next request").delegated, definitions);

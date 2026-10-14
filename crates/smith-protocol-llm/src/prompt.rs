@@ -116,7 +116,7 @@ fn translate(
         let maximum = if Some(index) == owed_message { result_maximum } else { limits.rendered_result };
         let mut content = List::with_capacity(u32::try_from(message.content.len()).or(Err(Error::Limit))?);
         for block in message.content {
-            let block = translate_block(block, &namespace, &choice, limits, maximum)?;
+            let block = translate_block(block, &namespace, limits, maximum)?;
             content.push(block).expect("room for each admitted source block");
         }
         let role = match message.role {
@@ -178,18 +178,17 @@ fn served_name(descriptor: &llm::Served) -> &[u8] {
     }
 }
 
-fn outside_choice(choice: &llm::ToolChoice, maximum: u32) -> Result<Box<[u8]>, Error> {
+fn outside_choice(choice: Option<&[Box<[u8]>]>, maximum: u32) -> Result<Box<[u8]>, Error> {
     let prefix = b"not run: allowed calls now: ";
     let mut length = prefix.len();
     match choice {
-        llm::ToolChoice::Only(selected) => {
-            for descriptor in selected {
-                length = length.checked_add(served_name(descriptor).len()).ok_or(Error::Limit)?;
+        Some(names) => {
+            for name in names {
+                length = length.checked_add(name.len()).ok_or(Error::Limit)?;
                 length = length.checked_add(1).ok_or(Error::Limit)?;
             }
         }
-        llm::ToolChoice::None => length = length.checked_add(4).ok_or(Error::Limit)?,
-        llm::ToolChoice::Auto => return Err(Error::Invalid),
+        None => length = length.checked_add(4).ok_or(Error::Limit)?,
     }
     if u64::try_from(length).or(Err(Error::Limit))? > u64::from(maximum) {
         return Err(Error::Limit);
@@ -197,14 +196,13 @@ fn outside_choice(choice: &llm::ToolChoice, maximum: u32) -> Result<Box<[u8]>, E
     let mut writer = skein_lib::Writer::new(length);
     writer.put(prefix).or(Err(Error::Limit))?;
     match choice {
-        llm::ToolChoice::Only(selected) => {
-            for descriptor in selected {
-                writer.put(served_name(descriptor)).or(Err(Error::Limit))?;
+        Some(names) => {
+            for name in names {
+                writer.put(name).or(Err(Error::Limit))?;
                 writer.put(b" ").or(Err(Error::Limit))?;
             }
         }
-        llm::ToolChoice::None => writer.put(b"none").or(Err(Error::Limit))?,
-        llm::ToolChoice::Auto => unreachable!("validated above"),
+        None => writer.put(b"none").or(Err(Error::Limit))?,
     }
     Ok(writer.finish())
 }
@@ -412,7 +410,6 @@ fn history_admitted(messages: &[llm::Message], limits: &Limits) -> Result<(), Er
 fn translate_block(
     block: llm::Block,
     namespace: &tools::Namespace,
-    choice: &llm::ToolChoice,
     limits: &Limits,
     maximum: u32,
 ) -> Result<shared::Block, Error> {
@@ -433,7 +430,7 @@ fn translate_block(
             Ok(shared::Block::ToolCall { id, name, arguments: input, replay: replay_value(replay, limits)? })
         }
         llm::Block::ToolResult { id, result } => {
-            let (text, error) = result_text(result, namespace, choice, limits, maximum)?;
+            let (text, error) = result_text(result, namespace, limits, maximum)?;
             Ok(shared::Block::ToolResult { id, text, is_error: error })
         }
     }
@@ -442,7 +439,6 @@ fn translate_block(
 fn result_text(
     result: llm::Returned,
     namespace: &tools::Namespace,
-    choice: &llm::ToolChoice,
     limits: &Limits,
     maximum: u32,
 ) -> Result<(Box<[u8]>, bool), Error> {
@@ -454,7 +450,7 @@ fn result_text(
         llm::Returned::Withdrawn => Ok((bytes::copy_of(b"withdrawn"), true)),
         llm::Returned::NotRun { why } => match why {
             llm::NotRun::Stopped => Ok((bytes::copy_of(b"not run"), true)),
-            llm::NotRun::OutsideChoice => Ok((outside_choice(choice, maximum)?, true)),
+            llm::NotRun::OutsideChoice { choice } => Ok((outside_choice(choice.as_deref(), maximum)?, true)),
         },
         llm::Returned::Invalid { problem } => Ok((crate::failure::problem(problem, maximum)?, true)),
         llm::Returned::Served { returned, error } => {

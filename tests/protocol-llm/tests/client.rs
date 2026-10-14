@@ -600,7 +600,9 @@ fn only_uses_automatic_wire_choice_and_keeps_all_definitions_and_not_run_feedbac
                 role: llm::Role::User,
                 content: Box::new([llm::Block::ToolResult {
                     id: b"outside-call".as_slice().into(),
-                    result: llm::Returned::NotRun { why: llm::NotRun::OutsideChoice },
+                    result: llm::Returned::NotRun {
+                        why: llm::NotRun::OutsideChoice { choice: Some(Box::new([b"opaque_host".as_slice().into()])) },
+                    },
                 }]),
             },
         ]);
@@ -629,5 +631,34 @@ fn only_uses_automatic_wire_choice_and_keeps_all_definitions_and_not_run_feedbac
             }),
             "actual replay tells the disallowed call which unchanged descriptor is permitted"
         );
+    }
+}
+
+fn native_choice(wire: &Wire) -> Option<serde_json::Value> {
+    let body = wire.peer.requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("HTTP body");
+    let body: serde_json::Value = serde_json::from_slice(&wire.peer.requests[body + 4..]).expect("JSON");
+    body.get("tool_choice").cloned()
+}
+
+#[test]
+fn a_compaction_asks_none_in_each_dialect_and_the_next_window_its_choice() {
+    let choices =
+        [(serde_json::json!("none"), Some(serde_json::json!("auto"))), (serde_json::json!({"type":"none"}), None)];
+    for (configuration, (none, only)) in wire::configurations().iter().zip(choices) {
+        let mut summary = prompt();
+        summary.purpose = llm::Purpose::Compaction { room: 4096 };
+        summary.choice = llm::ToolChoice::None;
+        summary.tools.inspect = true;
+        let (compaction, _) = run_wire(summary, configuration, 811);
+        let mut next = prompt();
+        next.tools.inspect = true;
+        next.choice = llm::ToolChoice::Only(Box::new([next.served[0].clone()]));
+        let (continued, _) = run_wire(next, configuration, 812);
+        assert_eq!(native_choice(&compaction), Some(none));
+        assert_eq!(native_choice(&continued), only);
+        let old = smith_protocol_llm_world::referee::NativeRequest::from_http(&compaction.peer.requests);
+        let new = smith_protocol_llm_world::referee::NativeRequest::from_http(&continued.peer.requests);
+        assert_eq!(old.tools, new.tools);
+        assert!(old.tools.is_some());
     }
 }

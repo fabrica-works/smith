@@ -48,7 +48,7 @@ fn a_childs_final_turn_is_answered_with_stop_budget() {
             result,
             &llm::Block::ToolResult {
                 id: b"outside".as_slice().into(),
-                result: llm::Returned::NotRun { why: llm::NotRun::OutsideChoice },
+                result: llm::Returned::NotRun { why: llm::NotRun::OutsideChoice { choice: llm::ToolChoice::None } },
             }
         );
         world.close();

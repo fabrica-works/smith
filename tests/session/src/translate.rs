@@ -290,7 +290,7 @@ fn render_with_namespace(result: &agent::Returned, namespace: &Namespace) -> (Bo
         }
         agent::Returned::Invalid { problem } => (format!("malformed call: {problem:?}").into_bytes().into(), true),
         agent::Returned::Withdrawn => (b"withdrawn".as_slice().into(), true),
-        agent::Returned::NotRun { why: agent::NotRun::OutsideChoice } => {
+        agent::Returned::NotRun { why: agent::NotRun::OutsideChoice { .. } } => {
             (b"not run: outside the narrowed choice".as_slice().into(), true)
         }
         agent::Returned::NotRun { why: agent::NotRun::Stopped } => {

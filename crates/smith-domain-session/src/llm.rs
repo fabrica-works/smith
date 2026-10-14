@@ -150,12 +150,12 @@ pub enum Returned {
 }
 
 /// Why a concrete tool call ran nothing (domain/session.md, section 5).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum NotRun {
     /// The provider stopped without asking for execution.
     Stopped,
     /// The call was outside the completion's retained choice.
-    OutsideChoice,
+    OutsideChoice { choice: ToolChoice },
 }
 
 /// The offered descriptors this completion may call; definitions stay unchanged.

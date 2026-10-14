@@ -342,7 +342,10 @@ fn owed_results_prompt(purpose: llm::Purpose) -> llm::Prompt {
     llm::Prompt {
         effort: None,
         purpose,
-        choice: llm::ToolChoice::Auto,
+        choice: match purpose {
+            llm::Purpose::Ordinary => llm::ToolChoice::Only(Box::new([llm::Served::Finish])),
+            llm::Purpose::Compaction { .. } => llm::ToolChoice::None,
+        },
         namespace: tools::Namespace::One,
         affinity: llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
@@ -350,9 +353,20 @@ fn owed_results_prompt(purpose: llm::Purpose) -> llm::Prompt {
         model: b"model".as_slice().into(),
         system: b"the same system".as_slice().into(),
         tools: tools::Grants { inspect: false, modify: false, shell: false },
-        served: Box::new([]),
+        served: Box::new([llm::Served::Finish]),
         messages: Box::new([
-            llm::Message { role: llm::Role::User, content: Box::new([earlier]) },
+            llm::Message {
+                role: llm::Role::User,
+                content: Box::new([
+                    earlier,
+                    llm::Block::ToolResult {
+                        id: b"outside-choice".as_slice().into(),
+                        result: llm::Returned::NotRun {
+                            why: llm::NotRun::OutsideChoice { choice: Some(Box::new([b"finish".as_slice().into()])) },
+                        },
+                    },
+                ]),
+            },
             llm::Message {
                 role: llm::Role::Assistant,
                 content: Box::new([llm::Block::Text { text: b"prior answer".as_slice().into(), replay: None }]),
@@ -367,16 +381,36 @@ fn owed_results_prompt(purpose: llm::Purpose) -> llm::Prompt {
     }
 }
 
-#[test]
-fn a_compactions_owed_results_are_cut_and_its_history_is_unchanged() {
-    let bounds = limits();
-    let ordinary = adapter::prompt(owed_results_prompt(llm::Purpose::Ordinary), &[], &bounds).expect("admitted prompt");
-    let summary = adapter::prompt(owed_results_prompt(llm::Purpose::Compaction { room: 160 }), &[], &bounds)
-        .expect("admitted prompt");
+fn finish_tool() -> adapter::ToolSchema {
+    adapter::ToolSchema {
+        kind: adapter::ToolKind::Finish,
+        name: b"finish".as_slice().into(),
+        description: b"Finish the work.".as_slice().into(),
+        schema: b"{}".as_slice().into(),
+    }
+}
+
+fn retained_history(ordinary: &skein_llm::Prompt, summary: &skein_llm::Prompt) {
     assert_eq!(summary.instructions, ordinary.instructions);
     assert_eq!(summary.tools, ordinary.tools);
     assert_eq!(summary.messages[..2], ordinary.messages[..2]);
+    assert_eq!(summary.choice, skein_llm::ToolChoice::None);
+    let skein_llm::Block::ToolResult { text, .. } = &summary.messages[0].content[1] else {
+        panic!("retained disallowed result");
+    };
+    assert_eq!(text.as_ref(), b"not run: allowed calls now: finish ");
     assert_eq!(summary.messages[3], ordinary.messages[3]);
+}
+
+#[test]
+fn a_compactions_owed_results_are_cut_and_its_history_is_unchanged() {
+    let bounds = limits();
+    let finish = [finish_tool()];
+    let ordinary =
+        adapter::prompt(owed_results_prompt(llm::Purpose::Ordinary), &finish, &bounds).expect("admitted prompt");
+    let summary = adapter::prompt(owed_results_prompt(llm::Purpose::Compaction { room: 160 }), &finish, &bounds)
+        .expect("admitted prompt");
+    retained_history(&ordinary, &summary);
     let mut kept = 0;
     for (actual, whole) in summary.messages[2].content.iter().zip(ordinary.messages[2].content.iter()) {
         let skein_llm::Block::ToolResult { text, is_error, .. } = actual else { panic!("owed result") };

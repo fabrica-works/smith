@@ -104,7 +104,7 @@ pub(super) fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
     let mut bytes = fixed
         .checked_add(u64::try_from(size_of::<crate::llm::Prompt>()).ok()?)?
         .checked_add(conversation.namespace.owned_bytes()?)?
-        .checked_add(super::choice_bytes(&conversation.choice))?;
+        .checked_add(if conversation.compaction.asking() { 0 } else { super::choice_bytes(&conversation.choice) })?;
     let cell = u64::try_from(size_of::<Message>()).ok()?;
     for message in &conversation.transcript {
         bytes = bytes.checked_add(cell)?.checked_add(content_cost(&message.content)?)?;
