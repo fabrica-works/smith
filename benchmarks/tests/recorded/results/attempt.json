@@ -231,6 +231,7 @@
     }
   },
   "outcome": {
+    "deciding": ["file-content"],
     "end": {
       "end": "completed"
     },

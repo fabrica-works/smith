@@ -1,3 +1,4 @@
+deciding = ["tree-ended"]
 id = "repository-seed"
 version = 1
 kind = "repository"

@@ -1,3 +1,4 @@
+deciding = ["tree-ended"]
 id = "codex-isolation"
 version = 1
 kind = "probe"

@@ -5,6 +5,70 @@ use std::path::Path;
 use smith_bench::grade::{Ended, Snapshot};
 use smith_bench::{End, Exit, Measure, OutcomeCheck};
 
+fn graded_attempt() -> smith_bench::AttemptResult {
+    let recorded = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
+    let mut result = smith_bench::read_result(&recorded).expect("recorded attempt");
+    result.identity.task = "fixtures/01-backoff".into();
+    result.outcome.end = End::Completed;
+    result.outcome.deciding = ["end", "grade", "protected-unchanged", "tree-ended"].map(str::to_owned).into();
+    result.outcome.grade = Some(Measure::Observed { value: true });
+    result.outcome.checks = result
+        .outcome
+        .deciding
+        .iter()
+        .map(|name| smith_bench::CheckVerdict {
+            check: name.clone(),
+            passed: Measure::Observed { value: true },
+            evidence: Vec::new(),
+        })
+        .collect();
+    result
+}
+
+#[test]
+fn an_unavailable_passive_check_outside_deciding_decides_nothing() {
+    let mut result = graded_attempt();
+    for passed in [Measure::unavailable("calls are not observed"), Measure::Observed { value: false }] {
+        result.outcome.checks.push(smith_bench::CheckVerdict {
+            check: "nothing-outside".into(),
+            passed: passed.clone(),
+            evidence: vec!["scope listing".into()],
+        });
+        assert_eq!(smith_bench::judge(&result), smith_bench::Judgment::Pass);
+        assert_eq!(result.outcome.checks.last().expect("advisory evidence").passed, passed);
+    }
+}
+
+#[test]
+fn a_graded_attempt_passes_on_end_grade_protected_and_tree() {
+    let mut result = graded_attempt();
+    assert_eq!(smith_bench::judge(&result), smith_bench::Judgment::Pass);
+    for index in 0..result.outcome.checks.len() {
+        result.outcome.checks[index].passed = Measure::Observed { value: false };
+        assert_eq!(smith_bench::judge(&result), smith_bench::Judgment::Fail, "{}", result.outcome.checks[index].check);
+        result.outcome.checks[index].passed = Measure::Observed { value: true };
+    }
+}
+
+#[test]
+fn a_task_without_deciding_checks_is_refused() {
+    let root = std::env::temp_dir().join(format!("smith-bench-no-deciding-{}", std::process::id()));
+    std::fs::create_dir(&root).expect("fixture root");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/tasks/valid");
+    std::fs::create_dir(root.join("seed")).expect("seed");
+    std::fs::copy(fixture.join("seed/README.md"), root.join("seed/README.md")).expect("seed bytes");
+    let manifest = std::fs::read_to_string(fixture.join("task.toml"))
+        .expect("manifest")
+        .replace("deciding = [\"tree-ended\"]\n", "");
+    std::fs::write(root.join("task.toml"), manifest).expect("empty deciding");
+    let error =
+        smith_bench::check_task(&root.join("task.toml"), &Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/design"))
+            .expect_err("every task names deciding checks");
+    assert_eq!(error.key, "deciding");
+    assert_eq!(error.reason, "task requires deciding checks");
+    std::fs::remove_dir_all(root).expect("remove fixture");
+}
+
 fn checks(ended: &Ended, checks: &[OutcomeCheck]) -> Vec<smith_bench::CheckVerdict> {
     smith_bench::grade::checks(Path::new("."), &Snapshot::new(), &Snapshot::new(), checks, ended)
 }

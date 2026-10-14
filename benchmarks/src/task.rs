@@ -312,7 +312,7 @@ pub struct Variant {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
-    /// Result check names that decide this probe; empty retains historical all-check judgment.
+    /// Result check names that decide this task.
     #[serde(default)]
     pub deciding: Vec<String>,
     pub id: String,

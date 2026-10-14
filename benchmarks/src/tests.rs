@@ -10,6 +10,7 @@ const DOCUMENT: &str = r#"
 id = "recorded"
 version = 1
 kind = "probe"
+deciding = ["tree-ended"]
 tier = "small"
 deadline_seconds = 10
 prompt = "Read the README and finish.\n"
@@ -795,6 +796,14 @@ fn summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates()
         .collect();
     results[8].outcome.grade = Some(crate::Measure::Observed { value: false });
     results[9].outcome.grade = Some(crate::Measure::unavailable("grader crashed"));
+    for result in &mut results[8..] {
+        result.outcome.deciding.push("grade".into());
+        result.outcome.checks.push(crate::CheckVerdict {
+            check: "grade".into(),
+            passed: result.outcome.grade.clone().expect("fixture grader"),
+            evidence: Vec::new(),
+        });
+    }
     let summary = crate::summarise(&results, "sample", "small", crate::Design::Single, 3, None, None).expect("summary");
     assert!(summary.audits.contains(&"attempt-08".into()));
     assert_eq!(

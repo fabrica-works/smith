@@ -149,6 +149,9 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
     }
     check_outcomes(file, "outcome", &task.outcome)?;
     event_checks(file, "event", &task.event, &task.smith, None)?;
+    if task.deciding.is_empty() {
+        return Err(Refusal::new(file, "deciding", "task requires deciding checks"));
+    }
     deciding(file, "deciding", &task.deciding, &task.outcome, &task.event)?;
     for (index, grade) in task.grade.iter().enumerate() {
         if grade.command.is_empty() || grade.deadline_seconds == 0 || grade.max_output_bytes == 0 {

@@ -1,5 +1,5 @@
 id = "failures"
-version = 3
+version = 4
 kind = "probe"
 tier = "small"
 effort = "low"
@@ -7,6 +7,7 @@ deadline_seconds = 630
 prompt = "Read README.md using one read call, then in your next completion finish with its token. Do not batch the read with finish or make any other call.\n"
 seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
 guards = ["domain/run.md, section 9", "shell.md, section 4.3"]
+deciding = ["end", "tree-ended"]
 
 [budget]
 seconds = 600

@@ -39,12 +39,12 @@ pub fn judge(result: &AttemptResult) -> Judgment {
             return Judgment::Fail;
         }
     }
-    let mut incomplete = outcome.checks.is_empty();
+    let mut incomplete = outcome.deciding.is_empty();
     for name in &outcome.deciding {
         incomplete |= !outcome.checks.iter().any(|check| check.check == *name);
     }
     for check in &outcome.checks {
-        if !outcome.deciding.is_empty() && !outcome.deciding.contains(&check.check) {
+        if !outcome.deciding.contains(&check.check) {
             continue;
         }
         match check.passed {
@@ -52,12 +52,6 @@ pub fn judge(result: &AttemptResult) -> Judgment {
             Measure::Observed { value: true } => {}
             Measure::LowerBound { .. } | Measure::Unavailable { .. } => incomplete = true,
         }
-    }
-    match &outcome.grade {
-        Some(Measure::Observed { value: false }) => return Judgment::Fail,
-        Some(Measure::Observed { value: true }) if outcome.checks.is_empty() => incomplete = false,
-        Some(Measure::Observed { value: true }) | None => {}
-        Some(Measure::LowerBound { .. } | Measure::Unavailable { .. }) => incomplete = true,
     }
     if incomplete || crate::cache::selected(result) { Judgment::Incomplete } else { Judgment::Pass }
 }

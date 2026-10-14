@@ -321,12 +321,12 @@ fn metric_summary(results: &[&AttemptResult], metric: &str) -> Result<MetricSumm
 }
 
 fn checks_passed(result: &AttemptResult) -> Option<bool> {
-    let mut unknown = result.outcome.checks.is_empty();
+    let mut unknown = !result.outcome.deciding.iter().any(|name| name != "grade");
     for name in &result.outcome.deciding {
-        unknown |= !result.outcome.checks.iter().any(|check| check.check == *name);
+        unknown |= name != "grade" && !result.outcome.checks.iter().any(|check| check.check == *name);
     }
     for check in &result.outcome.checks {
-        if !result.outcome.deciding.is_empty() && !result.outcome.deciding.contains(&check.check) {
+        if check.check == "grade" || !result.outcome.deciding.contains(&check.check) {
             continue;
         }
         match &check.passed {

@@ -87,6 +87,20 @@ impl Neutral {
             &self.checks,
             &ended,
         ));
+        if !self.checks.iter().any(|check| matches!(check, OutcomeCheck::End { .. })) {
+            result.outcome.checks.push(crate::CheckVerdict {
+                check: "end".into(),
+                passed: Measure::Observed { value: result.outcome.end == crate::End::Completed },
+                evidence: Vec::new(),
+            });
+        }
+        if let Some(grade) = &result.outcome.grade {
+            result.outcome.checks.push(crate::CheckVerdict {
+                check: "grade".into(),
+                passed: grade.clone(),
+                evidence: Vec::new(),
+            });
+        }
     }
 }
 

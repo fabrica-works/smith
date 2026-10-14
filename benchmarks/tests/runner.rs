@@ -41,8 +41,10 @@ fn repository_request(root: &std::path::Path, guard: &smith_bench::guard::Guard)
     let task_root = root.join("task");
     smith_bench::isolate::copy_directory(guard, &fixtures.join("tasks/repository-seed"), &task_root).expect("task");
     let manifest = task_root.join("task.toml");
-    let text = std::fs::read_to_string(&manifest).expect("manifest")
-        .replace("[[grade]]", "protected = ['README', 'Cargo.toml']\ndeciding = ['end', 'grade', 'protected-unchanged', 'tree-ended']\n\n[[grade]]");
+    let text = std::fs::read_to_string(&manifest)
+        .expect("manifest")
+        .replace("deciding = [\"tree-ended\"]", "deciding = ['end', 'grade', 'protected-unchanged', 'tree-ended']")
+        .replace("[[grade]]", "protected = ['README', 'Cargo.toml']\n\n[[grade]]");
     std::fs::write(&manifest, text).expect("protected paths");
     let task = smith_bench::read_task(&manifest).expect("task");
     let mut identity = smith_bench::read_result(&fixtures.join("results/attempt.json")).expect("identity").identity;

@@ -242,6 +242,7 @@ fn a_variant_carries_its_own_calibration() {
 fn ten_passes_within_twelve_attempts_is_calibrated() {
     let mut results = recorded_passes();
     let mut deviation = results[0].clone();
+    deviation.outcome.deciding.push("answer".into());
     deviation.outcome.checks.push(smith_bench::CheckVerdict {
         check: "answer".into(),
         passed: Measure::Observed { value: false },
@@ -257,6 +258,7 @@ fn ten_passes_within_twelve_attempts_is_calibrated() {
 fn a_model_deviation_is_counted_apart_from_smiths_failures() {
     let mut results = recorded_passes();
     results.truncate(2);
+    results[0].outcome.deciding.push("answer".into());
     results[0].outcome.checks.push(smith_bench::CheckVerdict {
         check: "answer".into(),
         passed: Measure::Observed { value: false },
