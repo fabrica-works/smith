@@ -38,3 +38,22 @@ pub fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::
     std::fs::write(path.join("arm.json"), serde_json::to_vec(&arm).expect("manifest")).expect("fixture manifest");
     smith_bench::arm::read_build(&path.join("smith")).expect("actual manifest verification")
 }
+
+#[must_use]
+pub fn calibration(task: &smith_bench::Task) -> smith_bench::Calibration {
+    use sha2::{Digest, Sha256};
+    smith_bench::Calibration {
+        binary: "a".repeat(40),
+        binary_sha256: "b".repeat(64),
+        date: "2026-10-14".into(),
+        summary: "summaries/calibration.json".into(),
+        attempts: 10,
+        passes: (1..=10).map(|index| format!("recorded-run/{index:02}")).collect(),
+        deviations: vec![],
+        control: "c".repeat(40),
+        failed_before: vec!["control-run/01".into()],
+        prompt_sha256: format!("{:x}", Sha256::digest(task.prompt.as_bytes())),
+        seed_sha256: task.seed_sha256.clone(),
+        checks_sha256: task.checks_sha256().expect("checks digest"),
+    }
+}

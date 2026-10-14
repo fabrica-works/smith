@@ -171,24 +171,6 @@ fn recorded_passes() -> Vec<smith_bench::AttemptResult> {
         .collect()
 }
 
-fn block(task: &smith_bench::Task) -> smith_bench::Calibration {
-    use sha2::{Digest, Sha256};
-    smith_bench::Calibration {
-        binary: "a".repeat(40),
-        binary_sha256: "b".repeat(64),
-        date: "2026-10-14".into(),
-        summary: "summaries/calibration.json".into(),
-        attempts: 10,
-        passes: (1..=10).map(|index| format!("recorded-run/{index:02}")).collect(),
-        deviations: vec![],
-        control: "c".repeat(40),
-        failed_before: vec!["control-run/01".into()],
-        prompt_sha256: format!("{:x}", Sha256::digest(task.prompt.as_bytes())),
-        seed_sha256: task.seed_sha256.clone(),
-        checks_sha256: task.checks_sha256().expect("checks digest"),
-    }
-}
-
 fn calibration_files(name: &str) -> (PathBuf, PathBuf) {
     let directory = root(name);
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -203,7 +185,7 @@ fn calibration_files(name: &str) -> (PathBuf, PathBuf) {
 fn a_calibration_block_names_its_summary_and_failing_control() {
     let (directory, file) = calibration_files("block");
     let task = smith_bench::read_task(&file).expect("task");
-    let block = block(&task);
+    let block = common::calibration(&task);
     smith_bench::probe::record_calibration(&directory, &file, "probes/smoke-tools", &block, &recorded_passes(), 7)
         .expect("record calibration");
     let task = smith_bench::read_task(&file).expect("persisted task");
@@ -220,7 +202,7 @@ fn a_calibration_block_names_its_summary_and_failing_control() {
 fn a_variant_carries_its_own_calibration() {
     let (directory, file) = calibration_files("variant");
     let task = smith_bench::read_task(&file).expect("task").with_variant("child").expect("child");
-    let block = block(&task);
+    let block = common::calibration(&task);
     smith_bench::probe::record_calibration(
         &directory,
         &file,
@@ -275,7 +257,7 @@ fn a_model_deviation_is_counted_apart_from_smiths_failures() {
 fn a_block_whose_prompt_digest_differs_gates_nothing() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut task = smith_bench::read_task(&repository.join("tasks/probes/smoke-tools/task.toml")).expect("task");
-    task.calibration = Some(block(&task));
+    task.calibration = Some(common::calibration(&task));
     assert!(task.calibrated().expect("unchanged inputs"));
     task.prompt.push_str("Read another file.\n");
     assert!(!task.calibrated().expect("changed prompt"));

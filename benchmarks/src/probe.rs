@@ -13,6 +13,8 @@ use crate::arm::ArmRef;
 use crate::guard::Guard;
 use crate::{Agent, AttemptResult, End, Identity, Judgment, Measure, ModelIdentity, Suite};
 
+pub mod gating;
+
 /// The committed source selected by the person running a command.
 #[derive(Clone, Debug)]
 pub enum Source {
@@ -410,6 +412,7 @@ fn prepare(
     let names = crate::validate_suite(&suite_file, &suite, &entries, &root.join("agents"), &models)
         .map_err(|error| error.to_string())?;
     let names = crate::include(&suite_file, &suite, &names, asked).map_err(|error| error.to_string())?;
+    let names = if name == "smoke" { gating::smoke_tasks(&entries, &names)? } else { names };
     let face = match arm {
         ArmRef::Installed { .. } => None,
         ArmRef::Built(build) => {
@@ -530,9 +533,18 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
             let file = repository.join("benchmarks/suites").join(format!("{name}.toml"));
             let value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
             let planned = prepare(repository, name, &value, &arm, false, &asked)?;
+            if name == "smoke" && planned.requests.is_empty() {
+                println!("summary {} attempts=0 verdict=incomplete", planned.run);
+                return Ok(Judgment::Incomplete);
+            }
             let batch = crate::batch::run(&planned.suite, &planned.directory, seed)?;
             if name == "parity" {
                 return parity_summary(repository, &batch, seed);
+            }
+            if name == "probes" {
+                let verdict = gating::judgment(&batch, &gating::uncalibrated(&planned.requests)?);
+                println!("summary {} attempts={} verdict={}", planned.run, batch.results.len(), verdict_name(verdict));
+                return Ok(verdict);
             }
             Ok(summary(&planned, &batch))
         }

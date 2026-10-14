@@ -215,6 +215,8 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
         .cloned()
         .collect();
     let selected = crate::include(suite_file, suite, &selected, &asked).map_err(|error| error.to_string())?;
+    let selected =
+        if suite.name == "smoke" { crate::probe::gating::smoke_tasks(&catalogue, &selected)? } else { selected };
     let allowed = allowed_agents(suite);
     let mut pins = Vec::new();
     for agent in &allowed {
@@ -438,6 +440,7 @@ fn run_suite(
     calibration: Option<(u32, u32)>,
 ) -> Result<Batch, String> {
     let requests = requests(prepared_directory)?;
+    let uncalibrated = crate::probe::gating::suite_tasks(suite, logical, &requests)?;
     check_requests(suite_file, suite, &requests)?;
     let ordered = if logical { order(suite, requests, seed, true)? } else { ordered(suite, requests, seed)? };
     let physical = ordered.first().map_or(Ok(1), |request| {
@@ -535,13 +538,12 @@ fn run_suite(
         }
     }
     cache_verdicts(&results, &mut incomplete, &mut probes);
-    Ok(Batch { results, incomplete, probes })
+    Ok(crate::probe::gating::report(Batch { results, incomplete, probes }, &uncalibrated))
 }
 
 #[cfg(test)]
 pub(crate) fn probe_cases() {
     tests::no_request_requires_selected_complete_observations_without_inventing_tokens();
-    native_suite_pin_tests::native_built_suite_pin_verifies_full_arm_commit_and_binary();
 }
 
 #[cfg(test)]
@@ -761,13 +763,14 @@ mod native_suite_pin_tests {
     use super::*;
     use sha2::Digest;
 
-    pub(super) fn native_built_suite_pin_verifies_full_arm_commit_and_binary() {
+    #[test]
+    fn native_built_suite_pin_verifies_full_arm_commit_and_binary() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let pin_file = root.join("agents/smith/everything.pin.toml");
         let pin = crate::read_configuration(&pin_file).expect("native built-arm pin");
         let task_file = root.join("tasks/probes/first-request/task.toml");
         let task = crate::read_task(&task_file).expect("frozen author input");
-        let mut suite = crate::read_suite(&root.join("suites/smoke.toml")).expect("suite");
+        let mut suite = crate::read_suite(&root.join("suites/calibrate.toml")).expect("suite");
         suite.tasks = vec!["probes/first-request".into()];
         let mut identity =
             crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("identity fixture").identity;
@@ -814,7 +817,7 @@ mod native_suite_pin_tests {
             disk_estimate_bytes: 1,
             force_walk: true,
         };
-        let suite_file = root.join("suites/smoke.toml");
+        let suite_file = root.join("suites/calibrate.toml");
         let valid = check_requests(&suite_file, &suite, std::slice::from_ref(&request));
         // Do not execute or read credentials; this is the real admission seam.
         assert!(valid.is_ok(), "verified native commit must match built-arm pin: {valid:?}");

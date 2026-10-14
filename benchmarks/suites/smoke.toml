@@ -5,7 +5,7 @@ repetitions = 1
 rerun_failed = 1
 max_wall_seconds = 720
 max_tokens = 300000
-tasks = ["probes/first-request", "probes/smoke-tools", "probes/large-write", "probes/budget/child-quota", "probes/budget/wrap-up"]
+tasks = ["probes/first-request", "probes/smoke-tools", "probes/large-write", "probes/budget/child-quota", "probes/budget/wrap-up", "probes/failures/one-turn"]
 
 
 [[agents]]

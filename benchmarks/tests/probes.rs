@@ -115,6 +115,99 @@ fn result() -> smith_bench::AttemptResult {
         .expect("unchanged recorded result")
 }
 
+fn smoke_entry() -> smith_bench::CatalogueTask {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = root.join("tasks/probes/smoke-tools/task.toml");
+    let task = smith_bench::read_task(&manifest).expect("smoke task");
+    smith_bench::CatalogueTask { name: "probes/smoke-tools".into(), manifest, task }
+}
+
+#[test]
+fn smoke_skips_an_uncalibrated_probe() {
+    let entry = smoke_entry();
+    let selected =
+        smith_bench::probe::gating::smoke_tasks(std::slice::from_ref(&entry), std::slice::from_ref(&entry.name))
+            .expect("selection");
+    assert_eq!(selected, Vec::<String>::new());
+}
+
+#[test]
+fn the_smoke_suite_names_the_one_turn_refusal_probe() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let suite = smith_bench::read_suite(&root.join("suites/smoke.toml")).expect("suite");
+    assert_eq!(
+        suite.tasks,
+        [
+            "probes/first-request",
+            "probes/smoke-tools",
+            "probes/large-write",
+            "probes/budget/child-quota",
+            "probes/budget/wrap-up",
+            "probes/failures/one-turn"
+        ]
+    );
+}
+
+#[test]
+fn smoke_keeps_a_probe_with_current_calibration_digests() {
+    let mut entry = smoke_entry();
+    entry.task.calibration = Some(common::calibration(&entry.task));
+    let selected =
+        smith_bench::probe::gating::smoke_tasks(std::slice::from_ref(&entry), std::slice::from_ref(&entry.name))
+            .expect("selection");
+    assert_eq!(selected, ["probes/smoke-tools"]);
+}
+
+#[test]
+fn smoke_skips_a_probe_whose_calibration_digests_changed() {
+    let mut entry = smoke_entry();
+    entry.task.calibration = Some(common::calibration(&entry.task));
+    entry.task.prompt.push_str("changed prompt");
+    let selected =
+        smith_bench::probe::gating::smoke_tasks(std::slice::from_ref(&entry), std::slice::from_ref(&entry.name))
+            .expect("selection");
+    assert_eq!(selected, Vec::<String>::new());
+}
+
+fn failed_probe() -> smith_bench::batch::Batch {
+    let mut value = result();
+    value.identity.task = "probes/smoke-tools".into();
+    value.outcome.end = End::Completed;
+    value.outcome.deciding = vec!["end".into()];
+    value.outcome.checks =
+        vec![CheckVerdict { check: "end".into(), passed: Measure::Observed { value: false }, evidence: vec![] }];
+    smith_bench::batch::Batch {
+        probes: [(format!("{}/{}", value.identity.task, value.identity.arm), smith_bench::ProbeVerdict::Regression)]
+            .into(),
+        results: vec![value],
+        incomplete: false,
+    }
+}
+
+#[test]
+fn an_uncalibrated_probe_failure_is_not_a_regression() {
+    let batch = failed_probe();
+    let names = ["probes/smoke-tools".into()].into();
+    assert_eq!(smith_bench::probe::gating::judgment(&batch, &names), Judgment::Pass);
+    assert_eq!(batch.results.len(), 1, "raw attempt stays available");
+}
+
+#[test]
+fn a_calibrated_probe_failure_still_counts_as_a_regression() {
+    assert_eq!(
+        smith_bench::probe::gating::judgment(&failed_probe(), &std::collections::BTreeSet::default()),
+        Judgment::Fail
+    );
+}
+
+#[test]
+fn an_uncalibrated_harness_error_still_makes_the_suite_incomplete() {
+    let mut batch = failed_probe();
+    batch.results[0].outcome.end = End::HarnessError { what: "recorded harness error".into() };
+    let names = ["probes/smoke-tools".into()].into();
+    assert_eq!(smith_bench::probe::gating::judgment(&batch, &names), Judgment::Incomplete);
+}
+
 #[test]
 fn credentials_decides_on_the_login_digest_and_the_answer() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -290,7 +383,14 @@ fn attempt_and_suite_share_failure_precedence_and_preserve_expected_budget_class
 fn smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with_exact_frozen_inputs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let design = root.join("../docs/design");
-    let tasks = smith_bench::catalogue(&root.join("tasks"), &design).expect("frozen seeds and manifests");
+    let tasks: Vec<_> = ["first-request", "smoke-tools", "large-write", "budget", "failures"]
+        .into_iter()
+        .map(|name| {
+            let manifest = root.join("tasks/probes").join(name).join("task.toml");
+            let task = smith_bench::check_task(&manifest, &design).expect("frozen seed and manifest");
+            smith_bench::CatalogueTask { name: format!("probes/{name}"), manifest, task }
+        })
+        .collect();
     let models = smith_bench::read_model_tiers(&root.join("agents/models.toml")).expect("model tiers");
     for name in ["smoke", "calibrate"] {
         let path = root.join("suites").join(format!("{name}.toml"));
@@ -298,7 +398,9 @@ fn smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with
         assert_eq!(
             smith_bench::validate_suite(&path, &suite, &tasks, &root.join("agents"), &models)
                 .expect("pins/selectors")
-                .len(),
+                .iter()
+                .filter(|task| *task != "probes/failures/one-turn")
+                .count(),
             5
         );
     }
@@ -348,8 +450,12 @@ fn smoke_probe_documents_and_pass_fail_incomplete_boundary() {
     fix_body_keeps_both_runs_and_distinguishes_effect_from_unjudged();
     decision_names_keep_advisory_unknown_and_false_evidence_without_deciding_the_probe();
     attempt_and_suite_share_failure_precedence_and_preserve_expected_budget_class();
-    smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with_exact_frozen_inputs();
     smoke_listing_is_a_minimum_and_shell_stays_exact();
+}
+
+#[test]
+fn the_smoke_retains_each_probes_frozen_checks_and_inputs() {
+    smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with_exact_frozen_inputs();
 }
 
 fn smoke_listing_is_a_minimum_and_shell_stays_exact() {
