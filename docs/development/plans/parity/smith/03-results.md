@@ -74,7 +74,13 @@ Files: `crates/smith-local-shell/src/presets.rs` (`prices`,
   `benchmarks/src/check.rs` (`:54`), `benchmarks/src/summary/compare.rs`,
   `benchmarks/src/tests/comparison.rs`, `benchmarks/agents/prices.toml`,
   `benchmarks/README.md` (`:60`, `:88`), every user of `prices.toml`
-  that `rg -n 'prices.toml|PriceTable' benchmarks` lists; and for the
+  that `rg -n 'prices.toml|PriceTable' benchmarks` lists; for the
+  resolved model and window, `benchmarks/src/result.rs` (`ModelIdentity`,
+  `:75-80`), `benchmarks/src/probe.rs` (`:226-233`),
+  `benchmarks/src/agent/smith/events.rs`, `benchmarks/src/agent/codex.rs`,
+  `benchmarks/src/agent/codex/rollouts.rs`,
+  `benchmarks/tests/recorded/results/attempt.json`, and every user that
+  `rg -n 'ModelIdentity|resolved_model' benchmarks` lists; and for the
   summary's version, `benchmarks/src/summary.rs`'s literal versions
   (`:462`, `:478`, `:527`, `:541`, `:604`, `:613`, `:688`),
   `benchmarks/summaries/` (the 42 files of version 2) and
@@ -88,17 +94,31 @@ Shape: `pub fn list_prices(endpoint: &str, model: &str, window: u64) ->
   `committed_costs` refusing another version instead of skipping it; the
   summary records `priced_at`, the harness's commit. `summarise` takes no
   price table. The committed summaries and baselines go; `check` reads
-  both directories empty.
+  both directories empty. `ModelIdentity` gains `resolved_window:
+  Measure<u64>`, set `Measure::unavailable("not run")` where
+  `resolved_model` is today. The smith adapter fills `resolved_model` and
+  `resolved_window` from the main conversation's first `Model` record
+  (`model`, `window_tokens`); the Codex adapter from the root rollout's
+  first `turn_context` (`model`) and first `token_count`
+  (`info.model_context_window`); each is unavailable, with its reason,
+  where its stream lacks it. `priced` prices the attempt's tokens with
+  `list_prices` at the resolved model and window; it is unavailable,
+  naming what is missing, when either is unavailable or the presets do
+  not price the model, and is never priced from the requested model or a
+  preset's window. `resolved_effort` stays as it is.
 Test shape: `benchmarks/tests/offline.rs` (or `summary.rs`'s tests):
   `the_summary_prices_tokens_from_the_product_presets` (a fixed token
   record priced against a literal for `codex/gpt-6-astra` at 272,000),
   `the_priced_basis_names_its_catalog_commit`,
   `an_agents_own_figure_is_kept_beside_the_priced_one`. Under 20 ms each.
+  `the_resolved_window_comes_from_each_agents_stream` (a recorded smith
+  trace, and a recorded Codex rollout's 258,400),
+  `an_unavailable_window_leaves_the_priced_spend_unavailable`.
   In `smith-local-shell`: `list_prices_switches_to_long_context_past_272000`.
 Proof: unit, those tests.
 Don't: read prices from an arm's `smith check` output, or keep any table
   of rates in `benchmarks/`.
-Size: 150 lines.
+Size: 230 lines.
 Removes: `benchmarks/agents/prices.toml`, `PriceTable` and its reader and
   check; the 42 summaries and 11 baselines of version 2 (decisions.md,
   10.6).

@@ -463,3 +463,16 @@ changes what section 8.4 holds.
     window turn and 10.1's outcomes land under it; `JobEnd` owned by 09.2;
     rule 9's limits per command and its "stopped by the provider"; FC's sum
     of priced spend; a suite without Codex naming its reference.
+
+## Rulings
+
+101. **03.1 prices at the resolved model and window** (cross-session scope, smith 03's block of 2026-10-14T10:26:36Z).
+     Ruling 101. Yes: in 03.1, `ModelIdentity` gains `resolved_window: Measure<u64>`, and the adapters fill both `resolved_model` and `resolved_window`, because 03-results.md's choice prices spend "by the model each attempt resolved and its declared window", and on `main` neither is observed: `probe.rs` sets `resolved_model: Measure::unavailable("not run")` and no adapter changes it. benchmarks.md 8.1 asks for "every agent's tokens priced on one basis: smith's presets' list prices (shell.md, 5.2 and 6.1)", and shell.md 5.2 tiers by "its window as settings leave it", so the price needs the window each attempt ran with.
+
+     - `ModelIdentity` gains `resolved_window: Measure<u64>`, set `Measure::unavailable("not run")` where `resolved_model` is set today (`benchmarks/src/probe.rs:226-233`).
+     - The smith adapter fills `resolved_model` and `resolved_window` from the main conversation's first `Model` record (`smith_events::Model`'s `model` and `window_tokens`); the Codex adapter from the root rollout's first `turn_context` (`model`) and first `token_count` (`info.model_context_window`). Each is unavailable, with its reason, where its stream lacks it.
+     - `priced` prices the attempt's tokens with `list_prices` at the resolved model and window. It is unavailable, naming what is missing, when either is unavailable or the presets do not price the model. It is never priced from the requested model or a preset's window.
+     - `resolved_effort` stays as it is. The result's version is the 3 that 03.1 already sets (README, rule 12): no further bump.
+     - 03.1's Size becomes 230 lines; README rule 1 splits it if it passes that (the observation of model and window lands alone).
+     - The session file now names `result.rs` (`ModelIdentity`), `probe.rs`, `agent/smith/events.rs`, `agent/codex.rs`, `agent/codex/rollouts.rs` and `tests/recorded/results/attempt.json` in 03.1's Files, and two more tests: `the_resolved_window_comes_from_each_agents_stream` (a recorded smith trace, and a recorded Codex rollout's 258,400) and `an_unavailable_window_leaves_the_priced_spend_unavailable`, under 20 ms each.
+     - Adapt any further construction or reader of `ModelIdentity` that `rg -n 'ModelIdentity|resolved_model' benchmarks` lists, as README rule 3 says, and list it in the commit body under "Users outside Files:".
