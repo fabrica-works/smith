@@ -76,7 +76,8 @@ Files: `crates/smith-transcript/schema/transcript-v4.schema` (from
   `crates/smith-transcript/src/lib.rs` (`FORMAT_VERSION`, `:29`, `:12`),
   `crates/smith-protocol-channel/src/turn.rs` (`encode_turn`, `:17`,
   `:69-78`), `crates/smith-domain-session/src/record.rs` (`Turn`,
-  `:143-159`), `tests/codecs/tests/drift.rs` (`:22-28`),
+  `:143-159`), `crates/smith-host-domain/src/process.rs` (`Event`,
+  `:10-12`: README rule 7's one exception), `tests/codecs/tests/drift.rs` (`:22-28`),
   `tests/codecs/tests/transcript.rs`, and the
   version's sweep (`rg -n 'transcript-v3|generated/v3|golden/v3|FORMAT_VERSION'`
   over `crates` and `tests`).

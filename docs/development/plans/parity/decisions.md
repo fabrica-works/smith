@@ -476,3 +476,15 @@ changes what section 8.4 holds.
      - 03.1's Size becomes 230 lines; README rule 1 splits it if it passes that (the observation of model and window lands alone).
      - The session file now names `result.rs` (`ModelIdentity`), `probe.rs`, `agent/smith/events.rs`, `agent/codex.rs`, `agent/codex/rollouts.rs` and `tests/recorded/results/attempt.json` in 03.1's Files, and two more tests: `the_resolved_window_comes_from_each_agents_stream` (a recorded smith trace, and a recorded Codex rollout's 258,400) and `an_unavailable_window_leaves_the_priced_spend_unavailable`, under 20 ms each.
      - Adapt any further construction or reader of `ModelIdentity` that `rg -n 'ModelIdentity|resolved_model' benchmarks` lists, as README rule 3 says, and list it in the commit body under "Users outside Files:".
+
+102. **process::Event takes its neighbours' large_enum_variant expectation** (cross-session scope, smith 11's block of 2026-10-14T10:35:14Z).
+     Ruling 102. Neither boxing: `process::Event` takes the attribute its neighbours carry. In 11.1, put on `pub enum Event` in `crates/smith-host-domain/src/process.rs` the line
+
+         #[expect(clippy::large_enum_variant, reason = "sealed payloads are priced by bounded queues and state")]
+
+     the same attribute and reason as `process::Request` (`process.rs:49`) and as `boundary::Input` (`boundary.rs:10`), which holds `process::Event` inline as `Input::Process(process::Event)` and is already excepted for that reason. The inline `Up` is priced where its slot is priced, as today; boxing `TurnValue`'s value or `Event::Received.message` would move bytes out of the slot that the queues price by `size_of`, and change the turn accounting (`TurnValue::owned_bytes`) and its tests, which 11.1 does not own.
+
+     - No field changes type, no value is boxed, and no byte count or limit changes.
+     - README rule 7 now names this attribute as its one exception: its grep prints this line in 11.1's landing, and nothing else. Every other lint is fixed, as rule 7 says.
+     - 11.1's Files now name `crates/smith-host-domain/src/process.rs` (`Event`).
+     - If clippy reports `large_enum_variant` on a further enum that holds `process::Event`, `channel::Up` or `TurnValue` inline after `Turn` gains `jobs`, give it the same line, with the same reason, and list it in the commit body under "Lint exceptions by ruling 102:"; any other enum's lint is a question.

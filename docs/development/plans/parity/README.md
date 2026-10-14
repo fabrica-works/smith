@@ -134,7 +134,12 @@ until the run ends.
 
    prints nothing. Each word it prints is reworded to say what the code
    does, with no synonym in its place; each lint exception is removed and
-   its lint fixed. Words already on `main` stay.
+   its lint fixed. Words already on `main` stay. The one exception: the
+   `#[expect(clippy::large_enum_variant, reason = "sealed payloads are
+   priced by bounded queues and state")]` that 11.1 puts on
+   `smith-host-domain`'s `process::Event` (decisions.md, ruling 102),
+   the attribute and reason that `process::Request` and `boundary::Input`
+   carry on `main`.
 8. **The smoke on every smith landing that changes code** (smith
    `workflow.md`, section 5): `smoke-tools`, live, on the branch rebased
    on `origin/main` just before `land`:
