@@ -5,8 +5,9 @@ from the findings in `findings/` (skein's development.md, sections 4.1
 and 10.4). Sections 1 to 8 are the design's; the design documents follow
 them, and where this file and the design disagree, the design wins and
 the disagreement is a question for the designer. Section 9 lists the
-decisions with long-term consequences that the user may veto. The run's
-rulings, when it runs, go in a section 10 of their own.
+decisions with long-term consequences that the user may veto. Section 10
+is the planner's: how the plan applies sections 1 to 8. The run's
+rulings follow, under "Rulings", numbered from 101.
 
 The user was away while this was designed, and asked every agent to use
 good judgement and take reasonable decisions. So the designer decided
@@ -335,7 +336,130 @@ it. To veto one, say which; the alternative is named.
    4.7, routed to the user on 2026-10-14). Alternative: 3/5. The plan
    runs the experiment again after the compaction fix and reports it.
 
+6. **The plan's live lines, and what yields to the closing run** (10.2).
+   12.3's calibrations of `tool-output` version 3 and `process-tree` run
+   only while 64 attempts are left for 12.4 and its reruns. Alternative:
+   run them before 12.1, at the cost of a closing run that may not fit.
+7. **The committed summaries and baselines of version 2 leave the tree**
+   (10.6): 42 summaries and 11 baselines, kept in git's history.
+   Alternative: an archive directory that `check` skips, read by nothing.
+8. **A calibration with no runnable control stands on its passes** (10.9;
+   benchmarks.md 3.1, as landed for this plan). Alternative: such probes
+   stay uncalibrated, and `suite smoke` holds only probes with a control.
+9. **The smoke suite after the plan holds `first-request` only,** with
+   whatever 12.3 calibrates outside it: `smoke-tools`, `large-write`,
+   `budget/child-quota`, `budget/wrap-up` and `failures/one-turn` lose
+   their calibrations with the version 2 summaries (10.6), and wait in
+   `later.md`. The per-landing `smoke-tools` run is unchanged.
+   Alternative: recalibrate those five in this run, about 60 attempts
+   more than the 340.
+10. **The `compaction` experiment's result,** which 12.2 reports, for the
+    user's decision 4.5 (the threshold).
+
 Still with the user from the reliability plan, unchanged by this one:
 borrowing another CLI's login (its 10.2), the smoke before `land` (its
 10.4), the skein pin tags (its 10.5), and local `sub_agents` on by
 default (its 10.7).
+
+## 10. The plan's decisions
+
+2026-10-14, by the parity plan's planner, within sections 1 to 8. None
+changes what section 8.4 holds.
+
+1. **The plan's shape** (README, "The sessions"). Thirteen sessions:
+   twelve in smith, one in skein, each of at most six increments. The
+   harness is cut into four sessions with few shared files (01 tasks, 02
+   pins, 03 results, 04 probes and verdict) so that the baseline opens at
+   its fifth step; jobs into four (08 vocabulary and limits, 09 machine,
+   10 domains, 11 offered), so that the transcript's version 4 (11.1, from
+   10.1's sketch) lands at once and the machine runs beside the domains. Each format moves its version once, by a named
+   increment (README, rule 12).
+2. **The live budget is $50 and 340 attempts** for the run, as the user
+   set it on 2026-10-14, in place of 8.2's $45; Codex's attempts count,
+   its spend does not. Each step has its line (README, "Live services"),
+   every live landing carries a `Live:` trailer, and the run's total is
+   summed from them (README, rule 10). Past 340 attempts or $50, live work
+   stops and the supervisor reports to the user; offline work goes on.
+   The closing run keeps its 58 attempts and 6 for reruns: 12.3's
+   calibrations run only within what is left (item 6 of section 9).
+3. **Section 8.1's order, kept where a dependency is true.** Steps 1 and
+   2 come before the baseline (12.1) by its Needs; steps 4 and 5 after it,
+   by README rule 11's fence on the increments that change what the model
+   is sent (06.1, 06.2, 09.3, 11.2); step 7 last. Step 6, the `compaction`
+   experiment, needs only compaction's fix (07.3): jobs change nothing
+   `history` exercises, and a parallel plan keeps true dependencies only
+   (development.md 5.1).
+4. **`gpt-6.1-sol`'s rates** (shell.md 6.1: "the code holds the
+   numbers"): $2 fresh, $0.10 cache read, $10 output per million tokens,
+   from the provider's list (findings L3); cache writes at $2.50, 1.25
+   times fresh, as the other Codex presets price them; past 272,000 tokens
+   of window, twice the fresh and cached rates and 1.5 times the output's.
+5. **The role and the descriptions, proven together.** The task role's
+   topic 5 names jobs only once `job` is offered (11.2), since the role
+   names only tools smith offers (shell.md 6.6). The descriptions' facts
+   (06.1) and the role (06.2) are measured by one `compare` run of two
+   smith arms, 06.1's parent and 06.2, the designer's 30 attempts (8.2).
+   `host-part-holds-the-role` runs where the shell gives the task role,
+   which passes its bound to the profile; a profile composed without it
+   skips the check.
+6. **What leaves the tree.** The 42 committed summaries of version 2 go
+   when summaries move to 3 (03.1): their raw results are of result
+   version 2, which version 3 refuses, so none can be regenerated
+   (benchmarks.md 8.1). The 11 baselines predate the product face and go
+   with the summaries they were cut from (03.1; benchmarks.md 6.2); 12.4 cuts smith's and Codex's from the
+   closing run. `credentials`' calibration block lacks the new fields and
+   names a removed summary: it goes (04.1), and `credentials` waits in
+   `later.md`. `benchmarks/agents/prices.toml` goes (03.1; 1.4).
+7. **The `list` defect's cause is found.** The planner's audit traced it
+   and reproduced it with this machine's `rg` 14.1.1: the listing parser
+   requires byte order, and `rg --sort=path` sorts each directory by name
+   (`findings/planning-audit.md`). The 8-process lead of 7.3 is true in the
+   code, but no recorded failure reached it; 08.3 derives the machine's
+   processes as limits.md 3.5 asks anyway. 09.3 fixes the order with a
+   test that fails on its parent; no diagnosis step is needed.
+8. **3.3's "below its deadline" reads as benchmarks.md 6.1 says:** `check`
+   refuses a comparison task that names any `[budget]`, and one whose
+   `deadline_seconds` is not below the run defaults' hour (01.4).
+9. **A calibration with no runnable control.** benchmarks.md 3.1 asked a
+   failure on the binary before the fix or on a control arm; for a
+   behaviour older than the oldest face the harness runs (`0d5604f9`,
+   6.2), neither can run. The planner closed the gap as the designer
+   would, in its own design landing before this plan (smith
+   `72311b8e`): such a block records why, and the calibration stands
+   on its passes. 04.6 (`first-request`) and 12.3 calibrate so.
+10. **run.md 3.3's order of sections** is the domain's to decide ("The
+    domain decides what each says and in which order"), with the role
+    first, which the code already does. The plan reorders nothing.
+11. **The pins left** are smith's `standard` (trace `calls`) and one for
+    the probes that read prompts (trace `everything`); every other value a
+    probe needs is in its task's `[smith]`, `first-request`'s
+    `instructions = ""` among them (02.1).
+12. **Codex's pin** keeps `check_for_update_on_startup = false`, which
+    keeps an attempt unattended, and drops `features.multi_agent`,
+    `agents.max_threads` and `shell_environment_policy.inherit`; it trusts
+    the attempt root, not the working directory, and runs the private
+    package by its digest (02.3).
+13. **A `not run` result keeps its tool choice.** A compaction asked with
+    `None` after a narrowing to `Only` would render earlier history with
+    the new choice (`prompt.rs:457`); 07.1 keeps the choice in force
+    with the result in the session's history, so the cached prefix holds
+    (session.md 8.2); the transcript's `not_run` record is unchanged.
+14. **The repository check is a suite of its own,**
+    `repository-check.toml`: `shell-cwd`, 5 per arm, smith against Codex,
+    interleaved, for 8.1's "one `shell-cwd` check, five attempts per arm"
+    (11.3; benchmarks.md 5.3).
+15. **The reliability retrospective's lessons** (its section 10, rows 1,
+    2, 3, 4, 10, 13, 14, 15 and 21) are the README's rules 1 to 9 and its
+    "Done when" item 4, in this plan's words.
+16. **Arms of one event vocabulary.** A `smith-bench` of one vocabulary
+    version reads no other (events.md 6). So the increments whose parents
+    are run as arms after 08.1, 06.1 (06.2's before) and 07.1 (07.3's
+    control), need 08.1; 11.2's parent comes after it by its Needs.
+17. **The reviews' corrections.** The consistency review and the literal
+    reading (`findings/planning-consistency.md`, `planning-literal.md`)
+    found 54 points in the plan as first written; each was corrected
+    before the plan landed, among them: the summary's version moved with
+    the result's in 03.1; the transcript's version 4 first, so that 07.2's
+    window turn and 10.1's outcomes land under it; `JobEnd` owned by 09.2;
+    rule 9's limits per command and its "stopped by the provider"; FC's sum
+    of priced spend; a suite without Codex naming its reference.
