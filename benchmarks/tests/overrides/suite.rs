@@ -93,3 +93,86 @@ fn an_override_arms_settings_reach_its_command_after_the_tasks() {
         assert_eq!(&check[2..], &command[3..command.len() - 1]);
     }
 }
+
+#[test]
+fn a_suite_gives_one_task_its_own_repetitions() {
+    let (_, _, mut suite, _) = fixture();
+    suite.repetitions_by_task.insert("repository/shell-cwd".into(), 3);
+    for (name, authored, logical, expected) in [
+        ("repository/shell-cwd", None, false, 3),
+        ("repository/shell-cwd", Some(2), false, 3),
+        ("fixtures/01-backoff", None, false, 5),
+        ("fixtures/01-backoff", Some(2), false, 2),
+        ("repository/shell-cwd", Some(2), true, 6),
+    ] {
+        assert_eq!(suite.task_repetitions(name, authored, logical).expect("count"), expected, "{name}");
+    }
+    let (root, entry, _, arm) = fixture();
+    suite.repetitions_by_task.insert(entry.name.clone(), 3);
+    let mut prepared = Vec::new();
+    let count = suite.task_repetitions(&entry.name, entry.task.repetitions, false).expect("count");
+    task_requests(
+        root.parent().expect("repository"),
+        &entry,
+        &suite,
+        &arm,
+        ("offline-overrides", "2026-10-14T00:00:00Z", Some(crate::SmithFace::Events), &"0".repeat(40)),
+        count,
+        &mut prepared,
+    )
+    .expect("prepared requests");
+    assert_eq!(crate::batch::ordered(&suite, prepared, 17).expect("ordered").len(), 6);
+}
+
+#[test]
+fn the_parity_suite_runs_58_attempts_interleaved() {
+    let (root, entry, base, arm) = fixture();
+    let suite = crate::read_suite(&root.join("suites/parity.toml")).expect("parity suite");
+    assert_eq!(suite.design, crate::Design::Interleaved);
+    assert_eq!(suite.tier, "working");
+    assert_eq!(suite.rerun_failed, 0);
+    assert_eq!(suite.max_wall_seconds, 28_800);
+    assert_eq!(suite.max_tokens, 150_000_000);
+    assert_eq!(suite.agents.iter().map(|agent| agent.agent).collect::<Vec<_>>(), [Agent::Smith, Agent::Codex]);
+    assert!(suite.agents.iter().all(|agent| agent.config == "standard" && agent.provider == crate::Provider::Codex));
+    let prepared = parity_requests(&root, &suite, &requests(&root, &entry, &base, &arm)[0]);
+    let ordered = crate::batch::ordered(&suite, prepared.clone(), 17).expect("interleaved");
+    assert_eq!(ordered.len(), 58);
+    let repeated = crate::batch::ordered(&suite, prepared, 17).expect("repeated order");
+    assert_eq!(
+        repeated.iter().map(|request| &request.identity).collect::<Vec<_>>(),
+        ordered.iter().map(|request| &request.identity).collect::<Vec<_>>()
+    );
+    for (name, expected) in [
+        ("fixtures/01-backoff", 16),
+        ("fixtures/02-line-decoder", 16),
+        ("fixtures/03-planner", 16),
+        ("repository/shell-cwd", 10),
+    ] {
+        assert_eq!(ordered.iter().filter(|request| request.identity.task == name).count(), expected, "{name}");
+    }
+    for block in ordered.chunks_exact(2) {
+        assert_eq!(block[0].identity.task, block[1].identity.task);
+        assert_ne!(block[0].identity.agent, block[1].identity.agent);
+    }
+}
+
+fn parity_requests(root: &Path, suite: &Suite, template: &crate::run::Prepared) -> Vec<crate::run::Prepared> {
+    let mut prepared = Vec::new();
+    for name in &suite.tasks {
+        let task = root.join("tasks").join(name).join("task.toml");
+        let authored = crate::read_task(&task).expect("task").repetitions;
+        for agent in &suite.agents {
+            for _ in 0..suite.task_repetitions(name, authored, false).expect("repetitions") {
+                let mut request = template.clone();
+                request.task.clone_from(&task);
+                request.identity.task.clone_from(name);
+                request.identity.agent = agent.agent;
+                request.identity.arm = agent.agent.directory().into();
+                request.identity.attempt = format!("{:02}", prepared.len() + 1);
+                prepared.push(request);
+            }
+        }
+    }
+    prepared
+}

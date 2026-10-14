@@ -423,11 +423,7 @@ fn prepare(
     for name in names {
         let entry = task(&entries, &name)?;
         let task = &entry.task;
-        let repetitions = if logical {
-            suite.repetitions.checked_mul(task.repetitions.unwrap_or(1)).ok_or("repetition overflow")?
-        } else {
-            task.repetitions.unwrap_or(suite.repetitions)
-        };
+        let repetitions = suite.task_repetitions(&name, task.repetitions, logical)?;
         task_requests(
             repository,
             &entry,

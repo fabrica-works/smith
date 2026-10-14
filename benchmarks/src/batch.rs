@@ -56,17 +56,13 @@ fn order(suite: &Suite, requests: Vec<Prepared>, seed: u64, logical: bool) -> Re
             .push(request);
     }
     let mut ordered = Vec::new();
-    for arms in groups.into_values() {
+    for (name, arms) in groups {
         let mut arms: Vec<_> = arms.into_values().collect();
         for attempts in &mut arms {
             attempts.sort_by(|left, right| left.identity.attempt.cmp(&right.identity.attempt));
         }
         let authored = crate::read_task(&arms[0][0].task).map_err(|error| error.to_string())?.repetitions;
-        let repetitions = if logical {
-            suite.repetitions.checked_mul(authored.unwrap_or(1)).ok_or("probe repetition count overflow")?
-        } else {
-            authored.unwrap_or(suite.repetitions)
-        };
+        let repetitions = suite.task_repetitions(&name, authored, logical)?;
         if arms.iter().any(|attempts| attempts.len() != usize::try_from(repetitions).expect("u32 fits usize")) {
             return Err("each prepared task/arm must supply its declared repetition count".into());
         }

@@ -71,6 +71,9 @@ pub struct Suite {
     #[serde(default)]
     pub reference: Option<String>,
     pub repetitions: u32,
+    /// Suite-authored counts for exact task and variant names (benchmarks.md, 5.3).
+    #[serde(default)]
+    pub repetitions_by_task: BTreeMap<String, u32>,
     /// Zero or one rerun after a failed attempt.
     pub rerun_failed: u32,
     pub max_wall_seconds: u64,
@@ -85,6 +88,17 @@ pub struct Suite {
     pub agents: Vec<SuiteAgent>,
     #[serde(default, rename = "arm")]
     pub arms: Vec<Arm>,
+}
+
+impl Suite {
+    pub(crate) fn task_repetitions(&self, name: &str, authored: Option<u32>, logical: bool) -> Result<u32, String> {
+        let repetitions = self.repetitions_by_task.get(name).copied().unwrap_or(self.repetitions);
+        if logical {
+            repetitions.checked_mul(authored.unwrap_or(1)).ok_or_else(|| "probe repetition count overflow".into())
+        } else {
+            Ok(self.repetitions_by_task.get(name).copied().or(authored).unwrap_or(repetitions))
+        }
+    }
 }
 
 /// A validated task and its catalogue name, supplied to suite resolution.
@@ -185,6 +199,7 @@ pub fn validate_suite(
     if selected.is_empty() {
         return Err(Refusal::new(file, "tasks/select", "suite must name an existing task"));
     }
+    validate_repetitions(file, suite, &selected)?;
     for agent in &suite.agents {
         if agent.tasks.iter().any(|name| !selected.contains(name)) {
             return Err(Refusal::new(file, "agents.tasks", "agent task must be selected by the suite"));
@@ -234,6 +249,15 @@ pub fn validate_suite(
         }
     }
     Ok(selected.into_iter().collect())
+}
+
+fn validate_repetitions(file: &Path, suite: &Suite, selected: &BTreeSet<String>) -> Result<(), Refusal> {
+    for (name, repetitions) in &suite.repetitions_by_task {
+        if *repetitions == 0 || !(selected.contains(name) || suite.when_asked.contains(name)) {
+            return Err(Refusal::new(file, "repetitions_by_task", "positive counts must name suite tasks"));
+        }
+    }
+    Ok(())
 }
 
 /// The default selection plus asked tasks; names outside `when_asked` are refused.
@@ -303,10 +327,10 @@ pub fn choose_guards_with_costs(
         if !entry.task.guards.iter().any(|guard| sections.contains(guard)) {
             continue;
         }
-        let repetitions = u64::from(entry.task.repetitions.unwrap_or(suite.repetitions));
         let names = std::iter::once(entry.name.clone())
             .chain(entry.task.variant.iter().map(|variant| format!("{}/{}", entry.name, variant.name)));
         for name in names {
+            let repetitions = u64::from(suite.task_repetitions(&name, entry.task.repetitions, false).expect("count"));
             let agents =
                 suite.agents.iter().filter(|agent| agent.tasks.is_empty() || agent.tasks.contains(&name)).count();
             let agents = u64::try_from(agents).expect("agent count fits u64");
