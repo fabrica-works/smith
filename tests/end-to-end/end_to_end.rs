@@ -41,6 +41,7 @@ fn a_window_size_change_reaches_the_status_line() {
             Action::Wait(b"> ".as_slice().into()),
             Action::Send(b"Ask first\n".as_slice().into()),
             Action::Wait(b"codex/gpt-6-luna: in ".as_slice().into()),
+            Action::Wait(b"\r\nFinishing now\r\n".as_slice().into()),
             Action::Send(b"Again\n".as_slice().into()),
             Action::Eof,
         ],
