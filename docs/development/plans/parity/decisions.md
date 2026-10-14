@@ -592,3 +592,13 @@ changes what section 8.4 holds.
      - `smith-protocol-llm/src/failure.rs`'s `problem` renders them. `JobsFull` says that at most `jobs` may run at once, and that `job` with `stop` stops one, or reads the end of one that ended. `UnknownJob` names the number, and says that no `running` answer named it or that its end was already answered. Both texts render live and on resume (llm.md 5: "the same outcome renders to the same bytes, live and on resume").
      - The users this changes are named in `smith/10-jobs.md`'s 10.5 block. Adapt any further exhaustive match over `llm::Problem`, `wire::CallProblem` or `tools::Request` that `cargo check --workspace --all-targets` reports, as README rule 3 says, and list it in the commit body under "Users outside Files:".
      - `a_yield_while_jobs_jobs_run_is_an_invalid_call` and `a_job_call_naming_an_unknown_or_answered_job_is_invalid` (10.1's Test shape) each expect one `Request::Invalid` with its problem. One codec test round-trips each new `CallProblem` through version 4. Nothing else in 10.1's Shape changes.
+
+117. **a running answer says its deadline's clamp** (cross-session scope, smith 10's block of 2026-10-14T19:58:01Z).
+     Ruling 117. Option 1: `Outcome::Running` gains `timeout: TimeoutClamp`, after `dropped`, and so does transcript version 4's `CommandRunning`. `Exited` and `CommandEnd` carry the same field. There is no version bump (README rule 12). The plan's sketch left it out, which is a plan defect. tools.md 5 says of a shell call: "its deadline is the one the LLM asked for, or the profile's default, clamped to a tool call's longest deadline … The outcome says when a request was clamped." A `running` answer is that call's outcome. llm.md 5 renders "a request clamped to a ceiling, saying so and naming the ceiling".
+
+     - `render.rs` says both clamps when both apply: the deadline's and the yield's.
+     - `facts.rs`'s `observed` counts `timeout` as it does for `Exited`.
+     - 10.5's Files already hold the schema, `src/generated/v4.rs` and `golden/v4/` (ruling 116). Regenerate them once, for both rulings.
+     - One test asks a timeout past `tool_deadline` and a yield past `job_wait` in one call, and expects one `Running` with both clamps. A codec test round-trips a `CommandRunning` with a clamped `timeout`.
+     - The users are named in the 10.5 block. Adapt any further one that `cargo check --workspace --all-targets` reports, as README rule 3 says, and list it under "Users outside Files:".
+     - `Outcome::Job` stays as it is: its `wait` is its own clamp, and its job's deadline was said in its `running` answer.

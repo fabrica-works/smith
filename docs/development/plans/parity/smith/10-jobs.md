@@ -280,6 +280,14 @@ below holds.
   `tests/protocol-llm/tests/adapter_continuation.rs`; `tools::Request`'s
   in `smith-domain-session/src/session.rs:1103-1109`, `tests/tools/src/world.rs:488-557`
   and `tests/tools/tests/memory.rs:36-46`.
+- `Outcome::Running` gains `timeout: TimeoutClamp`, the command's deadline
+  clamp, after `dropped`, and so does version 4's `CommandRunning`, as
+  `Exited` and `CommandEnd` carry it (ruling 117). Its users on `main`:
+  `smith-domain-tools/src/facts.rs:258` (`observed`, which counts it as
+  `Exited`'s `timeout` is), `src/tests/jobs.rs:25`; `smith-protocol-channel/src/turn.rs:298`,
+  `transcript.rs:363`, `src/tests/jobs.rs:48`, `:58`, `:185`;
+  `smith-protocol-llm/src/render.rs:220` (both clamps said), `tests.rs:132`,
+  `:662`, `:748`; `tests/codecs/tests/transcript.rs:109-122`.
 
 **10.2**
 - `tools::Request::JobsCancelled` needs arms at `smith-domain-session/src/session.rs:1098-1108`
