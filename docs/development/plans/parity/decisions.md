@@ -761,3 +761,11 @@ changes what section 8.4 holds.
      - 10.2 keeps `Event::CancelJobs` and `Request::JobsCancelled`, `cancelled` at a job's next read, the close's facts for each job whose end no answer reported, the referee and the fuzzy world, and its other tests.
      - Option 2 (10.6 and 10.2 landing together) is not taken. If 10.6 with these two parts passes README rule 1's split point, split it there, as rule 1 says.
      - Nothing is offered to a model: `job` waits for 11.2, and production `shell` calls keep `Yield::Never` until 11.2 (the 10.1 corrections).
+
+123. **07.3 calibrates base history v3 while the designer answers** (design gap (interim), smith 07's block of 2026-10-14T20:59:36Z).
+     Ruling 123. Interim, until the designer's answer: 07.3 runs base `history` version 3 at medium now, once: `calibrate probes/history --arm <the version 3 arm already built>`, with no control (ruling 121, point 5.3). `history/small-window` waits for the answer. The question is in the run's `question.md`: does a small-window attempt whose model finished after 4 reads, before any compaction was due, count as a model deviation, smith's failure or unjudged? Base `history` decides neither `conversation-opened` nor `compaction-choice`, so its calibration does not rest on that answer.
+
+     - If it reaches 10 passes, commit its `[calibration]` block on `parity/smith-07-words`, and land nothing.
+     - It stops as ruling 121's point 5.4 says: on a question for any failure that is smith's under benchmarks.md 3.2, or any unjudged attempt. On model deviations alone that put ten passes out of reach, report the count and stop. `high` waits for the answer, so that both calibrations move to it together.
+     - Then 07.3 waits for the answer. No small-window attempt runs, and no check, classifier or instruction word changes.
+     - Row 07.3: 69 attempts and $4 in all, 23 and $0.45 spent.
