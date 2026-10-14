@@ -178,7 +178,8 @@ Files: `crates/smith-domain-run/src/prompt.rs` (`SUMMARY`, `:30`;
   `PREAMBLE`), its tests, `tests/local-process/src/world.rs` (`:1089`,
   a fake cue that matches "Summarise the work so far": the new `SUMMARY`
   keeps that opening, or the cue matches its new one),
-  `benchmarks/tasks/probes/history/task.toml` (the two blocks),
+  `benchmarks/tasks/probes/history/task.toml` (the two blocks, and
+  `effort = "medium"` with its reason, ruling 118),
   `benchmarks/summaries/`.
 Shape: `SUMMARY` and `PREAMBLE` rewritten to say, in that order, what
   run.md 3.3 lists; `SUMMARY` no longer says "Keep the task".
@@ -189,7 +190,8 @@ Proof: live, once each, through `heavy --gate`, with the control 07.1's
   <07.1's parent> --arm <dir>` (the control fails `compaction-choice`;
   the arm passes 10 within 12) and `calibrate probes/history --control
   <07.1's parent> --arm <dir>`. Each writes its block (04.1). At most 28
-  attempts, $1.50, 60 minutes. A malformed end under `None` is smith's,
+  attempts, $1.50, 60 minutes; ruling 118 makes it 37 attempts, $4 and
+  90 minutes in all, the 9 spent at low effort included. A malformed end under `None` is smith's,
   and stops on a question (decisions.md 4.4).
 Don't: change the threshold (4/5; decisions.md 4.5).
 Size: 30 lines.

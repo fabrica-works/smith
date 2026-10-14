@@ -255,14 +255,14 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 | 02.1, 02.3 | `first-request`, and Codex on `smoke-tools`, each at most 2 | 4 | $0.02 |
 | 04.6 | `first-request` calibrated, no control (rulings 112, 114: 11 spent, 12 fresh) | 23 | $0.05 |
 | 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 30 | $3 |
-| 07.3 | `history` and `history/small-window` calibrated, with their control | 28 | $1.50 |
+| 07.3 | `history` and `history/small-window` calibrated, with their control: 9 spent at low effort, then both again at medium (ruling 118) | 37 | $4 |
 | 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 24 | $7 |
 | 12.1 | the baseline `parity` run | 58 | $12 |
 | 12.2 | the `compaction` experiment, 10 per arm | 20 | $1 |
 | 12.3 | `tool-output` version 3's four variants and `process-tree`, while room is left | at most 50 | $0.30 |
 | 12.4 | the closing `parity` run | 58 | $12 |
 | reserve | provider-stopped reruns (rule 9) | 6 | $0.30 |
-| **the run** | | **at most 340** | **about $37** |
+| **the run** | | **at most 340** | **about $39.50** |
 
 12.3 runs only the calibrations that leave 64 attempts (12.4's 58 and the
 reserve) under 340; those it cannot run go to `later.md`.
