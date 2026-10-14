@@ -1,6 +1,6 @@
 # The agent process
 
-Provisional, 2026-10-07, revised 2026-10-13. What an agent process is:
+Provisional, 2026-10-07, revised 2026-10-14. What an agent process is:
 the `smith-agent` binary, glue over `smith-agent-shell`, which a host
 spawns to run one run. It covers:
 
@@ -21,6 +21,7 @@ are limits.md's, and its event vocabulary events.md's.
   - files loaded and stored;
   - directories scanned and trees listed;
   - searches and commands run, each in its own process group;
+  - commands left running as jobs, held, read and stopped;
   - checks run and guides read.
 - **Everything runs in a view, once contained trees exist.** Each
   command, search and check is then a contained tree (skein's
@@ -57,7 +58,10 @@ are limits.md's, and its event vocabulary events.md's.
 | scan a directory | its entries, within their bound |
 | list a tree | the entries beneath a directory, to a depth, leaving out what the ignore files and git exclude, within their bound |
 | search | `rg` in a process group of its own: no configuration, an empty environment, the pattern and glob after `--` |
-| run a command | `sh -c` in a process group of its own, in the working directory, with the configured environment and the domain's deadline, its output's head and tail kept |
+| run a command | `sh -c` in a process group of its own, in the working directory, with the configured environment and the domain's deadline, its output's head and tail kept; asked with a yield, answered at the yield with its output so far while it goes on as a job |
+| hold a job | its group kept running under its command's deadline, and what it writes kept as the head and the tail of the bytes not yet read, with the count dropped between them, within the job's kept output (limits.md, 3.5) |
+| read a job | the job's kept output, as much of its head and its tail as the domain asks for, the rest counted as dropped, and the read empties it; then its end, once it has ended. It answers at the job's end, or when the wait the domain asks for ends |
+| stop a job | its group stopped in the three steps below, then its end answered |
 | run the checks | the convention's executable, in its directory, the same way |
 | read a guide | as text, UTF-8, cut at a character's boundary within its bound |
 
@@ -79,8 +83,24 @@ are limits.md's, and its event vocabulary events.md's.
      group and reaps it (skein's io.md, 6).
 
   It answers once the group's leader is reaped and its pipes are closed.
+- **Jobs** are commands the domain left running past their call's
+  answer (domain/tools.md, section 5). The machine holds each job's
+  process group and its unread output until the domain has taken its
+  end. A job's deadline is its command's, counted from its start: when
+  it passes, its group is stopped in the three steps, and its end is
+  timed out. A stop or a cancel stops its group in the same three steps.
+- **Its close stops the jobs it holds.** At the answer it holds none,
+  since a session's close cancels its jobs and waits for them to settle
+  (domain/session.md, section 5), and the run answers only once its
+  sessions have closed (domain/run.md, section 4). One it still holds,
+  after a run dropped without an answer, it stops with the third step
+  alone, io's close of the job's child, which kills what is left of the
+  group and reaps it within one `close`, so jobs add nothing to the
+  teardown bound (limits.md, section 7).
 - **Its limits are derived from the tools'** (limits.md, section 3.5),
-  so a tool's limit never meets a smaller one here.
+  so a tool's limit never meets a smaller one here: its processes hold
+  `jobs` for each of `conversations` beside the listings, searches,
+  commands and checks the run's calls may have running at once.
 
 ## 3. The view
 
@@ -286,7 +306,8 @@ spawns one (hosts.md, section 5.2).
 
 - **The domain is owed** its operations carried out as asked, each answered
   once, with outcomes in its terms: a file's content and version, a
-  command's exit and output, a group ended after a deadline.
+  command's exit and output, a job's output since its last read and its
+  end, a group ended after a deadline.
 - **skein owes:**
   - io's files and roots;
   - process groups, signalled whole (skein's `io.md`, section 6), and
@@ -307,13 +328,19 @@ spawns one (hosts.md, section 5.2).
   - commands that hang, fail and flood their output;
   - commands whose children hold their pipes, ended with their group at
     the deadline;
+  - a command past its yield held as a job: read while it runs, its
+    output past its kept output's bound kept as head and tail with the
+    count dropped, then read to its end; a job stopped; a job past its
+    deadline; a job still held at the machine's close, stopped within
+    one `close`;
   - the configured environment reaching commands and checks, and none
     reaching a search;
   - checks that pass, fail and time out.
 
   The referee requires that every group is ended before its call is
-  answered, and, once contained trees exist, that nothing is written
-  outside the writable directories.
+  answered, a job's before its end is answered or told, and every group
+  before the machine reports closed; and, once contained trees
+  exist, that nothing is written outside the writable directories.
 - **The process,** as a simulated world: the agent's `iterate` with a
   scripted host on its channel and a fake LLM peer. Each world inherits
   skein's teardown invariant: a world that ends by itself fires no

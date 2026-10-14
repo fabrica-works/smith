@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-13. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-14. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -195,17 +195,35 @@ child domain `smith-domain-session`, whose own child is the tools domain
 ## 5. Tools in a session
 
 - **Tools run in parallel where that is safe.** Each tool has an effect,
-  read or write. Adjacent reads in one turn run together, a write runs
-  alone, and results go back in call order. A sub-agent's effect follows
-  from its tools; a host tool's is as its charter declares; `finish` and
-  `deliver` are writes.
+  read or write. Adjacent reads in one turn run together, up to
+  `parallel_tools` at once, or `calls_per_response` where that is
+  smaller (protocol/limits.md, 2.3); the reads past it make the next
+  batch, which starts once every call of the one before has answered. A
+  write runs alone, and results go back in call order. A sub-agent's
+  effect follows from its tools; a host tool's is as its charter
+  declares; `finish` and `deliver` are writes; `job` is a read, and a
+  write with `stop` (tools.md, section 5).
+- **Jobs run beside the turns.** A `shell` call stays a write until it
+  answers, `running` or ended. A job that is running holds no place in
+  any later batch: the session's later reads, writes and commands run by
+  these rules while it runs, and its completions go on.
+  - **They are the session's writes in progress.** Its opener cancels
+    them, and waits for them to settle, before another writer takes the
+    lease or a check or a delivery runs (run.md, sections 5.3 and 8.1).
+  - **They end with the session.** A session closing, for any reason,
+    cancels its running jobs and waits for them to settle, then tells a
+    `job.ended` for each job whose end no answer reported, before it
+    ends (tools.md, section 5).
+  - **None outlives its activation.** A session resumed in a later
+    activation has no jobs.
 - **Tool choice.** Each completion is asked with a tool choice: any tool
   offered (`Auto`), none (`None`), or only some (`Only(names)`). The
   tools offered never change (section 3); the choice narrows what may be
   called.
   - The opener gives the choice when it continues the session, as a run
     winding down offers only `finish` and `deliver` (run.md, section 9).
-    The session sets `None` on its own final turn (section 7).
+    The session sets `None` on its own final turn (section 7), and on a
+    compaction (8.2), whatever the conversation's choice.
   - A call outside the choice, one a dialect that cannot express `Only`
     let through or one the model wrote anyway, is answered as not run.
     The session then goes on by its ordinary rules.
@@ -226,7 +244,10 @@ child domain `smith-domain-session`, whose own child is the tools domain
   (run.md, section 9), so spend never crosses it. Time is the exception:
   when it runs out, the session closes at once. A compaction is a
   completion like any other: it counts as a turn, and is reserved,
-  charged and counted against these budgets (section 8.2).
+  charged and counted against these budgets (section 8.2). A job
+  charges no turn, token or spend; its session's time runs on while it
+  runs, as it does while any call runs, and a session that closes as its
+  time runs out cancels its jobs with its other calls (section 5).
 - **Context is a dimension of its own.** The window bounds one prompt
   (section 8.1); the token budgets bound what every completion used,
   summed. Neither stands for the other: a session well within its token
@@ -323,13 +344,14 @@ window, history only grows (section 3).
   - the window above its threshold holds the most one turn can append,
     the summary instruction and a completion's output, so a compaction
     the check triggers always fits the window;
-  - a new window's opening at its largest (the system text, the task, a
-    summary of a completion's most output, and the messages held back,
-    at most one offer of its opener's, which the opener bounds for this
-    in messages and bytes, run.md, section 6) passes the check, so a
-    window just opened can make its first completion. Where a declared
-    window would not hold that material, the derivation lowers the
-    material's bounds, never the window (protocol/limits.md).
+  - a new window's opening at its largest (the system text, the task,
+    the summary preamble, a summary of a completion's most output, and
+    the messages held back, at most one offer of its opener's, which the
+    opener bounds for this in messages and bytes, run.md, section 6)
+    passes the check, so a window just opened can make its first
+    completion. Where a declared window would not hold that material,
+    the derivation lowers the material's bounds, never the window
+    (protocol/limits.md).
 - **The history's other bounds** (its messages, blocks and bytes) are
   derived so that the window check is reached first (protocol/limits.md).
   A history that would cross one of them anyway is compacted as a full
@@ -359,24 +381,38 @@ window, history only grows (section 3).
   longer declares makes the transcript one the run cannot resume
   (section 3).
 - **The compaction completion** has the same model, affinity, system
-  text, tools and tool choice as the completion it stands in for, and
-  the window's history with every result owed to it, then one appended
+  text and tools as the completion it stands in for, and is asked with
+  `ToolChoice::None`, whatever the conversation's own choice; the new
+  window asks with the conversation's choice again. It holds the
+  window's history with every result owed to it, then one appended
   user message: the summary instruction, which the run gives at open
   (run.md, section 3.3). The results owed to it are rendered within the
   room the window leaves for them, each cut with its marker where they
-  would pass it (protocol/limits.md, section 3.9). Nothing before them
-  differs from an ordinary prompt, so the request reads the cached
-  prefix. Messages the
-  opener passed since the last completion are held back for the new
-  window. Calls in the compaction's answer are not run.
-- **The new window** opens with one user message: the conversation's
-  task (its opening message, carried from window to window), the
-  summary (the answer's text), then the held-back messages. The
-  compaction's own blocks are not kept, and the old window's history is
-  released.
-- **The summary** is the text of the answer's text blocks, in order. A
-  summary cut at the output limit opens the window as written, with no
-  marker, as an ordinary answer cut there stays in history as written;
+  would pass it (protocol/limits.md, section 3.9). The history before
+  them is the ordinary prompt's, unchanged:
+  - **on the Codex dialect,** which keeps the tool choice outside the
+    cached prefix, the request reads the cached prefix;
+  - **on the Anthropic dialect,** a changed choice keeps the cache of the
+    tools and the system text and loses that of the messages, so a
+    compaction there writes its window's history to the cache once more
+    (protocol/llm.md, section 2.2). The design accepts that cost, once
+    per window, so that the model is asked for a summary and offered no
+    call.
+
+  Messages the opener passed since the last completion are held back for
+  the new window. Calls in the compaction's answer, which a provider may
+  write anyway, are not run.
+- **The new window** opens with one user message of separate text
+  blocks, in this order: the conversation's task (its opening message,
+  carried from window to window); the summary preamble, which the run
+  gives at open with the summary instruction (run.md, section 3.3); the
+  summary (the answer's text); then the held-back messages, one block
+  each. The compaction's own blocks are not kept, and the old window's
+  history is released.
+- **The summary** is the text of the answer's text blocks, in order,
+  separated by a blank line. A summary cut at the output limit opens the
+  window as written, with no marker, as an ordinary answer cut there
+  stays in history as written;
   the compaction's `response.completed` has `stop` `max_tokens`
   (protocol/events.md, 3.5).
 - **Told as a window turn,** like any other turn: its usage and spend
@@ -454,7 +490,13 @@ budgets.
 
 - **Its stories:**
   - a conversation that yields and is continued;
-  - reads in parallel and a write alone;
+  - reads in parallel and a write alone; more adjacent reads than
+    `parallel_tools`, the rest run in the next batch;
+  - a command answered `running` while the session reads, edits and
+    completes, then read to its end with `job`; a `job` with `stop`
+    alone in its batch; jobs cancelled by the opener before another
+    writer, `cancelled` at their next read; a session closing with a job
+    running, telling its `job.ended`;
   - every failure class retried or given up; head and idle timeouts
     retried, a whole-call expiry not; a full pool waited for;
   - a call cut off at the output limit, answered and made again; an
@@ -468,9 +510,14 @@ budgets.
     long; context too long on the compaction, failing; calls in a
     compaction's answer not run; a request skein finds too large, taken
     once as context too long;
-  - a summary cut at the output limit, opening its window as written; a
-    refused compaction, and ones with no text, cut and not, each failing
-    with its fault and telling no turn;
+  - a compaction asked with `None` and the window's tools; one in a
+    conversation narrowed to `Only`, whose new window asks with `Only`
+    again; a child's final turn falling due during a compaction;
+  - a summary of several text blocks, opening its window after the task
+    and the preamble, separated by blank lines; a summary cut at the
+    output limit, opening its window as written; a refused compaction,
+    and ones with no text, cut and not, each failing with its fault and
+    telling no turn;
   - a wind-down offering only some tools, with a call outside them; a
     child's final turn answered with `stop: budget`;
   - a sub-agent's spend counted once; cache writes priced at their own
@@ -483,7 +530,9 @@ budgets.
   - every prompt of a conversation carrying its affinity, and distinct
     conversations distinct ones;
   - within a window, each prompt extending the one before; one window
-    boundary per compaction;
+    boundary per compaction; every compaction asked with `None`;
+  - every job's end told once, and no job running once its session has
+    closed;
   - no prompt whose bound exceeds its window;
   - no failure detail in a prompt.
 - **The fuzzy suite** draws usage and appended sizes, and checks that no
@@ -494,9 +543,20 @@ budgets.
 
 - **Transcripts across providers:** whether a later version may carry a
   provider-neutral form, so a run can resume on another provider.
-- **A window's contents:** the task, the summary and the held-back
-  messages, as section 8.2 has them; whether the last results should
-  also be kept is for the history probe to measure.
+- **A window's contents:** the task, the summary preamble, the summary
+  and the held-back messages, as section 8.2 has them; whether the last
+  results should also be kept is for the history probe to measure.
+- **Which text makes the summary:** every text block of the compaction's
+  answer, as section 8.2 has it, or only those a dialect marks as the
+  answer rather than as working notes, where it marks them.
+- **A job's end between completions:** the model learns a job's end only
+  from a `job` call (section 5); whether the session appends a note of
+  it, by the path messages mid-work take (run.md, section 6).
+- **A failed call and the calls after it:** a call's failure changes
+  nothing for the calls after it in the same response, which run in
+  section 5's batches; whether a write or a command after a failed call
+  should be answered as not run instead, and the tools' descriptions say
+  so.
 - **An unreported input or output count:** section 6 charges the
   reservation in its place. To confirm against each dialect's reporting.
 - **Calls past the completion's bound:** failing the completion, as

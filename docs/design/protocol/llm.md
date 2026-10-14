@@ -1,6 +1,6 @@
 # LLM calls
 
-Provisional, 2026-10-07, revised 2026-10-09. `smith-protocol-llm` is the
+Provisional, 2026-10-07, revised 2026-10-14. `smith-protocol-llm` is the
 agent's component for LLM calls. It translates `smith-domain`'s LLM
 vocabulary to skein's LLM client and back:
 
@@ -26,7 +26,10 @@ schemas, decodes what the LLM calls, and renders what the tools return.
 - **A stable prefix.** Within a conversation's window, what comes before
   the history never changes, the history only grows, and encoding is
   byte-deterministic, so a provider's cache can serve each prompt's
-  prefix (section 2.2).
+  prefix (section 2.2). A compaction's request is the window's prompt
+  with its owed results and the summary instruction appended, asked with
+  the tool choice `None`; on the Anthropic dialect that choice costs the
+  messages' cache once per window.
 - **Decoding is total.** Every call the LLM writes becomes a typed call, or
   an invalid call with typed problems for the domain to answer, an
   oversized call included.
@@ -88,8 +91,19 @@ A completion's prompt is built from what the domain gives:
   placed in the system text or a tool's description, which are written
   once, when the conversation opens.
 - **A window boundary is the one exception.** A compaction opens a new
-  window, whose prompt starts afresh from the task and the summary
-  (domain/session.md, section 8).
+  window, whose prompt starts afresh from the task, the summary preamble
+  and the summary (domain/session.md, section 8).
+- **A compaction asks with `None`.** Its request is the window's prompt,
+  with the results owed to it and the summary instruction appended
+  (section 5), asked with the tool choice `None` whatever the
+  conversation's (section 3; domain/session.md, 8.2). The tool choice is
+  not among what a window fixes:
+  - on the Codex dialect it is outside the cached prefix, so the request
+    reads the cached prefix;
+  - on the Anthropic dialect a changed choice keeps the cache of the
+    tools and the system text and loses that of the messages (skein's
+    `llm.md`, 4.7), so the compaction writes its window's messages to
+    the cache again. The design accepts that cost, once per window.
 - **Byte-deterministic.** The same prompt becomes the same bytes:
   translation here, rendering (section 5) and skein's dialect encoding
   are functions of their input alone, with a fixed order of fields and no
@@ -113,7 +127,8 @@ A completion's prompt is built from what the domain gives:
 | `search` | `pattern`; optionally `path` and `glob`, to search within |
 | `write` | `path`, and `content`, the whole file, at most the tool payload in bytes |
 | `edit` | `path`, and `edits`, each an `old`, a `new` and optionally `all`, in the dialect's edit format |
-| `shell` | `command`; optionally `timeout_seconds`, at most the effective maximum, and `output_bytes`, at most the output ceiling |
+| `shell` | `command`; optionally `timeout_seconds`, at most the effective maximum, `output_bytes`, at most the output ceiling, and `yield_seconds`, at most `job_wait` |
+| `job` | `job`, the number of a job its session answered `running`; optionally `wait_seconds`, at most `job_wait`, `output_bytes`, at most the output ceiling, and `stop`, a boolean |
 | `finish` | the result contract's forms (below) |
 | `deliver` | the change's required fields |
 | `wait` | nothing |
@@ -123,20 +138,44 @@ A completion's prompt is built from what the domain gives:
 - **Descriptions say what the domain enforces, with units and limits.**
   Every parameter has a description, and each limit it meets is given
   with its unit and its maximum: the read ceiling, the tool payload, the
-  output ceiling, the deadline's maximum. They are the effective values
-  (section 8), written in when the conversation opens, so the LLM meets
-  no hidden cap. Paths are described as domain/tools.md, section 2 says:
-  with one directory, relative to the working directory, whose name is
-  never shown; with several, the working directory named and the others
-  as `/name/...`. The descriptions also say that a `write` needs the
-  file's current version read, that an `edit` needs each `old` to match
-  once in the file as it is, and that output past a limit is cut and
-  marked.
+  output ceiling, the deadline's maximum, `job_wait` and `jobs`. They
+  are the effective values (section 8), written in when the conversation
+  opens, so the LLM meets no hidden cap. Paths are described as
+  domain/tools.md, section 2 says: with one directory, relative to the
+  working directory, whose name is never shown; with several, the
+  working directory named and the others as `/name/...`. The
+  descriptions also say that a `write` needs the file's current version
+  read, that an `edit` needs each `old` to match once in the file as it
+  is, and that output past a limit is cut and marked.
+- **The facts each description states,** beside its limits:
+  - `shell`: `timeout_seconds` and `yield_seconds` are in seconds. The
+    timeout's default is `shell_timeout` and its ceiling
+    `tool_deadline`, each in seconds, within the session's remaining
+    time. The yield's ceiling is `job_wait`, in seconds, and it has no
+    default: without a yield the call waits for the command's end. A
+    command still running at its yield is answered `running` with its
+    job's number, and goes on as that job under its timeout, counted
+    from its start;
+  - `job`: that it reads a job's output since its last answer, and its
+    end once it has ended; `wait_seconds` in seconds, its default and
+    its ceiling `job_wait`; `stop`, which stops the job and answers its
+    end; and `jobs`, the most a session may hold, a job holding its
+    place until an answer reports its end;
+  - `search`: that it runs `rg`, and that its `pattern` is a regular
+    expression;
+  - each path field: that `.` and the empty path both name the working
+    directory; that its byte bound counts each name, `.` and `..`, with
+    one separator between each two, and a repeated, leading or trailing
+    separator as nothing; and that the path must keep the same bound
+    once resolved, `.` and `..` taken out, from the workspace's root
+    (domain/tools.md, section 2).
 - **Batching is invited.** The descriptions say that independent reads,
   listings and searches may be called together in one response, and run
   side by side, and that writes, edits and commands may be called
   together too, and run one at a time in call order (domain/session.md,
-  section 5). No description says that a tool runs alone unless the
+  section 5). They also say that a `job` call without `stop` is a read,
+  and runs beside them, that one with `stop` is a write, and that a job
+  running between calls holds no place in a later batch. No description says that a tool runs alone unless the
   session runs it alone, and none asks the LLM to call a tool by itself.
 - **The edit format is the dialect's.** Each dialect is offered the edit
   format its models are measured to handle best, old and new text or a
@@ -160,10 +199,10 @@ A completion's prompt is built from what the domain gives:
 - **The tool choice narrows; the tools never change.** A conversation is
   offered the same definitions for its life. Which of them a completion
   may call is skein's neutral `ToolChoice`: `Auto`; `None`, for a child's
-  final turn; or `Only(names)`, for a wind-down's `finish` and, when
-  granted, `deliver` (domain/run.md, section 9). A dialect that cannot
-  express `Only` renders `Auto`, and the session answers a call outside
-  the set as not run.
+  final turn and for a compaction (2.2); or `Only(names)`, for a
+  wind-down's `finish` and, when granted, `deliver` (domain/run.md,
+  section 9). A dialect that cannot express `Only` renders `Auto`, and
+  the session answers a call outside the set as not run.
 - **`finish`'s schema is generated from the contract** (charter.md, 2.1).
   It has:
   - one branch per form allowed;
@@ -222,6 +261,10 @@ A completion's prompt is built from what the domain gives:
   sub-agent's call of `sub_agent`, which it is never offered, is invalid
   with the problem *nesting*, which tells the LLM that a sub-agent does
   its work itself (domain/run.md, 5.3).
+- **The empty path is the working directory.** A path field whose
+  value is the empty string, `""`, decodes to the same typed path as
+  `.`, the working directory itself (domain/tools.md, section 2), and is
+  never refused as a bad value.
 - **A host tool's input** is checked only to be a JSON object within its
   bound, and is relayed as bytes (domain/run.md, 5.2).
 - **A result for `finish`** is decoded into the domain's result: its form,
@@ -239,6 +282,10 @@ A completion's prompt is built from what the domain gives:
     of its edits and why;
   - a command's exit, and the head and tail of its output, saying what was
     dropped between them;
+  - a command answered `running`: its job's number, its output so far,
+    and that `job` reads the rest; a job's output since its last answer,
+    then `running`, or its end: its exit, its deadline passed, stopped
+    or cancelled;
   - a request clamped to a ceiling, saying so and naming the ceiling;
   - a failure with its output.
 
@@ -261,8 +308,9 @@ A completion's prompt is built from what the domain gives:
   compaction are rendered within what the window leaves above the
   compaction's history, less the summary instruction and one output,
   each cut with its marker as the rest require (limits.md, 3.9). Only
-  that request's tail changes: the history before it is as it was sent,
-  so the cached prefix holds.
+  that request's tail and its tool choice change: the history before it
+  is as it was sent, so the cached prefix holds, but for the messages'
+  cache on the Anthropic dialect (2.2).
 - **Deterministic.** Within a release, the same outcome renders to the
   same bytes, live and on resume, as the stable prefix needs (2.2).
 - **An invalid call** is rendered with its problem, naming the field; too
@@ -399,13 +447,20 @@ component and skein's client against scripted byte peers, in each dialect.
     accepts as replayable;
   - a compaction whose owed results pass its room, cut with their
     markers, its history unchanged before them;
+  - a compaction asked with `None` in a conversation asked with `Auto`
+    and in one narrowed to `Only`, and the new window's first request
+    asked with the conversation's choice, in each dialect;
+  - a `shell` call with a yield answered `running`, then `job` calls
+    read while it runs, at its end, and with `stop`;
+  - the empty path and `.` decoded to the same call, for each path
+    field;
   - the request's bytes, the first byte and the largest gap measured
     for the event stream, and deltas given to it only when asked;
   - a call cut off, and nesting asked for, each answered as its problem;
   - `finish`'s schema for each form of contract, and a result decoded from
     it;
   - the descriptions, for one directory and for several, stating each
-    effective limit;
+    effective limit and each fact of section 3;
   - a host tool's input passed through;
   - each failure class, with each kind of evidence, a limit naming
     itself and an HTTP failure its status;

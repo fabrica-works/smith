@@ -1,6 +1,6 @@
 # The run
 
-Provisional, 2026-10-05, revised 2026-10-13. What a smith run is, as a
+Provisional, 2026-10-05, revised 2026-10-14. What a smith run is, as a
 domain layer: one activation of an agent, from the charter its host gives
 it to the answer it gives back. It is the child domain `smith-domain-run`,
 composed with its sessions by `smith-domain` (README.md, section 4). The
@@ -69,9 +69,12 @@ session   one conversation with an LLM; runs the workspace's tools
 
 What the host gives a run to set it up:
 
-- **Instructions:** the role, as text: a chat, a researcher, a
-  coordinator, a reviewer with a lens, an operator, a producer of a
-  change.
+- **Instructions:** the role, as text, the first part of main's system
+  text (3.3): a chat, a researcher, a coordinator, a reviewer with a
+  lens, an operator, a producer of a change. A host gives its own;
+  smith's shell gives the task role, one text for chats and for tasks,
+  when its settings give none (`docs/design/shell.md`, sections 5.2 and
+  6.6).
 - **Brief:** titled sections of text, in order, that the host wrote for
   why the run runs, already fitted to the host's budget for them. A host
   that keeps typed context renders it; smith reads only titles and text.
@@ -137,13 +140,13 @@ More messages may follow at once, before the run has read its start.
 
 ### 3.3 The prompt
 
-The run composes its main session's system text: the instructions; the
-brief's sections; then the sections about its own mechanics, because
-those are what it enforces: the workspace, if any, and what it may
-write; the tools; each directory's guide; the checks; the budget
-(`## Budget`, 9.2); sub-agents, when granted (5.3); how to finish (the
-contract, as the LLM must meet it); and how waiting works, when `wait`
-is granted. The domain decides what each says and in which order, and
+The run composes its main session's system text: the instructions, the
+role (3.1), first; the brief's sections; then the sections about its
+own mechanics, because those are what it enforces: the workspace, if
+any, and what it may write; the tools; each directory's guide; the
+checks; the budget (`## Budget`, 9.2); sub-agents, when granted (5.3);
+how to finish (the contract, as the LLM must meet it); and how waiting
+works, when `wait` is granted. The domain decides what each says and in which order, and
 writes it as text, as it writes the results and problems of the run's
 own tools and the host's, and the notes it appends (9.2), so a
 transcript keeps exactly what the LLM was told. The workspace tools'
@@ -164,11 +167,24 @@ outcomes stay typed (tools.md, section 4).
   or a tool's description, so each request extends the one before and a
   provider's cache keeps it. A session that resumes the conversation in a
   later activation has it written afresh, from the start that resumes it.
-- **The summary instruction.** With each session it opens, the run gives
-  the instruction the session sends when it compacts its conversation
-  into a new window (session.md, section 8): what a summary must keep for
-  the work to go on. The session decides when; the run owns the words, as
-  it owns every prompt.
+- **The summary instruction and its preamble.** With each session it
+  opens, the run gives the instruction the session sends when it
+  compacts its conversation into a new window, and the preamble that
+  opens the summary in that window (session.md, section 8.2). The
+  session decides when; the run owns the words, as it owns every
+  prompt. The instruction must say:
+  - that the work is not finished, and that a new window continues it,
+    opening with the task's own words;
+  - to answer with text and to call no tool;
+  - to write what the next window needs that the task does not say: what
+    was done and found, with exact values, names and paths as they were
+    read; what remains; and the decisions taken;
+  - not to restate the task or its required answer.
+
+  The preamble says that what follows is the model's own summary of an
+  earlier window, and that the work goes on. Both are the same whatever
+  the charter says, so they count in smith's own part of a window
+  (protocol/limits.md, section 3.9).
 
 A guide is read from each workspace directory at the path the
 conventions name, as text, UTF-8: whole within the guide limit, which
@@ -221,9 +237,9 @@ that is not empty, or a message.
 2. **Prepares:** reads each workspace directory's guide and looks for its
    checks (8.1).
 3. **Equips** its main session: prompt, tools, workspace authority, LLM,
-   the run's identity, a share of the budget, the summary instruction,
-   and the transcript it resumes, if any; and opens it once there is
-   work, or awaits its first message (3.4).
+   the run's identity, a share of the budget, the summary instruction
+   and its preamble, and the transcript it resumes, if any; and opens it
+   once there is work, or awaits its first message (3.4).
 4. **Drives** the session. A session *yields* when the LLM stops calling
    tools, and the run decides what happens next: nudge the LLM ("you have
    not finished"), pass on the messages that arrived, wait for one, or
@@ -252,7 +268,7 @@ that is not empty, or a message.
 
 | Source | Tools | Who answers | Effect |
 |---|---|---|---|
-| the workspace | `read`, `list`, `search`; `write`, `edit`, `shell` | the session, through its tools (tools.md) | reads; writes |
+| the workspace | `read`, `list`, `search`; `write`, `edit`, `shell`; `job` | the session, through its tools (tools.md) | reads; writes; `job` reads, and writes with `stop` |
 | the run | `finish`, `deliver`, `wait`, sub-agents | the run | `finish` and `deliver` write; a sub-agent's follows its tools |
 | the host | declared in the charter | the host, relayed | as declared |
 | MCP servers, later | as each server lists them | the protocol layer, as opaque calls | as the charter declares |
@@ -353,10 +369,21 @@ section 6).
   nothing meanwhile. Children granted only inspect hold no lease, and run
   side by side, with each other and with the reads around them in their
   parent's turn. Checks and delivery hold the lease over the whole
-  workspace (8.1). The lease follows from how calls are scheduled; naming
-  it lets a later step change who holds it while keeping what it means.
-  The first such step, a read-only parent working beside one writing
-  child, is a later document's (section 15).
+  workspace (8.1).
+  - **Jobs give way.** A session's running jobs are its writes in
+    progress (tools.md, section 5), so whatever takes the lease first
+    cancels the running jobs of every other session, and waits for them
+    to settle: a writing `sub_agent` call cancels its parent's jobs
+    before its child opens, and the checks and the delivery cancel every
+    running job before they run (8.1).
+  - **A child's jobs end with it.** A child granted shell may start
+    jobs; its session's close cancels them (session.md, section 5), so
+    none outlives the call that asked for it.
+
+  The lease follows from how calls are scheduled and from these cancels;
+  naming it lets a later step change who holds it while keeping what it
+  means. The first such step, a read-only parent working beside one
+  writing child, is a later document's (section 15).
 - **Focused briefs.** Main's system text says how to delegate: a child
   starts cold, knowing only its brief, the guides, its tools and its
   share, so a brief names the paths, the decisions already made and the
@@ -512,12 +539,20 @@ its next run to hear of. smith does not make the host's judgement.
   the whole workspace (5.3): nothing else holds write authority from the
   checks' start to the delivery's answer, so the host makes exactly the
   tree that was checked durable. That holds by construction: a write runs
-  alone in its session, and a sub-agent lives only as long as the call
-  that asked for it.
+  alone in its session, a sub-agent lives only as long as the call
+  that asked for it, and no job runs through a check or a delivery.
+- **Jobs are cancelled first.** A `finish` that delivers and a `deliver`
+  cancel every running job, and wait for each to settle, before the
+  checks start, or before the delivery when no directory has checks
+  (5.3; tools.md, section 5). Only their own session's can be running:
+  they run alone, and a child lives only as long as its call. A job so
+  cancelled ends `cancelled`, which the next `job` call naming it
+  answers.
 - **A long operation is said.** The run tells its host when checks start,
   with their deadline, and when they end, as it does for each LLM
-  completion and each command its sessions run, so a long test suite, a
-  slow completion or a long build is not taken for a hang (host.md,
+  completion, each command its sessions run, until it ends or is
+  answered `running`, and each `job` call's wait, so a long test suite,
+  a slow completion or a long build is not taken for a hang (host.md,
   section 4).
 - **A failing check is feedback,** with its output's tail, like any
   other.
@@ -654,7 +689,11 @@ answers as it was ending; the host has the delivery's own answer.
   and its host decides what wakes it. The run's budget is in one of two
   stages, ordinary or winding down, and the change is a fact (section
   11).
-  1. Live sub-agents are closed and settled, each call answered once.
+  1. Live sub-agents are closed and settled, each call answered once,
+     and their jobs end with them (session.md, section 5). Main's own
+     jobs run on: a `finish` that delivers, or a `deliver`, cancels them
+     before its checks (8.1), and the run's end, which closes main's
+     session, cancels any left.
   2. Main then gets at most the reserve's turns of completions, the first
      with the run's note that the budget is spent and it is to finish now
      with what it has. They offer only `finish`, and `deliver` when
@@ -739,7 +778,9 @@ never when a sink takes it:
   was clamped, and on its return what it used: turns, time and spend;
 - an LLM call started, retried or finished, with its usage;
 - a tool or a check started (with its deadline) or finished, a tool's
-  with the provider's id for its call;
+  with the provider's id for its call; and a job's end that no answer
+  reported, as its session closes (tools.md, section 5; `job.ended`,
+  protocol/events.md, section 3.6);
 - a message received, or refused with its reason, then read by a told
   turn or unread at the answer, so every message's terminal is a fact;
 - the budget, as it stands at each charge, and its stage, ordinary or
@@ -800,6 +841,17 @@ a merge in progress; a sub-agent on another model; a delivery found
 stale; a chat with no workspace, only host tools; a cancel in the middle
 of a turn.
 
+For jobs:
+
+- a build run as a job while main reads and edits, read to its end;
+- main's jobs cancelled before a writing child opens, and before a
+  `finish`'s checks and a `deliver`'s; a writing child's job ended with
+  the child;
+- a wind-down with a job running, cancelled by the `finish` that
+  delivers;
+- a run parked with a job running, the job told ended, and a `job` call
+  after the resume answered as invalid.
+
 For messages:
 
 - a start that carries messages, opened with the brief's instruction and
@@ -833,7 +885,7 @@ For budgets and sub-agents:
   down;
 - final turns ignored, failing once for the budget;
 - a compaction, counted as a turn and as spend, the system text
-  unchanged;
+  unchanged, given the run's summary instruction and preamble;
 - a compaction refused, failing the run as *refused*, the message it
   held back unread;
 - inspect-only children side by side, and a writing child alone.
@@ -851,13 +903,18 @@ call answered once; every host call asked under one name. And:
 - a sub-agent's effective share is within what was left above the
   reserve when it was asked;
 - at most one lease holder over overlapping directories, and checks and
-  deliveries only under the whole workspace's;
+  deliveries only under the whole workspace's; no job running in
+  another session while a writing child lives, and none while a check
+  or a delivery runs;
+- every job's end told once, by an answer or as its session closes;
 - with a reserve of a turn or more, no budget failure before main's last
   final turn.
 
 The agent's top-level world checks the same against the fake provider:
 requests carry `## Budget`, `## Your share` and the usage lines, and
-final turns offer no tool to choose, or only `finish` and `deliver`.
+final turns offer no tool to choose, or only `finish` and `deliver`;
+compactions offer no tool to choose, and each new window opens with the
+task, the preamble and the summary.
 These are domain-speed stories under a deterministic clock and seed,
 within the focused suite's budget; the fuzzy suite draws message
 timings, budgets and shares within its own (`docs/design/testing.md`).

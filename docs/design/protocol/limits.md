@@ -1,6 +1,6 @@
 # Limits
 
-Provisional, 2026-10-09, revised 2026-10-12. How an agent's limits are
+Provisional, 2026-10-09, revised 2026-10-14. How an agent's limits are
 made:
 
 - the quantities a deployment declares;
@@ -21,8 +21,9 @@ the rules and the arithmetic's shape, not the values.
   quantities: per model, its window, its output, its largest reasoning
   item and its progress deadlines; per deployment, its concurrency, its
   tool payload, its calls per response, what a tool's output may hold,
-  its LLM pool and its memory (section 2). No byte limit is
-  configuration. A test may override a derived limit; nothing else may.
+  the jobs a session may hold, its LLM pool and its memory (section 2).
+  No byte limit is configuration. A test may override a derived limit;
+  nothing else may.
 - **A profile is a named bundle** of declared values and policy values.
   It is step code in the service crates (README.md, section 5), so a
   profile is tested where it is made, and its values are the product's
@@ -90,6 +91,7 @@ settings override them (`docs/design/shell.md`).
 | `tool_payload` | bytes | the most a tool exchanges in one piece: a `read`'s largest window, a `write`'s content, the arguments of one call |
 | `file_bytes` | bytes | the largest file the tools hold whole: a file `read` pages through in windows, and one `edit` loads and stores. It is at least `tool_payload`, so a file can grow past one piece: written once, then extended by edits |
 | `calls_per_response` | count | the most tool calls one completion may make, and so the most result blocks the next message holds |
+| `jobs` | count | the most jobs one session may hold at once: a job counts from the answer that names it `running` until an answer reports its end, or its session closes (domain/tools.md, section 5) |
 | render caps | bytes, count | what a tool's output may hold (below) |
 | `llm_pool` | bytes | the memory every LLM call in flight shares, sending and receiving (section 5) |
 | `memory` | bytes | the process's real memory: every worst case must fit within it (section 5) |
@@ -120,10 +122,12 @@ name `smith check` and the event stream's header print it under
 | `inbox` | count | the messages a run holds unread (domain/run.md, section 6) |
 | `unacknowledged` | count | the most turns a start's window may ask to hold unacknowledged (channel.md, section 7) |
 | `compaction_threshold` | fraction | the share of a window at which a session compacts (domain/session.md, section 8) |
+| `parallel_tools` | count | the most adjacent reads of one completion that run at once, as one batch; the reads after them wait, in call order, until every call of that batch has answered, and then form the next batch. A session uses the smaller of it and `calls_per_response` (domain/session.md, section 5). It is from 1 to 8, the most calls a session runs at once |
 | `connect`, `handshake` | duration, per endpoint | connecting, and TLS's handshake (section 7) |
 | `connection_keep` | duration, per endpoint | how long an idle connection stays open in a live service; never how the process ends, since the pool closes at the answer (skein's `llm-connection.md`, section 7) |
 | `tool_deadline` | duration | a tool call's longest deadline: the most a command's call may ask for, and the most any tool call's deadline may be, a host tool's included (domain/tools.md, section 5) |
 | `shell_timeout` | duration | a command's deadline when its call asks for none |
+| `job_wait` | duration | the longest a `shell` call's yield or a `job` call's wait may be: the ceiling of `yield_seconds`, and the default and the ceiling of `wait_seconds` (domain/tools.md, section 5) |
 | `check_timeout` | duration | the checks' deadline (domain/run.md, 8.1), cut at the run's end; a charter that allows a change keeps at least this much time in its reserve (domain/run.md, 9.1) |
 | `group_stop` | duration | each of the three steps that stop a command's group (agent.md, section 2) |
 | `close` | duration | io's close deadline (section 7) |
@@ -149,7 +153,10 @@ in every deployment:
   bound (3.1);
 - **an operator's line:** one line on standard error, a failure's
   detail clipped to its first 512 bytes at a character's boundary
-  (agent.md, section 6).
+  (agent.md, section 6);
+- **a model's effort:** a name of at most 32 bytes, the charter schema's
+  (charter.md, section 2). The list of names a model accepts is its
+  declaration (`docs/design/shell.md`, 6.1), never the vocabulary's.
 
 ## 3. The derivation
 
@@ -258,9 +265,9 @@ declarations:
   rule 4: the threshold's tokens at `TOKEN_BYTES` bytes each, plus what
   the window must receive before its next check, which is one
   completion's reserve beyond its answer and one batch's results: the
-  calls that run together (domain/session.md, section 5), each at its
-  render bound. A completion's later batches run within what is left
-  (domain/session.md, 8.1), never in more history. So `window-first`
+  calls that run together, at most `parallel_tools` (domain/session.md,
+  section 5), each at its render bound. A completion's later batches run
+  within what is left (domain/session.md, 8.1), never in more history. So `window-first`
   holds by construction. Its messages and blocks are
   those bytes over a block's cell in memory, by rule 3, and they are
   also skein's declared history items (skein's `llm.md`, 4.2). A prompt
@@ -292,6 +299,11 @@ declarations:
   completion;
 - **a decoded call's bytes:** `calls_per_response` decoded calls, each
   within one call's input and all within one answer's bytes (rule 1);
+- **a session's jobs:** at most `jobs`, each with its number, the
+  provider's id of the `shell` call that started it, its start's time,
+  and whether its end has come; a cell each, since their kept output is
+  the machine's (3.5). The session also keeps the highest number it has
+  given, so that none is reused (domain/tools.md, section 5);
 - **a batch's results:** each result within its render bound. Problems
   that name a contract's fields are charged at that contract's total
   (rule 1), rendered ×4 only where bytes may be invalid UTF-8 (rule 2);
@@ -314,7 +326,8 @@ them (transcript.md, section 7):
     appended after them, one offer of messages (3.9) and the run's
     notes;
   - a window's opening: the task's blocks, its instruction and one
-    offer, then the summary and one offer of held-back messages.
+    offer, then the summary preamble's block, the summary's and one
+    offer of held-back messages.
 
   So one declared number bounds both the completion and the message of
   its results, in the transcript's third version;
@@ -336,7 +349,9 @@ section 8):
 - **each workspace tool's outcome at its caps,** rendered: its kept bytes,
   with every escape at its largest expansion, and what the rendering
   adds (line numbers, paths, the head and tail's separator, a clamp's
-  note);
+  note, a job's number and how to read it). A `running` answer and a
+  `job` call's answer are outcomes like these: a job's kept output at
+  `shell_head` and `shell_tail`, and its end or `running`;
 - **a host tool's answer,** with the prefix the rendering adds; its text
   is at most `tool_payload`, like any piece the model reads at once;
 - **a message,** with its label's prefix, at its bound (3.9);
@@ -354,6 +369,14 @@ them (agent.md, section 2):
 
 - **a command's captured output:** at least `shell_head` and
   `shell_tail`;
+- **its processes:** at least the listings, searches, commands and
+  checks the run's calls may have running at once, a batch of at most
+  `parallel_tools` in each of `conversations`, and beside them `jobs`
+  for each of `conversations`, each job with its process record;
+- **a job's kept output:** `shell_head` + `shell_tail` bytes, the head
+  and the tail of what it wrote since its last answer, and the count of
+  bytes dropped between them, held from its `running` answer until an
+  answer reports its end or its session closes;
 - **a file's load and store:** at least `file_bytes`;
 - **a scan and a search:** at least `list_entries`, `search_hits` and
   `search_bytes`;
@@ -414,16 +437,17 @@ For each model the configuration declares:
   its compaction reported, or `output` when none was, never as its bytes.
 - **smith's own part** is taken first: the run's sections at their
   largest, smith's tools' schemas, the opening's and the summary's
-  instructions, and the prompt's allowance (3.2). smith's code fixes
-  them, and the service measures them at startup. Only what is the same
+  instructions, the summary preamble, and the prompt's allowance (3.2).
+  smith's code fixes them, and the service measures them at startup. Only what is the same
   whatever the charter says is smith's own. A number a section shows,
   such as a budget's, counts at its largest.
 - **The rest is split in halves,** a factor of the derivation's own:
   - **the host's part:** every byte that is there because of what the
     charter chose, beside a guide at `guide` for each of the start's
     directories. That includes:
-    - the charter's instructions, its brief, and its host tools'
-      descriptions and schemas;
+    - the charter's instructions, the task role among them when the
+      shell gives it (`docs/design/shell.md`, 6.6), its brief, and its
+      host tools' descriptions and schemas;
     - what smith renders from the charter's choices, in the system text
       and in the schemas it generates for `finish` and `deliver`: the
       contract's forms, fields, rules, verdict labels and items; the
@@ -453,7 +477,8 @@ For each model the configuration declares:
     (llm.md, section 4);
   - **the window's messages:** two offers (below). The task is the
     opening's instruction and one offer, and a new window carries the
-    task, the summary and at most one offer of held-back messages.
+    task, the summary preamble, counted in smith's own part, the summary
+    and at most one offer of held-back messages.
 - **One offer** is the most the run gives the model at once (domain/run.md,
   sections 3.4 and 6): at most `inbox` messages, and at most half the
   window's messages in rendered bytes. What an offer leaves stays
@@ -476,7 +501,8 @@ within what the window leaves after the history before them, the
 summary instruction and one `output`, never less than the window above
 its threshold less those two; each is cut with its marker where they
 would pass it (llm.md, section 5). History before them is unchanged, so
-the compaction still reads the cached prefix.
+the compaction still reads the cached prefix, but for what its tool
+choice costs on the Anthropic dialect (llm.md, 2.2).
 
 ## 4. Checked at startup
 
@@ -496,6 +522,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 |---|---|
 | `derived` | every derived limit fits its type; the first that overflows is named |
 | `fresh-window` | for each declared model, a new window at its largest (smith's own part, the host's part, the task as its instruction and one offer, a summary of `output` tokens, and one offer of held-back messages) and one `output` fit within the window at the compaction threshold, counting a byte as a token (3.9). The parts are derived so that this holds whenever smith's own part fits the room, for every shipped preset among them (`docs/design/shell.md`, 6.1); the check refuses a model whose room smith's own part fills |
+| `host-part-holds-the-role` | for each declared model, the host's part (3.9) holds the task role at its bound (`docs/design/shell.md`, 6.6) beside a guide at `guide` for each of the start's directories, so that the product's own default never makes a start too large for the entrance |
 | `compaction-headroom` | for each declared model, the window above its threshold holds one `output`, the summary instruction and a cut result's marker for each of `calls_per_response` results, so the compaction the check calls for always fits, its results cut to what is left (3.9; domain/session.md, 8.1) |
 | `output-in-window` | each model's `output` is less than its `window` |
 | `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound: the threshold at `TOKEN_BYTES` bytes a token, plus one completion's reserve beyond its answer and one batch's results, within the history's bytes (rule 4 of section 3). It holds by construction for 3.2's derivation, and guards it |
@@ -506,11 +533,11 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `render-in-result` | every tool's outcome at its caps, a host's answer, a message and a sub-agent's result render uncut within one rendered result's bound: the cut is a safeguard, never what a cap relies on (llm.md, section 5). A bound held below its derived worst case by any other limit breaks it |
 | `read-in-payload` | `read_window` is at most `tool_payload` |
 | `payload-in-file` | `tool_payload` is at most `file_bytes` |
-| `machine-holds-tools` | the machine's output, file, scan, search and path limits hold the tools' (3.5) |
+| `machine-holds-tools` | the machine's output, file, scan, search and path limits hold the tools', and its processes hold the listings, searches, commands and checks that run at once, and `jobs` for each of `conversations` beside them (3.5) |
 | `environment` | the configured environment's names are valid and distinct |
 | `request-head` | a request's head holds a credential at its bound (2.4), the affinity's headers and the endpoint's configured headers, none of which is a reserved name |
 | `ceilings-in-vocabulary` | the policy ceilings fit the charter's and the channel's schemas |
-| `deadlines` | every deadline is positive, and `shell_timeout` ≤ `tool_deadline`, so no command's deadline, asked for or not, passes what the session allows one tool call |
+| `deadlines` | every deadline is positive, `shell_timeout` ≤ `tool_deadline`, so no command's deadline, asked for or not, passes what the session allows one tool call, and `job_wait` ≤ `tool_deadline`, so no yield or wait does either |
 | `memory` | the sum of every worst case, with the LLM pool at its size, fits `memory` |
 | `cancel-over-close` | `cancel_grace` is at least twice io's `close`: a cancelled call settles within one `close` against a peer that keeps its connection open (skein's `shell.md`, section 13), so a grace no longer than `close` drops a run whose cancel would have settled; the second `close` is the margin |
 
@@ -549,10 +576,11 @@ reserve against the budget.
   connections.
 - **The rest is counted at its derived limits:** each conversation's
   window of history; the channel's queue and frames; the machine's
-  captures; each write in flight's file and its result, `file_bytes`
-  each; io's buffers; the event sink's output cap. Each layer's
-  `worst_case` adds what its containers report (programming-model.md,
-  section 6.3).
+  captures, with `jobs` for each of `conversations`, each at its kept
+  output and its process record (3.5); each write in flight's file and
+  its result, `file_bytes` each; io's buffers; the event sink's output
+  cap. Each layer's `worst_case` adds what its containers report
+  (programming-model.md, section 6.3).
 - **Waiting is the backpressure.** A full pool slows the run's calls; it
   never refuses one that fits the pool alone (programming-model.md,
   section 7).
@@ -586,6 +614,9 @@ reserve against the budget.
 | messages queued past one offer | they wait, in order, for the next offer (3.9) |
 | a provider's "context too long" | one compaction; a second in the same window fails the session |
 | a completion past `calls_per_response` | a typed limit failure of the completion; the tools' descriptions state the bound |
+| a `shell` call with `yield_seconds` while its session holds `jobs` jobs | answered as an invalid call that says at most `jobs` may run and how to stop one; the command is not run (domain/tools.md, section 5) |
+| a yield or a wait asked past `job_wait` | clamped to it, and the outcome says so |
+| what a job writes between two answers, past its kept output | its head and tail kept, and the bytes between them counted and said (3.5) |
 | a message, a host's answer, a charter or a start past its bound | refused at its entrance, naming the bound (domain/run.md, sections 4 and 6) |
 
 ## 7. Deadlines
@@ -609,6 +640,15 @@ reserve against the budget.
   the charter, at most `tool_deadline`; a command's from its call, or
   `shell_timeout`, clamped to `tool_deadline`; the checks' is
   `check_timeout`, cut at the run's end (domain/tools.md, section 5).
+- **A job keeps its command's deadline,** counted from the command's
+  start, whatever its yield. A `shell` call's yield and a `job` call's
+  wait bound how long that call waits before it answers, never how long
+  the job runs, and are at most `job_wait`.
+- **A cancel of jobs settles within the group stop.** A session's close,
+  like whatever takes the lease (domain/run.md, sections 5.3 and 8.1),
+  stops the groups of the jobs it cancels together, each in the three
+  steps of agent.md, section 2, so it waits at most three `group_stop`s
+  for them, however many there are.
 - **The end of the process** is bounded only by io's close deadlines
   (skein's `shell.md`, section 13). After its answer the agent closes its
   components together, its LLM connections, its machine's roots and its
@@ -618,6 +658,14 @@ reserve against the budget.
   to settle, which io's close deadlines already bound and which adds
   nothing to them. That is its **teardown bound**, from which a host
   derives `exit_grace` (section 4).
+- **Jobs add nothing to the teardown bound.** A session's close cancels
+  its running jobs and waits for them to settle (domain/session.md,
+  section 5), and the run answers
+  only once its sessions have closed and what was in flight has settled
+  (domain/run.md, section 4), so the machine holds a running job at its
+  close only after a run dropped without an answer. Its close stops each
+  such job with io's close of the job's child, the group stop's third
+  step, within one `close` (agent.md, section 2).
 
 ## 8. A limit that fires
 
@@ -695,8 +743,13 @@ version of it (events.md, section 6).
 - **Rendering:** a result past its bound cut with its marker; random
   outcomes at random caps rendered within the bound.
 - **Memory:** skein's counting allocator against the formula, with the
-  LLM pool full and every conversation open, in the agent's simulated
-  world (agent.md, section 8).
+  LLM pool full and every conversation open, each holding `jobs` jobs at
+  their kept output's ceiling, in the agent's simulated world (agent.md,
+  section 8).
+- **Jobs and batches,** in the session's world with small values: a
+  `shell` call with a yield refused while `jobs` jobs are held; a yield and a
+  wait clamped to `job_wait`; more adjacent reads than `parallel_tools`,
+  the rest run as the next batch once the first has answered.
 
 ## 12. From temper
 

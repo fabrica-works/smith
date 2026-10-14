@@ -1,8 +1,8 @@
 # Tools
 
-Provisional, 2026-10-05, revised 2026-10-09. What a smith session does to
-its workspace, as a domain layer: read, list, search, write, edit and
-shell. It is the child domain `smith-domain-tools`, under the session
+Provisional, 2026-10-05, revised 2026-10-14. What a smith session does to
+its workspace, as a domain layer: read, list, search, write, edit, shell
+and job. It is the child domain `smith-domain-tools`, under the session
 (session.md). A run with no workspace has none of these tools; its LLM
 acts through its host's tools and MCP servers. What is still open is
 listed in section 8.
@@ -28,6 +28,11 @@ listed in section 8.
   deadline the LLM may choose within a stated maximum, and the
   configuration's environment, without credentials. Containment in a
   view of the workspace comes with skein's contained trees (section 5).
+- **A command may run on as a job.** A command still running past a
+  yield the LLM chooses is answered `running`, and goes on as a job while
+  the session works; `job` reads its output, waits for its end or stops
+  it. A job's end is told once, and a job never outlives its session
+  (section 5).
 
 ## 2. The workspace
 
@@ -61,7 +66,22 @@ listed in section 8.
 - **The directory itself** is an empty path within it, and `.` at io for
   every operation: loads, stores, scans, listings, searches, and the
   working directory of a command or a check. `read`, `write` and `edit`
-  of a directory itself answer *not a file* without asking io.
+  of a directory itself answer *not a file* without asking io. A call
+  may name the working directory as `.` or as the empty path: both
+  decode to it, and the tools' descriptions say so (protocol/llm.md,
+  sections 3 and 4).
+- **A path's bound** is one number of bytes that a path must keep both
+  as written and as resolved:
+  - as written: each name, `.` and `..`, with one separator between each
+    two. A repeated, leading or trailing separator counts nothing;
+  - as resolved, `.` and `..` taken out: its names from the workspace's
+    root, the working directory's own name included, with one separator
+    between each two. A host alias is counted so twice: from the host's
+    root, and from the workspace's root for the place it names.
+
+  A path past the bound in any of these counts is answered as too long.
+  The tools' descriptions state the bound and its count as written
+  (section 4; protocol/llm.md, section 3).
 - **Repositories are directories with git.** A directory that is a git
   working tree gets git's protections: its git directory is never
   written (section 4), and it may start from a merge in progress.
@@ -81,10 +101,11 @@ listed in section 8.
 | `search` | read | `rg` over the workspace |
 | `write` | write | a file's whole content, created or replaced |
 | `edit` | write | one or more replacements in one file, applied together or not at all |
-| `shell` | write | a command, in its own process group, with a deadline |
+| `shell` | write | a command, in its own process group, with a deadline; past a yield the call asks for, a job |
+| `job` | read; write with `stop` | a job's output since its last answer, and its end once it has ended; with `stop`, the job stopped first |
 
 The charter's families grant them: inspect (`read`, `list`, `search`),
-modify (`write`, `edit`), shell.
+modify (`write`, `edit`), shell (`shell`, `job`).
 
 - **`read { path, offset?, window? }`** answers the whole lines from line
   `offset` that fit its window of bytes: the profile's default, or the
@@ -115,12 +136,23 @@ modify (`write`, `edit`), shell.
   `old` must occur exactly once, or at least once with `all`. If any
   edit fails, none is applied, and the outcome names the first that
   failed and why. The file is stored once.
-- **`shell { command, timeout_seconds?, output_bytes? }`** runs `command`
-  with a deadline and a budget for its kept output (section 5).
-- **Output budgets are the LLM's to choose.** A `read`'s window and a
-  command's kept output are asked for per call, and clamped to the
-  profile's ceilings; the outcome says when a request was clamped, and
-  to what. A search's and a listing's caps are the profile's.
+- **`shell { command, timeout_seconds?, output_bytes?, yield_seconds? }`**
+  runs `command` with a deadline and a budget for its kept output
+  (section 5). With `yield_seconds`, a command still running that many
+  seconds after its start is answered `running`, naming its job, with
+  its kept output so far, and goes on as that job. Without it, the call
+  waits for the command's end.
+- **`job { job, wait_seconds?, output_bytes?, stop? }`** answers the
+  job's kept output since its last answer, then `running`, or the job's
+  end: `exited`, with its exit; `timed_out`, naming its deadline;
+  `stopped`; or `cancelled`. It waits up to `wait_seconds` for the end
+  before it answers `running`. With `stop: true`, it stops the job first
+  and answers its end (section 5).
+- **Output budgets are the LLM's to choose.** A `read`'s window, a
+  command's kept output and a job's answer's are asked for per call, and
+  clamped to the profile's ceilings; the outcome says when a request was
+  clamped, and to what. So are a command's yield and a job's wait. A
+  search's and a listing's caps are the profile's.
 - **One typed call, whatever the dialect.** The protocol layer offers
   each dialect the edit format its models handle best, chosen by
   measurement, and decodes every format to the same `Edit`
@@ -155,8 +187,10 @@ modify (`write`, `edit`), shell.
   became.
 - **Limits are told.** Every limit a tool applies is stated to the LLM
   with its unit and its maximum: a read's window, what a write or an
-  edit may carry, a command's deadline and kept output, a search's hits
-  and bytes, a listing's entries. None is set here: each is derived
+  edit may carry, a command's deadline, yield and kept output, a job's
+  wait and the jobs a session may run, a search's hits and bytes, a
+  listing's entries, and a path's bytes, with what they count as written
+  (section 2). None is set here: each is derived
   from the deployment's declared quantities and checked at startup
   (protocol/limits.md), and the tools' descriptions state the effective
   values (protocol/llm.md, section 3).
@@ -203,8 +237,8 @@ modify (`write`, `edit`), shell.
     default, clamped to a tool call's longest deadline, a policy value of
     the profile, which the tool's description states (protocol/limits.md,
     section 2.3). The outcome says when a request was clamped. A session
-    that runs out of time cancels its commands as it closes (session.md,
-    section 6);
+    that runs out of time cancels its commands and its jobs as it closes
+    (session.md, section 6);
   - **its kept output** is the budget asked for, or the profile's
     default, within the ceiling: the head and the tail of what it wrote,
     the budget split between them in the proportion of the profile's
@@ -212,6 +246,60 @@ modify (`write`, `edit`), shell.
 - **A command has its own process group,** and a timeout signals the
   group, so what the command started ends with it, not only the shell.
   A process that leaves its group is beyond this until contained trees.
+- **A job** is a command that a `shell` call left running past its
+  yield. It belongs to the session that started it.
+  - **Its start.** The yield is `yield_seconds`, clamped to `job_wait`
+    (protocol/limits.md, section 2.3). A command still running when its
+    yield ends is answered `running`: its job's number and its kept
+    output so far. It goes on in its process group under its deadline,
+    counted from its start. A command that ends within its yield is
+    answered as if the call had none.
+  - **Its number.** A session numbers its jobs from 1, in the order its
+    `running` answers name them, and never reuses a number. A session
+    resumed in a later activation numbers its next job after the highest
+    its transcript's last turn records (protocol/transcript.md, sections
+    2 and 4), so that no number names two jobs in one conversation.
+  - **Reading it.** A `job` call answers the job's kept output since its
+    last answer: the budget the call asks for, or a command's default
+    when it asks for none, within a command's ceiling, kept as a
+    command's output is, from the head and the tail of the bytes not yet
+    answered, with the count of bytes dropped between them. No later
+    answer holds what one dropped. It then answers `running`, or the job's end: `exited` with
+    its exit, `timed_out` naming the deadline it passed, `stopped`, or
+    `cancelled`. It waits for the end up to `wait_seconds`, whose default
+    and ceiling are `job_wait`, before it answers `running`.
+  - **Stopping it.** `job` with `stop: true` stops the job's group in the
+    steps a deadline uses (protocol/agent.md, section 2), then answers
+    its end, `stopped`, with its output since its last answer. A job that
+    had already ended is answered with that end, as without `stop`.
+  - **Its bound.** A session has at most `jobs` running at once
+    (protocol/limits.md, section 2.2). For this bound a job runs from its
+    `running` answer until an answer reports its end or its session
+    closes, so one that ended unread still counts. A `shell` call with
+    `yield_seconds` while `jobs` jobs of its session are running is
+    answered as an invalid call, and not run: it says that at most
+    `jobs` may run at once, and that `job` with `stop` stops one, or
+    reads the end of one that ended. A `job` call naming a
+    number its session never answered `running`, or a job whose end was
+    already answered, is answered as an invalid call.
+  - **Cancelled for another writer.** A session's running jobs are its
+    writes in progress. Whatever takes the lease (run.md, sections 5.3
+    and 8.1) first cancels the running jobs of every other session, and
+    a check or a delivery cancels every running job before it runs; each
+    waits for the jobs it cancelled to settle before it goes on. A
+    cancelled job's end is `cancelled`, answered by the next `job` call
+    that names it.
+  - **Ended with its session.** A session closing (its run's end, a
+    child's end, a cancel, its time running out) cancels its running
+    jobs and waits for them to settle, then tells a `job.ended`
+    (protocol/events.md, section 3.6) for each job whose end no answer
+    reported, with its end as observed: `exited` or `timed_out` if it had
+    ended so, else `cancelled`. The session ends after those records.
+  - **One terminal each.** Every job's end is told once: by the first
+    answer that reports it, or else by its `job.ended`.
+  - **Within its activation.** A job never survives its activation: a
+    session resumed in a later activation has none, and a `job` call
+    naming an earlier one is invalid.
 - **Containment is skein's contained trees, later.** A command's tree is
   then to see the workspace's view: it writes only the writable
   directories, and every git directory is read-only to it, since the
@@ -226,7 +314,8 @@ modify (`write`, `edit`), shell.
 
 io's operations: file loads and atomic stores, directory scans and tree
 listings, `rg` searches, and commands in their own process groups with
-deadlines, and later contained process trees with proof that a tree is
+deadlines, each job's group held with its unread output between its
+answers, and later contained process trees with proof that a tree is
 empty once stopped, reached through `smith-protocol-machine`. That
 component translates a place to an io path in one way for every
 operation (section 2). The protocol layer: each tool's schema and each
@@ -238,9 +327,11 @@ The machine's faces for files and processes, and the programs they run
 (git directories read-only, `rg`, `sh`). Its stories:
 
 - **Paths:** one directory and several; `list /`; a host alias; the
-  directory itself, for every operation; a directory's name written as a
-  prefix, failing with the path it resolved to; symbolic links and
-  `.git` parts on paths.
+  directory itself, for every operation, named as `.` and as the empty
+  path; a directory's name written as a prefix, failing with the path it
+  resolved to; a path at its bound and one past it, as written and as
+  resolved, with repeated separators that count nothing; symbolic links
+  and `.git` parts on paths.
 - **Changes:** files changed behind a session's back; a `write` of a file
   not read; edit lists that all match, one that fails so that none
   applies, edits that overlap or match twice, and an edit with no
@@ -254,21 +345,39 @@ The machine's faces for files and processes, and the programs they run
   command whose child outlives it, ended with its group at the deadline;
   the configured environment seen by commands and checks, and none by
   searches.
+- **Jobs:** a command past its yield, answered `running` and read until
+  it exits; one read past its kept output's ceiling, the bytes dropped
+  counted once; one stopped, and one stopped after it had exited; one
+  past its deadline, `timed_out`; a yield and a wait asked past
+  `job_wait`, clamped and said; reads, edits and other commands while a
+  job runs; a `shell` call with a yield while `jobs` jobs are running, and
+  `job` calls naming an unknown number or an end already answered, each
+  invalid; jobs cancelled for a check, `cancelled` at their next read; a
+  session closing with one job running and one exited unread, each told
+  once by `job.ended`.
 
 Its referee: nothing written by a tool outside the writable directories;
 no write of a version not read; no edit stored over a version other than
 the one it matched; every outcome within its stated limit; every call
-answered once. Random edit lists drive the fuzzy world. These are domain
-steps over the fake machine, within the suites' budgets; that a group's
-grandchild dies at the deadline is skein's to prove on a real kernel.
+answered once; every job's end told once, by an answer or by
+`job.ended`, and at most `jobs` running at once. Random edit lists, and
+jobs' polls, stops and ends drawn among them, drive the fuzzy world.
+These are domain steps over the fake machine, within the suites'
+budgets; that a group's grandchild dies at the deadline is skein's to
+prove on a real kernel.
 
 ## 8. Open questions
 
 - **A code graph:** indexing a workspace for codebase-memory-mcp, served
   as an MCP tool source, and who keeps the index.
 - **Workspaces beyond directories** (README.md, section 8).
-- **Background processes:** a tool to start a command, read its output as
-  it comes, write to it and stop it, after process groups.
+- **A job's standard input:** writing to a running job, which `job` does
+  not do (section 5).
+- **A path's resolved bound and a hidden name:** with one directory, the
+  bound as resolved counts the working directory's name, which the LLM
+  is never shown (section 2), so the descriptions state only the count
+  as written; whether it should count from the working directory
+  instead.
 - **Aliases that collide:** an absolute path that reads both as a host
   alias and as `/name/...` is read here as the alias; whether to refuse
   it as ambiguous instead. Aliases go once contained trees give the view

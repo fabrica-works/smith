@@ -1,6 +1,6 @@
 # Events
 
-Provisional, 2026-10-09, revised 2026-10-13. The event vocabulary: one
+Provisional, 2026-10-09, revised 2026-10-14. The event vocabulary: one
 versioned stream of JSON lines that says what a process running smith
 did, from its start to its end. `smith exec --json` writes it to
 standard output, and a trace file is the same stream. Its records,
@@ -18,8 +18,9 @@ their writer and their reader are `smith-events` (README.md, section
 - **One vocabulary, one stream.** Every record is one line holding one
   JSON object with `"v"`, `"type"` and `"t_ms"`. A process writes one
   stream: `session.started` first, `session.ended` last, and between them
-  its runs, their conversations, each LLM response, each tool call, each
-  message, the budget and notices for operators.
+  its runs, their conversations, each LLM response, each tool call, the
+  end of each job that no call reported, each message, the budget and
+  notices for operators.
 - **Two destinations, one stream.** `smith exec --json` writes the
   stream to standard output; a trace file is the same stream, appended.
   Same records, same order, same encoder; each destination counts its
@@ -288,10 +289,11 @@ and the host's:
 |---|---|---|
 | `run`, `conversation` | integer | |
 | `call`, `tool` | string | as started |
-| `verdict` | string | how it ended, without what it said: a workspace tool's outcome kind (`read`, `listed`, `found`, `written`, `edited`, `exited`, `conflict`, `missing`, `too_large`, `timed_out`, `failed`, `cancelled`, ...), `result` or `error` for a served or host tool, `invalid`, `not_run` or `withdrawn` |
-| `exit` | object, optional | a command's end: `code`, or `signal` |
+| `verdict` | string | how it ended, without what it said: a workspace tool's outcome kind (`read`, `listed`, `found`, `written`, `edited`, `exited`, `conflict`, `missing`, `too_large`, `timed_out`, `running`, `stopped`, `failed`, `cancelled`, ...), `result` or `error` for a served or host tool, `invalid`, `not_run` or `withdrawn`. A `shell` call answered `running` left its command running as a job; a `job` call's verdict is `running` while its job goes on, or its job's end: `exited`, `timed_out`, `stopped` or `cancelled` (domain/tools.md, section 5) |
+| `exit` | object, optional | a command's or a job's end: `code`, or `signal` |
+| `job` | integer, optional | for a `shell` call answered `running`, and for a `job` call not answered `invalid`: the job's number in its conversation |
 | `bytes` | integer | the result's payload |
-| `omitted_bytes` | integer | what the tool's own caps left out of its result: a command's output beyond its kept head and tail, or a read beyond its window. What the render bound later cuts is told with the request that renders it, not here |
+| `omitted_bytes` | integer | what the tool's own caps left out of its result: a command's output, or a job's since its last answer, beyond its kept head and tail, or a read beyond its window. What the render bound later cuts is told with the request that renders it, not here |
 | `clamped` | bool | the call's requested budget or deadline was lowered to its ceiling, as the tool's outcome records it |
 | `duration_ms` | integer | from `tool.started` |
 | `child` | object, optional | for `sub_agent`, under every policy: `conversation`; `stop`, how the child ended: `end`, an answer it chose to give, `budget`, an answer its share ended (domain/run.md, 5.3), or, unanswered, `failed` or `closed`; `turns`, `time_ms`, `spent` and `usage` |
@@ -305,6 +307,21 @@ rendered it: in that request's new part, each rendered result with its
 cut (under `everything`; 3.11). `tool.completed` carries no result text.
 A tool's typed outcome has no text of its own before rendering, and the
 rendered one is the record of what the model saw.
+
+**`job.ended`,** for a job whose end no call's answer reported, told when
+its session closes (domain/tools.md, section 5). Every job has exactly
+one terminal: the first `tool.completed` whose verdict reports its end,
+or this record, never both.
+
+| Field | Type | What it is |
+|---|---|---|
+| `run`, `conversation` | integer | the session that started it |
+| `job` | integer | its number in its conversation |
+| `call` | string | the provider's id for the `shell` call that answered it `running` |
+| `verdict` | string | its end as observed: `exited`, `timed_out` when its deadline had passed, or `cancelled` |
+| `exit` | object, optional | for `exited`: `code`, or `signal` |
+| `unread_bytes` | integer | what it wrote after the last answer that named it, which the model never read; what earlier answers dropped is in their `omitted_bytes` |
+| `duration_ms` | integer | from its `shell` call's `tool.started` to its end as observed |
 
 **`check.started`** (`run`, `deadline_ms`) and **`check.completed`**
 (`run`, `exit`, `passed`, `duration_ms`), for the workspace's checks
@@ -461,6 +478,7 @@ when it is about one; and the kind's fields.
 | `response.completed` | the session's facts that a completion answered, failed, was cancelled or will be retried, and its usage and charge; the LLM component's measures of the encoded request, its first byte and its largest gap (llm.md, section 6); the domain's content under capture |
 | `text.delta` | the LLM component's deltas, which the session never holds (llm.md, section 6) |
 | `tool.started`, `.completed` | the tools' facts that a call started and was answered, with its verdict and bytes; the session's facts for delegated calls; the run's facts for its own calls and their returns, a child's usage included; each with the provider's id for the call |
+| `job.ended` | the session's fact, as it closes, that a job ended with no answer reporting it, with its end, its output's unread bytes and the provider's id for the call that started it |
 | `check.started`, `.completed` | the run's facts that checks started, with their deadline, and finished |
 | `message.received`, `.read`, `.unread` | the run's facts that a message was admitted or refused, each told turn's fence, and the answer's final fence |
 | `budget` | the run's facts of its budget, at each charge and at the wind-down |
@@ -558,7 +576,8 @@ The vocabulary is pre-release, like every format (README.md, section 8).
 - **The domain owes** facts that carry what the records need: the time
   each happened, the provider's id for each call, a child's effective
   share, its clamps and its usage, every message's terminal, the
-  compactions and the budget (domain/run.md, section 11;
+  compactions, each job's end that no answer reported, and the budget
+  (domain/run.md, section 11;
   domain/session.md).
 - **skein owes:**
   - its JSON writer and reader (skein's `json.md`);
@@ -587,6 +606,10 @@ The vocabulary is pre-release, like every format (README.md, section 8).
   - one `run.completed` per run, equal to the host's answer;
   - one `.completed` per `.started` for responses, tools and checks, a
     tool's by its call id, and one `.closed` per `conversation.opened`;
+  - one terminal per job: for each job that a `shell` call's
+    `tool.completed` names `running`, exactly one later record reports
+    its end, a `tool.completed` or a `job.ended`, before its
+    conversation's `conversation.closed`;
   - one terminal per message;
   - each run's `spent` and `usage` equal to the sums over its responses;
   - under `complete`, no loss, and `emitted` equal to the records read;

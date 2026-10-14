@@ -1,6 +1,6 @@
 # Turns and transcripts
 
-Provisional, 2026-10-07, revised 2026-10-13. The records of a
+Provisional, 2026-10-07, revised 2026-10-14. The records of a
 conversation kept beyond its process: a turn, as a run tells it, and a
 transcript, as a run resumes from it (domain/session.md, section 3). They
 are the family `smith-transcript`, versioned on their own, since a host
@@ -67,6 +67,8 @@ A versioned record. Every turn starts with its version.
   reasoning tokens (domain/session.md, section 6);
 - **spend:** the run's spend so far, in the host's unit, sub-agents included
   (domain/session.md, section 6);
+- **jobs:** the highest job number the conversation has given so far,
+  zero before its first (domain/tools.md, section 5);
 - **messages,** oldest first, each from the user or the assistant, each a
   list of blocks:
   - **text,** with the provider's replay, if any;
@@ -82,7 +84,10 @@ A versioned record. Every turn starts with its version.
     invalid with the problem *too large* (domain/session.md, section 5);
   - **a result:** the call's id, and one of:
     - a workspace tool's outcome, typed (domain/tools.md's vocabulary: lines read,
-      entries listed, an edit made, a command's exit and output);
+      entries listed, an edit made, a command's exit and output, a
+      command answered `running` with its job's number and its output so
+      far, a job's output since its last answer with its end or
+      `running`);
     - text the domain wrote, as a result or an error: a served tool's, or a
       host tool's answer;
     - invalid, with the problem found in the call (domain/tools.md,
@@ -97,9 +102,11 @@ A versioned record. Every turn starts with its version.
 A call's typed form is not kept. The agent decodes the input again when it
 resumes, as it did when the call was made.
 
-A window turn's messages are one user message holding text blocks: the
-conversation's task, the summary, and the messages held back for the new
-window. It holds no call. Its usage and spend are the compaction's.
+A window turn's messages are one user message holding text blocks, in
+this order: the conversation's task, the summary preamble and the
+summary, each a block of its own, and the messages held back for the
+new window. It holds no call. Its usage and spend are
+the compaction's.
 
 ## 3. A transcript
 
@@ -157,6 +164,13 @@ Each refusal is distinct, and the run fails as transient, saying which
 - malformed;
 - unresolved;
 - too large.
+
+**No job is resumed.** A job does not survive its activation: a
+`running` result renders as it was told, and a later `job` call naming
+its job is answered as an invalid call (domain/tools.md, section 5). Its
+number is not reused: the resumed session's next job takes the number
+after the highest its last turn records (section 2), which counts the
+jobs of every earlier window and activation.
 
 ## 5. Rendering
 
@@ -247,6 +261,8 @@ Each refusal is distinct, and the run fails as transient, saying which
   - each refusal;
   - a transcript from another dialect;
   - a version-2 transcript refused as another version;
+  - a transcript holding a `running` result, resumed with no job, and a
+    `job` call naming that job answered as invalid;
   - `opens_window` on a conversation's first turn and on each window
     turn, and on no other, and a host resuming from the last of them.
 - **A large transcript:** at the resume limit, one window at its largest,

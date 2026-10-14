@@ -1,6 +1,6 @@
 # Testing smith
 
-Provisional, 2026-10-08, revised 2026-10-09. How smith is tested. The
+Provisional, 2026-10-08, revised 2026-10-14. How smith is tested. The
 strategy is skein's `docs/foundation/testing-strategy.md`: the tiers,
 faults, what every fake shares, what every world checks, scenarios and
 the referee, the two suites, and where a failure is fixed. This document
@@ -373,8 +373,10 @@ Every world checks what the strategy lists (testing-strategy.md, section
   or dropped.
 - **Events are complete:** the event stream matches what the fakes saw:
   one response record per provider response, tool records paired by the
-  provider's call id, usage summing to the answer's spend, and every loss
-  counted exactly (protocol/events.md).
+  provider's call id, one end for each job a `running` verdict named,
+  told by a later answer or by its `job.ended` (domain/tools.md, section
+  5), usage summing to the answer's spend, and every loss counted exactly
+  (protocol/events.md).
 - **Memory** is measured per step, against each process's worst case,
   derived from the declared values the world chose, at every iteration
   in the simulated worlds and the real loop.
@@ -395,7 +397,7 @@ Every world checks what the strategy lists (testing-strategy.md, section
 - **The real loop, once settled:**
   - the scratch directory changed only where the scenario expects;
   - nothing is left running: the agent finished, and every child was
-    reaped.
+    reaped, each job's process group included.
 - **Containment, once contained trees exist** (protocol/agent.md, sections
   2 and 3; protocol/hosts.md, section 3), in the real loop:
   - **writes stay in the view:** commands that try to write outside the
@@ -422,8 +424,10 @@ run by the commands in `docs/development/workflow.md`:
   harness's offline tests;
 - **fuzzy tests:** each world's `tests/fuzzy_*.rs`, sweeps over seeds
   under faults; the run's world also draws message timings, budgets and
-  shares (domain/run.md, section 13), and the session's usage and
-  appended sizes (domain/session.md, section 10).
+  shares (domain/run.md, section 13), the session's world its usage and
+  appended sizes (domain/session.md, section 10), and the tools' world
+  its jobs' polls, stops and ends among edits (domain/tools.md, section
+  7).
 
 The live tests are a third suite, outside the gate, under the `live`
 profile only (2.3). Benchmarks are no suite: they run by their own

@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-13. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-14. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -44,6 +44,8 @@ profile numbers (section 6); everything else derives from them
   `standard` profile's deployment and policy values are defaults that
   the probes of benchmarks.md validate. A value with thin evidence is marked
   provisional (section 6).
+- **smith's own role.** Without `instructions`, a run's role is the task
+  role: one text for chats and tasks, on the topics section 6.6 lists.
 - **One credential source per account:** smith's own sign-in, another
   tool's login borrowed read-only, or an environment variable. A refresh
   token is never copied (section 7).
@@ -399,13 +401,13 @@ A headless run's code follows its answer (domain/run.md, section 10):
 |---|---|---|
 | 0 | accepted | an accepted answer, however long its teardown took |
 | 1 | run failed | a failed answer: the model (a provider's failure past its retries, an exhausted account, a limit that fired), policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing; the result's file not written after an accepted answer (`-o`); or a start refused as busy |
-| 2 | usage or configuration | arguments, a settings refusal (5.3), a start the run refused as invalid |
+| 2 | usage or configuration | arguments, a settings refusal (5.3), a start the run refused as invalid, a writable repository whose head the start cannot read (one with no commit among them) |
 | 3 | credentials | an account the run needs without a usable credential: not signed in, rejected, a borrowed login expired, a variable unset; also a run that failed because the provider refused its credential (a model failure of class `unauthorized`) |
 | 4 | budget | a failed answer for its budget: spend, time or turns |
 | 5 | needs input | a parked answer |
 | 130 | interrupted | a cancelled answer, after an interrupt or a termination signal; or a run dropped before it answered, at the person's second interrupt or past the cancel's grace |
 
-The code is also `session.ended`'s `exit`.
+The code is also `session.ended`'s `exit`. A start that fails before its run opens ends the command with its code and its last line, as an answer does: `smith exec` never waits on a start that has failed.
 
 **The result's file is the product's, not the run's.** `-o`'s file is
 written after the answer, so `run.completed` stays as the run answered.
@@ -439,7 +441,7 @@ the typed values:
 | 1 | a spawned agent's failure | `smith: run failed: the agent <how it ended>: <its error output's tail>` |
 | 1 | a host failure | `smith: run failed: chat <name>: turn <n> could not be kept: <error>` |
 | 1 | the result's file | `smith: run accepted, but its result could not be written to <file>: <the kernel's error>` |
-| 2 | usage or configuration | `smith: usage: <problem>`; a setting as in 5.3; `smith: run refused: <what> is <value>, past its bound of <bound>` |
+| 2 | usage or configuration | `smith: usage: <problem>`; a setting as in 5.3; `smith: run refused: <what> is <value>, past its bound of <bound>`; `smith: run refused: repository <directory>: its head cannot be read` |
 | 3 | credentials | ``smith: account <account> has no credential: run `smith login <account>` ``; the expiry notice of section 7; `smith: account <account>: the provider rejected its credential`; `smith: account <account>: <VARIABLE> is not set` |
 | 4 | budget | `smith: run failed: out of <spend, time or turns>: used <used> of <limit>` |
 | 5 | needs input | ``smith: needs input: answer with `smith exec --chat <name>` `` |
@@ -564,7 +566,7 @@ source = "borrow"
 |---|---|---|
 | `model`, `effort` | the main model, `endpoint/name`, and its effort, one the model declares when it declares any (6.1) | none; the provider's effort |
 | `profile` | the named bundle of deployment values | `standard` |
-| `instructions` | the role (domain/run.md, section 3.1) | smith's own, for a chat or for a task |
+| `instructions` | the role (domain/run.md, section 3.1) | the task role (6.6): smith's own, one text for a chat and for a task |
 | `chat` | the interactive chat | `default` |
 | `waiting_seconds` | how long an interactive run waits before it parks | 6.4 |
 | `sub_agents` | whether runs may delegate | off (domain/run.md, section 5.3) |
@@ -614,7 +616,9 @@ source = "borrow"
   past a prompt size, the preset prices the model at the highest rates a
   prompt within its window can reach, its window as settings leave it:
   Haiku 5.5 at its long-prompt rates whenever its window passes 100,000
-  tokens. A charter's prices stay flat (domain/run.md, section 9), so
+  tokens, and each Codex model at its long-context rates whenever its
+  window passes 272,000 tokens, so at its base rates at the preset's
+  window. A charter's prices stay flat (domain/run.md, section 9), so
   spend is never under-counted. A person who wants the lower rates
   declares a window at or below the tier's size; prices a person sets
   are used as set.
@@ -675,6 +679,7 @@ profile (2.1).
 |---|---|---:|---:|---:|---:|---:|
 | `codex` | `gpt-6-astra` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
 | `codex` | `gpt-6-luna` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
+| `codex` | `gpt-6.1-sol` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
 | `anthropic` | `claude-opus-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
 | `anthropic` | `claude-sonnet-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
 | `anthropic` | `claude-haiku-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
@@ -702,6 +707,13 @@ profile (2.1).
 - **A model no preset knows** declares `window` and `output`;
   `reasoning_item`, `head` and `idle` default to its provider's values in
   this table.
+- **The working tier's model.** `gpt-6.1-sol` is the working tier's
+  Codex model, and a tier's model is one the presets declare
+  (benchmarks.md, section 7), so that the tier runs smith as it ships. Its
+  notional prices are its provider's list prices, tiered as 5.2's
+  "Tiered list prices" says, and the code holds the numbers. It declares
+  no efforts until a preset takes them from its provider's documentation
+  (the `efforts` bullet above).
 - **The small tier.** `gpt-6-luna` and `claude-haiku-5-5`, each at `low`
   effort, are the models benchmarks' probes run on (benchmarks.md,
   section 7). Each preset model takes its provider's effort names, `low`
@@ -740,6 +752,7 @@ The declared quantities of protocol/limits.md, section 2.2:
 | `tool_payload` | 40 KiB, so that a call at the payload, escaped at its largest (6 bytes a byte), fits one answer of the smallest preset `output` (32,000 tokens at 8 bytes a token): skein's `input ≤ answer` (limits.md, 4) | provisional; the large-write probe |
 | `file_bytes` | 1 MiB: the largest file the tools read whole and edit | provisional; the large-write probe |
 | `calls_per_response` | 16 | provisional; the parallel-read probe |
+| `jobs` | 4 jobs held by one session at once | provisional; the tool-output probe's `background` |
 | `read_window` | 32 KiB; a call may ask up to `tool_payload` | decided |
 | `guide` | 16 KiB, a guide kept whole up to it | decided |
 | `shell_output` | 16 KiB | provisional; the tool-output probe |
@@ -775,12 +788,42 @@ names (section 2.3):
 | `shell_timeout` | 2 minutes | provisional; the tool-output probe |
 | `check_timeout` | 5 minutes, which the default reserve's 5 minutes holds (domain/run.md, 9.1) | provisional |
 | `tool_deadline` | 20 minutes, the most a command's call may ask for | provisional; the tool-output probe |
+| `job_wait` | 30 s, the longest yield or wait a call may ask for, and a `job` call's wait when it asks for none | provisional; the tool-output probe's `background` |
+| `parallel_tools` | 4 adjacent reads run at once | provisional; the parallel-read probe |
 | `group_stop` | 1 s for each of its three steps | provisional; the process-tree probe |
 | `close` | 5 s | provisional |
 | `write_deadline` | 30 s for one write of the event stream | provisional |
 | `wrap_up` | 60 s, a child's final turn's allowance at most | provisional; the budget probe's `wrap-up` |
 | `cancel_grace` | 10 s | provisional |
 | `exit_grace` | derived: the agent's teardown bound, two `close`s, the event stream's `write_deadline` and its cancels' settling, plus one more `close` as a margin (skein's `shell.md`, section 13; protocol/limits.md, section 7); a setting below the bound is refused | decided as derived; the margin provisional |
+
+### 6.6 Instructions
+
+The task role is smith's own instructions: the role a run is given when
+settings set no `instructions` (5.2; domain/run.md, section 3.1).
+
+- **One text, at most 4 KiB,** the same for every model, and for chats
+  and tasks alike.
+- **Its topics, in this order:**
+  1. carrying the request to its end, within its scope;
+  2. finding files, with `list` and `search` first;
+  3. batching independent reads, lists and searches in one response;
+  4. changing files with `edit` and `write`, never through the shell,
+     the smallest change first;
+  5. running the tests the change needs, and long commands as jobs
+     (domain/tools.md, section 5);
+  6. not reverting changes the model did not make;
+  7. the report that `finish` carries;
+  8. that a compaction does not end the work.
+- **It names only smith's own tools** (domain/run.md, section 5.1), and
+  says nothing that the run's own sections of the system text already
+  say (domain/run.md, section 3.3).
+- **Its words are code,** in `smith-local-shell`; its topics are this
+  list. A topic added, dropped or moved is a change to this
+  section.
+- **It is a run's instructions,** so it counts where a charter's
+  instructions count: in the window's host part (protocol/limits.md,
+  3.9).
 
 ## 7. Credentials
 
@@ -913,6 +956,7 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
   - one refusal per strict rule, naming the file, line and key;
   - each key the repository layer may not set, refused;
   - preset expansion, byte-stable, against goldens;
+  - the task role within 4 KiB, each tool it names one of smith's own;
   - one refusal per relationship, naming it;
   - the mapping from every answer to its exit code and its last line on
     standard error, one per class;

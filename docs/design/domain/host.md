@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-05, revised 2026-10-13. The other side of a run:
+Provisional, 2026-10-05, revised 2026-10-14. The other side of a run:
 what a host owes an agent and is owed, the channel between them, and the
 domains smith ships for hosts: `smith-host-domain`, which a host embeds
 to start and supervise agent processes; `smith-inline-agent`, its twin,
@@ -72,9 +72,10 @@ Up, from the run:
   keeps them all by default; on the channel, projected for liveness, and
   dropped and counted as not projected when there is no room, never
   holding the run (run.md, section 11);
-- **long operations:** the run's checks, each LLM completion and each
-  command, each with its span, bounded by the limits, and its end
-  (section 4);
+- **long operations:** the run's checks, each LLM completion, each
+  command until it ends or is answered `running`, and each `job` call's
+  wait (tools.md, section 5), each with its span, bounded by the limits,
+  and its end (section 4);
 - **waiting,** with the last message read, if any: a run awaiting its
   first message has read none;
 - **notices** that a credential was rejected or an account exhausted;
@@ -164,8 +165,10 @@ policy.
   sent to it; while a call waits for its answer, which the run's own
   deadline for it bounds; and while a turn waits for room to be sent
   (section 6). It stretches to the span of the long operations the run
-  reports (its checks, its LLM completions, its commands), each bounded
-  by the run's own deadlines, until the run says each is done. What
+  reports (its checks, its LLM completions, its commands, its `job`
+  calls' waits), each bounded by the run's own deadlines, until the run
+  says each is done. A job that runs on between calls is no long
+  operation: the run reports the calls that read it. What
   silence remains is the run's own steps and io's short operations, and
   the no-progress deadline exceeds the longest of their deadlines
   (protocol/limits.md, `watchdog-over-silence`). A separate bound covers
