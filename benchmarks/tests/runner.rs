@@ -7,6 +7,97 @@ use skein_world::end_to_end::{Command, Method};
 use smith_bench::process::{Bounds, Capture, execute};
 use smith_bench::{End, Forced};
 
+fn isolated_replay(name: &str) -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("SMITH_REPOSITORY_REPLAY_ROOT") {
+        return Some(PathBuf::from(root));
+    }
+    let root = std::env::temp_dir().join(format!("smith-bench-{name}-{}", std::process::id()));
+    std::fs::create_dir(&root).expect("fixture root");
+    let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", name, "--nocapture"])
+        .env("SMITH_REPOSITORY_REPLAY_ROOT", &root)
+        .env("HOME", root.join("home"))
+        .env("XDG_CONFIG_HOME", root.join("config"))
+        .env("XDG_STATE_HOME", root.join("state"))
+        .output()
+        .expect("private replay process");
+    std::fs::remove_dir_all(root).expect("remove private replay");
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    None
+}
+
+fn repository_request(root: &std::path::Path, guard: &smith_bench::guard::Guard) -> smith_bench::run::Prepared {
+    use sha2::{Digest, Sha256};
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    let state = root.join("state/smith-bench");
+    std::fs::create_dir_all(state.join("bundles")).expect("bundles parent");
+    smith_bench::isolate::copy_directory(guard, &fixtures.join("bundles/tiny"), &state.join("bundles/tiny"))
+        .expect("private recorded bundle");
+    let task_root = root.join("task");
+    smith_bench::isolate::copy_directory(guard, &fixtures.join("tasks/repository-seed"), &task_root).expect("task");
+    let manifest = task_root.join("task.toml");
+    let text = std::fs::read_to_string(&manifest).expect("manifest")
+        .replace("[[grade]]", "protected = ['README', 'Cargo.toml']\ndeciding = ['end', 'grade', 'protected-unchanged', 'tree-ended']\n\n[[grade]]");
+    std::fs::write(&manifest, text).expect("protected paths");
+    let task = smith_bench::read_task(&manifest).expect("task");
+    let mut identity = smith_bench::read_result(&fixtures.join("results/attempt.json")).expect("identity").identity;
+    identity.agent = smith_bench::Agent::Codex;
+    identity.task = "repository/repository-seed".into();
+    identity.task_version = task.version;
+    identity.seed_sha256 = task.seed_sha256;
+    identity.prompt_sha256 = format!("{:x}", Sha256::digest(task.prompt.as_bytes()));
+    let program = std::fs::canonicalize("/bin/sh").expect("shell executable");
+    identity.binary_sha256 = smith_bench::arm::binary_digest(&program).expect("replay digest");
+    identity.run = "repository-replay".into();
+    smith_bench::run::Prepared {
+        task: manifest,
+        identity,
+        program,
+        arguments: Vec::new(),
+        codex_home: None,
+        configuration: None,
+        teardown_ms: 100,
+        grace_ms: 20,
+        settlement_ms: 200,
+        setup_deadline_seconds: 3,
+        max_stdout_bytes: 16384,
+        max_stderr_bytes: 4096,
+        disk_estimate_bytes: 1,
+        force_walk: true,
+    }
+}
+
+#[test]
+fn a_repository_attempt_compares_protected_files_with_its_bundle() {
+    let Some(root) = isolated_replay("a_repository_attempt_compares_protected_files_with_its_bundle") else { return };
+    let guard = smith_bench::guard::Guard::new(&root.join("home"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    let machine = smith_bench::isolate::Machine { path: "/usr/bin:/bin".into(), rustup_home: None };
+    let mut prepared = repository_request(&root, &guard);
+    for (name, tail, expected) in [
+        ("unchanged", "", Vec::<PathBuf>::new()),
+        ("changed", "printf changed > Cargo.toml;", vec![PathBuf::from("Cargo.toml")]),
+    ] {
+        prepared.identity.attempt = name.into();
+        let mut command = replay(tail);
+        command.arguments[1] = format!("cat >/dev/null; {tail} cat \"$1\"").into();
+        prepared.arguments = command.arguments.iter().map(|value| value.to_str().expect("argument").into()).collect();
+        let recorded = smith_bench::run::attempt(&guard, &machine, &root.join("state/smith-bench"), &prepared)
+            .expect("repository replay");
+        assert_eq!(recorded.result.outcome.end, End::Completed, "{name}");
+        assert_eq!(
+            recorded.result.outcome.protected_files_changed,
+            smith_bench::Measure::Observed { value: expected },
+            "{name}"
+        );
+    }
+}
+
 fn replay(tail: &str) -> Command {
     let recording = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/codex/completed.jsonl");
     Command {

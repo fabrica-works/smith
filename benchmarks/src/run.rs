@@ -388,6 +388,17 @@ fn task_for(prepared: &Prepared) -> Result<Task, String> {
     Ok(task)
 }
 
+fn copy_seed(
+    guard: &Guard,
+    source: &Path,
+    digest: &str,
+    root: &Path,
+) -> Result<(Private, crate::grade::Snapshot), Setup> {
+    let private = crate::isolate::prepare(guard, source, digest, root)?;
+    let seed = crate::grade::snapshot(&private.workspace).map_err(|reason| Setup { step: SetupStep::Seed, reason })?;
+    Ok((private, seed))
+}
+
 fn prepare(
     clock: &Clock,
     guard: &Guard,
@@ -396,7 +407,7 @@ fn prepare(
     task_directory: &Path,
     root: &Path,
     prepared: &Prepared,
-) -> Result<(Private, String), Setup> {
+) -> Result<(Private, String, crate::grade::Snapshot), Setup> {
     let mut step = SetupStep::Configuration;
     let prepared_attempt = (|| {
         if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
@@ -443,7 +454,7 @@ fn prepare(
         step = SetupStep::Seed;
         let bundles = crate::arm::state_root(guard)?.join("bundles");
         let (seed, digest) = crate::seed_source(task, task_directory, &bundles).map_err(|refusal| refusal.reason)?;
-        let private = crate::isolate::prepare(guard, &seed, &digest, root).map_err(|refusal| {
+        let (private, snapshot) = copy_seed(guard, &seed, &digest, root).map_err(|refusal| {
             step = refusal.step;
             refusal.reason
         })?;
@@ -491,7 +502,7 @@ fn prepare(
             grading.warm_target.clone_from(&private.warm_target);
             copy_cache(clock, guard, machine, &grading, prepared)?;
         }
-        Ok((private, revision))
+        Ok((private, revision, snapshot))
     })();
     prepared_attempt.map_err(|reason| Setup { step, reason })
 }
@@ -1045,13 +1056,12 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
         )?;
         archive(guard, &directory, &mut result, "prompt.txt", task.prompt.as_bytes())?;
         let task_directory = prepared.task.parent().ok_or("task needs a directory")?;
-        let (private, revision) =
-            prepare(&clock, guard, machine, &task, task_directory, &root, prepared).map_err(|refusal| {
+        let (private, revision, seed) = prepare(&clock, guard, machine, &task, task_directory, &root, prepared)
+            .map_err(|refusal| {
                 setup_step = refusal.step;
                 refusal.reason
             })?;
         setup_step = SetupStep::Configuration;
-        let seed = crate::grade::snapshot(&task_directory.join("seed"))?;
         let (command, capture, teardown, receipt) = invocation(
             Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
             &mut result,
@@ -1179,4 +1189,25 @@ pub fn attempt_file(path: &Path) -> Result<Recorded, String> {
     let machine = Machine::from_environment()?;
     let state = crate::arm::state_root(&guard)?;
     attempt(&guard, &machine, &state, &read_prepared(path)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_seed_snapshot_comes_from_the_copied_source() {
+        let root = std::env::temp_dir().join(format!("smith-bench-copied-source-{}", std::process::id()));
+        fs::create_dir(&root).expect("fixture root");
+        let guard = Guard::new(&root.join("home"), &root.join("config"), &root.join("state"), &[]).expect("guard");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/bundles/tiny");
+        let digest = crate::seed_digest(&source).expect("source digest");
+        let (private, snapshot) = copy_seed(&guard, &source, &digest, &root.join("attempt")).expect("copied seed");
+        assert_eq!(snapshot, crate::grade::snapshot(&source).expect("bundle snapshot"));
+        assert!(snapshot.contains_key(Path::new("README")));
+        assert!(!snapshot.contains_key(Path::new("bundle.toml")));
+        fs::write(private.workspace.join("Cargo.toml"), "setup-created").expect("setup edit");
+        assert!(!snapshot.contains_key(Path::new("Cargo.toml")));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
 }

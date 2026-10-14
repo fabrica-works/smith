@@ -127,6 +127,22 @@ fn candidate(
         force_walk: true,
     };
     let mut end = GradeEnd::Passed;
+    for command in &entry.task.setup {
+        let setup = crate::Grade {
+            command: command.clone(),
+            deadline_seconds: entry.task.deadline_seconds,
+            max_output_bytes: 4 * 1024 * 1024,
+        };
+        let environment = &entry.task.environment;
+        let result = crate::grade::command(clock, machine, &private, &private.workspace, &setup, bounds, environment)?;
+        if result.end != GradeEnd::Passed {
+            return Err(format!(
+                "validation setup failed: {:?}: {}",
+                result.end,
+                String::from_utf8_lossy(&result.stderr)
+            ));
+        }
+    }
     for (index, grade) in entry.task.grade.iter().enumerate() {
         let result = crate::grade::command(
             clock,
