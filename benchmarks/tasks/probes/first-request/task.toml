@@ -9,6 +9,20 @@ seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
 guards = ["domain/run.md, section 3", "domain/run.md, section 6"]
 deciding = ["end", "exit-code", "answer", "file-content:first.txt", "first-request-holds-task", "nothing-before-task", "completions", "run-completed"]
 
+[calibration]
+attempts = 10
+binary = "21f3e680a663571142de7cefaae7c67a5a3f7f73"
+binary_sha256 = "1cc894e54d55769abf93735bd5994702d506ab5eb0a2341e4206a77618adf902"
+checks_sha256 = "1663b03369ab42cecb85c598bf7e0232a455ee4acce676bdaa1ef8a17b88d5fd"
+control = "none: the behaviour predates the oldest runnable face"
+date = "2026-10-14T19:36:00.454693966Z"
+deviations = []
+failed_before = []
+passes = ["probes-first-request-21f3e680-20261014T193559Z/01", "probes-first-request-21f3e680-20261014T193559Z/02", "probes-first-request-21f3e680-20261014T193559Z/03", "probes-first-request-21f3e680-20261014T193559Z/04", "probes-first-request-21f3e680-20261014T193559Z/05", "probes-first-request-21f3e680-20261014T193559Z/06", "probes-first-request-21f3e680-20261014T193559Z/07", "probes-first-request-21f3e680-20261014T193559Z/08", "probes-first-request-21f3e680-20261014T193559Z/09", "probes-first-request-21f3e680-20261014T193559Z/10"]
+prompt_sha256 = "15524544ad24205fedae850e923fedf4ad2461e2aeba2e31e4ba811bb4f2626e"
+seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
+summary = "summaries/probes-first-request-21f3e680-20261014T193559Z.json"
+
 [budget]
 seconds = 300
 turns = 12
