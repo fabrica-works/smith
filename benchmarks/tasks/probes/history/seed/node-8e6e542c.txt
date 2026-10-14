@@ -1,4 +1,4 @@
-value: 22
+value: 25
 next: node-2ca5cddd.txt
 The remaining lines are padding; only value and next are part of the task.
 padding 3e9db87d: The archive keeps this line for the next reading.

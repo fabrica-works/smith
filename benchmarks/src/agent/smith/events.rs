@@ -33,6 +33,8 @@ mod scopes;
 
 mod final_turn;
 
+mod compaction_choice;
+
 mod budget;
 mod budget_report;
 

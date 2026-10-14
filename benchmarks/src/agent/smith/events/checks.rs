@@ -257,6 +257,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
     {
         unavailable("incomplete event stream prevents a complete task predicate")
     } else {
+        if *check == EventCheck::CompactionChoice {
+            return super::compaction_choice::check(observer);
+        }
         if let EventCheck::CacheReuse { median_at_least, full_misses_per_ten_at_most } = check {
             return super::cache::check(observer, *median_at_least, *full_misses_per_ten_at_most);
         }
@@ -355,6 +358,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::CacheReuse { median_at_least, full_misses_per_ten_at_most } =>
             super::cache::check(observer, *median_at_least, *full_misses_per_ten_at_most).passed,
         EventCheck::FinalTurn => super::final_turn::check(observer),
+        EventCheck::CompactionChoice => super::compaction_choice::check(observer).passed,
         EventCheck::BudgetVisible => super::budget::check(observer),
         EventCheck::BudgetTold => super::budget_report::check(observer, false),
         EventCheck::BudgetReport => super::budget_report::check(observer, true),

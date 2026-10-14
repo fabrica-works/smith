@@ -171,6 +171,7 @@ impl Observing {
                         | crate::EventCheck::CacheReuse { .. }
                         | crate::EventCheck::MainAfterChild
                         | crate::EventCheck::FinalTurn
+                        | crate::EventCheck::CompactionChoice
                         | crate::EventCheck::ChildShare { .. }
                         | crate::EventCheck::BudgetVisible
                         | crate::EventCheck::SpendWithin { .. }
@@ -216,6 +217,7 @@ impl Observing {
                 | crate::EventCheck::CacheReuse { .. }
                 | crate::EventCheck::MainAfterChild
                 | crate::EventCheck::FinalTurn
+                | crate::EventCheck::CompactionChoice
                 | crate::EventCheck::ChildShare { .. }
                 | crate::EventCheck::BudgetVisible
                 | crate::EventCheck::SpendWithin { .. }

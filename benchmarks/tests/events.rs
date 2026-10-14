@@ -7,6 +7,9 @@ pub mod common;
 #[path = "events/delegation.rs"]
 mod delegation;
 
+#[path = "events/compaction_choice.rs"]
+mod compaction_choice;
+
 use common::events::{LIMITS, balanced, bytes, record};
 
 fn observe(records: &[Record]) -> Observer {

@@ -24,6 +24,7 @@ pub(super) fn observation(process: &ProcessResult, task: &Task) -> Option<Measur
         | EventCheck::PromptWithinWindow
         | EventCheck::MainAfterChild
         | EventCheck::FinalTurn
+        | EventCheck::CompactionChoice
         | EventCheck::ChildShare { .. }
         | EventCheck::BudgetVisible
         | EventCheck::SpendWithin { .. }

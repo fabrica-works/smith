@@ -120,6 +120,8 @@ pub enum EventCheck {
     MainAfterChild,
     /// A budget ending retains text and requests no tools in its final turn.
     FinalTurn,
+    /// Every request in a compaction conversation disables tool calls.
+    CompactionChoice,
     /// The child stays within its opening's declared completion share.
     ChildShare { turns_at_most: u32 },
     /// Prompt budget text agrees with snapshots and children avoid the reserve.
@@ -177,6 +179,7 @@ impl EventCheck {
             Self::CacheReuse { .. } => "cache-reuse",
             Self::MainAfterChild => "main-after-child",
             Self::FinalTurn => "final-turn",
+            Self::CompactionChoice => "compaction-choice",
             Self::ChildShare { .. } => "child-share",
             Self::BudgetVisible => "budget-visible",
             Self::BudgetTold => "budget-told",

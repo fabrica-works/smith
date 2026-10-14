@@ -163,6 +163,7 @@ pub(super) fn checks(
             | EventCheck::PromptWithinWindow
             | EventCheck::MainAfterChild
             | EventCheck::FinalTurn
+            | EventCheck::CompactionChoice
             | EventCheck::BudgetVisible
             | EventCheck::BudgetTold
             | EventCheck::BudgetReport

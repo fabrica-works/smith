@@ -1,11 +1,11 @@
 id = "history"
-version = 1
+version = 2
 kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 330
-prompt = "Follow the 32-file pointer chain beginning at node-93e158a7.txt. Read each whole file using exactly one read call per completion. Each file has a value and a next pointer; ignore its padding. Keep a running sum and your next filename as you go, including across any summary. Do not list, batch reads, use shell, write, edit, or delegate. After the 32nd read reaches END, finish with exactly ALPHA followed by the sum.\n"
-seed_sha256 = "d48b97190d97ed4f0b85a4a8dd0a36e789156e553a7598a9b9efd6a649a34861"
+prompt = "Follow the 32-file pointer chain beginning at node-93e158a7.txt. Read each whole file using exactly one read call per completion. Each file has a value and a next pointer; ignore its padding. Keep a running sum and your next filename as you go, including across any summary. Do not list, batch reads, use shell, write, edit, or delegate. After the 32nd read reaches END, finish with exactly the word ALPHA, one space, then the sum.\n"
+seed_sha256 = "aea294bc0d91c756ea8377fa43ae1644dbf9a003e9b50947b1b1a8fd4820f336"
 guards = ["domain/session.md, section 8", "protocol/limits.md, section 3"]
 deciding = ["end", "exit-code", "answer", "tool-call", "calls-per-response", "completions", "prompt-within-window"]
 
@@ -48,10 +48,12 @@ check = "prompt-within-window"
 
 [[variant]]
 name = "small-window"
-deciding = ["conversation-opened"]
+deciding = ["conversation-opened", "compaction-choice"]
 [variant.smith]
 window = 65536
 [[variant.event]]
 check = "conversation-opened"
 kind = "compaction"
 count = { at-least = 1 }
+[[variant.event]]
+check = "compaction-choice"

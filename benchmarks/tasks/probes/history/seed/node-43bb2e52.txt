@@ -1,4 +1,4 @@
-value: 28
+value: 7
 next: node-e1f2a803.txt
 The remaining lines are padding; only value and next are part of the task.
 padding 3f361ccb: The archive keeps this line for the next reading.
@@ -119,4 +119,4 @@ padding 942eea25: The archive keeps this line for the next reading.
 padding 51b89540: The archive keeps this line for the next reading.
 padding 8186079f: The archive keeps this line for the next reading.
 padding f5cdb072: The archive keeps this line for the next reading.
-padding e7505529: The archive keeps this line for the next
+padding e7505529: The archive keeps this line for the next 
