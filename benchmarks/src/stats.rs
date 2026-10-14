@@ -7,6 +7,55 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use skein_lib::Rng;
 
+use crate::Measure;
+
+/// A repository comparison's range claim (benchmarks.md, sections 3.1 and 9).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum LargeEffect {
+    /// Every candidate value lies above or below every reference value.
+    Separated { above: bool },
+    /// The observed ranges overlap, including a shared endpoint.
+    None,
+    /// An incomplete range keeps the reason that prevents a claim.
+    Unclaimed { reason: String },
+}
+
+fn observed_range(measures: &[Measure<f64>]) -> Result<Interval, String> {
+    let mut values = Vec::new();
+    let mut reasons = Vec::new();
+    for measure in measures {
+        match measure {
+            Measure::Observed { value } => values.push(*value),
+            Measure::LowerBound { missing, .. } => reasons.push(format!("lower bound: {}", missing.join("; "))),
+            Measure::Unavailable { reason } => reasons.push(reason.clone()),
+        }
+    }
+    if !reasons.is_empty() {
+        return Err(reasons.join("; "));
+    }
+    validate(&values)?;
+    Ok(Interval {
+        lower: values.iter().copied().fold(f64::INFINITY, f64::min),
+        upper: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    })
+}
+
+/// Compare complete observed ranges without inferring statistical significance.
+#[must_use]
+pub fn large_effect(reference: &[Measure<f64>], candidate: &[Measure<f64>]) -> LargeEffect {
+    match (observed_range(reference), observed_range(candidate)) {
+        (Ok(reference), Ok(candidate)) if candidate.lower > reference.upper => LargeEffect::Separated { above: true },
+        (Ok(reference), Ok(candidate)) if candidate.upper < reference.lower => LargeEffect::Separated { above: false },
+        (Ok(_), Ok(_)) => LargeEffect::None,
+        (Err(reference), Err(candidate)) => {
+            LargeEffect::Unclaimed { reason: format!("reference: {reference}; candidate: {candidate}") }
+        }
+        (Err(reason), Ok(_)) => LargeEffect::Unclaimed { reason: format!("reference: {reason}") },
+        (Ok(_), Err(reason)) => LargeEffect::Unclaimed { reason: format!("candidate: {reason}") },
+    }
+}
+
 /// The rerun decision supplied by the probe's observed checks.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]

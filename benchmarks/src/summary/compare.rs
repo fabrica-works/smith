@@ -7,12 +7,17 @@ use crate::{ArmSummary, AttemptResult, Convention, Measure, SummaryComparison, b
 pub(crate) fn comparisons(
     groups: &[ArmSummary],
     grouped: &BTreeMap<(String, String), Vec<&AttemptResult>>,
+    design: crate::Design,
     seed: u64,
     reference_arm: Option<&str>,
 ) -> Result<Vec<SummaryComparison>, String> {
     let mut comparisons = Vec::new();
     let tasks: std::collections::BTreeSet<_> = groups.iter().map(|group| group.task.as_str()).collect();
     for task in tasks {
+        let repository = task.starts_with("repository/");
+        if !repository && design != crate::Design::Interleaved {
+            continue;
+        }
         let arms: Vec<_> = groups.iter().filter(|group| group.task == task).collect();
         if arms.len() < 2 {
             continue;
@@ -38,7 +43,22 @@ pub(crate) fn comparisons(
                     super::observations(&grouped[&(left.task.clone(), left.arm.clone())], metric);
                 let (candidate_values, candidate_missing) =
                     super::observations(&grouped[&(right.task.clone(), right.arm.clone())], &candidate_metric);
-                let result = if reference_missing.is_empty() && candidate_missing.is_empty() {
+                let large_effect = repository.then(|| {
+                    let measures = |arm: &str, metric: &str| {
+                        grouped[&(task.into(), arm.into())]
+                            .iter()
+                            .map(|result| {
+                                super::metric_values(result)
+                                    .remove(metric)
+                                    .unwrap_or_else(|| Measure::unavailable("metric not reported"))
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    crate::large_effect(&measures(&left.arm, metric), &measures(&right.arm, &candidate_metric))
+                });
+                let result = if repository {
+                    Measure::unavailable("repository tasks claim range separation, not significance")
+                } else if reference_missing.is_empty() && candidate_missing.is_empty() {
                     bootstrap_ratio(&reference_values, &candidate_values, seed, 10_000)
                         .map_or_else(Measure::unavailable, |value| Measure::Observed { value })
                 } else {
@@ -55,6 +75,7 @@ pub(crate) fn comparisons(
                     },
                     conventions,
                     result,
+                    large_effect,
                 });
             }
         }

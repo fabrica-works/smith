@@ -84,6 +84,9 @@ pub struct SummaryComparison {
     /// Reference and candidate conventions for a token field across agents.
     pub conventions: Option<(Convention, Convention)>,
     pub result: Measure<Comparison>,
+    /// Repository tasks claim only separation of complete observed ranges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub large_effect: Option<crate::LargeEffect>,
 }
 
 /// One attempt's evidence, retained by the builder for an offline verdict.
@@ -486,11 +489,7 @@ pub fn summarise(
     for group in grouped.values() {
         groups.push(group_summary(group)?);
     }
-    let comparisons = if design == Design::Interleaved {
-        compare::comparisons(&groups, &grouped, seed, reference_arm)?
-    } else {
-        Vec::new()
-    };
+    let comparisons = compare::comparisons(&groups, &grouped, design, seed, reference_arm)?;
     let audits = audit_sample(ordered.len(), 3, &disagreements, seed)?
         .into_iter()
         .map(|index| ordered[index].identity.attempt.clone())

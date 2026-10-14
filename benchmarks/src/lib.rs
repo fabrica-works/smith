@@ -41,8 +41,8 @@ pub use result::{
     Timing, classify_smith_exit, parse_result, read_result, render_result,
 };
 pub use stats::{
-    Comparison, Interval, ProbeVerdict, audit_sample, bootstrap_ratio, coefficient_of_variation, interleave, median,
-    minimum_detectable_effect, pass_interval, probe_verdict,
+    Comparison, Interval, LargeEffect, ProbeVerdict, audit_sample, bootstrap_ratio, coefficient_of_variation,
+    interleave, large_effect, median, minimum_detectable_effect, pass_interval, probe_verdict,
 };
 pub use suite::{
     Arm, CatalogueTask, Design, GuardSelection, Selection, Suite, SuiteAgent, catalogue, choose_guards,
