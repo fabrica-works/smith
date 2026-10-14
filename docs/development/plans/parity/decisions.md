@@ -534,3 +534,9 @@ changes what section 8.4 holds.
      - **While a disk check reads below 60 GB,** at most 6 sessions run at once; at 60 GB or more, 8 again. Below 40 GB new starts are held, and below 15 GB the line stops, as 11.4 says.
      - Ruling 103's `kache gc` below 40 GB stays.
      - Nothing outside the run's own directories is removed by the run: the user's checkouts and `~/src/rust/smith-benchmark-2026-10-08/` stay unless the user says otherwise.
+
+109. **the queue restarted after the full disk** (infrastructure, smith 07's block of 2026-10-14T12:38:47Z).
+     Ruling 109. The queue is back and the line resumes, under ruling 108's limits. pueued stopped at 12:33:21 because it could not save its state on the full disk ("Failed to write temp file while saving state. No space left on device"), and systemd gave up after six restarts. Its state file was whole (3,589 tasks); the supervisor removed the empty `state.json.partial`, restarted the service, and ran `plan check --fix`, which started the lanes.
+
+     - Tasks 3785 (smith's land gate) and 3786 (smith 03's `cargo nextest run`) were killed at 12:32; tasks 3788 (smith 04's land gate), 3789 (smith 05's smoke) and 3790 (smith 07's land prebuild) were queued with no process waiting on them, and were removed. Each session runs its interrupted command again, from the start: a rerun the disk caused counts as no retry of its own.
+     - The 2026-10-08 benchmark's `target/` directories are gone, by the user's leave (about 50 GB): the disk reads 167 GB. Ruling 108's rules stay.
