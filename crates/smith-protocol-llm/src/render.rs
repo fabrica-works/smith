@@ -212,36 +212,39 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             false
         }
         Outcome::Exited { exit, head, tail, dropped, timeout, output: kept } => {
-            let failure = match exit {
-                tools::Exit::Code { code } => {
-                    output.put(b"exit code ")?;
-                    output.number(u64::from(*code))?;
-                    *code != 0
+            let failure = command_end(*exit, output)?;
+            command_output(head, tail, *dropped, output)?;
+            command_following(*timeout, *kept, output)?;
+            failure
+        }
+        Outcome::Running { job, head, tail, dropped, after, output: kept } => {
+            job_number(*job, output)?;
+            output.put(b" running; use job to read the rest")?;
+            command_output(head, tail, *dropped, output)?;
+            job_following(b"yield", *after, *kept, output)?;
+            false
+        }
+        Outcome::Job { job, head, tail, dropped, wait, output: kept, end } => {
+            job_number(*job, output)?;
+            output.put(b" output since its last answer:")?;
+            command_output(head, tail, *dropped, output)?;
+            output.put(b"\n")?;
+            let failure = match end {
+                tools::JobEnd::Running => {
+                    output.put(b"running")?;
+                    false
                 }
-                tools::Exit::Signal { signal } => {
-                    output.put(b"signal ")?;
-                    output.number(u64::from(*signal))?;
+                tools::JobEnd::Ended(exit) => command_end(*exit, output)?,
+                tools::JobEnd::Stopped => {
+                    output.put(b"stopped")?;
                     true
                 }
-                tools::Exit::TimedOut => {
-                    output.put(b"command timed out")?;
+                tools::JobEnd::Cancelled => {
+                    output.put(b"cancelled")?;
                     true
                 }
             };
-            if !head.is_empty() {
-                output.put(b"\n")?;
-                output.text(head)?;
-            }
-            if *dropped > 0 {
-                output.put(b"\n... ")?;
-                output.number(*dropped)?;
-                output.put(b" bytes dropped ...")?;
-            }
-            if !tail.is_empty() {
-                output.put(b"\n")?;
-                output.text(tail)?;
-            }
-            command_following(*timeout, *kept, output)?;
+            job_following(b"wait", *wait, *kept, output)?;
             failure
         }
         Outcome::NotGranted => {
@@ -403,6 +406,68 @@ fn read_following(next: tools::Next, window: tools::BytesClamp, output: &mut Sin
         }
     }
     Ok(())
+}
+
+fn command_end(exit: tools::Exit, output: &mut Sink) -> Result<bool, Error> {
+    match exit {
+        tools::Exit::Code { code } => {
+            output.put(b"exit code ")?;
+            output.number(u64::from(code))?;
+            Ok(code != 0)
+        }
+        tools::Exit::Signal { signal } => {
+            output.put(b"signal ")?;
+            output.number(u64::from(signal))?;
+            Ok(true)
+        }
+        tools::Exit::TimedOut => {
+            output.put(b"command timed out")?;
+            Ok(true)
+        }
+    }
+}
+
+fn command_output(head: &[u8], tail: &[u8], dropped: u64, output: &mut Sink) -> Result<(), Error> {
+    if !head.is_empty() {
+        output.put(b"\n")?;
+        output.text(head)?;
+    }
+    if dropped > 0 {
+        output.put(b"\n... ")?;
+        output.number(dropped)?;
+        output.put(b" bytes dropped ...")?;
+    }
+    if !tail.is_empty() {
+        output.put(b"\n")?;
+        output.text(tail)?;
+    }
+    Ok(())
+}
+
+fn job_number(job: tools::JobNumber, output: &mut Sink) -> Result<(), Error> {
+    output.put(b"job ")?;
+    output.number(u64::from(job.0))
+}
+
+fn job_following(
+    label: &[u8],
+    wait: tools::TimeoutClamp,
+    kept: tools::BytesClamp,
+    output: &mut Sink,
+) -> Result<(), Error> {
+    match wait {
+        tools::TimeoutClamp::Within => {}
+        tools::TimeoutClamp::Clamped { asked, ceiling } => {
+            output.put(b"\n[")?;
+            output.put(label)?;
+            output.put(b" clamped: ")?;
+            output.number(asked.as_nanos() / 1_000_000)?;
+            output.put(b" ms to ")?;
+            output.number(ceiling.as_nanos() / 1_000_000)?;
+            output.put(b" ms]")?;
+        }
+    }
+    command_following(tools::TimeoutClamp::Within, kept, output)
 }
 
 fn command_following(timeout: tools::TimeoutClamp, kept: tools::BytesClamp, output: &mut Sink) -> Result<(), Error> {

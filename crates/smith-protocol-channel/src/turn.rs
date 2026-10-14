@@ -283,37 +283,51 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v4::Limits) -> Result<
             wire::Outcome::Edited(wire::Edited::new(limits, wire::EditedParts { replaced: *replaced })?)
         }
         tools::Outcome::Exited { exit, head, tail, dropped, timeout, output } => {
-            let exit = match exit {
-                tools::Exit::Code { code } => {
-                    wire::Exit::Code(wire::ExitCode::new(limits, wire::ExitCodeParts { code: *code })?)
-                }
-                tools::Exit::Signal { signal } => {
-                    wire::Exit::Signal(wire::ExitSignal::new(limits, wire::ExitSignalParts { signal: *signal })?)
-                }
-                tools::Exit::TimedOut => wire::Exit::TimedOut,
-            };
             wire::Outcome::Exited(wire::CommandEnd::new(
                 limits,
                 wire::CommandEndParts {
-                    exit,
+                    exit: encode_exit(*exit, limits)?,
                     head: head.clone(),
                     last: tail.clone(),
                     dropped: *dropped,
-                    timeout: match timeout {
-                        tools::TimeoutClamp::Within => wire::TimeoutClamp::Within,
-                        tools::TimeoutClamp::Clamped { asked, ceiling } => {
-                            wire::TimeoutClamp::Clamped(wire::DurationClamp::new(
-                                limits,
-                                wire::DurationClampParts { asked_ns: asked.as_nanos(), ceiling_ns: ceiling.as_nanos() },
-                            )?)
-                        }
-                    },
-                    output: match output {
-                        tools::BytesClamp::Within => wire::BytesClamp::Within,
-                        tools::BytesClamp::Clamped { asked, ceiling } => wire::BytesClamp::Clamped(
-                            wire::ByteClamp::new(limits, wire::ByteClampParts { asked: *asked, ceiling: *ceiling })?,
-                        ),
-                    },
+                    timeout: encode_timeout(*timeout, limits)?,
+                    output: encode_bytes(*output, limits)?,
+                },
+            )?)
+        }
+        tools::Outcome::Running { job, head, tail, dropped, output, after } => {
+            wire::Outcome::Running(wire::CommandRunning::new(
+                limits,
+                wire::CommandRunningParts {
+                    job: job.0,
+                    head: head.clone(),
+                    last: tail.clone(),
+                    dropped: *dropped,
+                    output: encode_bytes(*output, limits)?,
+                    after: encode_timeout(*after, limits)?,
+                },
+            )?)
+        }
+        tools::Outcome::Job { job, head, tail, dropped, output, wait, end } => {
+            let end = match end {
+                tools::JobEnd::Running => wire::JobEnd::Running,
+                tools::JobEnd::Ended(exit) => wire::JobEnd::Ended(wire::JobExit::new(
+                    limits,
+                    wire::JobExitParts { exit: encode_exit(*exit, limits)? },
+                )?),
+                tools::JobEnd::Stopped => wire::JobEnd::Stopped,
+                tools::JobEnd::Cancelled => wire::JobEnd::Cancelled,
+            };
+            wire::Outcome::Job(wire::JobRead::new(
+                limits,
+                wire::JobReadParts {
+                    job: job.0,
+                    head: head.clone(),
+                    last: tail.clone(),
+                    dropped: *dropped,
+                    output: encode_bytes(*output, limits)?,
+                    wait: encode_timeout(*wait, limits)?,
+                    end,
                 },
             )?)
         }
@@ -437,4 +451,33 @@ fn encode_size_part(what: tools::SizePart) -> wire::SizePart {
         tools::SizePart::EditReplacements => wire::SizePart::EditReplacements,
         tools::SizePart::ListGlob => wire::SizePart::ListGlob,
     }
+}
+
+fn encode_exit(exit: tools::Exit, limits: &wire::v4::Limits) -> Result<wire::Exit, Error> {
+    Ok(match exit {
+        tools::Exit::Code { code } => wire::Exit::Code(wire::ExitCode::new(limits, wire::ExitCodeParts { code })?),
+        tools::Exit::Signal { signal } => {
+            wire::Exit::Signal(wire::ExitSignal::new(limits, wire::ExitSignalParts { signal })?)
+        }
+        tools::Exit::TimedOut => wire::Exit::TimedOut,
+    })
+}
+
+fn encode_timeout(timeout: tools::TimeoutClamp, limits: &wire::v4::Limits) -> Result<wire::TimeoutClamp, Error> {
+    Ok(match timeout {
+        tools::TimeoutClamp::Within => wire::TimeoutClamp::Within,
+        tools::TimeoutClamp::Clamped { asked, ceiling } => wire::TimeoutClamp::Clamped(wire::DurationClamp::new(
+            limits,
+            wire::DurationClampParts { asked_ns: asked.as_nanos(), ceiling_ns: ceiling.as_nanos() },
+        )?),
+    })
+}
+
+fn encode_bytes(output: tools::BytesClamp, limits: &wire::v4::Limits) -> Result<wire::BytesClamp, Error> {
+    Ok(match output {
+        tools::BytesClamp::Within => wire::BytesClamp::Within,
+        tools::BytesClamp::Clamped { asked, ceiling } => {
+            wire::BytesClamp::Clamped(wire::ByteClamp::new(limits, wire::ByteClampParts { asked, ceiling })?)
+        }
+    })
 }

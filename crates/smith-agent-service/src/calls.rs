@@ -396,7 +396,9 @@ fn command_exit(verdict: tools::Verdict) -> Option<smith_events::CommandExit> {
             tools::Exit::Signal { signal } => Some(smith_events::CommandExit::Signal { signal: u64::from(signal) }),
             tools::Exit::TimedOut => None,
         },
-        tools::Verdict::Read
+        tools::Verdict::Running
+        | tools::Verdict::Stopped
+        | tools::Verdict::Read
         | tools::Verdict::Listed
         | tools::Verdict::Found
         | tools::Verdict::Written { .. }
@@ -426,6 +428,8 @@ fn command_exit(verdict: tools::Verdict) -> Option<smith_events::CommandExit> {
 
 fn verdict_kind(verdict: tools::Verdict) -> smith_events::Verdict {
     match verdict {
+        tools::Verdict::Running => smith_events::Verdict::Running,
+        tools::Verdict::Stopped => smith_events::Verdict::Stopped,
         tools::Verdict::Read => smith_events::Verdict::Read,
         tools::Verdict::Listed => smith_events::Verdict::Listed,
         tools::Verdict::Found => smith_events::Verdict::Found,

@@ -320,32 +320,14 @@ fn outcome(
         }
         wire::Outcome::Written(written) => tools::Outcome::Written { created: written.created() },
         wire::Outcome::Edited(edited) => tools::Outcome::Edited { replaced: edited.replaced() },
-        wire::Outcome::Exited(command) => {
-            let exit = match command.exit() {
-                wire::Exit::Code(code) => tools::Exit::Code { code: code.code() },
-                wire::Exit::Signal(signal) => tools::Exit::Signal { signal: signal.signal() },
-                wire::Exit::TimedOut => tools::Exit::TimedOut,
-            };
-            tools::Outcome::Exited {
-                exit,
-                head: Box::from(command.head()),
-                tail: Box::from(command.last()),
-                dropped: command.dropped(),
-                timeout: match command.timeout() {
-                    wire::TimeoutClamp::Within => tools::TimeoutClamp::Within,
-                    wire::TimeoutClamp::Clamped(clamp) => {
-                        if clamp.ceiling_ns() == 0 || clamp.asked_ns() <= clamp.ceiling_ns() {
-                            return Err(record::Refusal::Malformed);
-                        }
-                        tools::TimeoutClamp::Clamped {
-                            asked: Duration::from_nanos(clamp.asked_ns()),
-                            ceiling: Duration::from_nanos(clamp.ceiling_ns()),
-                        }
-                    }
-                },
-                output: byte_clamp(command.output())?,
-            }
-        }
+        wire::Outcome::Exited(command) => tools::Outcome::Exited {
+            exit: exit(command.exit()),
+            head: Box::from(command.head()),
+            tail: Box::from(command.last()),
+            dropped: command.dropped(),
+            timeout: timeout_clamp(command.timeout())?,
+            output: byte_clamp(command.output())?,
+        },
         wire::Outcome::NotGranted => tools::Outcome::NotGranted,
         wire::Outcome::Outside(failure) => tools::Outcome::Outside { path: resolved(failure.path())? },
         wire::Outcome::ReadOnly(failure) => tools::Outcome::ReadOnly { path: resolved(failure.path())? },
@@ -378,7 +360,35 @@ fn outcome(
         wire::Outcome::Cancelled => tools::Outcome::Cancelled,
         wire::Outcome::Busy => tools::Outcome::Busy,
         wire::Outcome::NulByte => tools::Outcome::NulByte,
-        wire::Outcome::Running(_) | wire::Outcome::Job(_) => return Err(record::Refusal::Malformed),
+        wire::Outcome::Running(command) => {
+            job_number(command.job())?;
+            tools::Outcome::Running {
+                job: tools::JobNumber(command.job()),
+                head: Box::from(command.head()),
+                tail: Box::from(command.last()),
+                dropped: command.dropped(),
+                output: byte_clamp(command.output())?,
+                after: timeout_clamp(command.after())?,
+            }
+        }
+        wire::Outcome::Job(read) => {
+            job_number(read.job())?;
+            let end = match read.end() {
+                wire::JobEnd::Running => tools::JobEnd::Running,
+                wire::JobEnd::Ended(ended) => tools::JobEnd::Ended(exit(ended.exit())),
+                wire::JobEnd::Stopped => tools::JobEnd::Stopped,
+                wire::JobEnd::Cancelled => tools::JobEnd::Cancelled,
+            };
+            tools::Outcome::Job {
+                job: tools::JobNumber(read.job()),
+                head: Box::from(read.head()),
+                tail: Box::from(read.last()),
+                dropped: read.dropped(),
+                output: byte_clamp(read.output())?,
+                wait: timeout_clamp(read.wait())?,
+                end,
+            }
+        }
     };
     Ok(value)
 }
@@ -598,4 +608,34 @@ mod found_tests {
     fn a_found_piece_past_the_tools_hit_count_is_too_large() {
         assert_eq!(found_piece(&[0; 12], &CEILINGS, 0), Err(record::Refusal::TooLarge));
     }
+}
+
+fn exit(source: &wire::Exit) -> tools::Exit {
+    match source {
+        wire::Exit::Code(code) => tools::Exit::Code { code: code.code() },
+        wire::Exit::Signal(signal) => tools::Exit::Signal { signal: signal.signal() },
+        wire::Exit::TimedOut => tools::Exit::TimedOut,
+    }
+}
+
+fn timeout_clamp(source: &wire::TimeoutClamp) -> Result<tools::TimeoutClamp, record::Refusal> {
+    match source {
+        wire::TimeoutClamp::Within => Ok(tools::TimeoutClamp::Within),
+        wire::TimeoutClamp::Clamped(clamp) => {
+            if clamp.ceiling_ns() == 0 || clamp.asked_ns() <= clamp.ceiling_ns() {
+                return Err(record::Refusal::Malformed);
+            }
+            Ok(tools::TimeoutClamp::Clamped {
+                asked: Duration::from_nanos(clamp.asked_ns()),
+                ceiling: Duration::from_nanos(clamp.ceiling_ns()),
+            })
+        }
+    }
+}
+
+fn job_number(number: u32) -> Result<(), record::Refusal> {
+    if number == 0 {
+        return Err(record::Refusal::Malformed);
+    }
+    Ok(())
 }

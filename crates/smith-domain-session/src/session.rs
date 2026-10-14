@@ -2627,7 +2627,7 @@ fn outcome_cost(outcome: &Outcome) -> Option<u64> {
             }
             Some(cost)
         }
-        Outcome::Exited { exit: _, head, tail, dropped: _, timeout: _, output: _ } => {
+        Outcome::Exited { head, tail, .. } | Outcome::Running { head, tail, .. } | Outcome::Job { head, tail, .. } => {
             len(head)?.checked_add(len(tail)?)
         }
         Outcome::EditFailed { edit: _, why } => match why {

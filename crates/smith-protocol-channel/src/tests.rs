@@ -598,3 +598,5 @@ fn a_turns_model_and_effort_round_trip_in_its_transcript() {
         assert_eq!(decoded, turn);
     }
 }
+
+mod jobs;

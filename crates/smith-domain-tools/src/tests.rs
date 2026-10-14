@@ -1996,3 +1996,5 @@ fn read_caps_are_observable_at_the_tools_parent_boundary() {
     assert!(reported.contains("omitted_bytes: 2"), "missing actual window observation: {reported}");
     assert!(reported.contains("clamped: true"), "missing actual lowered-cap observation: {reported}");
 }
+
+mod jobs;

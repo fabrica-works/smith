@@ -92,6 +92,10 @@ pub enum Verdict {
         /// Terminal process classification; only a zero exit code passes checks.
         exit: Exit,
     },
+    /// A shell or job call left its command running.
+    Running,
+    /// A job call stopped its command's group.
+    Stopped,
     /// The kit has no authority for this tool family.
     NotGranted,
     /// The path is outside the granted repository roots.
@@ -196,6 +200,18 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome, observatio
             Verdict::Exited { exit: *exit },
             len(head).checked_add(len(tail)).expect("bounded command output fits u64"),
         ),
+        Outcome::Running { head, tail, .. } => {
+            (Verdict::Running, len(head).checked_add(len(tail)).expect("bounded job output"))
+        }
+        Outcome::Job { head, tail, end, .. } => {
+            let verdict = match end {
+                crate::JobEnd::Running => Verdict::Running,
+                crate::JobEnd::Ended(exit) => Verdict::Exited { exit: *exit },
+                crate::JobEnd::Stopped => Verdict::Stopped,
+                crate::JobEnd::Cancelled => Verdict::Cancelled,
+            };
+            (verdict, len(head).checked_add(len(tail)).expect("bounded job output"))
+        }
         Outcome::NotGranted => (Verdict::NotGranted, 0),
         Outcome::Outside { .. } => (Verdict::Outside, 0),
         Outcome::ReadOnly { .. } => (Verdict::ReadOnly, 0),
@@ -222,11 +238,29 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome, observatio
         Outcome::Busy => (Verdict::Busy, 0),
         Outcome::NulByte => (Verdict::NulByte, 0),
     };
-    let observed = match outcome {
+    let observed = observed(outcome, observation);
+    FactKind::Answered {
+        session,
+        tool,
+        verdict,
+        bytes,
+        omitted_bytes: observed.omitted_bytes,
+        clamped: observed.clamped,
+    }
+}
+
+fn observed(outcome: &Outcome, observation: Observation) -> Observation {
+    match outcome {
         Outcome::Exited { dropped, timeout, output, .. } => Observation {
             omitted_bytes: *dropped,
             clamped: observation.clamped || timeout_clamped(*timeout) || bytes_clamped(*output),
         },
+        Outcome::Running { dropped, after, output, .. } | Outcome::Job { dropped, wait: after, output, .. } => {
+            Observation {
+                omitted_bytes: *dropped,
+                clamped: observation.clamped || timeout_clamped(*after) || bytes_clamped(*output),
+            }
+        }
         Outcome::Read { window, .. } => Observation {
             omitted_bytes: observation.omitted_bytes,
             clamped: observation.clamped || bytes_clamped(*window),
@@ -253,14 +287,6 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome, observatio
         | Outcome::Cancelled
         | Outcome::Busy
         | Outcome::NulByte => observation,
-    };
-    FactKind::Answered {
-        session,
-        tool,
-        verdict,
-        bytes,
-        omitted_bytes: observed.omitted_bytes,
-        clamped: observed.clamped,
     }
 }
 

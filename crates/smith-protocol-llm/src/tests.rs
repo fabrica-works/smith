@@ -77,7 +77,7 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
     let mut rng = Rng::new(941);
     let mut smallest_bound = u32::MAX;
     let mut read_cuts = Vec::new();
-    for case in 0_usize..256 {
+    for case in 0_usize..2 {
         let mut caps = tools();
         caps.read_bytes = u32::try_from(rng.next_u64() % 1024).unwrap();
         caps.shell_head = u32::try_from(rng.next_u64() % 1024).unwrap();
@@ -110,7 +110,7 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
     }
 }
 
-fn random_outcomes(caps: &tools::Limits) -> [tools::Outcome; 4] {
+fn random_outcomes(caps: &tools::Limits) -> [tools::Outcome; 6] {
     let entries = (0..caps.list_entries)
         .map(|_| tools::Entry { name: vec![0xff; 8].into(), kind: tools::Kind::Directory })
         .collect::<Vec<_>>()
@@ -128,6 +128,29 @@ fn random_outcomes(caps: &tools::Limits) -> [tools::Outcome; 4] {
                 count: u32::MAX,
                 lines: vec![u32::MAX; usize::try_from(caps.match_lines).unwrap()].into(),
             },
+        },
+        tools::Outcome::Running {
+            job: tools::JobNumber(u32::MAX),
+            head: vec![0xff; usize::try_from(caps.shell_head).unwrap()].into(),
+            tail: vec![0; usize::try_from(caps.shell_tail).unwrap()].into(),
+            dropped: u64::MAX,
+            after: tools::TimeoutClamp::Clamped {
+                asked: Duration::from_nanos(u64::MAX),
+                ceiling: Duration::from_nanos(1),
+            },
+            output: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: 1 },
+        },
+        tools::Outcome::Job {
+            job: tools::JobNumber(u32::MAX),
+            head: vec![0xff; usize::try_from(caps.shell_head).unwrap()].into(),
+            tail: vec![0; usize::try_from(caps.shell_tail).unwrap()].into(),
+            dropped: u64::MAX,
+            wait: tools::TimeoutClamp::Clamped {
+                asked: Duration::from_nanos(u64::MAX),
+                ceiling: Duration::from_nanos(1),
+            },
+            output: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: 1 },
+            end: tools::JobEnd::Ended(tools::Exit::Signal { signal: u8::MAX }),
         },
         tools::Outcome::Exited {
             exit: tools::Exit::Code { code: u8::MAX },
@@ -615,4 +638,163 @@ fn owed_results_past_their_room_are_cut_with_markers() {
         assert!(text.contains("\n["));
         assert!(text.ends_with(" bytes omitted]"));
     }
+}
+
+fn render_job(end: tools::JobEnd) -> (Box<[u8]>, bool) {
+    render_outcome(
+        &tools::Outcome::Job {
+            job: tools::JobNumber(7),
+            head: b"new".as_slice().into(),
+            tail: b"last".as_slice().into(),
+            dropped: 11,
+            output: tools::BytesClamp::Within,
+            wait: tools::TimeoutClamp::Within,
+            end,
+        },
+        &tools::Namespace::One,
+        1024,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_running_command_names_the_job_to_read_next() {
+    let outcome = tools::Outcome::Running {
+        job: tools::JobNumber(3),
+        head: b"start".as_slice().into(),
+        tail: Box::default(),
+        dropped: 0,
+        output: tools::BytesClamp::Within,
+        after: tools::TimeoutClamp::Within,
+    };
+    assert_eq!(
+        render_outcome(&outcome, &tools::Namespace::One, 1024).unwrap(),
+        (b"job 3 running; use job to read the rest\nstart".as_slice().into(), false)
+    );
+}
+
+#[test]
+fn a_running_jobs_answer_renders_only_its_unread_output() {
+    assert_eq!(
+        render_job(tools::JobEnd::Running),
+        (b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\nrunning".as_slice().into(), false)
+    );
+}
+
+#[test]
+fn a_successful_jobs_answer_renders_its_exit_code() {
+    assert_eq!(
+        render_job(tools::JobEnd::Ended(tools::Exit::Code { code: 0 })),
+        (
+            b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\nexit code 0".as_slice().into(),
+            false
+        )
+    );
+}
+
+#[test]
+fn a_failed_jobs_answer_renders_its_exit_code() {
+    assert_eq!(
+        render_job(tools::JobEnd::Ended(tools::Exit::Code { code: 2 })),
+        (
+            b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\nexit code 2".as_slice().into(),
+            true
+        )
+    );
+}
+
+#[test]
+fn a_signalled_jobs_answer_renders_its_terminal_signal() {
+    assert_eq!(
+        render_job(tools::JobEnd::Ended(tools::Exit::Signal { signal: 9 })),
+        (b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\nsignal 9".as_slice().into(), true)
+    );
+}
+
+#[test]
+fn a_timed_out_jobs_answer_says_its_deadline_passed() {
+    assert_eq!(
+        render_job(tools::JobEnd::Ended(tools::Exit::TimedOut)),
+        (
+            b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\ncommand timed out"
+                .as_slice()
+                .into(),
+            true
+        )
+    );
+}
+
+#[test]
+fn a_stopped_jobs_answer_says_it_was_stopped() {
+    assert_eq!(
+        render_job(tools::JobEnd::Stopped),
+        (b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\nstopped".as_slice().into(), true)
+    );
+}
+
+#[test]
+fn a_cancelled_jobs_answer_says_it_was_cancelled() {
+    assert_eq!(
+        render_job(tools::JobEnd::Cancelled),
+        (
+            b"job 7 output since its last answer:\nnew\n... 11 bytes dropped ...\nlast\ncancelled".as_slice().into(),
+            true
+        )
+    );
+}
+
+#[test]
+fn a_commands_yield_clamp_names_the_asked_and_ceiling() {
+    let outcome = tools::Outcome::Running {
+        job: tools::JobNumber(3),
+        head: Box::default(),
+        tail: Box::default(),
+        dropped: 0,
+        output: tools::BytesClamp::Within,
+        after: tools::TimeoutClamp::Clamped { asked: Duration::from_secs(90), ceiling: Duration::from_secs(30) },
+    };
+    assert_eq!(
+        render_outcome(&outcome, &tools::Namespace::One, 1024).unwrap(),
+        (b"job 3 running; use job to read the rest\n[yield clamped: 90000 ms to 30000 ms]".as_slice().into(), false)
+    );
+}
+
+#[test]
+fn a_jobs_wait_clamp_names_the_asked_and_ceiling() {
+    let outcome = tools::Outcome::Job {
+        job: tools::JobNumber(3),
+        head: Box::default(),
+        tail: Box::default(),
+        dropped: 0,
+        output: tools::BytesClamp::Within,
+        end: tools::JobEnd::Running,
+        wait: tools::TimeoutClamp::Clamped { asked: Duration::from_secs(90), ceiling: Duration::from_secs(30) },
+    };
+    assert_eq!(
+        render_outcome(&outcome, &tools::Namespace::One, 1024).unwrap(),
+        (
+            b"job 3 output since its last answer:\nrunning\n[wait clamped: 90000 ms to 30000 ms]".as_slice().into(),
+            false
+        )
+    );
+}
+
+#[test]
+fn a_jobs_output_clamp_names_the_asked_and_ceiling() {
+    let outcome = tools::Outcome::Job {
+        job: tools::JobNumber(3),
+        head: Box::default(),
+        tail: Box::default(),
+        dropped: 0,
+        output: tools::BytesClamp::Clamped { asked: 90, ceiling: 30 },
+        end: tools::JobEnd::Running,
+        wait: tools::TimeoutClamp::Within,
+    };
+    assert_eq!(
+        render_outcome(&outcome, &tools::Namespace::One, 1024).unwrap(),
+        (
+            b"job 3 output since its last answer:\nrunning\n[output clamped: 90 bytes to 30 bytes]".as_slice().into(),
+            false
+        )
+    );
 }

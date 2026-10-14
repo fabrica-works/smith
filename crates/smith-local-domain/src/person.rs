@@ -237,13 +237,19 @@ pub(crate) fn turn_text(turn: &agent::Turn, cap: u32) -> Box<[u8]> {
 pub(crate) fn tool_end(result: &session::llm::Returned) -> &'static [u8] {
     match result {
         session::llm::Returned::Owned { outcome } => match outcome {
-            tools::Outcome::Read { .. }
+            tools::Outcome::Running { .. }
+            | tools::Outcome::Job {
+                end: tools::JobEnd::Running | tools::JobEnd::Ended(tools::Exit::Code { code: 0 }),
+                ..
+            }
+            | tools::Outcome::Read { .. }
             | tools::Outcome::Listed { .. }
             | tools::Outcome::Found { timed_out: false, .. }
             | tools::Outcome::Written { .. }
             | tools::Outcome::Edited { .. }
             | tools::Outcome::Exited { exit: tools::Exit::Code { code: 0 }, .. } => b"Tool finished\n",
-            tools::Outcome::Found { timed_out: true, .. }
+            tools::Outcome::Job { .. }
+            | tools::Outcome::Found { timed_out: true, .. }
             | tools::Outcome::Exited { .. }
             | tools::Outcome::NotGranted
             | tools::Outcome::Outside { .. }

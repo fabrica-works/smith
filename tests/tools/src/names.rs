@@ -14,6 +14,13 @@ pub fn kind(outcome: &Outcome) -> &'static str {
         Outcome::Written { .. } => "written",
         Outcome::Edited { .. } => "edited",
         Outcome::Exited { .. } => "exited",
+        Outcome::Running { .. } => "running",
+        Outcome::Job { end, .. } => match end {
+            smith_domain_tools::JobEnd::Running => "running",
+            smith_domain_tools::JobEnd::Ended(_) => "exited",
+            smith_domain_tools::JobEnd::Stopped => "stopped",
+            smith_domain_tools::JobEnd::Cancelled => "cancelled",
+        },
         Outcome::EditFailed { why, .. } => match why {
             smith_domain_tools::Mismatch::NoMatch => "no match",
             smith_domain_tools::Mismatch::Ambiguous { .. } => "ambiguous",
