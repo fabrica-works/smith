@@ -24,6 +24,9 @@ fn main() -> ExitCode {
         }
         [command] if command == "check" => check_all(),
         [command, directory] if command == "check" => check(Path::new(directory)),
+        [command, summary, flag, commit] if command == "parity" && flag == "--commit" => {
+            parity_command(Path::new(summary), commit)
+        }
         [command, names @ ..] if command == "validate" => validate_command(names),
         [command, results, suite, tier, design, seed, reference @ ..]
             if command == "summarise" && reference.len() <= 1 =>
@@ -46,7 +49,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench parity SUMMARY --commit SHA\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
             );
             ExitCode::from(2)
         }
@@ -59,6 +62,48 @@ fn build_command(commit: &str, repository: Option<&Path>) -> ExitCode {
         println!("built {} sha256 {}", built.arm.commit, built.arm.sha256);
         built.directory
     }))
+}
+
+fn parity_command(file: &Path, commit: &str) -> ExitCode {
+    let result = smith_bench::read_summary(file)
+        .map_err(|error| error.to_string())
+        .and_then(|summary| smith_bench::parity::verify(&summary, commit).map(|parity| (summary, parity)));
+    match result {
+        Ok((summary, parity)) => {
+            for criterion in parity.criteria {
+                let lower_bound = summary.attempts.iter().any(|row| {
+                    let repository = row.task == "repository/shell-cwd";
+                    row.agent == "codex"
+                        && match criterion.name.as_str() {
+                            "FT" | "RT" => {
+                                repository == (criterion.name == "RT")
+                                    && matches!(row.task_wall_ms, smith_bench::Measure::LowerBound { .. })
+                            }
+                            "FC" | "RC" => {
+                                repository == (criterion.name == "RC")
+                                    && matches!(row.priced_usd, smith_bench::Measure::LowerBound { .. })
+                            }
+                            _ => false,
+                        }
+                });
+                println!(
+                    "{} statistic={} interval=[{}, {}] margin={} holds={} codex_lower_bound={}",
+                    criterion.name,
+                    criterion.statistic,
+                    criterion.interval.0,
+                    criterion.interval.1,
+                    criterion.margin,
+                    criterion.holds,
+                    lower_bound
+                );
+            }
+            ExitCode::from(parity.verdict.code())
+        }
+        Err(reason) => {
+            eprintln!("{reason}");
+            ExitCode::from(2)
+        }
+    }
 }
 
 fn committed_output(directory: &str, name: &str) -> Result<PathBuf, String> {

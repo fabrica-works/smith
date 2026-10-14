@@ -139,6 +139,8 @@ pub struct RunSummary {
     pub seed: u64,
     pub date: String,
     pub attempts: Vec<AttemptRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parity: Option<crate::parity::Parity>,
     pub groups: Vec<ArmSummary>,
     pub comparisons: Vec<SummaryComparison>,
     pub audits: Vec<String>,
@@ -497,7 +499,7 @@ pub fn summarise(
         ordered.iter().map(|result| result.identity.started_utc.as_str()).min().expect("nonempty run").to_owned();
     let drift_notices =
         if let Some(reference) = reference { drift(&groups, suite, tier, reference)? } else { Vec::new() };
-    Ok(RunSummary {
+    let mut summary = RunSummary {
         version: SUMMARY_VERSION,
         result_version: RESULT_VERSION,
         priced_at: results[0].identity.harness_commit.clone(),
@@ -508,11 +510,16 @@ pub fn summarise(
         seed,
         date,
         attempts: results.iter().map(attempt_row).collect(),
+        parity: None,
         groups,
         comparisons,
         audits,
         drift_notices,
-    })
+    };
+    if suite == "parity" {
+        summary.parity = Some(crate::parity::from_summary(&summary)?);
+    }
+    Ok(summary)
 }
 
 fn drift(groups: &[ArmSummary], suite: &str, tier: &str, reference: &Baseline) -> Result<Vec<String>, String> {

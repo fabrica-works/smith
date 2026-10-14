@@ -490,10 +490,12 @@ fn run_suite(
         }
         let remaining = deadline.as_nanos().checked_sub(clock.now().now.as_nanos());
         let Some(remaining) = remaining.filter(|span| *span > 0) else {
+            println!("suite max_wall_seconds reached: incomplete");
             incomplete = true;
             break;
         };
         if used >= suite.max_tokens {
+            println!("suite max_tokens reached: incomplete");
             incomplete = true;
             break;
         }
@@ -527,6 +529,7 @@ fn run_suite(
             used = used.checked_add(count).ok_or("suite token count overflow")?;
             incomplete |= used > suite.max_tokens;
         } else if !zero_charge {
+            println!("suite token usage unavailable: incomplete");
             incomplete = true;
             break;
         }

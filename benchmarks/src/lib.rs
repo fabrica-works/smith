@@ -85,4 +85,6 @@ pub use cache::{CacheObservation, CacheTriplet};
 
 pub mod probe;
 
+pub mod parity;
+
 pub mod validate;

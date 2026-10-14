@@ -531,11 +531,29 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
             let value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
             let planned = prepare(repository, name, &value, &arm, false, &asked)?;
             let batch = crate::batch::run(&planned.suite, &planned.directory, seed)?;
+            if name == "parity" {
+                return parity_summary(repository, &batch, seed);
+            }
             Ok(summary(&planned, &batch))
         }
         "calibrate" | "fix" => comparison(command, repository, &order, &arm, &options, seed),
         _ => Err("unknown probe command".into()),
     }
+}
+
+fn parity_summary(repository: &Path, batch: &crate::batch::Batch, seed: u64) -> Result<Judgment, String> {
+    let summary = crate::summarise(&batch.results, "parity", "working", crate::Design::Interleaved, seed, None, None)?;
+    let directory = repository.join("benchmarks/summaries");
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    crate::write_summary(&directory.join(format!("{}.json", summary.run)), &summary)?;
+    let parity = summary.parity.expect("parity suite section");
+    let verdict = match parity.verdict {
+        crate::parity::Verdict::OnPar => Judgment::Pass,
+        crate::parity::Verdict::NotOnPar => Judgment::Fail,
+        crate::parity::Verdict::Incomplete => Judgment::Incomplete,
+    };
+    println!("summary {} attempts={} verdict={}", summary.run, batch.results.len(), verdict_name(verdict));
+    Ok(verdict)
 }
 
 fn comparison(

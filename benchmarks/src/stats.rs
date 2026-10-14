@@ -147,6 +147,76 @@ fn resample(values: &[f64], random: &mut Rng, sample: &mut Vec<f64>) {
     }
 }
 
+/// The fixture's paired value and pass observations, retained in its own stratum.
+pub(crate) struct Stratum {
+    pub reference: Vec<(f64, bool)>,
+    pub candidate: Vec<(f64, bool)>,
+}
+
+fn solved_ratio(reference: (f64, u32), candidate: (f64, u32)) -> f64 {
+    if reference.1 == 0 || candidate.1 == 0 || reference.0 == 0.0 {
+        f64::INFINITY
+    } else {
+        (candidate.0 / f64::from(candidate.1)) / (reference.0 / f64::from(reference.1))
+    }
+}
+
+fn draw_solved(values: &[(f64, bool)], random: &mut Rng, resample: bool) -> (f64, u32) {
+    let mut sum = 0.0;
+    let mut passes = 0;
+    let bound = u64::try_from(values.len()).expect("stratum size");
+    for index in 0..values.len() {
+        let index = if resample { usize::try_from(random.below(bound)).expect("draw") } else { index };
+        sum += values[index].0;
+        passes += u32::from(values[index].1);
+    }
+    (sum, passes)
+}
+
+fn pooled_solved(strata: &[Stratum], random: &mut Rng, resample: bool) -> f64 {
+    let mut reference = (0.0, 0);
+    let mut candidate = (0.0, 0);
+    for stratum in strata {
+        let observed = draw_solved(&stratum.reference, random, resample);
+        reference.0 += observed.0;
+        reference.1 += observed.1;
+        let observed = draw_solved(&stratum.candidate, random, resample);
+        candidate.0 += observed.0;
+        candidate.1 += observed.1;
+    }
+    solved_ratio(reference, candidate)
+}
+
+/// Resample each fixture and arm separately, preserving value/pass pairing.
+pub(crate) fn bootstrap_per_solved(strata: &[Stratum], seed: u64, resamples: u32) -> Result<(f64, (f64, f64)), String> {
+    if strata.is_empty()
+        || resamples < 1000
+        || strata.iter().any(|stratum| {
+            stratum.reference.iter().chain(&stratum.candidate).any(|(value, _)| !value.is_finite() || *value < 0.0)
+        })
+    {
+        return Err("per-solved bootstrap needs finite nonnegative strata and 1000 resamples".into());
+    }
+    let mut random = Rng::new(seed);
+    let ratio = pooled_solved(strata, &mut random, false);
+    let constant = strata.iter().all(|stratum| {
+        [&stratum.reference, &stratum.candidate]
+            .iter()
+            .all(|values| values.first().is_none_or(|first| values.iter().all(|value| value == first)))
+    });
+    if constant {
+        return Ok((ratio, (ratio, ratio)));
+    }
+    let mut ratios = Vec::with_capacity(usize::try_from(resamples).expect("resamples"));
+    for _ in 0..resamples {
+        ratios.push(pooled_solved(strata, &mut random, true));
+    }
+    ratios.sort_by(f64::total_cmp);
+    let lower = usize::try_from(u64::from(resamples) * 25 / 1000).expect("percentile");
+    let upper = usize::try_from(u64::from(resamples) * 975 / 1000).expect("percentile");
+    Ok((ratio, (ratios[lower], ratios[upper.min(ratios.len() - 1)])))
+}
+
 /// Bootstrap the ratio of medians; at least five complete observations per arm.
 /// Detection needs both an interval excluding one and an effect above the MDE.
 pub fn bootstrap_ratio(reference: &[f64], candidate: &[f64], seed: u64, resamples: u32) -> Result<Comparison, String> {
@@ -159,6 +229,20 @@ pub fn bootstrap_ratio(reference: &[f64], candidate: &[f64], seed: u64, resample
         return Err("reference zero can make a bootstrap ratio undefined".into());
     }
     let ratio = median(candidate)? / median(reference)?;
+    // Constant arms make every percentile draw the same ratio.
+    if reference.iter().all(|value| value.to_bits() == reference[0].to_bits())
+        && candidate.iter().all(|value| value.to_bits() == candidate[0].to_bits())
+        && candidate[0] > 0.0
+        && ratio.is_finite()
+    {
+        return Ok(Comparison {
+            ratio,
+            interval_95: Interval { lower: ratio, upper: ratio },
+            minimum_detectable_effect: 0.0,
+            detected: ratio.to_bits() != 1.0_f64.to_bits(),
+            resamples,
+        });
+    }
     let mut random = Rng::new(seed);
     let mut ratios = Vec::with_capacity(usize::try_from(resamples).expect("resamples fit usize"));
     let mut candidate_sample = Vec::with_capacity(candidate.len());
