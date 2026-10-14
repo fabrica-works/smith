@@ -1,0 +1,27 @@
+name = "compaction"
+tier = "small"
+design = "interleaved"
+repetitions = 5
+rerun_failed = 0
+max_wall_seconds = 3600
+max_tokens = 12000000
+tasks = ["probes/history/small-window"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "cache-reuse"
+
+[[arm]]
+source = "override"
+name = "80-percent"
+[arm.smith]
+"deployment.compaction_threshold.numerator" = 4
+"deployment.compaction_threshold.denominator" = 5
+
+[[arm]]
+source = "override"
+name = "60-percent"
+[arm.smith]
+"deployment.compaction_threshold.numerator" = 3
+"deployment.compaction_threshold.denominator" = 5
