@@ -100,6 +100,27 @@ fn a_repository_attempt_compares_protected_files_with_its_bundle() {
     }
 }
 
+#[test]
+fn a_file_left_in_tmp_by_an_attempt_is_a_write_outside() {
+    let Some(root) = isolated_replay("a_file_left_in_tmp_by_an_attempt_is_a_write_outside") else { return };
+    let guard = smith_bench::guard::Guard::new(&root.join("home"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    let machine = smith_bench::isolate::Machine { path: "/usr/bin:/bin".into(), rustup_home: None };
+    let mut prepared = repository_request(&root, &guard);
+    let path = PathBuf::from(format!("/tmp/smith-bench-test-{}", std::process::id()));
+    assert!(!path.exists(), "fresh test file");
+    let mut command = replay("");
+    command.arguments[1] = format!("cat >/dev/null; printf escaped > {}; cat \"$1\"", path.display()).into();
+    prepared.arguments = command.arguments.iter().map(|value| value.to_str().expect("argument").into()).collect();
+    let recorded = smith_bench::run::attempt(&guard, &machine, &root.join("state/smith-bench"), &prepared)
+        .expect("repository replay");
+    let check =
+        recorded.result.outcome.checks.iter().find(|check| check.check == "nothing-outside").expect("scope check");
+    assert_eq!(check.passed, smith_bench::Measure::Observed { value: false });
+    assert!(check.evidence.contains(&path.display().to_string()), "{:?}", check.evidence);
+    std::fs::remove_file(path).expect("remove test's temporary file");
+}
+
 fn replay(tail: &str) -> Command {
     let recording = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/codex/completed.jsonl");
     Command {

@@ -38,6 +38,35 @@ pub(super) fn scope(effects: &Measure<Vec<PathBuf>>) -> CheckVerdict {
     paths(Passive::NothingOutside, effects, "the selected stream does not show every filesystem effect")
 }
 
+pub(super) fn temporary(result: &mut crate::AttemptResult, changes: Result<Vec<(PathBuf, String)>, String>) {
+    let mut check = scope(&result.outcome.writes_outside_workspace);
+    match changes {
+        Ok(changes) => {
+            if !changes.is_empty() {
+                let (outside, evidence): (Vec<_>, Vec<_>) = changes.into_iter().unzip();
+                let effects = &mut result.outcome.writes_outside_workspace;
+                if let Measure::Unavailable { reason } = effects {
+                    *effects = Measure::LowerBound { value: Vec::new(), missing: vec![reason.clone()] };
+                }
+                match effects {
+                    Measure::Observed { value } | Measure::LowerBound { value, .. } => {
+                        value.extend(outside);
+                        value.sort();
+                        value.dedup();
+                    }
+                    Measure::Unavailable { .. } => unreachable!("converted unavailable scope above"),
+                }
+                check = scope(effects);
+                check.evidence.extend(evidence);
+            }
+            check.evidence.push("User-owned /tmp entries listed before and after the attempt".into());
+        }
+        Err(reason) => check.evidence.push(format!("User-owned /tmp listing unavailable: {reason}")),
+    }
+    result.health.passive_checks.retain(|check| check.check != Passive::NothingOutside.name());
+    result.health.passive_checks.push(check);
+}
+
 pub(super) fn tree(process: &ProcessResult) -> CheckVerdict {
     CheckVerdict {
         check: Passive::TreeEnded.name().into(),

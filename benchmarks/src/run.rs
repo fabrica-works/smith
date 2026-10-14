@@ -1031,6 +1031,7 @@ fn afterwards(
 /// Setup failures are recorded as refusals and make the enclosing suite incomplete.
 pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepared) -> Result<Recorded, String> {
     let root = scratch_root(state, prepared)?;
+    let temporary_before = crate::isolate::temporary_entries(&root);
     private_parent(guard, root.parent().expect("scratch parent"))?;
     let archive_root = state.join("runs").join(&prepared.identity.run);
     private_parent(guard, &archive_root)?;
@@ -1121,6 +1122,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             result.outcome.end = End::HarnessError { what: format!("owned workspace deletion failed: {error}") };
         }
     }
+    passive::temporary(&mut result, crate::isolate::temporary_changes(temporary_before, &root));
     neutral.finish(&mut result);
     let incomplete = if inference { Incomplete::No } else { Incomplete::Setup(setup_step) };
     let bytes = crate::render_result(&result)?;

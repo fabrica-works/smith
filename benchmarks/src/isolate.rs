@@ -9,10 +9,65 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
 use crate::guard::Guard;
+
+/// One user-owned temporary entry, without following links or reading contents.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TemporaryEntry {
+    kind: fs::FileType,
+    bytes: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+}
+
+/// List the user's entries directly under /tmp, outside this attempt's private root.
+pub(crate) fn temporary_entries(private: &Path) -> Result<BTreeMap<PathBuf, TemporaryEntry>, String> {
+    let owner = fs::metadata("/proc/self").map_err(|error| error.to_string())?.uid();
+    let mut entries = BTreeMap::new();
+    for entry in fs::read_dir("/tmp").map_err(|error| error.to_string())? {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.starts_with(private) {
+            continue;
+        }
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.to_string()),
+        };
+        if metadata.uid() == owner {
+            entries.insert(
+                path,
+                TemporaryEntry {
+                    kind: metadata.file_type(),
+                    bytes: metadata.len(),
+                    modified_seconds: metadata.mtime(),
+                    modified_nanoseconds: metadata.mtime_nsec(),
+                },
+            );
+        }
+    }
+    Ok(entries)
+}
+
+/// Retain the path and both metadata records for each new or changed user entry.
+pub(crate) fn temporary_changes(
+    before: Result<BTreeMap<PathBuf, TemporaryEntry>, String>,
+    private: &Path,
+) -> Result<Vec<(PathBuf, String)>, String> {
+    let before = before?;
+    let after = temporary_entries(private)?;
+    Ok(after
+        .into_iter()
+        .filter(|(path, entry)| before.get(path) != Some(entry))
+        .map(|(path, entry)| {
+            let evidence = format!("{}: before {:?}, after {entry:?}", path.display(), before.get(&path));
+            (path, evidence)
+        })
+        .collect())
+}
 
 /// The preparation step that refused an attempt before inference.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
