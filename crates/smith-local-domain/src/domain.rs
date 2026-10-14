@@ -893,8 +893,24 @@ fn head_result(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: Git
         GitResult::Head { .. } | GitResult::Failed { .. } => {
             domain.chat.phase = Phase::Idle;
             crate::person::show_dropped(&mut domain.lines, out);
-            out.push(Request::Notice { notice: Notice::Failure(Failure::HeadUnavailable) });
-            finish_failed_start(domain, out);
+            let directory = domain
+                .config
+                .workspace
+                .as_ref()
+                .expect("head survey has a workspace")
+                .directories
+                .get(usize::try_from(directory).expect("directory position fits usize"))
+                .expect("head survey names a declared directory")
+                .name
+                .clone();
+            out.push(Request::Notice { notice: Notice::Failure(Failure::HeadUnavailable { directory }) });
+            match domain.config.mode {
+                crate::Mode::Headless { .. } => {
+                    domain.chat.phase = Phase::Done;
+                    out.push(Request::Exit { status: ExitStatus::Refused });
+                }
+                crate::Mode::Chat { .. } => finish_failed_start(domain, out),
+            }
         }
         GitResult::Status { .. }
         | GitResult::Inspected { .. }

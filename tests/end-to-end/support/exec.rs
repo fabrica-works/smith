@@ -171,6 +171,26 @@ pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option
     run_fixture(scratch, arguments, provider, false, person(input), false, window::Story::None).0
 }
 
+/// Start the product in a scratch repository with no commit, retaining provider requests.
+#[must_use]
+pub fn exec_without_head(scratch: &Scratch) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
+    drop(super::refusal_program_code(
+        std::path::Path::new("/usr/bin/git"),
+        scratch,
+        ["init", "-q"].into_iter().map(Into::into).collect(),
+        0,
+    ));
+    run_fixture(
+        scratch,
+        &["exec", "hello"],
+        Some(provider(scratch, Reply::Accepted)),
+        false,
+        person(b""),
+        false,
+        window::Story::None,
+    )
+}
+
 fn person(input: &[u8]) -> (Mode, Vec<Action>) {
     (Mode::Pipes, if input.is_empty() { vec![Action::Eof] } else { vec![Action::Send(input.into()), Action::Eof] })
 }

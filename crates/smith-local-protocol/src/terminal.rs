@@ -164,7 +164,11 @@ impl Terminal {
                         local::AccountFailure::Exhausted => b"A model account is exhausted",
                     },
                 ),
-                local::Failure::HeadUnavailable => append(&mut text, b"Repository head unavailable"),
+                local::Failure::HeadUnavailable { directory } => {
+                    append(&mut text, b"run refused: repository ");
+                    append(&mut text, directory);
+                    append(&mut text, b": its head cannot be read");
+                }
                 local::Failure::Run { failure, detail } => {
                     failure::run(&mut text, *failure, detail, models, None, None, None);
                 }
@@ -411,7 +415,10 @@ mod tests {
     fn local_failures_keep_their_own_words() {
         for (failure, expected) in [
             (local::Failure::NamesExhausted, b"Chat names exhausted\n".as_slice()),
-            (local::Failure::HeadUnavailable, b"Repository head unavailable\n".as_slice()),
+            (
+                local::Failure::HeadUnavailable { directory: b"workspace".as_slice().into() },
+                b"run refused: repository workspace: its head cannot be read\n".as_slice(),
+            ),
             (
                 local::Failure::Unstarted(smith_host_domain::End::Busy),
                 b"agent start refused: no agent slot\n".as_slice(),

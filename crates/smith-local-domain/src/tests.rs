@@ -818,3 +818,71 @@ fn slash_model_keeps_an_effort_the_new_model_accepts() {
         assert_eq!(domain.charter().0.llm.effort.as_deref(), Some(b"high".as_slice()));
     }
 }
+
+fn a_headless_start_reading_its_repository_head() -> (Domain, Env<Limits>, Queue<Request>) {
+    let limits = limits();
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
+    let mut config = config();
+    config.mode = crate::Mode::Headless { prompt: b"hello".as_slice().into() };
+    config.workspace = Some(run::Workspace {
+        directories: Box::new([run::Directory {
+            root: Token::new(1),
+            name: b"work".as_slice().into(),
+            host: b"/work".as_slice().into(),
+            writable: true,
+            git: true,
+            conflicts: Box::new([]),
+        }]),
+    });
+    let mut domain = Domain::new(config, &limits, 11).expect("headless domain");
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    crate::resume(&mut domain, &env, &mut out);
+    drop(drain_requests(&mut out));
+    crate::step(&mut domain, &env, Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) }, &mut out);
+    drop(drain_requests(&mut out));
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Credential {
+            grant: smith_domain::Grant {
+                name: smith_domain::GrantName { account: 7, generation: 1 },
+                valid: Duration::from_secs(60),
+            },
+        },
+        &mut out,
+    );
+    crate::step(&mut domain, &env, Event::StateSaved, &mut out);
+    let Some(Request::Git { owner, directory: 0, op: crate::GitOp::Head, .. }) = out.pop() else {
+        panic!("start surveys the repository head")
+    };
+    assert_eq!(owner, Token::new(0));
+    assert!(out.is_empty());
+    (domain, env, out)
+}
+
+#[test]
+fn a_headless_start_whose_head_cannot_be_read_exits_refused() {
+    let (mut domain, env, mut out) = a_headless_start_reading_its_repository_head();
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Git { owner: Token::new(0), result: crate::GitResult::Head { head: Box::new([]) } },
+        &mut out,
+    );
+    let requests = drain_requests(&mut out);
+    let failures = requests
+        .iter()
+        .filter_map(|request| {
+            if let Request::Notice { notice: crate::Notice::Failure(failure) } = request { Some(failure) } else { None }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(failures, [&crate::Failure::HeadUnavailable { directory: b"work".as_slice().into() }]);
+    let exits = requests
+        .iter()
+        .filter_map(|request| if let Request::Exit { status } = request { Some(*status) } else { None })
+        .collect::<Vec<_>>();
+    assert_eq!(exits, [crate::ExitStatus::Refused]);
+    assert_eq!(domain.chat.phase, crate::chat::Phase::Done);
+    crate::resume(&mut domain, &env, &mut out);
+    assert!(out.is_empty(), "a failed start never opens a run");
+}

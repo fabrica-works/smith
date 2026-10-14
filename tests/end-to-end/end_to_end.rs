@@ -449,6 +449,17 @@ fn local_host_io_failure_keeps_exit_1() {
 }
 
 #[test]
+fn exec_in_a_repository_without_a_commit_exits_two_with_its_line() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let (ran, requests) = support::exec_without_head(&scratch);
+    assert_eq!(ran.code, 2);
+    let stderr = std::str::from_utf8(&ran.stderr).expect("operator lines are UTF-8");
+    assert_eq!(stderr.lines().last(), Some("smith: run refused: repository workspace: its head cannot be read"));
+    assert!(requests.is_empty(), "a refused start sends no provider request");
+}
+
+#[test]
 fn local_chat_store_io_failure_keeps_exit_1() {
     use std::fmt::Write as _;
     let scratch = Scratch::new();

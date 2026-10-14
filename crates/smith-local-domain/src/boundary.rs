@@ -271,7 +271,7 @@ pub enum Failure {
     /// A configured account could not serve the run.
     Account(AccountFailure),
     /// A repository head could not be read.
-    HeadUnavailable,
+    HeadUnavailable { directory: Box<[u8]> },
     /// The answered run failed with its last diagnostic, for the person and operator.
     Run { failure: smith_host_domain::RunFailure, detail: Box<[u8]> },
     /// The run refused its start, naming the refusal.
