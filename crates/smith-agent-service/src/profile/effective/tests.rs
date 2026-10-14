@@ -175,3 +175,12 @@ fn the_sinks_own_limits_are_named_and_fit_the_header() {
         assert!(entry.name.len() <= usize::try_from(sinks.records.string).expect("name bound"));
     }
 }
+
+#[test]
+fn parallel_tools_is_printed_as_a_policy_count() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named =
+        effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    assert_eq!(value(&header, b"policy.parallel_tools"), Some(LimitValue::Integer(4)));
+}

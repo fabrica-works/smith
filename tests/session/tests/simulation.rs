@@ -650,3 +650,25 @@ fn no_prompt_holds_a_kept_detail() {
     })));
     world.close();
 }
+
+#[test]
+fn more_adjacent_reads_than_parallel_tools_run_in_the_next_batch() {
+    use skein_fake_llm_domain::api::{Finish, Line, Script, Turn};
+
+    let calm = Settings::calm(119);
+    let settings = Settings {
+        agent: Limits { parallel_tools: 2, ..calm.agent },
+        provider: Config { calls_per_answer: 5, tool_rounds: 1, ..calm.provider },
+        ..calm
+    };
+    let line = Line::Call { name: b"read".as_slice().into(), arguments: br#"{"path":"src/lib.rs"}"#.as_slice().into() };
+    let turn = Turn { lines: vec![line; 5].into(), finish: Finish::ToolCalls, tokens: 40 };
+    let script = Script { cue: b"You are a coding agent.".as_slice().into(), turns: Box::new([turn]) };
+    let mut world = World::with_scripts(settings, Box::new([script]));
+    let opener = world.submit(Time::ZERO, spec(b"fix the build"));
+    world.run(ITERATIONS);
+
+    assert_eq!((end(&world, opener), turns(&world, opener)), (End::Closed, 2));
+    assert_eq!(world.stats().most_parallel, 2, "reads respect the configured batch width");
+    assert_eq!(world.stats().results, 5, "every read waits for its batch and answers");
+}

@@ -2752,6 +2752,7 @@ fn derived_history_secures_threshold_and_full_receiving_before_effects() {
     let inputs = crate::Derivation {
         conversations: 1,
         calls_per_response: 2,
+        parallel_tools: 4,
         max_turns: 20,
         max_spend: 100,
         max_time: Duration::from_secs(60),

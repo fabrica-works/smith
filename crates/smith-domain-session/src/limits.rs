@@ -196,6 +196,7 @@ pub(crate) fn alarms(limits: &Limits) -> Option<u32> {
 pub struct Derivation {
     pub conversations: u32,
     pub calls_per_response: u32,
+    pub parallel_tools: u32,
     pub max_turns: u32,
     pub max_spend: u64,
     pub max_time: Duration,
@@ -252,7 +253,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     if inputs.conversations == 0 {
         return Err(Field::Sessions);
     }
-    if inputs.calls_per_response == 0 {
+    if inputs.calls_per_response == 0 || !(1..=MAX_PARALLEL).contains(&inputs.parallel_tools) {
         return Err(Field::ParallelTools);
     }
     if inputs.output_items == 0 {
@@ -283,7 +284,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         backoff_base: Duration::from_millis(200),
         backoff_max: Duration::from_secs(5),
         facts: 1024,
-        parallel_tools: inputs.calls_per_response.min(4),
+        parallel_tools: inputs.parallel_tools.min(inputs.calls_per_response),
         tools: inputs.tools,
     };
     // Rules 1 and 4: the window side bounds decoded history. Receiving beyond

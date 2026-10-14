@@ -629,3 +629,28 @@ fn cancel_grace_under_twice_close_is_refused_as_cancel_over_close() {
         }
     );
 }
+
+#[test]
+fn parallel_tools_outside_one_to_eight_is_refused() {
+    for parallel_tools in [0, 9, u32::MAX] {
+        let mut selected = profile();
+        selected.policy.parallel_tools = parallel_tools;
+        assert_eq!(
+            super::derive(&selected, &declarations()).expect_err("parallel tools outside range"),
+            Refusal::Field { limit: LimitName::deployment(Layer::Policy, "parallel_tools") },
+            "parallel_tools={parallel_tools}"
+        );
+    }
+}
+
+#[test]
+fn tool_batches_use_the_smaller_of_policy_and_response_calls() {
+    for (parallel_tools, calls_per_response, width) in [(1, 16, 1), (4, 16, 4), (8, 16, 8), (8, 2, 2)] {
+        let mut selected = profile();
+        selected.policy.parallel_tools = parallel_tools;
+        selected.declared.calls_per_response = calls_per_response;
+        let limits = super::derive(&selected, &declarations()).expect("bounded parallel tools");
+        assert_eq!(limits.domain.session.parallel_tools, width);
+        assert_eq!(limits.domain.session.tools.calls, width);
+    }
+}

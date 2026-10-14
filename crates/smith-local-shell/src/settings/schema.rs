@@ -62,8 +62,8 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         | [
             "deployment",
             "max_turns" | "sections" | "host_tools" | "verdicts" | "items" | "fields" | "inbox" | "unacknowledged"
-            | "conversations" | "tool_payload" | "file_bytes" | "calls_per_response" | "read_window" | "guide"
-            | "shell_output" | "shell_head" | "shell_tail" | "search_hits" | "search_bytes" | "list_entries",
+            | "parallel_tools" | "conversations" | "tool_payload" | "file_bytes" | "calls_per_response" | "read_window"
+            | "guide" | "shell_output" | "shell_head" | "shell_tail" | "search_hits" | "search_bytes" | "list_entries",
         ]
         | ["deployment", "compaction_threshold", "numerator" | "denominator"]
         | ["workspace", "contract", "max"] => Some(count()),

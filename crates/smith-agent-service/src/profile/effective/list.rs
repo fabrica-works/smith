@@ -132,6 +132,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
         inbox,
         unacknowledged,
         compaction_threshold,
+        parallel_tools,
         connection_keep: _,
         tool_deadline,
         shell_timeout,
@@ -156,6 +157,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
     inventory.value("inbox", Value::Count(u64::from(inbox)))?;
     inventory.value("unacknowledged", Value::Count(u64::from(unacknowledged)))?;
     inventory.value("compaction_threshold", Value::Fraction(compaction_threshold))?;
+    inventory.value("parallel_tools", Value::Count(u64::from(parallel_tools)))?;
     inventory.value("tool_deadline", Value::Duration(tool_deadline))?;
     inventory.value("shell_timeout", Value::Duration(shell_timeout))?;
     inventory.value("check_timeout", Value::Duration(check_timeout))?;

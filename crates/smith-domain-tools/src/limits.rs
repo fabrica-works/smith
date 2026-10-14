@@ -191,6 +191,7 @@ fn authority(limits: &Limits) -> Option<u64> {
 pub struct Derivation {
     pub conversations: u32,
     pub calls_per_response: u32,
+    pub parallel_tools: u32,
     pub tool_payload: u32,
     pub file_bytes: u32,
     pub read_window: u32,
@@ -236,7 +237,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     if inputs.conversations == 0 {
         return Err(Field::Kits);
     }
-    if inputs.calls_per_response == 0 {
+    if inputs.calls_per_response == 0 || inputs.parallel_tools == 0 {
         return Err(Field::Calls);
     }
     inputs.shell_head.checked_add(inputs.shell_tail).ok_or(Field::ShellOutput)?;
@@ -244,7 +245,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     let smallest_entry = entry_bytes.checked_add(1).ok_or(Field::ListBytes)?;
     Ok(Limits {
         kits: inputs.conversations,
-        calls: inputs.calls_per_response.min(4),
+        calls: inputs.parallel_tools.min(inputs.calls_per_response),
         repos: 2,
         path_bytes: 256,
         host_path_bytes: 4096,

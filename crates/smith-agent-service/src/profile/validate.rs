@@ -14,6 +14,9 @@ use super::{Check, Configuration, Layer, Limit, LimitName, Per, Profile, Refusal
 /// Check declared relationships before any deriving or provider work.
 pub fn declarations(profile: &Profile, configuration: &Configuration) -> Result<(), Refusal> {
     configured_models(configuration)?;
+    if !(1..=smith_domain::session::MAX_PARALLEL).contains(&profile.policy.parallel_tools) {
+        return Err(Refusal::Field { limit: LimitName::deployment(Layer::Policy, "parallel_tools") });
+    }
     at_most(
         Check::ReadInPayload,
         bytes(Layer::Declared, "read_window", u64::from(profile.declared.read_window)),

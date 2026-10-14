@@ -46,6 +46,7 @@ fn fixture(provider: skein_llm::Provider) -> Fixture {
     let mut limits = session::derive(&session::Derivation {
         conversations: 1,
         calls_per_response: 1,
+        parallel_tools: 4,
         max_turns: 4,
         max_spend: u64::MAX,
         max_time: Duration::from_secs(60),

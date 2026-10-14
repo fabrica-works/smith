@@ -91,6 +91,7 @@ struct PolicyOverrides {
     inbox: Option<u32>,
     unacknowledged: Option<u32>,
     compaction_threshold: Option<FractionDocument>,
+    parallel_tools: Option<u32>,
     connection_keep: Option<u64>,
     tool_deadline: Option<u64>,
     shell_timeout: Option<u64>,
@@ -717,6 +718,9 @@ fn apply_counts(
             return Err("profile.policy.unacknowledged must be positive".into());
         }
         profile.policy.unacknowledged = value;
+    }
+    if let Some(value) = overrides.parallel_tools {
+        profile.policy.parallel_tools = value;
     }
     if let Some(value) = &overrides.compaction_threshold {
         if value.numerator == 0 || value.numerator >= value.denominator {

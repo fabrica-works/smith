@@ -459,6 +459,7 @@ fn derive_tools(profile: &Profile) -> Result<tools::Limits, Refusal> {
     match tools::derive(&tools::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
+        parallel_tools: policy.parallel_tools,
         tool_payload: declared.tool_payload,
         file_bytes: declared.file_bytes,
         read_window: declared.read_window,
@@ -522,13 +523,14 @@ fn derive_domain(
     run.guide_bytes =
         u32::try_from(guide.min(u64::from(declared.guide))).or(Err(derived(Layer::Run, "guide_bytes")))?;
     let delegated = domain::feedback_worst_case(&run).ok_or(derived(Layer::Session, "delegated_result_bytes"))?;
-    let parallel = declared.calls_per_response.min(4);
+    let parallel = policy.parallel_tools.min(declared.calls_per_response);
     let owned = tools::batch_result_worst_case(&tools, parallel).ok_or(derived(Layer::Session, "batch_results"))?;
     let batch = owned.max(delegated.checked_mul(u64::from(parallel)).ok_or(derived(Layer::Session, "batch_results"))?);
     let threshold_bytes = threshold_bytes(&policy, configuration)?;
     let session = match session::derive(&session::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
+        parallel_tools: policy.parallel_tools,
         max_turns: policy.max_turns,
         max_spend: policy.max_spend,
         max_time: policy.max_time,

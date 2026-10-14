@@ -690,3 +690,11 @@ fn the_effort_flag_is_checked_against_the_models_declared_names() {
     assert_eq!(why.origin, Origin::Flag { flag: "--effort".into() });
     assert!(why.line().contains("Effort high is not declared; accepted: low"));
 }
+
+#[test]
+fn parallel_tools_reaches_the_agents_policy_and_batch_limits() {
+    let resolved = composed("[deployment]\nparallel_tools=2\n").unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.agent.profile.policy.parallel_tools, 2);
+    assert_eq!(resolved.agent.service.limits.domain.session.parallel_tools, 2);
+    assert_eq!(resolved.agent.service.limits.domain.session.tools.calls, 2);
+}

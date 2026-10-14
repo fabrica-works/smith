@@ -80,6 +80,8 @@ pub struct Policy {
     pub unacknowledged: u32,
     /// Window share at which compaction begins.
     pub compaction_threshold: Fraction,
+    /// Adjacent reads per batch, from 1 to 8.
+    pub parallel_tools: u32,
     /// Idle connection retention.
     pub connection_keep: Duration,
     /// Maximum requested tool duration.
@@ -182,6 +184,7 @@ pub const fn standard() -> Profile {
             inbox: 64,
             unacknowledged: 64,
             compaction_threshold: Fraction { numerator: 4, denominator: 5 },
+            parallel_tools: 4,
             connection_keep: Duration::from_secs(30),
             tool_deadline: Duration::from_secs(20 * 60),
             shell_timeout: Duration::from_secs(2 * 60),
