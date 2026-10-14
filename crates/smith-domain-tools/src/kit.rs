@@ -8,18 +8,18 @@
 //! would store must fit the limits, an edit must be of a file its LLM has read
 //! and must change something, its deadline must not have passed, and the kit
 //! must have room for one more call. A filesystem call that passes becomes a
-//! job; the namespace root's listing answers directly from its authority.
+//! flight; the namespace root's listing answers directly from its authority.
 //!
 //! The transition table.
 //!
 //! ```text
 //! state     event                  next      emits
-//! Open      call                   Open      answer, or the job's operation
-//!           close, no jobs         Closed    closed
-//!           close, jobs            Closing   a cancel per job
-//!           a job ends             Open
-//! Closing   a job ends, not last   Closing
-//!           the last job ends      Closed    closed
+//! Open      call                   Open      answer, or the flight's operation
+//!           close, no flights         Closed    closed
+//!           close, flights            Closing   a cancel per flight
+//!           a flight ends             Open
+//! Closing   a flight ends, not last   Closing
+//!           the last flight ends      Closed    closed
 //! ```
 //!
 //! A call or a close to a kit that is not open is the session's bug. A kit is
@@ -37,7 +37,7 @@ use crate::call::{self, Call, Entry, Kind, Outcome};
 use crate::call::{Mismatch, Replacement};
 use crate::domain::Domain;
 use crate::facts::{self, FactKind, Facts};
-use crate::job::{self, Job, Work};
+use crate::flight::{self, Flight, Work};
 use crate::knowledge::Knowledge;
 use crate::limits::Limits;
 use crate::path::{self, Path};
@@ -49,15 +49,15 @@ pub(crate) struct Kit {
     session: Token,
     pub(crate) checkout: Checkout,
     pub(crate) knowledge: Knowledge,
-    /// The jobs running its calls.
-    jobs: Set<Id<Job>>,
+    /// The flights running its calls.
+    flights: Set<Id<Flight>>,
     state: State,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum State {
     Open,
-    /// Its jobs have been cancelled; it ends with the last.
+    /// Its flights have been cancelled; it ends with the last.
     Closing,
     /// Terminal: retired, until the reclaim point frees it.
     Closed,
@@ -82,7 +82,7 @@ pub(crate) fn open(
         session,
         checkout,
         knowledge: Knowledge::new(env.limits.known_files),
-        jobs: Set::with_capacity(env.limits.calls),
+        flights: Set::with_capacity(env.limits.calls),
         state: State::Open,
     };
     let id = domain.kits.insert(kit).expect("checked for room above");
@@ -109,7 +109,7 @@ pub(crate) fn call(
     deadline: Time,
     out: &mut Queue<Request>,
 ) {
-    let Domain { kits, jobs, facts } = domain;
+    let Domain { kits, flights, facts } = domain;
     let id = Id::from_token(kit);
     let kit = kits.get_mut(id).expect("a kit lives until its session closes it");
     assert!(kit.state == State::Open, "no call follows a close");
@@ -117,9 +117,9 @@ pub(crate) fn call(
     match admit(kit, call, deadline, env) {
         Ok(Admitted::Work(work)) => {
             facts.push_call(FactKind::Started { session: kit.session, tool }, observation);
-            let job = job::start(jobs, id, reply_to, observation, work, deadline, env, out);
-            let fresh = kit.jobs.insert(job).expect("checked for room at the entrance");
-            assert!(fresh, "a job is new to its kit");
+            let flight = flight::start(flights, id, reply_to, observation, work, deadline, env, out);
+            let fresh = kit.flights.insert(flight).expect("checked for room at the entrance");
+            assert!(fresh, "a flight is new to its kit");
         }
         Ok(Admitted::Directories) => {
             facts.push_call(FactKind::Started { session: kit.session, tool }, observation);
@@ -144,14 +144,14 @@ pub(crate) fn close(domain: &mut Domain, kit: Token, out: &mut Queue<Request>) {
     let id = Id::from_token(kit);
     let kit = domain.kits.get_mut(id).expect("a kit lives until its session closes it");
     assert!(kit.state == State::Open, "a kit is closed once");
-    if kit.jobs.is_empty() {
+    if kit.flights.is_empty() {
         end(&mut domain.kits, &mut domain.facts, id, out);
         return;
     }
     kit.state = State::Closing;
-    domain.facts.push(FactKind::Closing { session: kit.session, running: kit.jobs.len() });
-    for job in &kit.jobs {
-        job::cancel(*job, out);
+    domain.facts.push(FactKind::Closing { session: kit.session, running: kit.flights.len() });
+    for flight in &kit.flights {
+        flight::cancel(*flight, out);
     }
 }
 
@@ -160,29 +160,35 @@ pub(crate) fn session(kit: &Kit) -> Token {
     kit.session
 }
 
-/// Whether the kit is closing, its jobs cancelled.
+/// Whether the kit is closing, its flights cancelled.
 pub(crate) fn closing(kit: &Kit) -> bool {
     match kit.state {
         State::Open => false,
         State::Closing => true,
-        State::Closed => unreachable!("a closed kit runs no job"),
+        State::Closed => unreachable!("a closed kit runs no flight"),
     }
 }
 
-/// The job `job` of the kit `id` has answered: it leaves the kit, which ends
+/// The flight `flight` of the kit `id` has answered: it leaves the kit, which ends
 /// with it if it was the last of a closing kit.
-pub(crate) fn finished(kits: &mut Slab<Kit>, facts: &mut Facts, id: Id<Kit>, job: Id<Job>, out: &mut Queue<Request>) {
-    let kit = kits.get_mut(id).expect("a kit lives until its jobs have ended");
-    let running = kit.jobs.remove(&job);
-    assert!(running, "a job is its kit's until it ends");
+pub(crate) fn finished(
+    kits: &mut Slab<Kit>,
+    facts: &mut Facts,
+    id: Id<Kit>,
+    flight: Id<Flight>,
+    out: &mut Queue<Request>,
+) {
+    let kit = kits.get_mut(id).expect("a kit lives until its flights have ended");
+    let running = kit.flights.remove(&flight);
+    assert!(running, "a flight is its kit's until it ends");
     match kit.state {
         State::Open => {}
         State::Closing => {
-            if kit.jobs.is_empty() {
+            if kit.flights.is_empty() {
                 end(kits, facts, id, out);
             }
         }
-        State::Closed => unreachable!("a closed kit runs no job"),
+        State::Closed => unreachable!("a closed kit runs no flight"),
     }
 }
 
@@ -195,7 +201,7 @@ fn end(kits: &mut Slab<Kit>, facts: &mut Facts, id: Id<Kit>, out: &mut Queue<Req
     kits.retire(id);
 }
 
-/// An admitted IO job, or the namespace root's immediate listing.
+/// An admitted IO flight, or the namespace root's immediate listing.
 enum Admitted {
     Work(Work),
     Directories,
@@ -359,7 +365,7 @@ fn ready(kit: &Kit, deadline: Time, env: &Env<Limits>) -> Result<(), Outcome> {
     if deadline <= env.now {
         return Err(Outcome::TimedOut);
     }
-    if kit.jobs.len() >= limits.calls {
+    if kit.flights.len() >= limits.calls {
         return Err(Outcome::Busy);
     }
     Ok(())

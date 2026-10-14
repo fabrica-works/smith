@@ -1325,7 +1325,7 @@ fn a_command_whose_child_outlives_it_ends_with_its_group_at_the_deadline() {
     tools::step(&mut domain, &after, tools::Event::Close { kit }, &mut out);
     assert_eq!(out.pop(), Some(tools::Request::Closed { session: Token::new(1) }));
     domain.reclaim();
-    assert_eq!((domain.kits(), domain.jobs()), (0, 0));
+    assert_eq!((domain.kits(), domain.flights()), (0, 0));
 }
 
 #[test]

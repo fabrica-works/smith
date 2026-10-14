@@ -1,6 +1,6 @@
 //! The tools child domain's state and its entry point (domain/tools.md,
 //! sections 3–6; programming-model.md, sections 4.5 and 6.3). [`Domain`]
-//! retains kits, pending IO jobs and bounded facts. [`step`] emits the kit's
+//! retains kits, pending IO flights and bounded facts. [`step`] emits the kit's
 //! bounded requests and accepts its typed terminals. This module never knows
 //! provider text, run outcomes, credentials or filesystem contents beyond
 //! what typed IO terminals supply.
@@ -9,7 +9,7 @@ use skein_lib::{Env, Queue, Slab};
 
 use crate::boundary::{Event, Request};
 use crate::facts::{Fact, Facts};
-use crate::job::{self, Job};
+use crate::flight::{self, Flight};
 use crate::kit::{self, Kit};
 use crate::limits::Limits;
 
@@ -32,7 +32,7 @@ pub const fn max_facts(_limits: &Limits) -> u32 {
 #[derive(Debug)]
 pub struct Domain {
     pub(crate) kits: Slab<Kit>,
-    pub(crate) jobs: Slab<Job>,
+    pub(crate) flights: Slab<Flight>,
     pub(crate) facts: Facts,
 }
 
@@ -40,10 +40,10 @@ impl Domain {
     /// A domain with room for `limits`.
     #[must_use]
     pub fn new(limits: &Limits) -> Domain {
-        let jobs = job::slots(limits).expect("worst_case accepted the limits");
+        let flights = flight::slots(limits).expect("worst_case accepted the limits");
         Domain {
             kits: Slab::with_capacity(limits.kits),
-            jobs: Slab::with_capacity(jobs),
+            flights: Slab::with_capacity(flights),
             facts: Facts::with_capacity(limits.facts),
         }
     }
@@ -56,14 +56,14 @@ impl Domain {
 
     /// Calls running, answered ones included until they are reclaimed.
     #[must_use]
-    pub fn jobs(&self) -> u32 {
-        self.jobs.len()
+    pub fn flights(&self) -> u32 {
+        self.flights.len()
     }
 
     /// The session owning a live IO operation, for its parent's deadline notices.
     #[must_use]
     pub fn io_session(&self, owner: skein_lib::Token) -> Option<skein_lib::Token> {
-        job::io_session(self, owner)
+        flight::io_session(self, owner)
     }
 
     /// The oldest reserved observation; the parent drains it before more work.
@@ -79,7 +79,7 @@ impl Domain {
 
     /// The reclaim point: frees what closed in this iteration.
     pub fn reclaim(&mut self) {
-        self.jobs.reclaim();
+        self.flights.reclaim();
         self.kits.reclaim();
     }
 }
@@ -94,6 +94,6 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
             kit::call(domain, env, kit, reply_to, observation, call, deadline, out);
         }
         Event::Close { kit } => kit::close(domain, kit, out),
-        Event::Done { owner, done } => job::done(domain, env, owner, done, out),
+        Event::Done { owner, done } => flight::done(domain, env, owner, done, out),
     }
 }

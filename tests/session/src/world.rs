@@ -1995,7 +1995,7 @@ impl World {
     fn assert_settled(&self) {
         assert_eq!(self.agent.sessions(), 0, "every session has ended and been reclaimed");
         assert_eq!(self.agent.runs(), 0, "every run has ended and been reclaimed");
-        assert_eq!((self.agent.kits(), self.agent.jobs()), (0, 0), "every kit has closed, its calls answered");
+        assert_eq!((self.agent.kits(), self.agent.flights()), (0, 0), "every kit has closed, its calls answered");
         assert!(self.ops.is_empty() && self.op_cancel_lost.is_empty(), "every operation has ended, once");
         assert_eq!(self.agent.next_deadline(), None, "no alarm outlives its session");
         assert_eq!(self.provider.calls(), 0, "the provider holds no call");

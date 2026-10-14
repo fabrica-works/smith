@@ -216,7 +216,7 @@ pub(crate) fn locate(checkout: &Checkout, path: &Path, max: u32) -> Result<Targe
     Ok(Target::Place(Located { place: Place { root: mount.root, path }, writable: mount.writable }))
 }
 
-/// The normalized namespace path of a place retained by a job. Legacy nested
+/// The normalized namespace path of a place retained by a flight. Legacy nested
 /// mounts keep their remaining components after the directory's first name.
 pub(crate) fn resolved(checkout: &Checkout, place: &Place) -> Resolved {
     for mount in &checkout.mounts {
@@ -258,7 +258,7 @@ pub(crate) fn resolved(checkout: &Checkout, place: &Place) -> Resolved {
             }
         }
     }
-    unreachable!("jobs retain places in their admitted checkout")
+    unreachable!("flights retain places in their admitted checkout")
 }
 
 /// The repository that holds `at`, an absolute path's names joined: the one

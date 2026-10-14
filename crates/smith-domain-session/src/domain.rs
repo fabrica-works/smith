@@ -107,8 +107,8 @@ impl Domain {
     /// Calls the tools are running, answered ones included until they are
     /// reclaimed.
     #[must_use]
-    pub fn jobs(&self) -> u32 {
-        self.calls.tools.jobs()
+    pub fn flights(&self) -> u32 {
+        self.calls.tools.flights()
     }
 
     /// When the earliest alarm falls due.

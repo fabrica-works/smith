@@ -83,7 +83,7 @@ fn churn(limits: Limits, seed: u64, rounds: u32) {
         domain.reclaim();
     }
     domain.reclaim();
-    assert_eq!((domain.kits(), domain.jobs()), (0, 0), "{limits:?}: nothing is left");
+    assert_eq!((domain.kits(), domain.flights()), (0, 0), "{limits:?}: nothing is left");
     assert!(counted.iter().all(|count| *count > 10), "{limits:?}: every kind of operation ran: {counted:?}");
 }
 

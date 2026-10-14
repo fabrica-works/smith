@@ -44,7 +44,7 @@ mod command;
 mod domain;
 mod edit;
 mod facts;
-mod job;
+mod flight;
 mod kit;
 mod knowledge;
 mod limits;

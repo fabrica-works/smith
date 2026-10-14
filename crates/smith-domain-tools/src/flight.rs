@@ -1,8 +1,8 @@
 //! Jobs: the calls a kit is running, each waiting on one operation of io.
 //!
-//! A call that passes the kit's entrance becomes a job, which asks io for its
+//! A call that passes the kit's entrance becomes a flight, which asks io for its
 //! operation and answers the call once that operation has ended. Every
-//! operation ends in exactly one terminal event, so a job answers exactly once,
+//! operation ends in exactly one terminal event, so a flight answers exactly once,
 //! whether the operation completed, failed, timed out, or lost or won a race
 //! with a cancel.
 //!
@@ -53,9 +53,9 @@
 //! load's race with its cancel went, the edit answers `Cancelled`.
 //!
 //! A cell either moves to its next state or answers the call; answering, and
-//! telling it as a fact, is done in one place ([`settle`]). A job is retired
+//! telling it as a fact, is done in one place ([`settle`]). A flight is retired
 //! once it is Done ([`follow`]), which also ends a closing kit with its last
-//! job.
+//! flight.
 //!
 //! Contract: domain/tools.md, sections 3 and 6; programming-model.md, sections 4.4 and 6.3.
 
@@ -78,7 +78,7 @@ use crate::path::Place;
 use crate::window::{self, Span};
 
 #[derive(Debug)]
-pub(crate) struct Job {
+pub(crate) struct Flight {
     /// The kit whose call it runs.
     kit: Id<Kit>,
     /// The tool the call is for, to tell of it.
@@ -87,10 +87,10 @@ pub(crate) struct Job {
     state: State,
 }
 
-/// The session whose live job issued the IO token, without exposing job state.
+/// The session whose live flight issued the IO token, without exposing flight state.
 pub(crate) fn io_session(domain: &Domain, owner: Token) -> Option<Token> {
-    let job = domain.jobs.get(Id::from_token(owner))?;
-    Some(kit::session(domain.kits.get(job.kit)?))
+    let flight = domain.flights.get(Id::from_token(owner))?;
+    Some(kit::session(domain.kits.get(flight.kit)?))
 }
 
 /// What a cell does: go on in another state, or answer the call.
@@ -172,7 +172,7 @@ pub(crate) enum Work {
     },
 }
 
-/// Starts a job for `work` in the kit `kit`, which has room for one, asking
+/// Starts a flight for `work` in the kit `kit`, which has room for one, asking
 /// io for its operation by `deadline`, or sooner if the tools' own limit on
 /// file operations, or on commands, falls first.
 #[expect(
@@ -180,7 +180,7 @@ pub(crate) enum Work {
     reason = "the call boundary carries its affine right and observation context beside its work"
 )]
 pub(crate) fn start(
-    jobs: &mut Slab<Job>,
+    flights: &mut Slab<Flight>,
     kit: Id<Kit>,
     reply_to: ReplyTo,
     observation: Option<crate::CallInfo>,
@@ -188,7 +188,7 @@ pub(crate) fn start(
     deadline: Time,
     env: &Env<Limits>,
     out: &mut Queue<Request>,
-) -> Id<Job> {
+) -> Id<Flight> {
     let limits = &env.limits;
     let call_deadline = deadline;
     // A command and a search have limits of their own; any other call is a
@@ -202,7 +202,7 @@ pub(crate) fn start(
         Work::Shell { timed, .. } => (Tool::Shell, timed.timeout),
     };
     let deadline = deadline.min(env.now.saturating_add(limit));
-    // The place goes to io and stays with the job: copy at emission.
+    // The place goes to io and stays with the flight: copy at emission.
     let (state, op) = match work {
         Work::Read { place, span } => {
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
@@ -235,29 +235,31 @@ pub(crate) fn start(
             (State::Searching { reply_to, place }, op)
         }
     };
-    // Room: a kit has at most `calls` jobs, and the slab twice that many slots
-    // per kit, for the jobs retired in this iteration, which are at most those
+    // Room: a kit has at most `calls` flights, and the slab twice that many slots
+    // per kit, for the flights retired in this iteration, which are at most those
     // running when it began.
-    let id = jobs.insert(Job { kit, tool, observation, state }).expect("the job slab has room for every kit's jobs");
+    let id = flights
+        .insert(Flight { kit, tool, observation, state })
+        .expect("the flight slab has room for every kit's flights");
     out.push(Request::Io { owner: id.token(), op, deadline });
     id
 }
 
-/// Cancels the job `id`'s operation, for its kit is closing. The job answers
+/// Cancels the flight `id`'s operation, for its kit is closing. The flight answers
 /// with whichever terminal comes.
-pub(crate) fn cancel(id: Id<Job>, out: &mut Queue<Request>) {
+pub(crate) fn cancel(id: Id<Flight>, out: &mut Queue<Request>) {
     out.push(Request::CancelIo { owner: id.token() });
 }
 
-// The entry point for terminals: look the job up, take its state out, run the
+// The entry point for terminals: look the flight up, take its state out, run the
 // cell's handler, follow the new state.
 
 pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: Done, out: &mut Queue<Request>) {
-    let Domain { kits, jobs, facts } = domain;
+    let Domain { kits, flights, facts } = domain;
     let id = Id::from_token(owner);
-    let job = jobs.get_mut(id).expect("a job lives until its operation has ended");
-    let kit = kits.get_mut(job.kit).expect("a kit lives until its jobs have ended");
-    let state = mem::replace(&mut job.state, State::Done);
+    let flight = flights.get_mut(id).expect("a flight lives until its operation has ended");
+    let kit = kits.get_mut(flight.kit).expect("a kit lives until its flights have ended");
+    let state = mem::replace(&mut flight.state, State::Done);
     let clamped = state_clamped(&state);
     let next = match state {
         State::Reading { reply_to, place, span } => loaded(kit, reply_to, place, span, done, env.limits.file_bytes),
@@ -270,10 +272,10 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
         State::Running { reply_to, place, timeout, output } => {
             exited(&kit.checkout, reply_to, place, timeout, output, done)
         }
-        State::Done => unreachable!("a job that has answered has nothing in flight"),
+        State::Done => unreachable!("a flight that has answered has nothing in flight"),
     };
-    job.state = settle(next, kit::session(kit), job, clamped, facts, out);
-    follow(kits, jobs, facts, id, out);
+    flight.state = settle(next, kit::session(kit), flight, clamped, facts, out);
+    follow(kits, flights, facts, id, out);
 }
 
 /// The applied request caps survive every terminal, including cancellation and timeout.
@@ -291,13 +293,20 @@ fn state_clamped(state: &State) -> bool {
 
 /// The state a cell leads to: the one it moves to, or Done once it has
 /// answered the call, which is told as a fact.
-fn settle(next: Next, session: Token, job: &Job, clamped: bool, facts: &mut Facts, out: &mut Queue<Request>) -> State {
+fn settle(
+    next: Next,
+    session: Token,
+    flight: &Flight,
+    clamped: bool,
+    facts: &mut Facts,
+    out: &mut Queue<Request>,
+) -> State {
     match next {
         Next::Wait(state) => state,
         Next::Answer { reply_to, outcome, omitted_bytes } => {
             facts.push_call(
-                facts::answered(session, job.tool, &outcome, facts::Observation { omitted_bytes, clamped }),
-                job.observation,
+                facts::answered(session, flight.tool, &outcome, facts::Observation { omitted_bytes, clamped }),
+                flight.observation,
             );
             out.push(Request::Answer { to: reply_to, outcome });
             State::Done
@@ -305,11 +314,17 @@ fn settle(next: Next, session: Token, job: &Job, clamped: bool, facts: &mut Fact
     }
 }
 
-/// What a job's state implies, applied after every transition: a job that is
+/// What a flight's state implies, applied after every transition: a flight that is
 /// Done is retired, and leaves its kit.
-fn follow(kits: &mut Slab<Kit>, jobs: &mut Slab<Job>, facts: &mut Facts, id: Id<Job>, out: &mut Queue<Request>) {
-    let job = jobs.get(id).expect("a job lives until it is retired");
-    match job.state {
+fn follow(
+    kits: &mut Slab<Kit>,
+    flights: &mut Slab<Flight>,
+    facts: &mut Facts,
+    id: Id<Flight>,
+    out: &mut Queue<Request>,
+) {
+    let flight = flights.get(id).expect("a flight lives until it is retired");
+    match flight.state {
         State::Reading { .. }
         | State::Listing { .. }
         | State::Searching { .. }
@@ -317,8 +332,8 @@ fn follow(kits: &mut Slab<Kit>, jobs: &mut Slab<Job>, facts: &mut Facts, id: Id<
         | State::Storing { .. }
         | State::Running { .. } => {}
         State::Done => {
-            kit::finished(kits, facts, job.kit, id, out);
-            jobs.retire(id);
+            kit::finished(kits, facts, flight.kit, id, out);
+            flights.retire(id);
         }
     }
 }
@@ -410,7 +425,7 @@ fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Ne
 /// version, if the kit is not closing.
 fn to_edit(
     kit: &mut Kit,
-    id: Id<Job>,
+    id: Id<Flight>,
     reply_to: ReplyTo,
     editing: Editing,
     done: Done,
@@ -533,12 +548,12 @@ fn exited(
     Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
-/// The slots the job slab needs under `limits`, or `None` past a `u32`.
+/// The slots the flight slab needs under `limits`, or `None` past a `u32`.
 pub(crate) fn slots(limits: &Limits) -> Option<u32> {
     limits.kits.checked_mul(limits.calls)?.checked_mul(2)
 }
 
-/// What a running job holds beyond its slot, or `None` past a `u64`: at most
+/// What a running flight holds beyond its slot, or `None` past a `u64`: at most
 /// a place, and an edit's snippets.
 pub(crate) fn held(limits: &Limits) -> Option<u64> {
     let cells = u64::try_from(size_of::<Replacement>()).ok()?.checked_mul(u64::from(limits.tool_payload))?;

@@ -8,7 +8,7 @@ use skein_lib::{Duration, Id, List, Map, Queue, Set, Slab};
 use crate::authority::Mount;
 use crate::call::{Call, Entry, Hit};
 use crate::facts::Fact;
-use crate::job::{self, Job};
+use crate::flight::{self, Flight};
 use crate::kit::Kit;
 use crate::knowledge::Seen;
 use crate::path::{Name, Place};
@@ -88,12 +88,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         return None;
     }
     let kits = Slab::<Kit>::worst_case(limits.kits)?.checked_add(u64::from(limits.kits).checked_mul(kit(limits)?)?)?;
-    // Only running jobs hold a place, at most `calls` a kit; the slab has more
-    // slots, for the jobs answered in an iteration.
+    // Only running flights hold a place, at most `calls` a kit; the slab has more
+    // slots, for the flights answered in an iteration.
     let running = u64::from(limits.kits).checked_mul(u64::from(limits.calls))?;
     // Every write in flight reserves a whole file and its result independently.
-    let held = job::held(limits)?.checked_add(u64::from(limits.file_bytes).checked_mul(2)?)?;
-    let jobs = Slab::<Job>::worst_case(job::slots(limits)?)?.checked_add(running.checked_mul(held)?)?;
+    let held = flight::held(limits)?.checked_add(u64::from(limits.file_bytes).checked_mul(2)?)?;
+    let flights = Slab::<Flight>::worst_case(flight::slots(limits)?)?.checked_add(running.checked_mul(held)?)?;
     // Facts own nothing beyond their queue.
     let facts = Queue::<Fact>::worst_case(limits.facts)?;
     // One call normalises a path at a time: flags for its raw components,
@@ -106,7 +106,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?;
     // A pure namespace listing borrows and sorts at most one name per mount.
     let names = List::<&[u8]>::worst_case(limits.repos)?;
-    kits.checked_add(jobs)?
+    kits.checked_add(flights)?
         .checked_add(facts)?
         .checked_add(scratch)?
         .checked_add(names)?
@@ -165,12 +165,12 @@ pub fn batch_result_worst_case(limits: &Limits, parallel: u32) -> Option<u64> {
 
 /// What one kit holds beyond its slot: its authority, each path in it at most
 /// `path_bytes` joined; what its LLM knows, a place for each file; and its
-/// jobs' names.
+/// flights' names.
 fn kit(limits: &Limits) -> Option<u64> {
     let known = u64::from(limits.known_files).checked_mul(u64::from(limits.path_bytes))?;
     let knowledge = Map::<Place, Seen>::worst_case(limits.known_files)?.checked_add(known)?;
-    let jobs = Set::<Id<Job>>::worst_case(limits.calls)?;
-    authority(limits)?.checked_add(knowledge)?.checked_add(jobs)
+    let flights = Set::<Id<Flight>>::worst_case(limits.calls)?;
+    authority(limits)?.checked_add(knowledge)?.checked_add(flights)
 }
 
 /// What a kit's authority holds, each path in it at most `path_bytes` joined.

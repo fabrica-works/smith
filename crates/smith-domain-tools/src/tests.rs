@@ -128,11 +128,11 @@ impl Harness {
     }
 
     /// Ends the operation of `owner` with `done`, and returns the operation
-    /// its job asks for next.
+    /// its flight asks for next.
     fn next(&mut self, owner: Token, done: Done) -> Op {
         match self.step(Event::Done { owner, done }) {
             Some(Request::Io { owner: again, op, .. }) => {
-                assert_eq!(again, owner, "a job asks for one operation at a time");
+                assert_eq!(again, owner, "a flight asks for one operation at a time");
                 op
             }
             other => panic!("expected another operation, not {other:?}"),
@@ -657,14 +657,14 @@ fn a_read_loads_the_file_and_answers_with_its_window() {
     let (owner, op) =
         h.start(kit, 7, Call::Read { path: path(b"src/lib.rs"), offset: 2, window: crate::Budget::Asked(4) });
     assert_eq!(op, Op::Load { at: place(1, b"src/lib.rs"), max: LIMITS.file_bytes });
-    assert_eq!(h.domain.jobs(), 1);
+    assert_eq!(h.domain.flights(), 1);
     let content = Box::from(&b"one\ntwo\nthree\n"[..]);
     let (call, outcome) = h.end(owner, Done::Loaded { content, version: version(5) });
     let expected = read_of(b"two\n", 1, 1, 3, false);
     assert_eq!((call, outcome), (7, expected));
     assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(5)));
     h.domain.reclaim();
-    assert_eq!(h.domain.jobs(), 0);
+    assert_eq!(h.domain.flights(), 0);
 }
 
 #[test]
@@ -792,7 +792,7 @@ fn closing_a_kit_cancels_its_calls_and_ends_with_the_last() {
     ]);
     assert_eq!(last, expected);
     h.domain.reclaim();
-    assert_eq!((h.domain.kits(), h.domain.jobs()), (0, 0));
+    assert_eq!((h.domain.kits(), h.domain.flights()), (0, 0));
 }
 
 #[test]
@@ -805,7 +805,7 @@ fn a_kit_whose_calls_end_and_start_in_one_iteration_has_room() {
         // The call ends, and the next starts before the reclaim point.
         drop(h.end(owner, Done::Missing));
         let (next, _) = h.start(kit, name, read(b"a"));
-        assert_eq!(h.domain.jobs(), 2, "the answered job waits for the reclaim point");
+        assert_eq!(h.domain.flights(), 2, "the answered flight waits for the reclaim point");
         owner = next;
     }
 }
@@ -1066,7 +1066,7 @@ fn edit_shape_bounds_are_refused_before_io_but_semantics_follow_the_loaded_bytes
         h.call(kit, change(b"vendor/lib/x.rs", b"a", b"b")),
         Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } }
     );
-    assert_eq!(h.domain.jobs(), 0);
+    assert_eq!(h.domain.flights(), 0);
 }
 
 #[test]
@@ -1566,7 +1566,7 @@ fn list_slash_answers_sorted_authority_names_without_io_and_obeys_both_caps() {
             h.call(kit, Call::List { path: path(b"/"), depth: crate::Depth::Whole, glob: None }),
             Outcome::Listed { entries: expected, more }
         );
-        assert!(h.domain.jobs.is_empty(), "the answer owns no IO job");
+        assert!(h.domain.flights.is_empty(), "the answer owns no IO flight");
         assert_eq!(h.step(Event::Close { kit }), Some(Request::Closed { session: Token::new(1) }));
     }
     let mut h = Harness::new(LIMITS);
@@ -1798,7 +1798,7 @@ fn a_read_uses_its_default_or_reports_the_clamped_payload_window() {
     ] {
         assert_eq!(h.call(kit, call), Outcome::Failed { fault: Fault::Other });
     }
-    assert_eq!(h.domain.jobs(), 0);
+    assert_eq!(h.domain.flights(), 0);
 }
 
 #[test]

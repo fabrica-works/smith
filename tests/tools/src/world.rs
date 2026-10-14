@@ -509,7 +509,7 @@ impl World {
         // takes its slot.
         let limits = &self.settings.tools;
         assert!(self.tools.kits() <= limits.kits, "kits stay within their slots");
-        assert!(self.tools.jobs() <= limits.kits * limits.calls * 2, "jobs stay within their slots");
+        assert!(self.tools.flights() <= limits.kits * limits.calls * 2, "jobs stay within their slots");
         self.tools.reclaim();
     }
 
@@ -856,7 +856,7 @@ impl World {
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
     fn assert_settled(&self) {
         assert_eq!(self.tools.kits(), 0, "every kit has closed and been reclaimed");
-        assert_eq!(self.tools.jobs(), 0, "every job has ended and been reclaimed");
+        assert_eq!(self.tools.flights(), 0, "every job has ended and been reclaimed");
         self.ops.assert_settled();
         assert!(self.wire.is_empty() && !self.stage.has_events(), "nothing is on its way");
         for (name, session) in &self.sessions {

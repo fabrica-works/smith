@@ -1790,7 +1790,7 @@ impl World {
                 self.agent.session().sessions(),
                 self.agent.session().runs(),
                 self.agent.session().kits(),
-                self.agent.session().jobs()
+                self.agent.session().flights()
             ),
             (0, 0, 0, 0),
             "sessions and tools settled"

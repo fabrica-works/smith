@@ -148,7 +148,7 @@ pub enum Verdict {
     NulByte,
 }
 
-/// Scalar observations retained by the job until its tool terminal.
+/// Scalar observations retained by the flight until its tool terminal.
 #[derive(Clone, Copy)]
 pub(crate) struct Observation {
     pub(crate) omitted_bytes: u64,
