@@ -20,7 +20,7 @@ toml = "0.9"
 regex = "1"
 base64 = "0.22"
 rusqlite = { version = "0.37", features = ["bundled"] }
-time = { version = "0.3", features = ["formatting"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 smith-local-shell = { path = "../crates/smith-local-shell" }
 smith-events.workspace = true
 smith-local-protocol.workspace = true

@@ -15,6 +15,7 @@ use crate::{Convention, ScopeKind, TokenLedger, TokenRecord, Usage};
 use super::ParseError;
 
 mod cache;
+mod time;
 
 const MAX_THREADS: usize = 4096;
 const MAX_BYTES: usize = 64 * 1024 * 1024;

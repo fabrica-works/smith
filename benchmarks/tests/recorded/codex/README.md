@@ -9,3 +9,11 @@ projections omit user/account identifiers and base instructions; retained
 usage and stdout lines are unchanged. Full originals remain in the private
 run archives named in manifest.json. Credential assignment, JWT, bearer,
 API-token and private-key scans found no matches in committed records.
+
+`repository-04-time.jsonl` projects timing fields from the root rollout of
+`repository-a64f0523-20261013T230741Z/04`. It retains timestamps, record types,
+response and call identities, tool names and command durations. Prompts,
+commands and outputs are omitted. The sibling `../smith-time.jsonl` retains
+matched event spans from attempt 01 of that run, omitting optional call input,
+request prompts and response completion bodies, with the events version projected
+to the current codec.

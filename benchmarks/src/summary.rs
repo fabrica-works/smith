@@ -192,8 +192,21 @@ fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
         ("task_wall_ms", &result.timing.task_wall_ms),
         ("teardown_ms", &result.timing.teardown_ms),
         ("grading_wall_ms", &result.timing.grading_wall_ms),
+        ("first_byte_ms", &result.timing.first_byte_ms),
+        ("largest_gap_ms", &result.timing.largest_gap_ms),
+        ("longest_completion_ms", &result.timing.longest_completion_ms),
+        ("time/requests_ms", &result.timing.record.requests_ms),
+        ("time/first_byte_ms", &result.timing.record.first_byte_ms),
+        ("time/largest_gap_ms", &result.timing.record.largest_gap_ms),
+        ("time/compaction_ms", &result.timing.record.compaction_ms),
+        ("time/children_ms", &result.timing.record.children_ms),
+        ("time/rest_ms", &result.timing.record.rest_ms),
+        ("time/commands_outside_calls_ms", &result.timing.record.commands_outside_calls_ms),
     ] {
         values.insert(name.into(), measure_u64(value));
+    }
+    for (name, value) in &result.timing.record.tools_ms {
+        values.insert(format!("time/tools/{name}_ms"), measure_u64(value));
     }
     for (name, scope, metric) in [
         ("cpu_ms", result.resources.cpu_scope, &result.resources.cpu_ms),

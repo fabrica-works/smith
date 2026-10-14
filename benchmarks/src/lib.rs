@@ -37,8 +37,8 @@ pub use models::{ModelChoice, ModelTiers, read_model_tiers};
 pub use result::{
     Artifact, AttemptResult, BudgetLimit, CheckVerdict, Child, ChildStop, Clamp, Classification, Counts, Delegation,
     End, Exit, FailureReason, Forced, Headroom, Health, Identity, Measure, ModelIdentity, Outcome, RESULT_VERSION,
-    Requested, ResourceScope, Resources, Share, ShareBound, SharePart, SmithFace, Spend, SpendBasis, Timing,
-    classify_smith_exit, parse_result, read_result, render_result,
+    Requested, ResourceScope, Resources, Share, ShareBound, SharePart, SmithFace, Spend, SpendBasis, TimeRecord,
+    Timing, classify_smith_exit, parse_result, read_result, render_result,
 };
 pub use stats::{
     Comparison, Interval, ProbeVerdict, audit_sample, bootstrap_ratio, coefficient_of_variation, interleave, median,
@@ -78,6 +78,8 @@ pub mod batch;
 pub mod fix;
 
 mod cache;
+
+mod time_record;
 
 pub use cache::{CacheObservation, CacheTriplet};
 

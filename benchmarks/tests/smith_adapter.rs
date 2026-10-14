@@ -974,3 +974,33 @@ fn omit_null(value: &mut serde_json::Value) {
         | serde_json::Value::String(_) => {}
     }
 }
+
+#[test]
+fn a_time_breakdown_sums_to_task_wall_within_one_second() {
+    let limits = smith_events::Limits { string: 524_288, content: 4096, items: 512 };
+    let mut observer =
+        smith_bench::agent::smith::events::Observer::with_ceiling(&limits, 1_048_576).expect("recorded stream bounds");
+    observer.feed(include_bytes!("recorded/smith-time.jsonl")).expect("recorded smith trace");
+    observer.finish().expect("complete trace");
+    let mut timing = smith_bench::parse_result(Path::new("fixture"), include_str!("recorded/results/attempt.json"))
+        .expect("result fixture")
+        .timing;
+    observer.timing(&mut timing);
+    let record = &timing.record;
+    let value = |measure: &Measure<u64>| match measure {
+        Measure::Observed { value } => *value,
+        other @ (Measure::LowerBound { .. } | Measure::Unavailable { .. }) => panic!("missing trace span: {other:?}"),
+    };
+    let sum = value(&record.requests_ms)
+        + value(&record.compaction_ms)
+        + value(&record.children_ms)
+        + value(&record.rest_ms)
+        + record.tools_ms.iter().map(|(_, span)| value(span)).sum::<u64>();
+    assert!(sum.abs_diff(764_602) < 1000, "recorded task wall: {sum}");
+    assert!((380_000..381_000).contains(&value(&record.requests_ms)));
+    assert!((93_000..94_000).contains(&value(&record.compaction_ms)));
+    assert!((32_000..33_000).contains(&value(&timing.first_byte_ms)));
+    assert_eq!(timing.first_byte_ms, record.first_byte_ms);
+    assert_eq!(timing.largest_gap_ms, record.largest_gap_ms);
+    assert!(value(&timing.longest_completion_ms) > 10_000);
+}

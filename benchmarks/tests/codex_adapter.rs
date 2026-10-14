@@ -1,6 +1,6 @@
 //! The named-thread collector reads only this attempt and preserves every gap.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use smith_bench::agent::codex::{ChildThread, Link, Rollouts, collect_rollouts, parse_rollout};
@@ -577,4 +577,83 @@ fn paths_use_the_declared_working_directory_and_refuse_escaped_paths_before_cred
     assert_eq!(std::fs::read(home.join("auth.json")).expect("unissued source unchanged"), auth);
     smith_bench::isolate::remove_owned_tree(&guard, &private.root).expect("read-only owned layout cleaned");
     std::fs::remove_dir_all(root).expect("unissued source fixture cleaned");
+}
+
+fn recorded_time(bytes: &[u8]) -> smith_bench::Timing {
+    let thread = "01a13785-a5a8-7543-ad07-90745b2ada69";
+    let rollouts = Rollouts {
+        responses: vec![],
+        children: vec![],
+        files: vec![smith_bench::agent::codex::RolloutFile { thread: thread.into(), bytes: bytes.into() }],
+    };
+    let mut timing = smith_bench::parse_result(Path::new("fixture"), include_str!("recorded/results/attempt.json"))
+        .expect("result fixture")
+        .timing;
+    rollouts.timing(thread, &mut timing).expect("recorded timestamps");
+    timing
+}
+
+#[test]
+fn rollout_threads_give_request_tool_and_command_overlap() {
+    let timing = recorded_time(include_bytes!("recorded/codex/repository-04-time.jsonl"));
+    let record = &timing.record;
+    let value = |measure: &Measure<u64>| match measure {
+        Measure::Observed { value } => *value,
+        other @ (Measure::LowerBound { .. } | Measure::Unavailable { .. }) => panic!("missing rollout span: {other:?}"),
+    };
+    assert!((388_000..389_000).contains(&value(&record.requests_ms)));
+    let exec = record.tools_ms.iter().find(|(tool, _)| tool == "exec").expect("root exec calls");
+    assert!((46_000..47_000).contains(&value(&exec.1)));
+    assert!(value(&record.commands_outside_calls_ms) > 110_000);
+    assert_eq!(record.compaction_ms, Measure::Observed { value: 0 });
+    assert_eq!(record.children_ms, Measure::Observed { value: 0 });
+    assert!(matches!(record.first_byte_ms, Measure::Unavailable { .. }));
+    assert!(matches!(record.largest_gap_ms, Measure::Unavailable { .. }));
+}
+
+#[test]
+fn a_stream_without_spans_leaves_the_record_unavailable() {
+    for bytes in [b"".as_slice(), include_bytes!("recorded/codex/completed.jsonl").as_slice()] {
+        let timing = recorded_time(bytes);
+        assert_eq!(timing.record.requests_ms, Measure::unavailable("root rollout lacks complete timestamped spans"));
+        assert!(matches!(timing.record.rest_ms, Measure::Unavailable { .. }));
+        assert!(matches!(timing.record.commands_outside_calls_ms, Measure::Unavailable { .. }));
+    }
+}
+
+#[test]
+fn a_summary_keeps_the_time_records_medians() {
+    let mut results = Vec::new();
+    for value in [100_u64, 300, 200] {
+        let mut result = smith_bench::parse_result(Path::new("fixture"), include_str!("recorded/results/attempt.json"))
+            .expect("result fixture");
+        result.identity.attempt = value.to_string();
+        let record = &mut result.timing.record;
+        record.requests_ms = Measure::Observed { value };
+        record.first_byte_ms = Measure::Observed { value: value / 10 };
+        record.largest_gap_ms = Measure::Observed { value: value / 2 };
+        record.compaction_ms = Measure::Observed { value: 0 };
+        record.children_ms = Measure::Observed { value: 0 };
+        record.rest_ms = Measure::Observed { value: value / 5 };
+        record.tools_ms = vec![("exec".into(), Measure::Observed { value: value / 4 })];
+        results.push(result);
+    }
+    let summary = smith_bench::summarise(&results, "timing", "working", smith_bench::Design::Single, 17, None, None)
+        .expect("summary");
+    for (metric, expected) in [
+        ("requests_ms", 200.0),
+        ("first_byte_ms", 20.0),
+        ("largest_gap_ms", 100.0),
+        ("compaction_ms", 0.0),
+        ("children_ms", 0.0),
+        ("rest_ms", 40.0),
+        ("tools/exec_ms", 50.0),
+    ] {
+        assert_eq!(
+            summary.groups[0].metrics[&format!("time/{metric}")].median,
+            Measure::Observed { value: expected },
+            "{metric}"
+        );
+    }
+    assert!(matches!(summary.groups[0].metrics["time/commands_outside_calls_ms"].median, Measure::Unavailable { .. }));
 }

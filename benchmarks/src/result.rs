@@ -118,6 +118,39 @@ pub struct Timing {
     pub largest_gap_ms: Measure<u64>,
     pub longest_completion_ms: Measure<u64>,
     pub agent_t_ms: Measure<u64>,
+    pub record: TimeRecord,
+}
+
+/// Main-conversation durations reported by the adapter (benchmarks.md, section 8.1).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TimeRecord {
+    pub requests_ms: Measure<u64>,
+    pub first_byte_ms: Measure<u64>,
+    pub largest_gap_ms: Measure<u64>,
+    /// Tool names retain the order of their first call.
+    pub tools_ms: Vec<(String, Measure<u64>)>,
+    pub compaction_ms: Measure<u64>,
+    pub children_ms: Measure<u64>,
+    pub rest_ms: Measure<u64>,
+    pub commands_outside_calls_ms: Measure<u64>,
+}
+
+impl TimeRecord {
+    /// Keep a missing stream's reason for every duration.
+    #[must_use]
+    pub fn unavailable(reason: &str) -> Self {
+        Self {
+            requests_ms: Measure::unavailable(reason),
+            first_byte_ms: Measure::unavailable(reason),
+            largest_gap_ms: Measure::unavailable(reason),
+            tools_ms: Vec::new(),
+            compaction_ms: Measure::unavailable(reason),
+            children_ms: Measure::unavailable(reason),
+            rest_ms: Measure::unavailable(reason),
+            commands_outside_calls_ms: Measure::unavailable(reason),
+        }
+    }
 }
 
 /// Event counts supplied by the adapter, with names retained in their own namespace.

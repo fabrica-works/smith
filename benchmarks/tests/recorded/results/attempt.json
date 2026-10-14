@@ -73,6 +73,37 @@
     "agent_t_ms": {
       "state": "unavailable",
       "reason": "not reported"
+    },
+    "record": {
+      "requests_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "first_byte_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "largest_gap_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "compaction_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "children_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "rest_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "commands_outside_calls_ms": {
+        "state": "unavailable",
+        "reason": "fixture has no timestamped spans"
+      },
+      "tools_ms": []
     }
   },
   "tokens": [

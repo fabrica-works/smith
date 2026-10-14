@@ -92,6 +92,7 @@ fn blank(identity: Identity) -> AttemptResult {
             largest_gap_ms: Measure::unavailable("not exposed by the selected stream"),
             longest_completion_ms: Measure::unavailable("not exposed by the selected stream"),
             agent_t_ms: Measure::unavailable("not reported by the agent"),
+            record: crate::TimeRecord::unavailable(missing),
         },
         tokens: Vec::new(),
         counts: crate::Counts {
@@ -574,12 +575,14 @@ fn collect_observation(
                     collection?;
                     let rollouts = observing.collected.as_ref().expect("completed collection");
                     rollouts.resolve_model(&thread, &mut result.identity.model).map_err(|error| error.to_string())?;
+                    rollouts.timing(&thread, &mut result.timing).map_err(|error| error.to_string())?;
                     result.tokens = rollouts.token_records(&thread)?;
                     result.counts.responses = rollouts.response_count();
                 }
             }
             crate::agent::Observing::Smith(observing) => {
                 observing.observer.resolve_model(&mut result.identity.model);
+                observing.observer.timing(&mut result.timing);
                 result.tokens = observing.tokens()?;
                 result.spend = observing.spend(&result.tokens)?;
                 result.counts = observing.counts();
