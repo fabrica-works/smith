@@ -36,8 +36,9 @@ target. The session writes no production code.
   (decisions.md, 10.3).
 - A `parity` run's own exit is its verdict, not the step's: the baseline
   lands whatever its verdict (README, rule 9's suite rule).
-- 12.4 cuts two baselines from its summary, smith's and Codex's, in place
-  of the 11 that 03.1 dropped (decisions.md, 10.6).
+- 12.4 cuts two baselines from its last run's summary, smith's and
+  Codex's, in place of the 11 that 03.1 dropped (decisions.md, 10.6;
+  benchmarks.md 16.5).
 
 ## Rules that bind it
 
@@ -148,28 +149,121 @@ Removes: nothing.
 
 ### 12.4 The closing `parity` run
 Scope: benchmarks.md 16 on the plan's final `main` (decisions.md 1.2,
-  8.1 step 7).
-Needs: every other step of the plan landed or dropped.
+  8.1 step 7), and 16.5 when a verdict is short of parity.
+Needs: every other step of the plan landed or dropped; for the second
+  run, 12.s1 too.
 Files: `benchmarks/summaries/parity-*.json`, `benchmarks/baselines/`.
-Shape: no code. Build `HEAD`, run `suite parity` as 12.1, commit the
-  summary, then cut the two baselines, each arm's configuration digest
-  read from the summary's arm identity:
+Shape: no code. At most two runs (benchmarks.md 16.5: "A plan that
+  targets parity says in its live budget how many closing runs it
+  holds").
+  - **The first run is spent:** `parity-b7b78fb1-20261015T115427Z`, on
+    `b7b78fb1`, 58 attempts, $9.89 notional, verdict 1. FT 1.193 [1.128,
+    1.260] and RT 1.156 [1.003, 1.581] fail; O, FC and RC hold. Its
+    summary lands as it is, from the local `e074d579` rebased, since
+    "A summary is committed whatever its verdict, 0 or 1" (16.5). The
+    commit body gives the five criteria lines, the exit 1, each arm's
+    time-record medians, and the `Live:` trailer. No baseline is cut
+    from it.
+  - **The second run** starts once 12.s1 is on `main` and nothing else
+    of the plan is left to land. Build `HEAD`, run `suite parity` once,
+    as 12.1, then `parity <summary> --commit <the full SHA>`. Commit the
+    summary whatever its verdict, 0 or 1. Then cut the two baselines from
+    it, each arm's configuration digest read from the summary's arm
+    identity:
 
-  ```
-  cargo run -q -p smith-bench -- baseline <summary> parity-smith --group smith <smith arm's configuration sha256> gpt-6.1-sol high
-  cargo run -q -p smith-bench -- baseline <summary> parity-codex --group codex <Codex arm's configuration sha256> gpt-6.1-sol high
-  ```
+    ```
+    cargo run -q -p smith-bench -- baseline <summary> parity-smith --group smith <smith arm's configuration sha256> gpt-6.1-sol high
+    cargo run -q -p smith-bench -- baseline <summary> parity-codex --group codex <Codex arm's configuration sha256> gpt-6.1-sol high
+    ```
 
-  and run the README's "Done when" item 2 once.
+    and run the README's "Done when" item 2 once.
+  - **If 12.s1 lands nothing** (its Stop), there is no second run. The
+    baselines are cut from the first run's summary, and the plan ends
+    with item 2 failed.
+  - **A second verdict of 1 lands as the first did.** The plan then ends
+    with item 2 failed: the commit body and the report name the
+    criteria that fail. It is not a question, and no third run follows.
 Test shape: none.
-Proof: live, once: 58 attempts, about $12 and 4 hours; item 2's command
-  exits 0.
-Don't: loosen a margin, rerun the suite to pass, or change a pin. A
-  verdict of 1 or 2 is a question for the designer: a truly equal smith
-  passes the whole verdict about 0.69 of the time (decisions.md 1.1).
+Proof: live: the first run, spent; the second, 58 attempts, about $10
+  and 3.5 hours. Item 2's command exits 0, or 1 as the Shape says.
+Don't: loosen a margin, change a pin, run the second before 12.s1 has
+  landed, or run a third. A verdict of 2 is a question for the designer,
+  unless README rule 9 runs the command once more (stopped by the
+  provider).
 Size: none.
+Removes: nothing.
+
+### 12.s1 The role's words cost no response the work does not need
+Drafted by the designer (answer of 2026-10-15), for the supervisor to
+name and schedule.
+Scope: benchmarks.md 16.5 ("A failed verdict is answered by a change,
+  never by a run"); shell.md 6.6 (topic 3, and "Its words cost
+  requests"); decisions.md 6.1.
+Needs: nothing.
+Files: `crates/smith-local-shell/src/role.rs`; the two arms of
+  `benchmarks/suites/role.toml`. Only if the diagnosis names it: the
+  words of `shell`'s `yield_seconds` description,
+  `crates/smith-protocol-llm/src/descriptions.rs`.
+Shape:
+  1. **The diagnosis,** offline, once, from the traces on disk:
+     `~/.local/state/smith-bench/runs/parity-744e0820-20261015T002817Z`
+     (FT held) against `parity-b7b78fb1-20261015T115427Z` (FT failed).
+     For each smith fixture attempt, count its responses and the calls
+     in each, and name which words of the role produce the responses
+     that the baseline did not make. The designer's counts, to check
+     with `jq` and not to redo another way:
+     - smith's fixture responses went from 185 to 231 over 24 attempts,
+       and Codex's from 145 to 145. Seconds of request per response rose
+       about alike (smith 9.1 to 10.4, Codex 11.3 to 13.5), so the count
+       carries FT's move;
+     - a response holding only a `shell` call, before the first `edit`
+       or `write`: in 1 attempt of 24, then in 15. The first shell call
+       holds `git status --short` in 21 attempts, then in 23; at the
+       baseline it went with the first `list` or with the reads;
+     - `yield_seconds` on 0 of 82 shell calls, then on 75 of 99; 9
+       shell calls answered `running`, and 9 `job` calls;
+     - failing shell calls 10, then 30, of which `cargo fmt --check`
+       failing within a second 9, then 16; `edit` calls 41, then 68;
+     - 06.2's compare, `role-aac2639e-20261015T051741Z`: 7.1 responses
+       per fixture attempt before the role, 8.3 with it;
+     - `shell-cwd`: smith 53.2 responses per attempt, then 75.4; Codex
+       48.6, then 55.0.
+  2. **The change:** the role's words, within shell.md 6.6's topics as
+     amended: topic 3 batches commands that change nothing with the
+     reads, lists and searches; a command is made a job only when it
+     runs long. Also the `yield_seconds` description's words, if step 1
+     names them. No topic added, dropped or moved; no tool, fact of a
+     description, or behaviour changed.
+  3. **Its proof** (benchmarks.md 4.2): the `role` suite, its arms set to
+     the change's parent and the change, run once: 30 attempts, about $2
+     and 45 minutes. At most one revision of the words, with one more
+     run of the suite.
+  4. **The commit body** names what 16.5 asks: FT and RT, the cause from
+     step 1 with its counts, and the proof: the six comparisons, and
+     each arm's responses per fixture attempt, which this prints, once
+     per run of the suite (on 06.2's run it prints 7.13 and 8.33):
+
+     ```
+     jq -s -c 'group_by(.identity.arm) | map({arm: .[0].identity.arm, attempts: length, responses_per_attempt: (map(.counts.responses.value) | add / length)})' ~/.local/state/smith-bench/runs/<the run>/*/result.json
+     ```
+Test shape: the role's two tests stay as they are. No new test: the
+  `compare` suite stands in place of a probe (benchmarks.md 4.2).
+Proof: the `role` suite's summary, as step 4 says; the smoke (rule 8).
+Stop:
+  - If step 1 finds the cause outside these words (a topic, a tool's
+    behaviour, the machine, the harness), stop on a question for the
+    designer, with the counts. Nothing lands.
+  - If in neither run of the suite step 4's command prints fewer
+    responses per attempt for the change than for its parent, nothing
+    lands: 12.4 has no second run, and the plan ends as 12.4 says.
+Don't: name a fixture, a file, or a language's or project's commands in
+  the words (16.5: "A change that serves the suite's tasks and no other
+  work … is not a cause's answer"); pass the role's 4 KiB; run `suite
+  parity`.
+Size: about 30 lines.
 Removes: nothing.
 
 ## Done when
 
-- The README's "Done when" items 2 and 4 hold.
+- The README's "Done when" item 4 holds, and its item 2 exits 0, or 1
+  as 12.4's Shape allows.
