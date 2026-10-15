@@ -175,6 +175,20 @@ these; where a line below and the text above differ, the line below holds.
   becomes 32768; name each in the commit body. No other expected value
   changes.
 
+**06.2** (from its block of 2026-10-15T04:46:38Z, against `main` at
+`d9e9b6c5`; decisions.md has the ruling's whole text)
+- The role check's count is the run's (limits.md 3.9: "the run counts it
+  directly"): `crates/smith-domain-run/src/prompt.rs` gains one public
+  count of the role and the guides, re-exported from
+  `crates/smith-domain-run/src/lib.rs` beside `fixed_prompt_bytes`
+  (`:84`); the profile calls it through `smith_domain::run`. Files gain
+  both.
+- The role's bound reaches the profile in
+  `crates/smith-local-shell/src/settings/resolve.rs`, after `from_value`
+  (`:83-86`), which both `smith check` (`check.rs:76`) and a run
+  (`compose.rs:107-109`) call. Files gain it; `compose.rs` changes only
+  where the bound must reach a later step there.
+
 ## Questions to raise when reached
 
 - None known.
