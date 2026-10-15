@@ -1089,6 +1089,13 @@ changes what section 8.4 holds.
      3. **06.2 waits for 03.s3,** then rebases `parity/smith-06-2` on `main` and runs its proof as written, its arms as built: before `894d132f`, after `a29a4ac5`. The suite's 30 attempts and $3 are 06.2's, unchanged; 03.s3 adds its one smoke attempt.
      4. **Unchanged:** `check_requests`, override and agent arms, 06.2's Shape, Test shape and Don't. A further caller of `task_requests` the change reaches: adapt it, and list it in the commit body.
 
+141. **06.2's comparison reports no difference: it lands** (plan defect, smith 06's block of 2026-10-15T05:56:50Z).
+     Ruling 141: a plan defect, not a design gap; the stop condition is not met, and 06.2 lands. 06.2's Proof stops "If the summary reports a difference (benchmarks.md 9: …)". benchmarks.md 9 says: "A difference is reported per task and metric when the 95% bootstrap interval of the ratio of the arms' medians, resampled with the run's seed, excludes 1, and the effect exceeds the task's minimum detectable effect … Otherwise the summary says none was detected, not that the arms are equal." The plan's parenthetical quoted only the first half. Backoff's time ratio is 1.0917 [1.0049, 1.2343] against a minimum detectable effect of 0.1418, so its effect, 0.0917, is under it, and the summary reports `detected: false` for all six comparisons. The role's proof is the comparison itself, in the commit body (benchmarks.md 4.2: "names the `compare` suite in place of a probe … whose comparison goes in its commit body"), as decisions.md 6.1 asks.
+
+     1. **06.2 goes on** to the smoke (rule 8), the gate and `land`, with the frozen summary `role-aac2639e-20261015T051741Z` and its six comparisons in the commit body, each with its ratio, interval and minimum detectable effect, and the line "no difference detected (benchmarks.md 9); backoff's time interval excludes 1 with its effect under its minimum detectable effect". No suite runs again and the role is not edited.
+     2. **The plan's condition** now quotes benchmarks.md 9 whole, and names the comparison's `detected` flag as its check (`benchmarks/src/stats.rs:320`).
+     3. **Unchanged:** 06.2's Shape, Test shape, Don't; the arms (before `894d132f`, after `a29a4ac5`); 11.2's Needs.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At

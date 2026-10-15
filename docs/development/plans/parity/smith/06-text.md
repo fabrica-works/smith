@@ -142,8 +142,10 @@ Proof: live, once: build 06.1's parent and 06.2, write `suites/role.toml`
   `standard` pin, no Codex), then `heavy --gate cargo run -p smith-bench
   -- suite role`; commit its summary, and put its comparisons in the
   commit body. 30 attempts, $3, about 90 minutes. If the summary reports
-  a difference (benchmarks.md 9: its interval excludes 1) with the change
-  slower or costlier than its parent on any fixture, stop on a question.
+  a difference (benchmarks.md 9: its interval "excludes 1, and the effect
+  exceeds the task's minimum detectable effect", the comparison's
+  `detected: true`) with the change slower or costlier than its parent on
+  any fixture, stop on a question.
 Don't: put in the role what the run's own sections say (tools, the
   checkout, sub-agents, finishing, the budget), or name a tool smith does
   not offer.
