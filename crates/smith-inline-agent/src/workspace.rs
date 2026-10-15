@@ -166,6 +166,14 @@ pub(crate) fn io(
     out.push(Output::Lower { agent, request: Lower::Io { owner, op, deadline } });
 }
 
+pub(crate) fn job(slot: &mut Slot, agent: Token, owner: Token, act: smith::tools::JobAct, out: &mut Queue<Output>) {
+    assert!(
+        slot.io.insert(owner, false).expect("bounded root tool rights").is_none(),
+        "root machine requests own one callback right"
+    );
+    out.push(Output::Lower { agent, request: Lower::Job { owner, act } });
+}
+
 pub(crate) fn cancel_io(slot: &mut Slot, agent: Token, owner: Token, out: &mut Queue<Output>) {
     if let Some(cancelled) = slot.io.get_mut(&owner)
         && !*cancelled

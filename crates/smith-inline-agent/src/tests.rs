@@ -377,6 +377,29 @@ fn workspace_routes_keep_equal_tokens_in_separate_lower_families() {
 }
 
 #[test]
+fn a_job_act_is_lowered_and_settles_with_its_done() {
+    let env = env();
+    let mut agent = Domain::new(&env.limits, configuration(), 91);
+    let mut out = Queue::with_capacity(crate::max_out(&env.limits));
+    step(&mut agent, &env, Input::Parent(parent::Event::Spawn { client: Token::new(1), start: start() }), &mut out);
+    let Some(Output::Parent(parent::Request::Started { agent: handle, .. })) = out.pop() else {
+        panic!("Started first")
+    };
+    while out.pop().is_some() {}
+    let owner = Token::new(55);
+    let act = smith::tools::JobAct::Read { head: 3, tail: 2, wait: Duration::from_secs(1) };
+    agent.lower.push(smith::Request::Job { owner, act });
+    translate::route(&mut agent, &env, Id::from_token(handle), &mut out);
+    assert_eq!(out.pop(), Some(Output::Lower { agent: handle, request: Lower::Job { owner, act } }));
+    let slot = agent.slots.get_mut(Id::from_token(handle)).expect("retained slot");
+    assert_eq!(
+        crate::workspace::terminal(slot, Below::Done { owner, done: smith::tools::Done::Cancelled }),
+        Some(smith::Event::Done { owner, done: smith::tools::Done::Cancelled })
+    );
+    assert_eq!(slot.io.len(), 0);
+}
+
+#[test]
 fn probe_check_and_abort_route_once_and_wait_for_the_matching_terminal() {
     let env = env();
     let mut agent = Domain::new(&env.limits, configuration(), 92);

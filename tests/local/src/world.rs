@@ -1672,6 +1672,10 @@ impl World {
                 self.events.push_back(self.below(Below::Done { owner, done }));
             }
             // Fake checkout operations already settled synchronously; their one terminal is queued above.
+            Lower::Job { owner, act: _ } => {
+                let done = tools::Done::Failed { fault: tools::Fault::Other };
+                self.events.push_back(self.below(Below::Done { owner, done }));
+            }
             Lower::CancelIo { .. } | Lower::Abort { .. } => {}
             Lower::Read { owner, at, max, deadline: _ } => {
                 let read = match self.disk.load(at.root.raw(), &at.path, u64::from(max)) {

@@ -510,7 +510,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             smith::Request::Io { owner, op, deadline } => {
                 crate::workspace::io(slot, id.token(), owner, op, deadline, out);
             }
-            smith::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
+            smith::Request::Job { owner, act } => crate::workspace::job(slot, id.token(), owner, act, out),
             smith::Request::CancelIo { owner } => crate::workspace::cancel_io(slot, id.token(), owner, out),
             smith::Request::Read { owner, at, max, deadline } => {
                 crate::workspace::read(slot, id.token(), owner, at, max, deadline, out);

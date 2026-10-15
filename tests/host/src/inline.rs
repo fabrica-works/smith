@@ -435,6 +435,9 @@ impl World {
                     Lower::Io { owner, op, deadline } => {
                         self.machine_request(agent, smith_protocol_machine::FromDomain::Op { owner, op, deadline });
                     }
+                    Lower::Job { owner, act } => {
+                        self.machine_request(agent, smith_protocol_machine::FromDomain::Job { owner, act });
+                    }
                     Lower::Read { owner, at, max, deadline } => self
                         .machine_request(agent, smith_protocol_machine::FromDomain::Read { owner, at, max, deadline }),
                     Lower::Probe { owner, at, deadline } => {

@@ -1328,6 +1328,7 @@ fn to_root_request(request: inline::Lower) -> agent::Request {
         },
         inline::Lower::Cancel { owner } => agent::Request::Cancel { owner },
         inline::Lower::Io { owner, op, deadline } => agent::Request::Io { owner, op, deadline },
+        inline::Lower::Job { owner, act } => agent::Request::Job { owner, act },
         inline::Lower::CancelIo { owner } => agent::Request::CancelIo { owner },
         inline::Lower::Read { owner, at, max, deadline } => agent::Request::Read { owner, at, max, deadline },
         inline::Lower::Probe { owner, at, deadline } => agent::Request::Probe { owner, at, deadline },

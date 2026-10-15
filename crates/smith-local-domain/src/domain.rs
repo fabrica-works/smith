@@ -1096,6 +1096,7 @@ fn route_agent(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
                 request @ (smith_inline_agent::Lower::Complete { .. }
                 | smith_inline_agent::Lower::Cancel { .. }
                 | smith_inline_agent::Lower::Io { .. }
+                | smith_inline_agent::Lower::Job { .. }
                 | smith_inline_agent::Lower::CancelIo { .. }
                 | smith_inline_agent::Lower::Read { .. }
                 | smith_inline_agent::Lower::Probe { .. }

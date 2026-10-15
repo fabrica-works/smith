@@ -54,6 +54,8 @@ pub enum Lower {
     },
     /// A tool operation routed to the machine; ends with Done.
     Io { owner: Token, op: smith::tools::Op, deadline: Time },
+    /// A held command's read or stop, routed to the machine; ends with Done.
+    Job { owner: Token, act: smith::tools::JobAct },
     /// Cancel a tool operation; its Done remains owed.
     CancelIo { owner: Token },
     /// Read a bounded guide from a mounted root; ends with Read.
