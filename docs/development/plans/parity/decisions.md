@@ -1070,6 +1070,9 @@ changes what section 8.4 holds.
 137. **06.1's Shapes against main** (ready check of smith-06.1).
      06.1's Shapes against `main` (`c7d54533`), from its ready check: four line references corrected (`decode.rs` `path` `:440-456`; `descriptions.rs` `words` `:48-100`, `path` `:102-111`, `properties` `:125-183`; `tests.rs` `:323`, `:417`, `:517`); Files gain `descriptions.rs:32-38` and `tools.rs:154-161` (the namespace reaches the list description), `tools.rs:71-86` (`fixed_schema_bytes` measures the larger of the two namespaces, since it feeds `profile.rs:151-153` and `profile/room.rs:34`) and `tests/tools/src/translate.rs:14-25` (`b""` maps to `[Part::Current]`); a world test's 16384-byte request cap passed only because the path descriptions grew becomes 32768, named in the commit body. `smith/06-text.md`, "The ready check's corrections".
 
+138. **README rule 17: no coordinator waker; logs by queue time** (steer of 2026-10-15T04:31:16Z).
+     README rule 17, until the run's end: the coordinator starts no waker (a `nohup`, background or `until` wait dies with its turn, development.md 7.4; it happened at 01:24Z and 04:10Z); before it idles on queue tasks, it names each in its `plan idle` text by id, label and session, and the supervisor starts the waker from its own shell (`pueue wait`, then `thread/resume`, then `plan ring`). A task's log is the first `logs/*-<id>.log` named after the time it was queued, since ids are reused once a task leaves the queue (3787 was reused twice at 04:25–04:26Z).
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At

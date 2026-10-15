@@ -238,6 +238,16 @@ until the run ends.
     otherwise change stay as they are, and so do test names the plan
     gives.
 
+17. **No waker of the coordinator's** (ruling 138). Before it idles on
+    queue tasks, the coordinator names each in its `plan idle` text by
+    id, label and session ("3787 smith-12 (w31), suite compaction"), and
+    starts no `nohup`, background or `until` waker: it dies with its turn
+    (development.md, section 7.4). The supervisor starts the waker from
+    its own shell: `pueue wait <ids>`, then `thread/resume` of the
+    coordinator's thread, then `plan ring`. A task's log is the first
+    `logs/*-<id>.log` named after the time it was queued, since ids are
+    reused once a task leaves the queue.
+
 ## Live services
 
 **OpenAI, through the user's Codex login,** the only live service. smith
