@@ -1048,6 +1048,15 @@ changes what section 8.4 holds.
      3. **12.1 runs once more,** once 04.s4 is on `main`: it rebases, builds `HEAD`, and runs its three commands as a new run. A setup refusal in that run stops the step on a block. Row 12.1 becomes 117 attempts and $3.30: the 59 spent, and 58, at this run's $0.029 an attempt. That answers rule 10's 1.5× question for 12.1, until that run's end.
      4. **The run's 340 attempts** will not hold all the rows left: about 395 with 12.3 at none, and under $10 of the $50. The question is the user's, in decisions.md's "For the user". Until an answer, rule 10 holds as written; 12.1's next run fits (about 245 of 340).
 
+134. **10.4's setup refusal is its own: find the term, correct an overcount or ask** (plan defect, smith 10's block of 2026-10-15T00:19:30Z).
+     Ruling 134, under README rule 8 as ruling 125 left it: "If `main`'s smoke passes, the failure is the step's own: it stops its step on a question, and the line goes on." `main`'s smoke passed (`probes-smoke-tools-f67834cd-20261015T001802Z attempts=1 verdict=pass`), so both refusals are 10.4's own: its branch's `service.worst_case`, 2,147,850,569 bytes, passes the shipped `declared.memory`, 2,147,462,772, by 387,797, at setup, before any model request. The line goes on.
+
+     1. **Find the term.** smith 10 prints the service's worst-case terms for `main`'s arm and for 10.4's (the profile's breakdown behind `smith: memory: service.worst_case=…`), once each, and names each term that differs, with its bytes. At most 3 runs for this (rule 5).
+     2. **An overcount is corrected,** as rulings 110, 114 and 125 did: a heap test shows the bytes a term prices that the code never holds at once (a buffer priced per job or per run that lives per step), and the correction removes them. No preset, `declared.memory`, bound or expected value changes. The commit body names the heap test, the bytes it removes and the margin left.
+     3. **State 10.4 must hold,** with no overcount to remove, is a design question: 10.4 stops on a question naming the term, its bytes and the bound it grows with, and changes nothing more. The supervisor takes it to the designer.
+     4. **The corrected arm takes the smoke afresh,** as rule 8 says: once, and once more on a failure. A second refusal stops 10.4 on a question with the term and its bytes; the line goes on.
+     5. **The three attempts** (the two refused on `de036162`, $0, and `main`'s, $0.000621) count in 10.4's `Live:` trailer (rule 10).
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At
