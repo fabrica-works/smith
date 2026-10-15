@@ -35,6 +35,7 @@ mod tests {
         profile.declared.llm_pool = 134_217_728;
         profile.declared.memory = 2_147_483_648;
         let declarations = Configuration {
+            role_bound: None,
             environment_bytes: 835,
             endpoints: Box::new([Endpoint {
                 number: 1,

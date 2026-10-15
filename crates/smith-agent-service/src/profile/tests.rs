@@ -1,5 +1,7 @@
 //! Named startup comparisons use independent declared values and exact refusals.
 
+mod role;
+
 use alloc::boxed::Box;
 use skein_lib::Duration;
 
@@ -19,6 +21,7 @@ pub(super) fn profile() -> super::Profile {
 
 pub(super) fn declarations() -> Configuration {
     Configuration {
+        role_bound: None,
         environment_bytes: 0,
         endpoints: Box::new([Endpoint {
             number: 7,

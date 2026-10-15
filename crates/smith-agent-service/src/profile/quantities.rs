@@ -149,6 +149,8 @@ pub struct Endpoint {
 /// Numeric endpoint declarations used by service derivation, without credentials.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Configuration {
+    /// The shell's task role bound in bytes, absent for profiles without that role.
+    pub role_bound: Option<u32>,
     /// Configured environment encoding: names, values and one equals byte each.
     pub environment_bytes: u32,
     pub endpoints: Box<[Endpoint]>,

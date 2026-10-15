@@ -33,6 +33,7 @@ fn every_settled_check_exit_preserves_its_kind_and_only_zero_passes() {
 pub(crate) fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
     use crate::profile::{Configuration, Endpoint, Model, OversizedReasoning};
     Configuration {
+        role_bound: None,
         environment_bytes,
         endpoints: Box::new([Endpoint {
             number: 0,

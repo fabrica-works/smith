@@ -186,15 +186,33 @@ pub(crate) fn host_bytes(charter: &Charter, mounted: Option<&Workspace>, guide_b
     let mut text = Text::measuring();
     render_main_prefix(&mut text, charter);
     render_system(&mut text, charter, mounted, &found, Families::of(&charter.grants), true);
-    for (index, _) in repositories.iter().enumerate() {
-        let guide = Guide { repository: u32::try_from(index).ok()?, text: Box::new([]), whole: false };
-        render_guide(&mut text, repositories, &guide, conventions::guide(charter));
-        if guide_bytes > 0 {
-            text.add_host(u64::from(guide_bytes).checked_add(2)?);
-        }
+    for directory in repositories {
+        let name = if repositories.len() == 1 { None } else { Some(directory.name.as_ref()) };
+        count_guide(&mut text, conventions::guide(charter), name, guide_bytes)?;
     }
     text.host_bytes
 }
+
+/// Count the bounded shell role and directory guides with their default rendering.
+#[must_use]
+pub fn role_host_bytes(role_bound: u32, directories: u32, directory_name_bytes: u32, guide_bytes: u32) -> Option<u64> {
+    let mut role = Text::measuring();
+    role.host = true;
+    if role_bound > 0 {
+        role.add_host(u64::from(role_bound));
+        end_paragraph(&mut role, b"x");
+    }
+    let mut guide = Text::measuring();
+    let name = if directories == 1 { None } else { Some(b"".as_slice()) };
+    count_guide(&mut guide, conventions::GUIDE, name, guide_bytes)?;
+    if directories > 1 {
+        guide.add_host(u64::from(directory_name_bytes));
+    }
+    role.host_bytes?.checked_add(guide.host_bytes?.checked_mul(u64::from(directories))?)
+}
+
+#[cfg(test)]
+mod role_tests;
 
 /// Count the caller brief and the charter-dependent common child system text.
 pub(crate) fn child_host_bytes(
@@ -436,24 +454,39 @@ fn end_paragraph(text: &mut Text, came: &[u8]) {
 }
 
 fn render_guide(text: &mut Text, repositories: &[Directory], guide: &Guide, guide_path: &[u8]) {
+    let directory =
+        if repositories.len() == 1 { None } else { Some(name(repositories, guide.repository).name.as_ref()) };
+    render_guide_parts(text, guide_path, directory, &guide.text, guide.whole);
+}
+
+fn render_guide_parts(text: &mut Text, guide_path: &[u8], directory: Option<&[u8]>, content: &[u8], whole: bool) {
     text.host = true;
     text.put(b"## ");
     text.put(guide_path);
-    if repositories.len() == 1 {
-        text.put(b" in the working directory\n\n");
-    } else {
-        text.put(b" in `");
-        text.put(&name(repositories, guide.repository).name);
-        text.put(b"`\n\n");
+    match directory {
+        None => text.put(b" in the working directory\n\n"),
+        Some(name) => {
+            text.put(b" in `");
+            text.put(name);
+            text.put(b"`\n\n");
+        }
     }
-    if !guide.text.is_empty() {
-        text.put(&guide.text);
-        end_paragraph(text, &guide.text);
+    if !content.is_empty() {
+        text.put(content);
+        end_paragraph(text, content);
     }
-    if !guide.whole {
+    if !whole {
         text.put(b"(The file goes on: read the rest with your tools.)\n\n");
     }
     text.host = false;
+}
+
+fn count_guide(text: &mut Text, guide_path: &[u8], directory: Option<&[u8]>, guide_bytes: u32) -> Option<()> {
+    render_guide_parts(text, guide_path, directory, &[], false);
+    if guide_bytes > 0 {
+        text.add_host(u64::from(guide_bytes).checked_add(2)?);
+    }
+    Some(())
 }
 
 fn render_tools(text: &mut Text, tools: Tools) {

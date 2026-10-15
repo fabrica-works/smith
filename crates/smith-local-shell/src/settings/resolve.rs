@@ -80,8 +80,16 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
     } else {
         Box::new([])
     };
-    let agent = smith_agent_shell::config::from_value(generated)
+    let mut agent = smith_agent_shell::config::from_value(generated)
         .map_err(|why| relationships::native(&settings, &models, why))?;
+    agent.declarations.role_bound =
+        if settings.values.contains_key("instructions") { None } else { Some(crate::role::TASK_ROLE_BOUND) };
+    smith_agent_service::profile::validate::host_part_holds_the_role(
+        &agent.profile,
+        &agent.declarations,
+        &agent.service.limits.domain.run,
+    )
+    .map_err(|why| relationships::profile(&settings, &models, why))?;
     smith_local_service::profile::host_limits(&agent.profile, &agent.service.limits)
         .map_err(|why| relationships::profile(&settings, &models, why))?;
     let limits = local::limits(&settings, &models, &agent)?;

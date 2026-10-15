@@ -356,6 +356,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
         declarations.push(build_models(endpoint)?);
     }
     let declarations = service::profile::Configuration {
+        role_bound: None,
         environment_bytes: u32::try_from(environment_bytes).map_err(|_| environment_size_refusal())?,
         endpoints: declarations.into_boxed_slice(),
     };
@@ -1436,6 +1437,7 @@ mod tests {
         let dto: Document = serde_json::from_value(document.clone()).expect("product DTO");
         let selected = build_profile(&dto.profile).expect("product profile");
         let declarations = service::profile::Configuration {
+            role_bound: None,
             environment_bytes: 835,
             endpoints: dto.endpoints.iter().map(|endpoint| build_models(endpoint).unwrap()).collect(),
         };
@@ -1583,6 +1585,7 @@ mod tests {
             let dto: Document = serde_json::from_value(document.clone()).expect("drawn DTO");
             let profile = build_profile(&dto.profile).expect("positive drawn declarations");
             let declarations = service::profile::Configuration {
+                role_bound: None,
                 environment_bytes: 835,
                 endpoints: dto.endpoints.iter().map(|endpoint| build_models(endpoint).unwrap()).collect(),
             };

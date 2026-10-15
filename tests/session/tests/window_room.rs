@@ -16,6 +16,7 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         profile.declared.tool_payload = 256;
         profile.declared.read_window = 256;
         let declarations = Configuration {
+            role_bound: None,
             environment_bytes: 0,
             endpoints: Box::new([Endpoint {
                 number: 7,

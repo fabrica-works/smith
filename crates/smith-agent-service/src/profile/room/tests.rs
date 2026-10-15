@@ -16,6 +16,7 @@ use skein_lib::{Duration, Rng};
 
 fn declarations(window: u32, output: u32) -> Configuration {
     Configuration {
+        role_bound: None,
         environment_bytes: 0,
         endpoints: Box::new([Endpoint {
             number: 7,
@@ -76,7 +77,7 @@ fn overflow_and_missing_declarations_are_typed_without_a_neutral_window() {
         room(&standard(), &declarations(10_000, 1), u64::MAX, 0).expect_err("own sum overflows"),
         Refusal::Derived { limit: LimitName::deployment(Layer::Service, "fresh_window") }
     );
-    let empty = Configuration { environment_bytes: 0, endpoints: Box::new([]) };
+    let empty = Configuration { role_bound: None, environment_bytes: 0, endpoints: Box::new([]) };
     assert_eq!(
         room(&standard(), &empty, 0, 0).expect_err("model required"),
         Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") }

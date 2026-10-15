@@ -50,10 +50,12 @@ fn valid_path(path: &[u8]) -> bool {
     true
 }
 
+pub(crate) const GUIDE: &[u8] = b"AGENTS.md";
+
 pub(crate) fn guide(charter: &Charter) -> &[u8] {
     match &charter.conventions {
         Some(conventions) => &conventions.guide,
-        None => b"AGENTS.md",
+        None => GUIDE,
     }
 }
 

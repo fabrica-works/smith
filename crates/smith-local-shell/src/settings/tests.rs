@@ -707,3 +707,17 @@ fn jobs_and_job_wait_reach_the_agents_tool_limits() {
     assert_eq!(resolved.agent.service.limits.domain.session.tools.jobs, 2);
     assert_eq!(resolved.agent.service.limits.domain.session.tools.job_wait, skein_lib::Duration::from_secs(7));
 }
+
+#[test]
+fn the_default_task_role_reaches_the_resolved_run() {
+    let resolved = composed("").unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.instructions.as_ref(), crate::role::TASK_ROLE.as_bytes());
+    assert_eq!(resolved.agent.declarations.role_bound, Some(4096));
+}
+
+#[test]
+fn explicit_instructions_replace_the_shells_default_task_role() {
+    let resolved = composed("instructions='Custom instructions'\n").unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.instructions.as_ref(), b"Custom instructions");
+    assert_eq!(resolved.agent.declarations.role_bound, None);
+}

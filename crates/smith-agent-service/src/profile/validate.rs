@@ -489,3 +489,24 @@ pub fn render_in_result(required: u32, available: u32) -> Result<(), Refusal> {
         bytes(Layer::Render, "result", u64::from(available)),
     )
 }
+
+/// The shell's role and fully bounded guides fit the shared host part for every model.
+pub fn host_part_holds_the_role(
+    profile: &Profile,
+    configuration: &Configuration,
+    limits: &smith_domain::run::Limits,
+) -> Result<(), Refusal> {
+    let Some(role_bound) = configuration.role_bound else { return Ok(()) };
+    let required = smith_domain::run::role_host_bytes(
+        role_bound,
+        limits.directories,
+        limits.directory_name_bytes,
+        profile.declared.guide,
+    )
+    .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Run, "role_and_guides") })?;
+    at_most(
+        Check::HostPartHoldsTheRole,
+        bytes(Layer::Run, "role_and_guides", required),
+        bytes(Layer::Run, "host_part", limits.host_part),
+    )
+}

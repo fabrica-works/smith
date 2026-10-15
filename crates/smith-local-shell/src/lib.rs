@@ -10,6 +10,7 @@ pub mod credentials;
 pub mod front;
 pub mod local_host;
 pub mod presets;
+pub mod role;
 pub mod settings;
 pub mod startup;
 

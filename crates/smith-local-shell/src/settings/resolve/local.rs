@@ -144,9 +144,7 @@ pub(super) fn build(
             .values
             .get("instructions")
             .and_then(|value| value.value.as_str())
-            .unwrap_or(
-                "Carry out the person's request in this workspace. Finish with what changed and what you checked.",
-            )
+            .unwrap_or(crate::role::TASK_ROLE)
             .as_bytes()
             .into(),
         brief: charter::Brief { sections: Box::new([]) },

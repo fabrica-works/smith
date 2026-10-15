@@ -519,6 +519,7 @@ fn derive_domain(
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Run, field.name())),
     };
+    validate::host_part_holds_the_role(profile, configuration, &run)?;
     // Each directory's guide shares the host's part. Entrance admission
     // also accounts for the charter's exact text and generated schemas.
     let guide = parts.host.checked_div(u64::from(run.directories)).ok_or(derived(Layer::Run, "guide_bytes"))?;

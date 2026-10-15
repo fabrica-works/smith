@@ -15,6 +15,7 @@ fn the_frozen_control_is_refused_at_startup_or_services_finish_after_four_turns(
     profile.declared.calls_per_response = 1;
     profile.policy.group_stop = Duration::from_millis(250);
     let configuration = Configuration {
+        role_bound: None,
         environment_bytes: 835,
         endpoints: Box::new([Endpoint {
             number: 1,

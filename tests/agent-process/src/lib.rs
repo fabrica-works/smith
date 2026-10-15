@@ -62,6 +62,7 @@ impl std::io::Write for AgentErrors {
 pub fn declarations(environment_bytes: u32) -> agent::profile::Configuration {
     use agent::profile::{Configuration, Endpoint, Model, OversizedReasoning};
     Configuration {
+        role_bound: None,
         environment_bytes,
         endpoints: Box::new([Endpoint {
             number: 0,

@@ -14,6 +14,8 @@ pub enum Check {
     Derived,
     /// A fresh window and its output fit the compaction threshold.
     FreshWindow,
+    /// The host's part holds the shell's role and every directory's guide.
+    HostPartHoldsTheRole,
     /// Compaction's output, instruction and result markers fit above the threshold.
     CompactionHeadroom,
     /// Each model's output is less than its window.
@@ -61,6 +63,7 @@ impl Check {
         match self {
             Self::Derived => "derived",
             Self::FreshWindow => "fresh-window",
+            Self::HostPartHoldsTheRole => "host-part-holds-the-role",
             Self::CompactionHeadroom => "compaction-headroom",
             Self::OutputInWindow => "output-in-window",
             Self::WindowFirst => "window-first",
