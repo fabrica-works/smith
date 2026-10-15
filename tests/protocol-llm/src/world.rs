@@ -25,6 +25,8 @@ use smith_domain::{self as agent, Event, Fact, Grant, GrantName, Limits, Request
 use smith_protocol_llm::{Limits as WireLimits, Receiving};
 use smith_tools_world::translate as io;
 
+mod jobs;
+
 use crate::{
     BUDGET, LIMITS, fixture,
     referee::{Meeting, Seen},
@@ -256,6 +258,7 @@ enum Delivery {
     Command { owner: Token, process: skein_fake_checkout::Process, head: u32, tail: u32, timed_out: bool },
     Check { owner: Token, passed: bool, output: Vec<u8>, timed_out: bool, tail: u32 },
     Host { relay: run::RelayName, reply: run::HostReply },
+    Job { owner: Token },
     Cancel,
 }
 
@@ -417,6 +420,7 @@ pub struct World {
     host_decisions: u32,
     host_terminals: Vec<(run::RelayName, Time, run::HostReply)>,
     snapshots: BTreeMap<Token, Vec<u8>>,
+    jobs: BTreeMap<Token, jobs::Held>,
     landed: Vec<u8>,
     prompts: Vec<provider::api::Query>,
     completions: Vec<CompletionObservation>,
@@ -556,6 +560,7 @@ impl World {
             host_decisions: 0,
             host_terminals: Vec::new(),
             snapshots: BTreeMap::new(),
+            jobs: BTreeMap::new(),
             landed: Vec::new(),
             prompts: Vec::new(),
             completions: Vec::new(),
@@ -1149,6 +1154,9 @@ impl World {
                 Backend::Typed { .. } => self.cancel(Family::Completion, owner, Event::Cancelled { owner }),
             },
             Request::Io { owner, op, deadline } => {
+                if self.start_job(owner, &op, deadline) {
+                    return;
+                }
                 self.boundaries.push((self.now, Boundary::Io { op: op.clone() }));
                 self.flights.open(
                     (Family::Io, owner),
@@ -1189,8 +1197,11 @@ impl World {
                 };
                 self.schedule_flight(Family::Io, owner, delivery);
             }
-            Request::Job { .. } => unreachable!("the tools issue no job act yet"),
+            Request::Job { owner, act } => self.job_act(owner, act),
             Request::CancelIo { owner } => {
+                if self.cancel_job(owner) {
+                    return;
+                }
                 self.cancel(Family::Io, owner, Event::Done { owner, done: tools::Done::Cancelled });
             }
             Request::Read { owner, at, max, deadline } => {
@@ -1433,6 +1444,7 @@ impl World {
                 self.stage.push(Event::HostReturned { relay, reply });
                 self.terminals += 1;
             }
+            Delivery::Job { owner } => self.job_tick(owner),
             Delivery::Cancel => {
                 if let Some(run) = self.admitted {
                     self.host_history.shutdown(self.now);

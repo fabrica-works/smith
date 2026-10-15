@@ -313,8 +313,11 @@ fn schema_inventory_admits_first_then_refuses_missing_duplicate_and_unoffered_en
 fn result_input(configuration: &Configuration) -> Input {
     let mut input = input(configuration);
     input.prompt.tools.shell = true;
-    input.application =
-        Box::new([schema(ToolKind::Wait, b"wait"), schema(ToolKind::Owned(tools::Tool::Shell), b"shell")]);
+    input.application = Box::new([
+        schema(ToolKind::Wait, b"wait"),
+        schema(ToolKind::Owned(tools::Tool::Shell), b"shell"),
+        schema(ToolKind::Owned(tools::Tool::Job), b"job"),
+    ]);
     input.prompt.messages = Box::new([
         llm::Message {
             role: llm::Role::Assistant,

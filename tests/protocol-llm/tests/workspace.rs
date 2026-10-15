@@ -592,7 +592,8 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
             (b"search", 3, b"Regular expression for rg"),
             (b"write", 2, b"max 257 bytes"),
             (b"edit", 5, b"max 257 bytes"),
-            (b"shell", 3, b"43 seconds"),
+            (b"shell", 4, b"43 seconds"),
+            (b"job", 4, b"default/max 30 seconds"),
         ] {
             let tool = offered.iter().find(|tool| tool.name.as_ref() == name).expect("actual offered tool");
             let schema = std::str::from_utf8(&tool.parameters).expect("native schema text");

@@ -11,7 +11,7 @@ Batch independent `read`, `list` and `search` calls in one response. Keep steps 
 
 Change files with `edit` and `write`. Use the smallest change that solves the problem, preserve surrounding conventions, and avoid unrelated changes. Do not change files through shell scripts.
 
-Run the tests the change needs with `shell`. Check the behavior affected by the change, fix failures it causes, and broaden testing when a failure or an unresolved concern calls for it.
+Run the tests the change needs with `shell`, and long commands as jobs: set yield_seconds, continue independent work, then use `job` to read the output and the end. Check the behavior affected by the change, fix failures it causes, and broaden testing when a failure or an unresolved concern calls for it.
 
 Preserve changes you did not make. Read the current file before editing it, and account for changes made while you work.
 
@@ -33,7 +33,7 @@ mod tests {
 
     #[test]
     fn each_tool_the_task_role_names_is_one_of_smiths_own() {
-        let own_tools = ["read", "list", "search", "write", "edit", "shell", "finish"];
+        let own_tools = ["read", "list", "search", "write", "edit", "shell", "job", "finish"];
         for tool in TASK_ROLE.split('`').skip(1).step_by(2) {
             assert!(own_tools.contains(&tool), "{tool}");
         }

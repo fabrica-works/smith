@@ -2,6 +2,9 @@
 //! The composed bound sums independently bounded layers, so equality with the
 //! sum is not expected; the driver attains the declared run context/section
 //! and decoded-completion limits rather than only measuring construction.
+#[path = "memory/jobs.rs"]
+mod jobs;
+
 use skein_lib::{List, Reader, Writer};
 use skein_world::domain::heap::Counting;
 use smith_agent_process_world::{World, charter, limits};
@@ -86,10 +89,12 @@ fn every_conversation_open_with_the_pool_full_fits_the_worst_case() {
     use skein_lib::{Env, Queue, Time, Token, Wall};
     use skein_llm_connection::{Component, Deadlines, Request};
     use skein_world::domain::heap::Meter;
-    let (endpoints, pool, bound) = full_pool();
+    let (endpoints, pool, pool_bound) = full_pool();
+    let bound = pool_bound + jobs::bound(&limits().machine);
     let meter = Meter::new();
     meter.start();
     let mut component = Component::new(endpoints, &pool).expect("bounded full pool");
+    let mut jobs = jobs::fill();
     let mut up = Queue::with_capacity(32);
     let mut io = Queue::with_capacity(32);
     for number in 0..pool.calls {
@@ -113,6 +118,7 @@ fn every_conversation_open_with_the_pool_full_fits_the_worst_case() {
     assert_eq!(io.len(), pool.calls, "every conversation opened its connection");
     assert_eq!(component.reserved(), pool.memory, "admitted calls fill the real pool");
     assert!(measured.peak() <= bound, "peak {} exceeds {bound}", measured.peak());
+    jobs.check_captures();
     assert_eq!(smith_agent_process_world::profile().declared.memory, 2_147_483_648);
 }
 

@@ -75,11 +75,15 @@ fn words(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) 
         Tool::Edit => output.put(
             b"Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. ",
         ),
-        Tool::Job => unreachable!("job is not offered until its schema is installed"),
+        Tool::Job => {
+            output.put(b"Output since last answer; running or end. Max ");
+            output.number(u64::from(stated.jobs));
+            output.put(b" jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.");
+        }
         Tool::Shell => {
             output.put(b"Run a command; files may change. Max ");
             output.number(u64::from(stated.output_ceiling));
-            output.put(b" output bytes; cuts are marked. ");
+            output.put(b" output bytes; cuts are marked. Without yield_seconds, wait for command end. At yield, an unfinished command answers running with job number; timeout counts from command start. ");
         }
     }
     match tool {
@@ -95,9 +99,10 @@ fn words(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) 
         Tool::Read | Tool::List | Tool::Search | Tool::Shell | Tool::Job => {}
     }
     match tool {
-        Tool::Read | Tool::List | Tool::Search | Tool::Job => {
+        Tool::Read | Tool::List | Tool::Search => {
             output.put(b"Batch independent reads, lists and searches side by side.");
         }
+        Tool::Job => {}
         Tool::Write | Tool::Edit | Tool::Shell => {
             output.put(b"Batch writes, edits and commands; run serially in call order.");
         }
@@ -116,7 +121,7 @@ fn path(stated: &Stated, namespace: &Namespace, output: &mut Text) {
 }
 
 fn input(stated: &Stated, output: &mut Text) {
-    output.put(b" Entire JSON call input max ");
+    output.put(b" Call JSON max ");
     output.number(u64::from(stated.call_input_bytes));
     output.put(b" bytes.");
 }
@@ -168,7 +173,13 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
             payload(stated, output);
             output.put(br#""},"all":{"type":"boolean","description":"False requires one unique match; true replaces every match."}},"required":["old","new"]}}},"required":["path","edits"]}"#);
         }
-        Tool::Job => unreachable!("job is not offered until its schema is installed"),
+        Tool::Job => {
+            output.put(br#""job":{"type":"integer","minimum":1,"description":"Job number answered running by this session."},"wait_seconds":{"type":"integer","minimum":0,"description":"Wait; default/max "#);
+            job_wait(stated, output);
+            output.put(br#""},"output_bytes":{"type":"integer","minimum":1,"description":""#);
+            command_output(stated, output);
+            output.put(br#""},"stop":{"type":"boolean","description":"Stop, then report end. Default false."}},"required":["job"]}"#);
+        }
         Tool::Shell => {
             output.put(br#""command":{"type":"string","description":"Shell command text."#);
             input(stated, output);
@@ -178,11 +189,24 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
             output.number(stated.shell_timeout.as_nanos() / 1_000_000_000);
             output.put(b" seconds; effective maximum ");
             output.number(stated.tool_deadline.as_nanos() / 1_000_000_000);
-            output.put(br#" seconds, within the remaining session time. Larger requests are clamped and reported."},"output_bytes":{"type":"integer","minimum":1,"description":"Retained output bytes; default "#);
-            output.number(u64::from(stated.shell_output));
-            output.put(b" bytes; max ");
-            output.number(u64::from(stated.output_ceiling));
-            output.put(br#" bytes, split between head and tail. Larger requests are clamped and reported."}},"required":["command"]}"#);
+            output.put(br#" seconds, within time left; clamped."},"output_bytes":{"type":"integer","minimum":1,"description":""#);
+            command_output(stated, output);
+            output.put(br#""},"yield_seconds":{"type":"integer","minimum":0,"description":"Yield; no default; max "#);
+            job_wait(stated, output);
+            output.put(br#""}},"required":["command"]}"#);
         }
     }
+}
+
+fn command_output(stated: &Stated, output: &mut Text) {
+    output.put(b"Bytes; default ");
+    output.number(u64::from(stated.shell_output));
+    output.put(b"; max ");
+    output.number(u64::from(stated.output_ceiling));
+    output.put(b"; head/tail, clamped.");
+}
+
+fn job_wait(stated: &Stated, output: &mut Text) {
+    output.number(stated.job_wait.as_nanos() / 1_000_000_000);
+    output.put(b" seconds; clamped.");
 }

@@ -331,6 +331,8 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         list_entries: 11,
         search_hits: 13,
         search_bytes: 127,
+        job_wait: Duration::from_secs(7),
+        jobs: 4,
         shell_timeout: Duration::from_secs(12),
         tool_deadline: Duration::from_secs(43),
         shell_output: 151,
@@ -358,8 +360,12 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             5,
         ),
         (
-            "Run a command; files may change. Max 151 output bytes; cuts are marked. Batch writes, edits and commands; run serially in call order.",
-            3,
+            "Run a command; files may change. Max 151 output bytes; cuts are marked. Without yield_seconds, wait for command end. At yield, an unfinished command answers running with job number; timeout counts from command start. Batch writes, edits and commands; run serially in call order.",
+            4,
+        ),
+        (
+            "Output since last answer; running or end. Max 4 jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.",
+            4,
         ),
     ];
     let schemas = crate::schemas(&described_prompt(), &stated);
@@ -390,7 +396,8 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
                     && text.contains("43 seconds")
                     && text.contains("max 401 bytes")
             ),
-            _ => panic!("only the six workspace tools"),
+            b"job" => assert!(text.contains("default/max 7 seconds")),
+            _ => panic!("only the seven workspace tools"),
         }
     }
     assert_eq!(schemas, crate::schemas(&described_prompt(), &stated));
@@ -408,6 +415,8 @@ fn stated_quantities_copy_effective_limits_and_refuse_capture_overflow() {
     assert_eq!(stated.output_ceiling, 128);
     assert_eq!(stated.shell_output, 128);
     assert_eq!(stated.shell_timeout, Duration::from_secs(30));
+    assert_eq!(stated.job_wait, Duration::from_secs(30));
+    assert_eq!(stated.jobs, 4);
     assert_eq!(stated.tool_deadline, Duration::from_secs(120));
     let excessive = tools::Limits { shell_head: u32::MAX, shell_tail: 1, ..limits };
     assert!(crate::Stated::from_tools(&excessive, 401).is_none());
@@ -440,13 +449,15 @@ fn path_descriptions_follow_the_actual_conversation_namespace() {
                 list_entries: 16,
                 search_hits: 8,
                 search_bytes: 256,
+                job_wait: Duration::from_secs(30),
+                jobs: 4,
                 shell_timeout: Duration::from_secs(60),
                 tool_deadline: Duration::from_secs(600),
                 shell_output: 192,
                 output_ceiling: 192,
             },
         ) {
-            if schema.name.as_ref() != b"shell" {
+            if ![b"shell".as_slice(), b"job"].contains(&schema.name.as_ref()) {
                 let text = core::str::from_utf8(&schema.schema).expect("valid namespace fixture");
                 assert!(
                     text.contains(wanted),
@@ -528,7 +539,7 @@ fn fixed_own_schema_measurement_matches_the_complete_fixed_inventory() {
         let rendered =
             inventory.iter().map(|tool| tool.name.len() + tool.description.len() + tool.schema.len()).sum::<usize>();
         largest = largest.max(rendered);
-        assert_eq!(inventory.len(), 8);
+        assert_eq!(inventory.len(), 9);
     }
     assert_eq!(crate::fixed_schema_bytes(&stated), u64::try_from(largest).ok());
 }

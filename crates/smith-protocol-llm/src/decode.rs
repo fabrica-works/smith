@@ -36,6 +36,7 @@ pub fn decode(
         b"write" if grants.modify => Kind::Write,
         b"edit" if grants.modify => Kind::Edit,
         b"shell" if grants.shell => Kind::Shell,
+        b"job" if grants.shell => Kind::Job,
         b"wait" if offered(served, Kind::Wait) => Kind::Wait,
         b"sub_agent" if offered(served, Kind::SubAgent) => Kind::SubAgent,
         _ => return llm::Decoded::Invalid { problem: llm::Problem::UnknownTool },
@@ -69,6 +70,7 @@ pub fn decode(
         | Kind::Write
         | Kind::Edit
         | Kind::Shell
+        | Kind::Job
         | Kind::Wait => {}
     }
     match call(kind, tokens) {
@@ -85,6 +87,7 @@ enum Kind {
     Write,
     Edit,
     Shell,
+    Job,
     Wait,
     SubAgent,
 }
@@ -157,26 +160,8 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
         Kind::Edit => llm::Decoded::Owned {
             call: tools::Call::Edit { path: path(&required_string(tokens, b"path")?)?, edits: replacements(tokens)? },
         },
-        Kind::Shell => {
-            let timeout = match optional_u32(tokens, b"timeout_seconds")? {
-                Some(0) => return Err(bad_value(b"timeout_seconds")),
-                Some(seconds) => tools::Timeout::Asked(Duration::from_secs(u64::from(seconds))),
-                None => tools::Timeout::Default,
-            };
-            let output = match optional_u32(tokens, b"output_bytes")? {
-                Some(0) => return Err(bad_value(b"output_bytes")),
-                Some(bytes) => tools::Budget::Asked(bytes),
-                None => tools::Budget::Default,
-            };
-            llm::Decoded::Owned {
-                call: tools::Call::Shell {
-                    after: tools::Yield::Never,
-                    command: required_string(tokens, b"command")?,
-                    timeout,
-                    output,
-                },
-            }
-        }
+        Kind::Shell => llm::Decoded::Owned { call: shell(tokens)? },
+        Kind::Job => llm::Decoded::Owned { call: job(tokens)? },
         Kind::Wait => llm::Decoded::Served { ask: run::Ask::Wait },
         Kind::SubAgent => llm::Decoded::Served {
             ask: run::Ask::SubAgent {
@@ -191,6 +176,68 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
         },
     };
     Ok(result)
+}
+
+fn shell(tokens: &Document) -> Result<tools::Call, llm::Problem> {
+    let timeout = match optional_seconds(tokens, b"timeout_seconds")? {
+        Some(duration) => tools::Timeout::Asked(duration),
+        None => tools::Timeout::Default,
+    };
+    let after = match job_seconds(tokens, b"yield_seconds")? {
+        Some(duration) => tools::Yield::Asked(duration),
+        None => tools::Yield::Never,
+    };
+    Ok(tools::Call::Shell {
+        after,
+        command: required_string(tokens, b"command")?,
+        timeout,
+        output: output_budget(tokens)?,
+    })
+}
+
+fn job(tokens: &Document) -> Result<tools::Call, llm::Problem> {
+    let number = optional_u32(tokens, b"job")?.ok_or(missing(b"job"))?;
+    let wait = match job_seconds(tokens, b"wait_seconds")? {
+        Some(duration) => tools::Wait::Asked(duration),
+        None => tools::Wait::Default,
+    };
+    let stop = match field(tokens, b"stop") {
+        Some(record) => match record.kind {
+            JsonKind::True => true,
+            JsonKind::False => false,
+            JsonKind::ObjectStart
+            | JsonKind::ObjectEnd
+            | JsonKind::ArrayStart
+            | JsonKind::ArrayEnd
+            | JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::Null
+            | JsonKind::Long => {
+                return Err(wrong_type(b"stop"));
+            }
+        },
+        None => false,
+    };
+    Ok(tools::Call::Job { job: tools::JobNumber(number), wait, output: output_budget(tokens)?, stop })
+}
+
+fn output_budget(tokens: &Document) -> Result<tools::Budget, llm::Problem> {
+    match optional_u32(tokens, b"output_bytes")? {
+        Some(bytes) => Ok(tools::Budget::Asked(bytes)),
+        None => Ok(tools::Budget::Default),
+    }
+}
+
+fn job_seconds(tokens: &Document, name: &[u8]) -> Result<Option<Duration>, llm::Problem> {
+    match field(tokens, name) {
+        Some(record) if record.kind == JsonKind::Number => {
+            let seconds = decimal(tokens.text(&record).ok_or(llm::Problem::NotAnObject)?).ok_or(bad_value(name))?;
+            Ok(Some(Duration::from_secs(u64::from(seconds))))
+        }
+        Some(_) => Err(wrong_type(name)),
+        None => Ok(None),
+    }
 }
 
 fn invalid(problem: llm::Problem) -> llm::Decoded {

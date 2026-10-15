@@ -297,6 +297,7 @@ fn required(input: &llm::Prompt, application: &[ToolSchema]) -> Result<(), Error
         tools::Tool::Write,
         tools::Tool::Edit,
         tools::Tool::Shell,
+        tools::Tool::Job,
     ] {
         let kind = ToolKind::Owned(tool);
         if offered(kind, input) && !has(kind, application) {
@@ -350,8 +351,7 @@ fn offered(kind: ToolKind, input: &llm::Prompt) -> bool {
         ToolKind::Owned(tool) => match tool {
             tools::Tool::Read | tools::Tool::List | tools::Tool::Search => input.tools.inspect,
             tools::Tool::Write | tools::Tool::Edit => input.tools.modify,
-            tools::Tool::Shell => input.tools.shell,
-            tools::Tool::Job => false,
+            tools::Tool::Shell | tools::Tool::Job => input.tools.shell,
         },
         ToolKind::Finish | ToolKind::Deliver | ToolKind::SubAgent | ToolKind::Wait => {
             for descriptor in &input.served {

@@ -39,7 +39,7 @@ fn prompt() -> llm::Prompt {
 #[test]
 fn production_schemas_cover_every_offered_workspace_and_run_tool() {
     let schemas = adapter::schemas(&prompt(), &limits().stated);
-    assert_eq!(schemas.len(), 8);
+    assert_eq!(schemas.len(), 9);
     for kind in [
         ToolKind::Owned(tools::Tool::Read),
         ToolKind::Owned(tools::Tool::List),
@@ -47,6 +47,7 @@ fn production_schemas_cover_every_offered_workspace_and_run_tool() {
         ToolKind::Owned(tools::Tool::Write),
         ToolKind::Owned(tools::Tool::Edit),
         ToolKind::Owned(tools::Tool::Shell),
+        ToolKind::Owned(tools::Tool::Job),
         ToolKind::Wait,
         ToolKind::SubAgent,
     ] {
@@ -387,6 +388,49 @@ fn the_empty_path_decodes_as_the_working_directory_for_each_path_field() {
 #[test]
 fn each_description_states_its_facts() {
     let schemas = adapter::schemas(&prompt(), &limits().stated);
+    assert_path_facts(&schemas);
+    for (name, facts) in [
+        (
+            b"list".as_slice(),
+            ["List . for the working directory", "omitted files and directories counted once"].as_slice(),
+        ),
+        (b"search", ["Search files with rg using a regular expression", "Regular expression for rg"].as_slice()),
+        (
+            b"shell",
+            [
+                "Seconds; default deadline 30 seconds",
+                "effective maximum 120 seconds",
+                "max 30 seconds",
+                "Without yield_seconds, wait for command end",
+                "timeout counts from command start",
+            ]
+            .as_slice(),
+        ),
+        (
+            b"job",
+            [
+                "Output since last answer",
+                "default/max 30 seconds",
+                "Max 4 jobs/session",
+                "held until end is answered",
+                "Without stop, read beside reads, lists and searches",
+                "with stop, write in call order",
+                "hold no later batch slot",
+                "Stop, then report end",
+            ]
+            .as_slice(),
+        ),
+    ] {
+        let schema = schemas.iter().find(|schema| schema.name.as_ref() == name).expect("fact tool");
+        let text =
+            format!("{} {}", String::from_utf8_lossy(&schema.description), String::from_utf8_lossy(&schema.schema));
+        for fact in facts {
+            assert!(text.contains(fact), "{name:?}: {fact}");
+        }
+    }
+}
+
+fn assert_path_facts(schemas: &[adapter::ToolSchema]) {
     for name in [b"read".as_slice(), b"list", b"search", b"write", b"edit"] {
         let schema = schemas.iter().find(|schema| schema.name.as_ref() == name).expect("path tool");
         let text = std::str::from_utf8(&schema.schema).expect("schema text");
@@ -396,18 +440,6 @@ fn each_description_states_its_facts() {
             "repeated, leading and trailing separators count nothing",
             "Keep the same bound once resolved, . and .. removed, from the workspace root",
         ] {
-            assert!(text.contains(fact), "{name:?}: {fact}");
-        }
-    }
-    for (name, facts) in [
-        (b"list".as_slice(), ["List . for the working directory", "omitted files and directories counted once"]),
-        (b"search", ["Search files with rg using a regular expression", "Regular expression for rg"]),
-        (b"shell", ["Seconds; default deadline 30 seconds", "effective maximum 120 seconds"]),
-    ] {
-        let schema = schemas.iter().find(|schema| schema.name.as_ref() == name).expect("fact tool");
-        let text =
-            format!("{} {}", String::from_utf8_lossy(&schema.description), String::from_utf8_lossy(&schema.schema));
-        for fact in facts {
             assert!(text.contains(fact), "{name:?}: {fact}");
         }
     }
