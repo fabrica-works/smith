@@ -113,8 +113,9 @@ until the run ends.
    `testing-strategy.md` its increments follow: read only those.
 5. **Diagnosis** (lesson 6). A step whose Scope is to find a cause
    carries `Budget: <N> runs, <M> minutes`; past it, the implementer stops
-   and reports. Outside such a step, at most 3 runs with diagnostics in
-   place for one failing test, then it asks. A diagnostic is a line added
+   and reports. Outside such a step, at most 6 runs with diagnostics in
+   place for one failing test, then it asks; a step's `Budget:` counts
+   double (ruling 143). A diagnostic is a line added
    only to find a cause; none lands: before `land`, `git diff
    origin/main...HEAD | grep -nE '^\+.*\bdbg!'` prints nothing, and the
    implementer removes any other such line it added.
@@ -183,7 +184,8 @@ until the run ends.
    benchmarks.md 8.3 and 16.3 say. A control that passes stops the step on
    a question, and no block is written. Proofs are live only where their
    Proof line says so.
-10. **The live budget** (decisions.md, 10.2): 340 attempts and $50 of
+10. **The live budget** (decisions.md, 10.2; doubled by the user, ruling
+    143): 680 attempts and $100 of
     smith's notional spend for the run, Codex's attempts counted but not
     its spend. Each landing that ran anything live ends its trailers with
     `Live: <attempts> attempts, $<notional> notional`, counting every
@@ -196,11 +198,11 @@ until the run ends.
     ```
 
     and adds its own step's attempts so far. If that sum plus the
-    command's attempts passes 340 attempts or $50, it stops on a question,
+    command's attempts passes 680 attempts or $100, it stops on a question,
     and the supervisor reports to the user (a push notification, and
     decisions.md's "For the user"); offline work goes on. A step whose
     attempts or notional pass 1.5 times its row in "Live services" stops
-    on a question the same way; a code landing's smoke has a row of 2
+    on a question the same way; a code landing's smoke has a row of 4
     attempts.
 11. **The baseline comes first.** These increments change what the model
     is sent or what a call answers, and land only after 12.1's summary is
@@ -260,21 +262,21 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 
 | Step | What | Attempts | Notional |
 |---:|---|---:|---:|
-| every smith code landing | `smoke-tools`, once, once more on failure (rule 8); 39 landings, most passing at once | 50 | $0.25 |
-| 02.1, 02.3 | `first-request`, and Codex on `smoke-tools`, each at most 2 | 4 | $0.02 |
-| 04.6 | `first-request` calibrated, no control (rulings 112, 114: 11 spent, 12 fresh) | 23 | $0.05 |
-| 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 30 | $3 |
-| 07.3 | `history` and `history/small-window` calibrated: 19 spent at low and medium (rulings 118, 119); version 3 (ruling 121): base 12 at medium, no control; small-window 13 after 04.s3, with its control (ruling 124); 25 more at `high` for both only if model deviations alone put ten passes out of reach | 73 | $4 |
-| 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 24 | $7 |
-| 12.1 | the baseline `parity` run: 10 spent on `17d63afd` (ruling 131) and 49 on `1ea86da7` (ruling 133), then 58 once 04.s4 lands; shell-cwd's attempts cost $0.73 to $1.61 each (ruling 135) | 117 | $13.60 |
-| 12.2 | the `compaction` experiment, 10 per arm | 20 | $1 |
-| 12.3 | `tool-output` version 3's four variants and `process-tree`, while room is left | at most 50 | $0.30 |
-| 12.4 | the closing `parity` run | 58 | $12 |
-| reserve | provider-stopped reruns (rule 9) | 6 | $0.30 |
-| **the run** | | **at most 340** | **about $39.70** |
+| every smith code landing | `smoke-tools`, once, once more on failure (rule 8); 39 landings, most passing at once | 100 | $0.50 |
+| 02.1, 02.3 | `first-request`, and Codex on `smoke-tools`, each at most 2 | 8 | $0.04 |
+| 04.6 | `first-request` calibrated, no control (rulings 112, 114: 11 spent, 12 fresh) | 46 | $0.10 |
+| 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 60 | $6 |
+| 07.3 | `history` and `history/small-window` calibrated: 19 spent at low and medium (rulings 118, 119); version 3 (ruling 121): base 12 at medium, no control; small-window 13 after 04.s3, with its control (ruling 124); 25 more at `high` for both only if model deviations alone put ten passes out of reach | 146 | $8 |
+| 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 48 | $14 |
+| 12.1 | the baseline `parity` run: 10 spent on `17d63afd` (ruling 131) and 49 on `1ea86da7` (ruling 133), then 58 once 04.s4 lands; shell-cwd's attempts cost $0.73 to $1.61 each (ruling 135) | 234 | $27.20 |
+| 12.2 | the `compaction` experiment, 10 per arm | 40 | $2 |
+| 12.3 | `tool-output` version 3's four variants and `process-tree`, while room is left | at most 100 | $0.60 |
+| 12.4 | the closing `parity` run | 116 | $24 |
+| reserve | provider-stopped reruns (rule 9) | 12 | $0.60 |
+| **the run** | | **at most 680** | **about $79.40** |
 
-12.3 runs only the calibrations that leave 64 attempts (12.4's 58 and the
-reserve) under 340; those it cannot run go to `later.md`.
+12.3 runs only the calibrations that leave 128 attempts (12.4's row and the
+reserve's) under 680; those it cannot run go to `later.md`.
 
 ## Repin
 

@@ -44,7 +44,7 @@ target. The session writes no production code.
 - **Live runs** (README, rule 9): each suite in one `heavy --gate` call,
   unsplit; a run stopped by the provider runs once more after 60 s.
 - **The live budget** (rule 10): print the run's total before each
-  command; 12.3 runs only what leaves 64 attempts under 340.
+  command; 12.3 runs only what leaves 128 attempts under 680 (ruling 143).
 - **The baseline comes first** (rule 11): once 12.1's summary is on
   `main`, the coordinator starts 06, 09.3 and 11.2 as their other Needs
   allow.
@@ -134,12 +134,13 @@ Files: `benchmarks/tasks/probes/tool-output/task.toml`,
   `benchmarks/tasks/probes/process-tree/task.toml` (their blocks),
   `benchmarks/summaries/`.
 Shape: no code. For each probe, in that order, while the run's total
-  (README, rule 10) plus 12 stays at most 276 attempts: `heavy --gate
+  (README, rule 10) plus 12 stays at most 552 attempts (ruling 143): `heavy --gate
   cargo run -p smith-bench -- calibrate <probe> --arm <dir>`, with no
   control (their controls predate the product face, as 04.6's), each
   block written by `calibrate`.
 Test shape: none.
-Proof: live: at most 12 attempts per probe, at most 50 in all, $0.30.
+Proof: live: at most 12 attempts per probe, at most 100 in all, $0.60
+  (ruling 143).
 Don't: run one past the total's bound. The report names each probe left,
   which the supervisor adds to `later.md`.
 Size: none.

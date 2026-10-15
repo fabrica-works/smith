@@ -1099,9 +1099,21 @@ changes what section 8.4 holds.
 142. **smith-11.s1: the inline agent routes job acts** (steer of 2026-10-15T07:32Z).
      `smith-11.s1`, "The inline agent routes job acts", is a new step in session 11 (`smith/11-offered.md`, 11.s1), needing 11.2, and 11.3's live proof needs it. A plan defect: 11.2 offered `job` to the model, and no session file named `smith-inline-agent`, whose only arm for `smith::Request::Job` is `unreachable!("the tools issue no job act yet")` (`translate.rs:513`, from 09.2). Task 3787's arm attempt (`875a9981`, attempt 01) ended harness-error: its stderr says "panicked at crates/smith-inline-agent/src/translate.rs:513:43". `Lower` gains `Job { owner, act }`, sent as `Io` is and settled by its `Done`; the local domain passes it down and the local service maps it to `agent::Request::Job`, which the agent service routes to the machine (`smith-agent-service/src/service.rs:2041-2047`). Its proof: `a_job_act_is_lowered_and_settles_with_its_done` and the smoke (rule 8); its live effect is 11.3's calibration, rerun from its first attempt on an arm rebuilt on it. 3787's 2 attempts count in 11.3's 24. This ruling is 11.s1's ready check.
 
+143. **The user doubles every cap, budget and attempt line** (the user's answer of 2026-10-15T08:15Z).
+     The user, 2026-10-15T08:2xZ, before going away: "please double all the caps, budgets and attemps, as I will be away and I don't want the plan to stop". This answers decisions.md's "For the user" question on the live budget. From now until the run's end:
+
+     1. **The run's live budget** (README, rule 10) is 680 attempts and $100 of smith's notional spend, from 340 and $50.
+     2. **Each row of "Live services"** doubles, attempts and notional: 11.3 48 and $14, 12.3 at most 100 and $0.60, 12.4 116 and $24, the reserve 12 and $0.60, a code landing's smoke 4; the run at most 680, about $79.40. A step still stops on a question past 1.5 times its row.
+     3. **Diagnosis** (rule 5): at most 6 runs with diagnostics for one failing test, from 3; a step's `Budget:` counts double.
+     4. **12.3** runs while the run's total plus 12 stays at most 552 attempts (from 276), at most 100 attempts and $0.60 in all, leaving 128 under 680 for 12.4 and the reserve.
+
+     Unchanged: what each step runs (12.4 still runs its 58 attempts once; 11.3 its 24), rule 9's per-command limits (a `probe` at most 12 a call; a `calibrate` at most 12 on its arm and 2 on its control, benchmarks.md's "ten passes within twelve"), and the gates' time budgets (15 s and 60 s; the last gates took 4.8 s and 5.2 s), which are the design's and none of which is near stopping the run.
+
 ## For the user
 
-- **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At
+- **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15).
+  Answered 2026-10-15T08:15Z: the user doubled every cap, budget and attempt
+  line (ruling 143); what follows is the question as it stood. At
   ruling 133 the landed total was 128 attempts, $1.35; 12.1 has spent 59
   unlanded and needs 58 more. With the rows left (06.2 30, 11.3 24, 12.2
   20, 12.4 58, the reserve 6, about 10 smokes), the run comes to about
