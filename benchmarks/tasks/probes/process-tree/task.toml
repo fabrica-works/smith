@@ -54,3 +54,17 @@ status = "accepted"
 check = "tool-call"
 tool = "finish"
 count = { exactly = 1 }
+
+[calibration]
+attempts = 10
+binary = "c98a562dc6151b31677383f7ddd0ae93abe12295"
+binary_sha256 = "acbfb95f8e203d5287bdb4f9189b195f01ba24d351e1103dc4bdecf2932f444d"
+checks_sha256 = "cc9949e7d3942a9723bc6786f15b2a70f4684bebbb6278923f34dafef8bf183c"
+control = "none: no runnable control was named"
+date = "2026-10-15T11:41:27.768443335Z"
+deviations = []
+failed_before = []
+passes = ["probes-process-tree-c98a562d-20261015T114126Z/01", "probes-process-tree-c98a562d-20261015T114126Z/02", "probes-process-tree-c98a562d-20261015T114126Z/03", "probes-process-tree-c98a562d-20261015T114126Z/04", "probes-process-tree-c98a562d-20261015T114126Z/05", "probes-process-tree-c98a562d-20261015T114126Z/06", "probes-process-tree-c98a562d-20261015T114126Z/07", "probes-process-tree-c98a562d-20261015T114126Z/08", "probes-process-tree-c98a562d-20261015T114126Z/09", "probes-process-tree-c98a562d-20261015T114126Z/10"]
+prompt_sha256 = "934d60a7183360f81f0e8278a5bc1f01496e7286db5e0bbf4fa914c875c5e88f"
+seed_sha256 = "004577ba0d0270885d8eb3994af77c63a4bc91b53570c505866f496ff2f85cc5"
+summary = "summaries/probes-process-tree-c98a562d-20261015T114126Z.json"

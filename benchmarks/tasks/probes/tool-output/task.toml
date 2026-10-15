@@ -52,6 +52,20 @@ at_least = 10241
 [[variant]]
 name = "test-output"
 
+[variant.calibration]
+attempts = 10
+binary = "c98a562dc6151b31677383f7ddd0ae93abe12295"
+binary_sha256 = "acbfb95f8e203d5287bdb4f9189b195f01ba24d351e1103dc4bdecf2932f444d"
+checks_sha256 = "67f6f75ccb04a0ee9918855edf24c6b051e721a4b078ea872e08e13840ab6f37"
+control = "none: no runnable control was named"
+date = "2026-10-15T11:33:46.508414288Z"
+deviations = []
+failed_before = []
+passes = ["probes-tool-output-test-output-c98a562d-20261015T113345Z/01", "probes-tool-output-test-output-c98a562d-20261015T113345Z/02", "probes-tool-output-test-output-c98a562d-20261015T113345Z/03", "probes-tool-output-test-output-c98a562d-20261015T113345Z/04", "probes-tool-output-test-output-c98a562d-20261015T113345Z/05", "probes-tool-output-test-output-c98a562d-20261015T113345Z/06", "probes-tool-output-test-output-c98a562d-20261015T113345Z/07", "probes-tool-output-test-output-c98a562d-20261015T113345Z/08", "probes-tool-output-test-output-c98a562d-20261015T113345Z/09", "probes-tool-output-test-output-c98a562d-20261015T113345Z/10"]
+prompt_sha256 = "3efc9633ac7515eb9ec7467519e24ca9401423fcb176ca8ad74200e202b4731d"
+seed_sha256 = "244a158c77ce03a5f885787ddfd916794d47ac1599ec967ba5de092973ce3e50"
+summary = "summaries/probes-tool-output-test-output-c98a562d-20261015T113345Z.json"
+
 [[variant]]
 name = "quote"
 replace_checks = true
@@ -80,6 +94,20 @@ check = "tool-call"
 tool = "read"
 count = { at-most = 2 }
 verdict = "read"
+
+[variant.calibration]
+attempts = 10
+binary = "c98a562dc6151b31677383f7ddd0ae93abe12295"
+binary_sha256 = "acbfb95f8e203d5287bdb4f9189b195f01ba24d351e1103dc4bdecf2932f444d"
+checks_sha256 = "3e1c23414bc32e56b3ca6177c1b119986d3c23a2159077b40d04623662eb4c42"
+control = "none: no runnable control was named"
+date = "2026-10-15T11:35:11.385752762Z"
+deviations = []
+failed_before = []
+passes = ["probes-tool-output-quote-c98a562d-20261015T113510Z/01", "probes-tool-output-quote-c98a562d-20261015T113510Z/02", "probes-tool-output-quote-c98a562d-20261015T113510Z/03", "probes-tool-output-quote-c98a562d-20261015T113510Z/04", "probes-tool-output-quote-c98a562d-20261015T113510Z/05", "probes-tool-output-quote-c98a562d-20261015T113510Z/06", "probes-tool-output-quote-c98a562d-20261015T113510Z/07", "probes-tool-output-quote-c98a562d-20261015T113510Z/08", "probes-tool-output-quote-c98a562d-20261015T113510Z/09", "probes-tool-output-quote-c98a562d-20261015T113510Z/10"]
+prompt_sha256 = "9d6be080b6e17e94300ada6f7afe88b0019c17752297639a7c06a7df3f6457d7"
+seed_sha256 = "244a158c77ce03a5f885787ddfd916794d47ac1599ec967ba5de092973ce3e50"
+summary = "summaries/probes-tool-output-quote-c98a562d-20261015T113510Z.json"
 
 [[variant]]
 name = "utf-8"
@@ -120,6 +148,19 @@ check = "tool-call"
 tool = "shell"
 count = { exactly = 0 }
 
+[variant.calibration]
+attempts = 10
+binary = "c98a562dc6151b31677383f7ddd0ae93abe12295"
+binary_sha256 = "acbfb95f8e203d5287bdb4f9189b195f01ba24d351e1103dc4bdecf2932f444d"
+checks_sha256 = "274a33a62d33d83dbbe2a715f18e329b121dae602398db71a309b8a9b4d87dd8"
+control = "none: no runnable control was named"
+date = "2026-10-15T11:38:28.863988224Z"
+deviations = []
+failed_before = []
+passes = ["probes-tool-output-utf-8-c98a562d-20261015T113828Z/01", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/02", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/03", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/04", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/05", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/06", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/07", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/08", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/09", "probes-tool-output-utf-8-c98a562d-20261015T113828Z/10"]
+prompt_sha256 = "0fe1d8fe2b68677560404b138599b43338b1440da6673750d67ec5d562ea4bc9"
+seed_sha256 = "244a158c77ce03a5f885787ddfd916794d47ac1599ec967ba5de092973ce3e50"
+summary = "summaries/probes-tool-output-utf-8-c98a562d-20261015T113828Z.json"
 
 [[variant]]
 name = "timeout"
