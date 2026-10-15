@@ -1067,6 +1067,9 @@ changes what section 8.4 holds.
      2. **12.1 keeps its worktree and the untracked summary,** and waits for 03.s2. Then it rebases, runs the `parity` command on that summary (or on 03.s2's regenerated one) with `--commit 744e08206cfdb1a63b1a6cbc0e28ab747e1d09ae`, and commits and lands it as its Shape says. Its `Live:` trailer counts 117 attempts and $9.80 notional, inside row 12.1's $13.60 (ruling 135).
      3. **The stored criteria are not yet the baseline's;** the commit body gives the ones the verified command prints. A failing criterion is the baseline's finding, not a block: the stored section says RT 1.293 [0.909, 1.539] against 1.20.
 
+137. **06.1's Shapes against main** (ready check of smith-06.1).
+     06.1's Shapes against `main` (`c7d54533`), from its ready check: four line references corrected (`decode.rs` `path` `:440-456`; `descriptions.rs` `words` `:48-100`, `path` `:102-111`, `properties` `:125-183`; `tests.rs` `:323`, `:417`, `:517`); Files gain `descriptions.rs:32-38` and `tools.rs:154-161` (the namespace reaches the list description), `tools.rs:71-86` (`fixed_schema_bytes` measures the larger of the two namespaces, since it feeds `profile.rs:151-153` and `profile/room.rs:34`) and `tests/tools/src/translate.rs:14-25` (`b""` maps to `[Part::Current]`); a world test's 16384-byte request cap passed only because the path descriptions grew becomes 32768, named in the commit body. `smith/06-text.md`, "The ready check's corrections".
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At

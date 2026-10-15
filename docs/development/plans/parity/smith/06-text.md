@@ -150,6 +150,31 @@ Don't: put in the role what the run's own sections say (tools, the
 Size: 150 lines, the role's text included.
 Removes: the 96-byte default role.
 
+## The ready check's corrections
+
+Ruling 137, against smith `main` at `c7d54533`. 06.1's Files include
+these; where a line below and the text above differ, the line below holds.
+
+**06.1**
+- Lines: `decode.rs` `path` `:440-456` (its refusal `:452-454`);
+  `descriptions.rs` `words` `:48-100`, `path` `:102-111`, `properties`
+  `:125-183`; `tests.rs`'s three tests `:323`, `:417`, `:517`.
+- The namespace reaches the list description: `words` and `description`
+  (`descriptions.rs:32-38`) take it, passed by `owned`
+  (`smith-protocol-llm/src/tools.rs:154-161`). Files gain both.
+- `fixed_schema_bytes` (`tools.rs:71-86`) measures path fields with
+  `Namespace::One` only, and feeds `endpoint_allowance`
+  (`smith-agent-service/src/profile.rs:151-153`) and `own_part`
+  (`profile/room.rs:34`): it measures the larger of the two namespaces.
+  Files gain `tools.rs:71`.
+- The tools world's decoder copy (`tests/tools/src/translate.rs:14-25`)
+  maps `b""` to `[Part::Current]`, as the protocol does. Files gain it.
+- World tests that cap a request at 16384 bytes (`workspace.rs:177`,
+  `:475`, `:644`, `brief.rs:477`, `nesting.rs:34`, `root_wire.rs:125`,
+  `budget.rs:262`): a cap passed only because the path descriptions grew
+  becomes 32768; name each in the commit body. No other expected value
+  changes.
+
 ## Questions to raise when reached
 
 - None known.
