@@ -1,0 +1,28 @@
+wall_h	33.9	h
+running_h	13.3	h
+steps_planned	47	steps
+steps_added	11	steps
+steps_dropped	0	steps
+step_h	0.23	h per step
+escalations	cross-session scope 14, design gap 4, infrastructure 4, plan defect 13, process 1	by kind
+escalation_wait_min	2.5	min, median
+blocked_h	7.3	h
+answers_reversed	1	answers
+steers	11 sent, 0 points refused	
+restarts		by cause
+tokens_coordinator	233127881 in (98% cached), 407829 out	tokens
+tokens_implementers	779082708 in (98% cached), 1692358 out	tokens
+tokens_claude	565593750 in (97% cached), 2818582 out; in: 121171571 before the claim, 315517190 in the run, 128904989 after	tokens
+cost_claude	$231: planner $45, supervisor $114, designer $19, retrospective $54; cache reads $111, cache writes $64, fresh input $0, output $56	dollars at list prices
+tokens_per_step	22956222	tokens per step, the run's
+coordinator_requests	1169, 48 after a wait ran out	requests
+compactions	2	compactions
+gates_per_step	1.8	land gates per step
+gate_lane_other	103	gate-lane tasks besides land's gates
+queue_wait_ratio	0.74	waiting per running
+suites	skein first: scripts/check.sh passed: 2106 tests / 2.779 s; 99 tests / 11.082 s; 6 tests / 4.254 s; 29 s in all; last: scripts/check.sh passed: 2106 tests / 2.779 s; 99 tests / 11.082 s; 6 tests / 4.254 s; 29 s in all | smith first: scripts/check.sh passed: 1995 tests / 4.798 s; 41 tests / 5.237 s; 30 s in all; last: scripts/check.sh passed: 2261 tests / 4.926 s; 42 tests / 6.094 s; 25 s in all	Gate-Result, by repository
+proofs	unit 29, world 11, process 2, live 12, 4 below plan	steps
+report_lines	11 median, 16 p90	lines
+lines	code +74784 -93312, tests +9804 -1518	lines
+pin_lag	smith: skein 76; temper: skein 348, smith 917	commits behind upstream main
+contexts	201K median, 293K p90 of the sessions' peaks; 26 handovers	
