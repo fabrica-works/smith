@@ -1096,6 +1096,9 @@ changes what section 8.4 holds.
      2. **The plan's condition** now quotes benchmarks.md 9 whole, and names the comparison's `detected` flag as its check (`benchmarks/src/stats.rs:320`).
      3. **Unchanged:** 06.2's Shape, Test shape, Don't; the arms (before `894d132f`, after `a29a4ac5`); 11.2's Needs.
 
+142. **smith-11.s1: the inline agent routes job acts** (steer of 2026-10-15T07:32Z).
+     `smith-11.s1`, "The inline agent routes job acts", is a new step in session 11 (`smith/11-offered.md`, 11.s1), needing 11.2, and 11.3's live proof needs it. A plan defect: 11.2 offered `job` to the model, and no session file named `smith-inline-agent`, whose only arm for `smith::Request::Job` is `unreachable!("the tools issue no job act yet")` (`translate.rs:513`, from 09.2). Task 3787's arm attempt (`875a9981`, attempt 01) ended harness-error: its stderr says "panicked at crates/smith-inline-agent/src/translate.rs:513:43". `Lower` gains `Job { owner, act }`, sent as `Io` is and settled by its `Done`; the local domain passes it down and the local service maps it to `agent::Request::Job`, which the agent service routes to the machine (`smith-agent-service/src/service.rs:2041-2047`). Its proof: `a_job_act_is_lowered_and_settles_with_its_done` and the smoke (rule 8); its live effect is 11.3's calibration, rerun from its first attempt on an arm rebuilt on it. 3787's 2 attempts count in 11.3's 24. This ruling is 11.s1's ready check.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At

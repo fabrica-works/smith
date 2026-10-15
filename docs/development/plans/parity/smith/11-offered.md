@@ -161,6 +161,40 @@ Don't: change the other variants' prompts, seeds or checks.
 Size: 120 lines.
 Removes: nothing.
 
+### 11.s1 The inline agent routes job acts
+Scope: llm.md 5's `job` and tools.md 5, through the shell's inline agent;
+  task 3787's harness-error (logs/20261015T064657-3787.log).
+Needs: 11.2. 11.3's live proof needs it.
+Files: `crates/smith-inline-agent/src/boundary.rs` (`Lower`, `:42-69`),
+  `crates/smith-inline-agent/src/translate.rs` (`:513`),
+  `crates/smith-inline-agent/src/workspace.rs` (`io`, `:154-167`),
+  `crates/smith-local-domain/src/domain.rs` (`:1095-1103`),
+  `crates/smith-local-service/src/service.rs` (`:1330`),
+  `crates/smith-inline-agent/src/tests.rs`.
+Shape: `translate.rs:513` is `smith::Request::Job { .. } =>
+  unreachable!("the tools issue no job act yet")` (09.2), reached since
+  11.2 offers `job`: smith panics when a live model reads a job. `Lower`
+  gains `Job { owner: Token, act: smith::tools::JobAct }` ("A held
+  command's read or stop, routed to the machine; ends with Done"), sent
+  as `Io` is (`translate.rs:510-512`), through a `workspace::job` that
+  takes the same callback right as `workspace::io`, so that its `Done`
+  settles as an `Io`'s does (`workspace.rs:105-120`). The local domain
+  passes it down with the other `Lower` requests, and the local service
+  maps it to `agent::Request::Job { owner, act }`, which the agent
+  service routes to the machine (`smith-agent-service/src/service.rs:2041-2047`).
+Test shape: `tests.rs`: `a_job_act_is_lowered_and_settles_with_its_done`
+  (beside `workspace_routes_keep_equal_tokens_in_separate_lower_families`,
+  `:335`). Under 20 ms.
+Proof: unit, that test; the smoke (rule 8). Its live effect is 11.3's
+  calibration, whose `background` variant is only on 11.3's branch
+  (`875a9981`): 11.3 rebases on 11.s1, rebuilds its arm, and reruns from
+  its first attempt; an attempt that ends harness-error again stops 11.3
+  on a block.
+Don't: change the machine's job handling, the agent service's routing,
+  or 11.3's probe.
+Size: 40 lines, the test included.
+Removes: the `unreachable!` at `translate.rs:513`.
+
 ## Done when
 
 - The README's "Done when" item 4 prints at least 1 for
