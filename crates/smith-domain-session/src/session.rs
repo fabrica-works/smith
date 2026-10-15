@@ -1220,9 +1220,7 @@ fn settle(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Que
     let waiting = Waiting { kit, ..waiting };
     let session = domain.sessions.get_mut(id).expect("looked up above");
     if waiting == SETTLED {
-        if !session.conversation.jobs.empty() {
-            pass_on_facts(domain, env);
-        }
+        pass_on_facts(domain, env);
         let session = domain.sessions.get_mut(id).expect("session lives through its terminal");
         let Conversation { opener, turns, usage, reported, .. } = session.conversation;
         let detail = mem::replace(&mut session.conversation.detail, Box::new([]));

@@ -1883,7 +1883,7 @@ fn a_session_tells_what_happens_as_facts() {
     let Some(Request::Ended { opener: _, end, turns, usage, .. }) = end else {
         panic!("expected the end, not {end:?}");
     };
-    h.told(&[Fact::Ended { opener, end, turns, usage }, by_tools(opener, tools::FactKind::Closed { session: owner })]);
+    h.told(&[by_tools(opener, tools::FactKind::Closed { session: owner }), Fact::Ended { opener, end, turns, usage }]);
 }
 
 #[test]

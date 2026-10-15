@@ -19,10 +19,6 @@ impl Jobs {
         Self { highest: 0, calls: Map::with_capacity(capacity) }
     }
 
-    pub(super) fn empty(&self) -> bool {
-        self.calls.is_empty()
-    }
-
     pub(super) fn answered(&mut self, result: &Returned, metadata: ToolCall) {
         match result {
             Returned::Owned { outcome } => match outcome {

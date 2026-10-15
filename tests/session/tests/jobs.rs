@@ -260,6 +260,32 @@ fn a_session_closing_with_a_job_running_tells_its_job_ended() {
 }
 
 #[test]
+fn a_session_closing_while_a_job_read_waits_answers_the_read_before_it_ends() {
+    const READ_WITHOUT_STOPPING: bool = false;
+    let mut world = world();
+    let owner = start_job(&mut world);
+    complete(&mut world, vec![job(READ_WITHOUT_STOPPING)]);
+    world.facts.clear();
+    world.step(session::Event::Close { session: world.session.expect("opened") });
+    end_job(&mut world, owner, JobEnd::Cancelled);
+    let order = world
+        .facts
+        .iter()
+        .filter_map(|fact| {
+            if matches!(fact.kind, session::FactKind::Tools { fact: tools::FactKind::Answered { .. }, .. }) {
+                Some("answer")
+            } else if matches!(fact.kind, session::FactKind::Ended { .. }) {
+                Some("end")
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(order, vec!["answer", "end"]);
+    world.close();
+}
+
+#[test]
 fn a_resumed_session_numbers_its_next_job_after_its_last_turns() {
     let old = recorded::scenario(1, 256);
     let mut transcript = recorded::transcript(&old);
