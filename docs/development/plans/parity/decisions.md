@@ -1118,6 +1118,9 @@ changes what section 8.4 holds.
      4. **smith's attempt 01 timed out** at 1,200,000 ms where Codex passed in 607 s: that is the suite's evidence, not a defect; RT and RC report it.
      5. **Unchanged:** 11.3's Files, Shape and Don't; `rerun_failed` 0; README rules 9, 10 and 17.
 
+145. **12.3 lands without timeout's calibration** (cross-session scope, smith 12's block of 2026-10-15T11:42:35Z).
+     Ruling 145: `tool-output/timeout` stays uncalibrated in this run, as the implementer proposed. 12.3 lands the four blocks that passed 10 of 10 (`test-output`, `quote`, `utf-8`, `process-tree`) with their summaries, and runs no further `timeout` attempt. Its one attempt made no shell call while `shell` was offered: the model's choice. By benchmarks.md 3.2 that is a model deviation ("A failed deciding check is the model's when it judges what the prompt asks of the model: … how many calls of a tool it makes where the prompt prescribes the number"; a contract that applies "only once their condition arises" is "not exercised"). The harness counted it smith's and stopped. That is a harness defect outside 12.3's Files, and 12.4 does not rest on it: a graded task "decides on its end, its grader, its protected files and its tree's end" (3.2), not on event checks. `later.md` takes the defect and the prompt's wording lead, in the commit this ruling lands with. 12.3's Don't stands: its report names `timeout` as the probe left.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15).
