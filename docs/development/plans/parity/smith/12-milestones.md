@@ -194,16 +194,22 @@ Size: none.
 Removes: nothing.
 
 ### 12.s1 The role's words cost no response the work does not need
-Drafted by the designer (answer of 2026-10-15), for the supervisor to
-name and schedule.
+Drafted by the designer (answer of 2026-10-15), named and scheduled by
+ruling 146: after 12.4's first summary lands, and before its second run.
 Scope: benchmarks.md 16.5 ("A failed verdict is answered by a change,
   never by a run"); shell.md 6.6 (topic 3, and "Its words cost
   requests"); decisions.md 6.1.
 Needs: nothing.
 Files: `crates/smith-local-shell/src/role.rs`; the two arms of
-  `benchmarks/suites/role.toml`. Only if the diagnosis names it: the
-  words of `shell`'s `yield_seconds` description,
-  `crates/smith-protocol-llm/src/descriptions.rs`.
+  `benchmarks/suites/role.toml`, and its `reference` (line 4), which
+  names the before arm and follows a rename. Only if the diagnosis names
+  them: the words of `shell`'s `yield_seconds` description,
+  `crates/smith-protocol-llm/src/descriptions.rs` (the tool's sentence
+  at line 86, "Without yield_seconds, wait for command end. At yield, …",
+  or the parameter's at line 194, "Yield; no default; max "), and the
+  two tests that quote them: `crates/smith-protocol-llm/src/tests.rs`
+  (the whole description at line 363, asserted at 374) and
+  `tests/protocol-llm/tests/production_tools.rs:404`.
 Shape:
   1. **The diagnosis,** offline, once, from the traces on disk:
      `~/.local/state/smith-bench/runs/parity-744e0820-20261015T002817Z`
@@ -222,7 +228,8 @@ Shape:
        baseline it went with the first `list` or with the reads;
      - `yield_seconds` on 0 of 82 shell calls, then on 75 of 99; 9
        shell calls answered `running`, and 9 `job` calls;
-     - failing shell calls 10, then 30, of which `cargo fmt --check`
+     - failing shell calls 10, then 21 (the 9 `running` answers aside;
+       the designer's 30 counts them), of which `cargo fmt --check`
        failing within a second 9, then 16; `edit` calls 41, then 68;
      - 06.2's compare, `role-aac2639e-20261015T051741Z`: 7.1 responses
        per fixture attempt before the role, 8.3 with it;
@@ -237,7 +244,14 @@ Shape:
   3. **Its proof** (benchmarks.md 4.2): the `role` suite, its arms set to
      the change's parent and the change, run once: 30 attempts, about $2
      and 45 minutes. At most one revision of the words, with one more
-     run of the suite.
+     run of the suite. A binary arm names the full 40-digit commit of
+     clean, committed source (`benchmarks/src/arm.rs`, `resolve_commit`),
+     so the change cannot name itself: its after arm is the change's
+     branch commit, frozen before the rebase; the change lands as its
+     own code commit, then `role.toml`'s arms and the summary land in a
+     recording commit after it, as 06.2 did (`b7937885`, then
+     `630d7a0b`, whose after arm is the pre-rebase `a29a4ac5`, ruling
+     140).
   4. **The commit body** names what 16.5 asks: FT and RT, the cause from
      step 1 with its counts, and the proof: the six comparisons, and
      each arm's responses per fixture attempt, which this prints, once
@@ -247,7 +261,9 @@ Shape:
      jq -s -c 'group_by(.identity.arm) | map({arm: .[0].identity.arm, attempts: length, responses_per_attempt: (map(.counts.responses.value) | add / length)})' ~/.local/state/smith-bench/runs/<the run>/*/result.json
      ```
 Test shape: the role's two tests stay as they are. No new test: the
-  `compare` suite stands in place of a probe (benchmarks.md 4.2).
+  `role` suite, benchmarks.md 4.2's two-arm run of the parent and the
+  change, stands in place of a probe (on `main`, `compare.toml` is the
+  agents' comparison, not this run).
 Proof: the `role` suite's summary, as step 4 says; the smoke (rule 8).
 Stop:
   - If step 1 finds the cause outside these words (a topic, a tool's

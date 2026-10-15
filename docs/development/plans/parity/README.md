@@ -48,7 +48,7 @@ meanwhile (implementer.md, section 8.7).
 | `09-machine.md` | 09: the kit's flights renamed, the machine holding jobs, the listing's order | — | 09.3: the baseline [12.1] |
 | `10-jobs.md` | 10: jobs in the tools domain, the session and the run | smith 08's `jobs` and `job_wait` [08.3]; smith 09's held jobs [09.2]; smith 11's transcript version 4 [11.1] | — |
 | `11-offered.md` | 11: the transcript's version 4, the `job` tool offered, the `background` probe and the repository check | — | 11.2: smith 10's lease [10.4], the baseline [12.1], smith 06's role [06.2]; 11.3: 11.2 |
-| `12-milestones.md` | 12: the baseline `parity` run, the `compaction` experiment, the calibrations left, the closing `parity` run | 12.1's Needs | 12.2: smith 07's words [07.3]; 12.3 and 12.4: every other step |
+| `12-milestones.md` | 12: the baseline `parity` run, the `compaction` experiment, the calibrations left, the closing `parity` run; 12.s1, the role's words (ruling 146), after 12.4's first summary, which it does not need, and before its second run | 12.1's Needs | 12.2: smith 07's words [07.3]; 12.3 and 12.4's first run: every other step; 12.4's second run: 12.s1 |
 
 ### skein (`skein/`)
 
@@ -271,9 +271,10 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 | 12.1 | the baseline `parity` run: 10 spent on `17d63afd` (ruling 131) and 49 on `1ea86da7` (ruling 133), then 58 once 04.s4 lands; shell-cwd's attempts cost $0.73 to $1.61 each (ruling 135) | 234 | $27.20 |
 | 12.2 | the `compaction` experiment, 10 per arm | 40 | $2 |
 | 12.3 | `tool-output` version 3's four variants and `process-tree`, while room is left | at most 100 | $0.60 |
-| 12.4 | the closing `parity` run | 116 | $24 |
+| 12.4 | two closing runs: the first spent (58, $9.89), the second after 12.s1 (ruling 146) | 116 | $24 |
+| 12.s1 | `role`: 12.s1's parent against 12.s1, at most two runs of 30; its smoke is the code landing's row (ruling 146) | 60 | $4 |
 | reserve | provider-stopped reruns (rule 9) | 12 | $0.60 |
-| **the run** | | **at most 680** | **about $79.40** |
+| **the run** | | **at most 680** | **about $83.40** |
 
 12.3 runs only the calibrations that leave 128 attempts (12.4's row and the
 reserve's) under 680; those it cannot run go to `later.md`.
@@ -306,7 +307,9 @@ Each command runs once, on `main` (`~/src/rust/smith`, after `git -C
    cd ~/src/rust/smith && run=$(ls benchmarks/summaries/parity-*.json | sort -t- -k3 | tail -n1) && sha=$(jq -r .parity.smith_commit "$run") && test -z "$(git log "$sha"..origin/main --grep='^Plan: parity$' --format=%h -- crates src tests benchmarks/src)" && cargo run -q -p smith-bench -- parity "$run" --commit "$sha"
    ```
 
-   exits 0, offline. It reads the newest committed `parity` summary,
+   exits 0, offline, or exits 1 when 12.4's last run is short of
+   parity, as benchmarks.md 16.5 says: the plan then ends with this item
+   failed, naming the criteria (ruling 146). It reads the newest committed `parity` summary,
    checks that no code commit of the plan landed after its smith arm, and
    recomputes the verdict.
 3. **The smoke passes on `main`:** `heavy cargo run -p smith-bench --

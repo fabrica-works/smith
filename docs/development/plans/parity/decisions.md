@@ -1121,6 +1121,169 @@ changes what section 8.4 holds.
 145. **12.3 lands without timeout's calibration** (cross-session scope, smith 12's block of 2026-10-15T11:42:35Z).
      Ruling 145: `tool-output/timeout` stays uncalibrated in this run, as the implementer proposed. 12.3 lands the four blocks that passed 10 of 10 (`test-output`, `quote`, `utf-8`, `process-tree`) with their summaries, and runs no further `timeout` attempt. Its one attempt made no shell call while `shell` was offered: the model's choice. By benchmarks.md 3.2 that is a model deviation ("A failed deciding check is the model's when it judges what the prompt asks of the model: … how many calls of a tool it makes where the prompt prescribes the number"; a contract that applies "only once their condition arises" is "not exercised"). The harness counted it smith's and stopped. That is a harness defect outside 12.3's Files, and 12.4 does not rest on it: a graded task "decides on its end, its grader, its protected files and its tree's end" (3.2), not on event checks. `later.md` takes the defect and the prompt's wording lead, in the commit this ruling lands with. 12.3's Don't stands: its report names `timeout` as the probe left.
 
+146. **12.4 holds two closing runs, and 12.s1 changes the role's words between them** (design gap, smith 12's block of 2026-10-15T15:32:18Z).
+     Ruling 146: the designer's answer, smith 7c345bd0 (benchmarks.md 16.5, shell.md 6.6), 98416739 and 96969b99 (12-milestones.md: 12.4 holds two closing runs; 12.s1 drafted), whose text follows; the supervisor names `smith-12.s1` as drafted there, with its ready check's corrections, and schedules it after 12.4's first summary and before its second run.
+
+
+     1. **The design now says what a verdict short of parity leads to:**
+        benchmarks.md 16.5, which follows.
+        - "**A summary is committed whatever its verdict, 0 or 1.** A run
+          measures its commit as it is. A verdict of 1 says where smith
+          stands, and the runs that follow are read beside it. A run whose
+          verdict is 2 measured nothing whole: its summary is not committed,
+          and its attempts are spent."
+        - "**A smith arm is run once to a verdict of 0 or 1.** No run repeats
+          an arm to pass (16.1, "with no rerun"). Each run of one smith is
+          one more chance for a smith worse than a margin to pass it; one run
+          per change keeps that chance to one per change."
+        - "**A failed verdict is answered by a change, never by a run.** A
+          later run is of a later commit whose smith arm differs, by a change
+          whose commit body names: the criteria it addresses; their cause,
+          read from the failed run's attempts: the measures reported beside
+          (16.1), the counts and the traces, against Codex's in that run, or
+          smith's in the last run where the criterion held; the change's own
+          proof (4.2). A change that names no cause earns no run. A change
+          that serves the suite's tasks and no other work, such as
+          instructions that name a task's files or commands, is not a cause's
+          answer."
+        - "**The newest run is the verdict.** Runs are never pooled, and none
+          is chosen among them: 16.4's command reads the newest committed
+          summary, and the earlier ones stay committed beside it."
+        - "**A plan bounds its runs.** A plan that targets parity says in its
+          live budget how many closing runs it holds. When the last it holds
+          is short of parity, the plan ends with its target unmet: its "Done
+          when" names the criteria that failed, its last summary is the
+          evidence, and their answer is a later plan's, a change as above."
+        - "**Baselines are cut from a plan's last `parity` run,** whatever
+          its verdict (section 9): they alarm on the drift of the smith that
+          ships, on par or not."
+
+        So the implementer's proposal holds in part. The summary lands as
+        evidence, with no rerun and no change to a margin or a pin. It does
+        not end the plan by itself, because a cause can be named now (item
+        3).
+
+     2. **The plan holds one more closing run, after one change. This is
+        option (2), bounded, not the default (1).**
+        - **The failure is not chance.** decisions.md 1.1's "a truly equal
+          smith passes the whole verdict about 0.69 of the time" is about an
+          equal smith, and this one is not:
+          - FT's intervals do not overlap: 0.995 [0.916, 1.085] at the
+            baseline, then 1.193 [1.128, 1.260];
+          - on the fixtures, smith's responses went from 185 to 231, and
+            Codex's stayed at 145.
+        - **The cause is this plan's own work,** landed between the two runs:
+          - the task role, 06.2's `b7937885`;
+          - jobs offered to the model, 11.2's `a5c62e34`, which the role's
+            words tell the model to use.
+          Leaving it to a later plan would ship a slowdown this plan made,
+          although its cause is already counted.
+        - **The budget holds it.** Row 12.4, doubled by ruling 143, is 116
+          attempts and $24: two runs of 58.
+        - **The user's instruction:** "I don't want the plan to stop" (ruling
+          143).
+        - **The bound:** one change, then one run. A second verdict of 1 ends
+          the plan, with no question and no third run.
+        - **RT failed in both runs.** The second run may fail it again. If
+          so, the plan ends short of parity on RT alone, and RT's answer is a
+          later plan's (16.5).
+
+     3. **The lead the change starts from.** These are the designer's counts
+        over the 24 fixture attempts per arm. 12.s1 checks them with `jq` and
+        does not redo them another way.
+        - **The response count carries FT's move:**
+          - smith's responses: 185, then 231;
+          - Codex's responses: 145, then 145;
+          - seconds of request per response rose about alike: smith 9.2,
+            then 10.5; Codex 11.4, then 13.6.
+        - **A response holding only a `shell` call, before the first change:**
+          - in 1 attempt of 24 at the baseline, then in 15;
+          - that call is mostly `git status --short`. At the baseline it went
+            with the first `list` or with the reads.
+          - The role says "Find relevant files with `list` and `search`
+            first", and lets the model batch only "independent `read`,
+            `list` and `search` calls".
+        - **Jobs where no command runs long:**
+          - `yield_seconds` was on 0 of 82 shell calls, then on 75 of 99;
+          - 9 shell calls answered `running`, followed by 9 `job` calls.
+          - The role says "long commands as jobs: set yield_seconds, continue
+            independent work, then use `job`".
+        - **More failing checks, and the edits that answer them:**
+          - failing shell calls: 10, then 30;
+          - `edit` calls: 41, then 68.
+        - **06.2's own compare showed the same direction:** 7.13 responses
+          per fixture attempt before the role, 8.33 with it. It reported "no
+          difference detected", which is not equality (benchmarks.md 9).
+        - **`shell-cwd` moved the same way:** smith went from 53.2 to 75.4
+          responses per attempt, and Codex from 48.6 to 55.0.
+
+        The design change this needs is in shell.md 6.6, landed:
+        - **Topic 3** becomes "batching independent calls in one response:
+          reads, lists, searches, and commands that change nothing".
+        - **A new bullet:** "**Its words cost requests.** Each step the words
+          ask of the model in a response of its own is a round trip to the
+          provider. The words ask for no such step that the work does not
+          need: what can go together goes together, and a command is made a
+          job only when it runs long. A change to them is proven by the
+          `compare` suite (benchmarks.md, section 4.2)."
+        - **Unchanged:** topic 4, "never through the shell". Its share of
+          the extra responses is the smallest, and it keeps a formatter from
+          rewriting files the change did not touch.
+
+     4. **What 12.4 does** (12-milestones.md, as landed):
+        1. **Now:** the first run's summary lands as it is, from the local
+           `e074d579`, rebased. Its commit body gives the five criteria
+           lines, the exit 1, each arm's time-record medians, and `Live: 58
+           attempts, $9.89 notional`. No baseline is cut from it.
+        2. **`12.s1` lands:** the diagnosis, the role's words, and the `role`
+           compare suite. Its text is a draft in `12-milestones.md`, for the
+           supervisor to name and schedule. Its Stop has two cases:
+           - a cause outside the words is a question for the designer;
+           - if no run of the suite gives the change fewer responses per
+             attempt than its parent, nothing lands, and the plan ends on the
+             first run.
+        3. **Then the second run**, once nothing else of the plan is left to
+           land:
+           - build `HEAD`, run `suite parity` once, then `parity <summary>
+             --commit <the full SHA>`;
+           - commit the summary whatever its verdict, 0 or 1;
+           - cut the two baselines from it;
+           - run the README's "Done when" item 2 once.
+        4. **The second verdict decides how the plan ends:**
+           - 0: the plan is done;
+           - 1: the summary lands as the first did, and the plan ends with
+             item 2 failed;
+           - 2: README rule 9 if the provider stopped the run, otherwise a
+             question for the designer.
+
+     5. **For the supervisor:**
+        - **The README needs four changes:**
+          - a row for 12.s1 in "Live services": the `role` suite, at most two
+            runs of 30, so 60 attempts and about $4, plus its smoke;
+          - row 12.4 reads "two closing runs: the first spent (58, $9.89), the
+            second after 12.s1";
+          - "Done when" item 2 adds: "or exits 1 when 12.4's last run is
+            short of parity, as benchmarks.md 16.5 says: the plan then ends
+            with this item failed, naming the criteria";
+          - a place for 12.s1 in the order: after 12.4's first summary, which
+            it does not need, and before the second run.
+        - **Ruling 143's "Unchanged: … 12.4 still runs its 58 attempts once"**
+          is amended: 12.4 runs twice, as above.
+        - **`later.md` needs two changes:**
+          - the `edit-format` row's "after the closing `parity` run, if FT or
+            FC fails there" becomes "after this plan's last closing `parity`
+            run (12.4), if FT or FC fails there";
+          - if the last run fails a criterion, add a row for its diagnosis
+            and change (benchmarks.md 16.5), for the next smith plan.
+        - **The live budget:**
+          - landed now: 374 attempts, $20.71;
+          - with 12.4's first run: 432 attempts, $30.60;
+          - adding 12.s1 (at most 60 and 4 for the smoke) and the second run
+            (58): 554 attempts and about $44.30, under 680 and $100.
+        - **When the plan ends short of parity,** STATUS.md's parity row says
+          "ended short of parity at `<sha>`: <criteria>". The plan's state in
+          STATUS.md is the supervisor's (development.md, 3.3).
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15).

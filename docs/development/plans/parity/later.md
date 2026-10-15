@@ -6,7 +6,7 @@ does not do, and when it should be done.
 | Item | Design | When |
 |---|---|---|
 | Children answering while their parent works (asynchronous children; work beside a writing child) | `domain/run.md`, sections 5.3 and 15; `decisions.md` 5.3 | after contained trees, in a document of their own |
-| The `edit-format` experiment | `benchmarks.md` 11.3; `protocol/llm.md` 12; `decisions.md` 6.3 | after the closing `parity` run, if FT or FC fails there |
+| The `edit-format` experiment | `benchmarks.md` 11.3; `protocol/llm.md` 12; `decisions.md` 6.3 | after this plan's last closing `parity` run (12.4), if FT or FC fails there |
 | The `delegation` experiment, for the user's decision on smith's `sub_agents` default | `benchmarks.md` 11.3; `decisions.md` 2.4 | after this plan's tasks and pins, in a plan of its own |
 | `cache-reuse` version 2, with a no-affinity control | `benchmarks.md` 11.1; findings R4, F5 | the next probes plan |
 | `parallel-read` version 2, with a copied answer | findings F3 | the next probes plan |
