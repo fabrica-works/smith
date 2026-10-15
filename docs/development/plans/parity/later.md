@@ -24,3 +24,4 @@ does not do, and when it should be done.
 | What a failed call in a batch means for the calls after it | `domain/session.md` 11; `decisions.md` 6.4 | when a probe shows the cost |
 | A job's end told between completions | `domain/session.md` 11 | after `mid-work`'s messages (`domain/run.md` 6) |
 | The kit's changes held back for after this run (skein's `kit-after-parity` branch) and the reliability retrospective's deferred rows (its section 10: 3, 5, 9, 11, 15, 16, 17, 20) | skein `docs/foundation/development.md` | after this run's retrospective |
+| `calibrate` rewrites the whole `task.toml` when it writes a `[calibration]` block, losing its layout; 11.3 restored it with a script (`tmp/smith/parity/logs/smith-11/preserve-calibration.py`) | `benchmarks.md` 5.2 | the next harness plan |
