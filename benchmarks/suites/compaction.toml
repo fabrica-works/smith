@@ -2,10 +2,10 @@ name = "compaction"
 tier = "small"
 design = "interleaved"
 reference = "80-percent"
-repetitions = 5
+repetitions = 10
 rerun_failed = 0
-max_wall_seconds = 3600
-max_tokens = 12000000
+max_wall_seconds = 7200
+max_tokens = 24000000
 tasks = ["probes/history/small-window"]
 
 [[agents]]
