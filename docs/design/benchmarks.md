@@ -1,6 +1,6 @@
 # Benchmarks
 
-Provisional, 2026-10-09, revised 2026-10-14. How smith shows that a change has the effect it
+Provisional, 2026-10-09, revised 2026-10-15. How smith shows that a change has the effect it
 claims and keeps it, and how smith compares with other agents. Tests are
 testing.md's; the events smith is observed through are
 protocol/events.md's; its commands, settings and exit codes are
@@ -41,7 +41,9 @@ Codex, the comparison's verdict, is section 16.
   with Codex when one run of the `parity` suite shows, for outcome, time
   and cost, that smith is not worse than Codex by more than a stated
   margin. One offline command reads the committed summary and exits 0 at
-  parity (section 16).
+  parity (section 16). A verdict short of it is committed too, and is
+  answered by a change that names its cause, never by another run of the
+  same smith (16.5).
 
 ## 2. What benchmarks are for
 
@@ -968,3 +970,38 @@ holds for one pinned Codex at one working tier.
 - **What moves it.** A new Codex pin, a new working tier, a new task
   version or a new result version starts a new comparison: parity is
   shown again, never carried across.
+
+### 16.5 A verdict short of parity
+
+- **A summary is committed whatever its verdict, 0 or 1.** A run
+  measures its commit as it is. A verdict of 1 says where smith stands,
+  and the runs that follow are read beside it. A run whose verdict is 2
+  measured nothing whole: its summary is not committed, and its attempts
+  are spent.
+- **A smith arm is run once to a verdict of 0 or 1.** No run repeats an
+  arm to pass (16.1, "with no rerun"). Each run of one smith is one more
+  chance for a smith worse than a margin to pass it; one run per change
+  keeps that chance to one per change.
+- **A failed verdict is answered by a change, never by a run.** A later
+  run is of a later commit whose smith arm differs, by a change whose
+  commit body names:
+  - the criteria it addresses;
+  - their cause, read from the failed run's attempts: the measures
+    reported beside (16.1), the counts and the traces, against Codex's in
+    that run, or smith's in the last run where the criterion held;
+  - the change's own proof (4.2).
+
+  A change that names no cause earns no run. A change that serves the
+  suite's tasks and no other work, such as instructions that name a
+  task's files or commands, is not a cause's answer.
+- **The newest run is the verdict.** Runs are never pooled, and none is
+  chosen among them: 16.4's command reads the newest committed summary,
+  and the earlier ones stay committed beside it.
+- **A plan bounds its runs.** A plan that targets parity says in its live
+  budget how many closing runs it holds. When the last it holds is short
+  of parity, the plan ends with its target unmet: its "Done when" names
+  the criteria that failed, its last summary is the evidence, and their
+  answer is a later plan's, a change as above.
+- **Baselines are cut from a plan's last `parity` run,** whatever its
+  verdict (section 9): they alarm on the drift of the smith that ships,
+  on par or not.

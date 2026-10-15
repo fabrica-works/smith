@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-14. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-15. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -807,7 +807,8 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
 - **Its topics, in this order:**
   1. carrying the request to its end, within its scope;
   2. finding files, with `list` and `search` first;
-  3. batching independent reads, lists and searches in one response;
+  3. batching independent calls in one response: reads, lists, searches,
+     and commands that change nothing;
   4. changing files with `edit` and `write`, never through the shell,
      the smallest change first;
   5. running the tests the change needs, and long commands as jobs
@@ -821,6 +822,11 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
 - **Its words are code,** in `smith-local-shell`; its topics are this
   list. A topic added, dropped or moved is a change to this
   section.
+- **Its words cost requests.** Each step the words ask of the model in a
+  response of its own is a round trip to the provider. The words ask for
+  no such step that the work does not need: what can go together goes
+  together, and a command is made a job only when it runs long. A change
+  to them is proven by the `compare` suite (benchmarks.md, section 4.2).
 - **It is a run's instructions,** so it counts where a charter's
   instructions count: in the window's host part (protocol/limits.md,
   3.9).
