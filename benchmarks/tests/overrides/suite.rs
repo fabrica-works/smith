@@ -24,7 +24,7 @@ fn requests(root: &Path, entry: &crate::CatalogueTask, suite: &Suite, arm: &ArmR
         root.parent().expect("repository"),
         entry,
         suite,
-        arm,
+        (arm, &[]),
         ("offline-overrides", "2026-10-14T00:00:00Z", Some(crate::SmithFace::Events), &"0".repeat(40)),
         5,
         &mut requests,
@@ -115,7 +115,7 @@ fn a_suite_gives_one_task_its_own_repetitions() {
         root.parent().expect("repository"),
         &entry,
         &suite,
-        &arm,
+        (&arm, &[]),
         ("offline-overrides", "2026-10-14T00:00:00Z", Some(crate::SmithFace::Events), &"0".repeat(40)),
         count,
         &mut prepared,
@@ -175,4 +175,70 @@ fn parity_requests(root: &Path, suite: &Suite, template: &crate::run::Prepared) 
         }
     }
     prepared
+}
+
+fn binary_fixture() -> (PathBuf, Suite, Vec<(String, ArmRef)>) {
+    let (root, _, mut suite, arm) = fixture();
+    suite.name = "role".into();
+    suite.reference = Some("before".into());
+    suite.tasks = ["fixtures/01-backoff", "fixtures/02-line-decoder", "fixtures/03-planner"].map(Into::into).to_vec();
+    suite.arms = vec![
+        crate::Arm::Binary { name: "before".into(), commit: "0".repeat(40) },
+        crate::Arm::Binary { name: "after".into(), commit: "2".repeat(40) },
+    ];
+    let ArmRef::Built(mut after) = arm.clone() else { panic!("built fixture") };
+    after.directory = "/after-arm".into();
+    after.arm.commit = "2".repeat(40);
+    after.arm.sha256 = "3".repeat(64);
+    (root, suite, vec![("before".into(), arm), ("after".into(), ArmRef::Built(after))])
+}
+
+fn binary_requests(root: &Path, suite: &Suite, binaries: &[(String, ArmRef)]) -> Vec<crate::run::Prepared> {
+    const REPETITIONS_PER_ARM: u32 = 5;
+    let mut prepared = Vec::new();
+    for name in &suite.tasks {
+        let manifest = root.join("tasks").join(name).join("task.toml");
+        let entry =
+            crate::CatalogueTask { name: name.clone(), task: crate::read_task(&manifest).expect("task"), manifest };
+        task_requests(
+            root.parent().expect("repository"),
+            &entry,
+            suite,
+            (&binaries[0].1, binaries),
+            ("offline-binaries", "2026-10-15T00:00:00Z", Some(crate::SmithFace::Events), &"0".repeat(40)),
+            REPETITIONS_PER_ARM,
+            &mut prepared,
+        )
+        .expect("prepared requests");
+    }
+    prepared
+}
+
+#[test]
+fn a_suite_with_two_binary_arms_prepares_each_arm_by_its_name() {
+    let (root, suite, binaries) = binary_fixture();
+    let prepared = binary_requests(&root, &suite, &binaries);
+    assert_eq!(prepared.len(), 30);
+    assert_eq!(prepared.iter().filter(|request| request.identity.arm == "before").count(), 15);
+    assert_eq!(prepared.iter().filter(|request| request.identity.arm == "after").count(), 15);
+    for task in prepared.chunks_exact(10) {
+        assert_eq!(
+            task.iter().map(|request| request.identity.arm.as_str()).collect::<Vec<_>>(),
+            ["before", "before", "before", "before", "before", "after", "after", "after", "after", "after"]
+        );
+    }
+    let ordered = crate::batch::ordered(&suite, prepared, 17).expect("interleaved requests");
+    for request in &ordered {
+        let (program, commit, sha256) = match request.identity.arm.as_str() {
+            "before" => ("/unexecuted-arm/smith", "0".repeat(40), "1".repeat(64)),
+            "after" => ("/after-arm/smith", "2".repeat(40), "3".repeat(64)),
+            name => panic!("unexpected arm {name}"),
+        };
+        assert_eq!(request.program, Path::new(program));
+        assert_eq!(request.identity.agent_version, commit);
+        assert_eq!(request.identity.binary_sha256, sha256);
+    }
+    for block in ordered.chunks_exact(2) {
+        assert_ne!(block[0].identity.arm, block[1].identity.arm);
+    }
 }

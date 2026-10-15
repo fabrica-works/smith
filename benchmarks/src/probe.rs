@@ -298,11 +298,12 @@ fn task_requests(
     repository: &Path,
     entry: &crate::CatalogueTask,
     suite: &Suite,
-    arm: &ArmRef,
+    arms: (&ArmRef, &[(String, ArmRef)]),
     run: (&str, &str, Option<crate::SmithFace>, &str),
     repetitions: u32,
     requests: &mut Vec<crate::run::Prepared>,
 ) -> Result<(), String> {
+    let (arm, binaries) = arms;
     for agent in &suite.agents {
         if !agent.tasks.is_empty() && !agent.tasks.contains(&entry.name) {
             continue;
@@ -314,21 +315,31 @@ fn task_requests(
         } else {
             arm
         };
-        let overrides: Vec<_> = suite
-            .arms
-            .iter()
-            .filter_map(|arm| match arm {
-                crate::Arm::Override { name, smith } => Some((name, smith)),
-                crate::Arm::Binary { .. } | crate::Arm::Agent { .. } => None,
-            })
-            .collect();
-        let executions = overrides.len().max(1);
-        for index in 0..executions {
+        let mut executions = Vec::new();
+        for comparison in &suite.arms {
+            match comparison {
+                crate::Arm::Binary { name, .. } => {
+                    let (_, binary) = binaries
+                        .iter()
+                        .find(|(built_name, _)| built_name == name)
+                        .ok_or("binary arm has no prepared build")?;
+                    executions.push((Some(name), binary, Vec::new()));
+                }
+                crate::Arm::Override { name, smith } => {
+                    executions.push((Some(name), selected, crate::suite::override_arguments(smith)));
+                }
+                crate::Arm::Agent { .. } => {}
+            }
+        }
+        if executions.is_empty() {
+            executions.push((None, selected, Vec::new()));
+        }
+        for (name, program, arguments) in executions {
             for _ in 0..repetitions {
-                let mut request = request(repository, entry, suite, agent, selected, run, requests.len() + 1)?;
-                if let Some((name, fields)) = overrides.get(index) {
+                let mut request = request(repository, entry, suite, agent, program, run, requests.len() + 1)?;
+                if let Some(name) = name {
                     request.identity.arm.clone_from(name);
-                    request.arguments = crate::suite::override_arguments(fields);
+                    request.arguments.clone_from(&arguments);
                 }
                 requests.push(request);
             }
@@ -427,15 +438,15 @@ fn prepare(
         .map_err(|error| error.to_string())?;
     let names = crate::include(&suite_file, &suite, &names, asked).map_err(|error| error.to_string())?;
     let names = if name == "smoke" { gating::smoke_tasks(&entries, &names)? } else { names };
-    let face = match arm {
-        ArmRef::Installed { .. } => None,
-        ArmRef::Built(build) => {
-            let faces =
-                crate::agent::smith::read_faces(&root.join("agents/smith/faces.toml")).map_err(|error| error.reason)?;
-            crate::agent::smith::face(&build.arm, &faces, repository).map_err(|error| error.reason)?;
-            Some(crate::SmithFace::Events)
+    let face = arm_face(repository, arm)?;
+    let mut binaries = Vec::new();
+    for comparison in &suite.arms {
+        if let crate::Arm::Binary { name, commit } = comparison {
+            let binary = archived(repository, &Source::Commit(commit.clone()))?;
+            arm_face(repository, &binary)?;
+            binaries.push((name.clone(), binary));
         }
-    };
+    }
     let mut requests = Vec::new();
     for name in names {
         let entry = task(&entries, &name)?;
@@ -445,7 +456,7 @@ fn prepare(
             repository,
             &entry,
             &suite,
-            arm,
+            (arm, &binaries),
             (&run, &started, face, &harness_commit),
             repetitions,
             &mut requests,
@@ -459,6 +470,18 @@ fn prepare(
         )?;
     }
     Ok(Planned { run, suite: suite_file, directory, requests })
+}
+
+fn arm_face(repository: &Path, arm: &ArmRef) -> Result<Option<crate::SmithFace>, String> {
+    match arm {
+        ArmRef::Installed { .. } => Ok(None),
+        ArmRef::Built(build) => {
+            let faces = crate::agent::smith::read_faces(&repository.join("benchmarks/agents/smith/faces.toml"))
+                .map_err(|error| error.reason)?;
+            crate::agent::smith::face(&build.arm, &faces, repository).map_err(|error| error.reason)?;
+            Ok(Some(crate::SmithFace::Events))
+        }
+    }
 }
 
 fn codex(repository: &Path, configuration: &str) -> Result<ArmRef, String> {
