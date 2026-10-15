@@ -1101,3 +1101,18 @@ changes what section 8.4 holds.
   Asked: raise the cap to 420 attempts, with $50 unchanged? Until an answer, rule 10 holds as written: a
   command that would pass 340 stops on a question, and offline work goes
   on.
+  Update, 2026-10-15T05:31Z (the check of 05:25Z): 274 attempts landed ($11.52); 06.2's
+  suite brings that to 304 and 11.3's 24 to 328, so 12.4's 58 (about
+  386) is the first command that would pass 340, about 4 h from now.
+- **The compaction threshold's evidence** (12.2, `894d132f`; decisions.md
+  4.5 is the user's; the threshold on `main` stays 4/5). Run
+  `compaction-c5f12007-20261015T035106Z`, `history/small-window`, 10
+  attempts an arm, interleaved, all ending completed:
+  - 80-percent: 9/10 passed (attempt 08 failed its answer check), median
+    task wall 69.3 s, compaction wall 15.5 s;
+  - 60-percent: 10/10 passed, median task wall 75.6 s, compaction wall
+    19.6 s;
+  - task-wall ratio 60/80 1.09 [0.985, 1.43] (minimum detectable 0.31): no
+    difference detected; the priced comparison is unavailable (attempt 19's
+    spend is a retried failure's lower bound). $0.37 notional.
+  Asked: keep 4/5, or change it? Nothing in the run waits on the answer.
