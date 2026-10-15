@@ -256,7 +256,7 @@ coordinator escalates it as `credentials`, and the user runs `codex` once.
 | 06.2 | `role`: 06.1's parent against 06.2, three fixtures, 5 each | 30 | $3 |
 | 07.3 | `history` and `history/small-window` calibrated: 19 spent at low and medium (rulings 118, 119); version 3 (ruling 121): base 12 at medium, no control; small-window 13 after 04.s3, with its control (ruling 124); 25 more at `high` for both only if model deviations alone put ten passes out of reach | 73 | $4 |
 | 11.3 | `tool-output/background` calibrated (14); `repository-check`, 5 per arm (10) | 24 | $7 |
-| 12.1 | the baseline `parity` run: 10 spent on `17d63afd` (ruling 131) and 49 on `1ea86da7` (ruling 133), then 58 once 04.s4 lands | 117 | $3.30 |
+| 12.1 | the baseline `parity` run: 10 spent on `17d63afd` (ruling 131) and 49 on `1ea86da7` (ruling 133), then 58 once 04.s4 lands; shell-cwd's attempts cost $0.73 to $1.61 each (ruling 135) | 117 | $13.60 |
 | 12.2 | the `compaction` experiment, 10 per arm | 20 | $1 |
 | 12.3 | `tool-output` version 3's four variants and `process-tree`, while room is left | at most 50 | $0.30 |
 | 12.4 | the closing `parity` run | 58 | $12 |

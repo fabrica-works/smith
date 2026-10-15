@@ -1057,6 +1057,9 @@ changes what section 8.4 holds.
      4. **The corrected arm takes the smoke afresh,** as rule 8 says: once, and once more on a failure. A second refusal stops 10.4 on a question with the term and its bytes; the line goes on.
      5. **The three attempts** (the two refused on `de036162`, $0, and `main`'s, $0.000621) count in 10.4's `Live:` trailer (rule 10).
 
+135. **12.1's row: 3.60, from shell-cwd's real cost** (steer of 2026-10-15T02:29:39Z).
+     Row 12.1 becomes 117 attempts and $13.60: the 59 spent ($1.59), and the session file's "about $12" for the 58. Ruling 133's $3.30 priced the 58 at $0.029 an attempt, from a run whose only shell-cwd attempt was refused at setup; in gate task 3788, smith's shell-cwd attempts cost $1.61, $1.20 and $0.73, against $0.03 to $0.11 for a fixture attempt (the check of 2026-10-15T02:24Z). The row answers rule 10's 1.5× question for 12.1 while its notional stays under $20.40. "For the user" now projects about $32 of the $50, not under $10. Rule 10's 340 attempts and $50, and the user's open question, are unchanged.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At
@@ -1064,8 +1067,8 @@ changes what section 8.4 holds.
   unlanded and needs 58 more. With the rows left (06.2 30, 11.3 24, 12.2
   20, 12.4 58, the reserve 6, about 10 smokes), the run comes to about
   395 attempts, past 340, with 12.3 at none. Its notional spend comes to
-  under $10 of the $50: the 49 attempts of 12.1's second run cost $1.41,
-  against the README's $12 for 58. Asked: raise the cap to 420 attempts,
-  with $50 unchanged? Until an answer, rule 10 holds as written: a
+  about $32 of the $50 (corrected by ruling 135: shell-cwd's attempts cost
+  $0.73 to $1.61 each, and 12.1's run on `1ea86da7` had none past setup).
+  Asked: raise the cap to 420 attempts, with $50 unchanged? Until an answer, rule 10 holds as written: a
   command that would pass 340 stops on a question, and offline work goes
   on.
