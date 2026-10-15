@@ -96,6 +96,12 @@ pub enum EventCheck {
     SlowCompletion { longer_than_ms: u64, head_ms: u64, idle_ms: u64, reasoning_bytes: u64 },
     /// Response usage sums match each authoritative run total.
     UsageSums,
+    /// A shell call answers running with its conversation's job number.
+    JobRunning,
+    /// A request starts after a job's running answer and before its terminal.
+    CompletionDuringJob,
+    /// Every observed job has one end reported by a call or its closing session.
+    JobTerminal,
     /// No tool ends with any of these verdicts.
     NoVerdict { verdicts: Vec<String> },
     /// Completions have this cardinality before the named boundary.
@@ -171,6 +177,9 @@ impl EventCheck {
             Self::ToolTimeout { .. } => "tool-timeout",
             Self::SlowCompletion { .. } => "slow-completion",
             Self::UsageSums => "usage-sums",
+            Self::JobRunning => "job-running",
+            Self::CompletionDuringJob => "completion-during-job",
+            Self::JobTerminal => "job-terminal",
             Self::NoVerdict { .. } => "no-verdict",
             Self::Completions { .. } => "completions",
             Self::FirstRequestHoldsTask => "first-request-holds-task",

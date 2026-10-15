@@ -13,6 +13,9 @@ pub(super) fn observation(process: &ProcessResult, task: &Task) -> Option<Measur
         EventCheck::CallCount { .. }
         | EventCheck::ToolCall { .. }
         | EventCheck::UsageSums
+        | EventCheck::JobRunning
+        | EventCheck::CompletionDuringJob
+        | EventCheck::JobTerminal
         | EventCheck::NoVerdict { .. }
         | EventCheck::Completions { .. }
         | EventCheck::FirstRequestHoldsTask

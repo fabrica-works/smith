@@ -1,11 +1,11 @@
 id = "tool-output"
-version = 3
+version = 4
 kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 180
 prompt = "Run sh test.sh using exactly one shell call. Choose an output budget large enough to identify the failing assertion in its output, which exceeds ten kilobytes. Finish by naming that assertion, its expected value and its observed value. Do not edit any file or delegate.\n"
-seed_sha256 = "21b8a7fa41617116df102cffd13c9c5e5a52da0c14594966a5400efd53bff9c5"
+seed_sha256 = "244a158c77ce03a5f885787ddfd916794d47ac1599ec967ba5de092973ce3e50"
 guards = ["domain/tools.md, section 3", "domain/tools.md, section 5"]
 protected = ["test.sh", "manual.txt"]
 deciding = ["end", "exit-code", "answer", "tool-call", "tool-result-bytes", "protected-unchanged", "stream-whole", "tree-ended"]
@@ -147,9 +147,47 @@ requested_seconds = 1
 deadline_ms = 1000
 clamped = false
 grace_ms = 1000
+
 [[variant.event]]
 check = "tool-timeout"
 requested_seconds = 9999
 deadline_ms = 1000
 clamped = true
 grace_ms = 1000
+
+[[variant]]
+name = "background"
+replace_checks = true
+smith = { "budget.reserve.seconds" = 30 }
+prompt = "First start sh background.sh with one shell call, yield_seconds=1 and timeout_seconds=90. It takes about sixty seconds; leave it running as a job. While it runs, read the QUOTE line near line 700 in manual.txt and read range.txt, using the read tool. Only after both reads, use job to collect the command's remaining output and exit, waiting as needed. Finish with the command's token, the quoted sentence and the range. Do not edit files, stop the job, run another shell command or delegate.\n"
+deciding = ["end", "exit-code", "answer", "job-running", "completion-during-job", "job-terminal", "protected-unchanged", "stream-whole", "tree-ended"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "(?s)BACKGROUND-COPPER-73.*The copper heron carries seven blue lanterns across the silent harbor\\..*10–12"
+[[variant.event]]
+check = "job-running"
+[[variant.event]]
+check = "completion-during-job"
+[[variant.event]]
+check = "job-terminal"
+
+[variant.calibration]
+attempts = 10
+binary = "4164598d3b40d13a99c7c3b5c7b769fa28ae37a2"
+binary_sha256 = "ab147ac9ee8194f090336955c861be9e228d1c7307378bde6813fa13388550b4"
+checks_sha256 = "0d9e2d9ec9a27e03dec70a481b2e204633cd831e16ed7147402784d8faa6dfcd"
+control = "630d7a0b14dcaa141690046f32fd534cb70b2254"
+date = "2026-10-15T07:47:18.563788161Z"
+deviations = []
+failed_before = ["probes-tool-output-background-630d7a0b-20261015T074716Z/01"]
+passes = ["probes-tool-output-background-4164598d-20261015T074715Z/01", "probes-tool-output-background-4164598d-20261015T074715Z/02", "probes-tool-output-background-4164598d-20261015T074715Z/03", "probes-tool-output-background-4164598d-20261015T074715Z/04", "probes-tool-output-background-4164598d-20261015T074715Z/05", "probes-tool-output-background-4164598d-20261015T074715Z/06", "probes-tool-output-background-4164598d-20261015T074715Z/07", "probes-tool-output-background-4164598d-20261015T074715Z/08", "probes-tool-output-background-4164598d-20261015T074715Z/09", "probes-tool-output-background-4164598d-20261015T074715Z/10"]
+prompt_sha256 = "8dca47e1ad27a399e511fc7de18926a621ce9686c20e246e3458d283e240690b"
+seed_sha256 = "244a158c77ce03a5f885787ddfd916794d47ac1599ec967ba5de092973ce3e50"
+summary = "summaries/probes-tool-output-background-4164598d-20261015T074715Z.json"
+

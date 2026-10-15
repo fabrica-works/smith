@@ -300,6 +300,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::SlowCompletion { longer_than_ms, head_ms, idle_ms, reasoning_bytes } =>
             super::slow::check(observer, *longer_than_ms, *head_ms, *idle_ms, *reasoning_bytes).passed,
         EventCheck::UsageSums => super::usage_sums::check(observer),
+        EventCheck::JobRunning | EventCheck::CompletionDuringJob | EventCheck::JobTerminal =>
+            super::jobs::check(observer, check),
         EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms, command } =>
             tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms, command.as_deref()).passed,
         EventCheck::ToolCall { .. } => tool_call(observer, check),

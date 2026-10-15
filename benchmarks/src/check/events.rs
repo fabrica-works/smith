@@ -89,9 +89,7 @@ pub(super) fn checks(
                 unreachable!("file checks return above")
             }
             EventCheck::ToolCall { tool, verdict, .. } => {
-                if tool.trim().is_empty() {
-                    return Err(Refusal::new(file, &format!("{key}.tool"), "tool name is empty"));
-                }
+                nonempty_tool(file, &key, tool)?;
                 if let Some(value) = verdict {
                     named(file, &format!("{key}.verdict"), value, VERDICTS)?;
                 }
@@ -152,6 +150,9 @@ pub(super) fn checks(
                 }
             }
             EventCheck::UsageSums
+            | EventCheck::JobRunning
+            | EventCheck::CompletionDuringJob
+            | EventCheck::JobTerminal
             | EventCheck::Completions { .. }
             | EventCheck::FirstRequestHoldsTask
             | EventCheck::NothingBeforeTask
@@ -272,6 +273,13 @@ fn timeout(
     }
     if requested == 0 || deadline == 0 || deadline.checked_add(grace).is_none() {
         return Err(Refusal::new(file, key, "timeout request, bound and grace must fit positive durations"));
+    }
+    Ok(())
+}
+
+fn nonempty_tool(file: &Path, key: &str, tool: &str) -> Result<(), Refusal> {
+    if tool.trim().is_empty() {
+        return Err(Refusal::new(file, &format!("{key}.tool"), "tool name is empty"));
     }
     Ok(())
 }

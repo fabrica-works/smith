@@ -51,6 +51,7 @@ mod spend;
 mod written_file;
 
 mod file_pieces;
+mod jobs;
 mod slow;
 
 /// A product invocation selected by the source face registry.

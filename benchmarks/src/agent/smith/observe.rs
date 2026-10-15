@@ -156,6 +156,9 @@ impl Observing {
                 crate::EventCheck::CallCount { .. }
                 | crate::EventCheck::ToolCall { .. }
                 | crate::EventCheck::UsageSums
+                | crate::EventCheck::JobRunning
+                | crate::EventCheck::CompletionDuringJob
+                | crate::EventCheck::JobTerminal
                 | crate::EventCheck::NoVerdict { .. }
                 | crate::EventCheck::Completions { .. }
                 | crate::EventCheck::FirstRequestHoldsTask
