@@ -41,6 +41,38 @@ fn a_smith_spend_missing_only_retried_failures_counts_as_reported() {
 }
 
 #[test]
+fn a_summary_with_a_retried_failure_row_verifies_against_its_own_section() {
+    const SMITH_FIXTURE_WALL_MS: u64 = 1_739_248;
+    const CODEX_FIXTURE_WALL_MS: u64 = 1_748_166;
+    let mut summary = common::parity_summary(Rows {
+        smith_wall_ms: SMITH_FIXTURE_WALL_MS,
+        codex_wall_ms: CODEX_FIXTURE_WALL_MS,
+        ..Rows::equal()
+    });
+    let limits = smith_events::Limits { string: 524_288, content: 4096, items: 512 };
+    let mut observer =
+        smith_bench::agent::smith::events::Observer::with_ceiling(&limits, 16_384).expect("response bounds");
+    observer.feed(include_bytes!("recorded/retried-failure-17d63afd-02.jsonl")).expect("response excerpt");
+    observer.finish().expect("whole lines");
+    let tokens = observer.tokens().expect("recorded tokens");
+    let total = tokens.iter().find(|record| record.role == smith_bench::ScopeKind::Total).expect("total");
+    let row = summary.attempts.iter_mut().find(|row| row.agent == "smith").expect("smith row");
+    row.fresh_tokens = total.usage.fresh.clone();
+    row.cache_read_tokens = total.usage.cache_read.clone();
+    row.output_tokens = total.usage.output.clone();
+    row.priced_usd = Measure::LowerBound {
+        value: 1.0,
+        missing: vec!["session-0/run-1/conversation-0: session-0/run-1/response-3: retried failure".into()],
+    };
+    summary.parity = Some(recompute(&summary));
+    let file = std::env::temp_dir().join(format!("smith-bench-parity-roundtrip-{}.json", std::process::id()));
+    smith_bench::write_summary(&file, &summary).expect("write summary");
+    let read_back = smith_bench::read_summary(&file).expect("read summary");
+    std::fs::remove_file(file).expect("remove summary");
+    assert_eq!(parity::verify(&read_back, &"0".repeat(40)).expect("section agrees").verdict, Verdict::OnPar);
+}
+
+#[test]
 fn parity_names_the_failing_criterion_and_exits_one() {
     let summary = common::parity_summary(Rows { smith_wall_ms: 130_000, ..Rows::equal() });
     let verdict = recompute(&summary);
