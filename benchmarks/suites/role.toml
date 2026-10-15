@@ -1,0 +1,24 @@
+name = "role"
+tier = "working"
+design = "interleaved"
+reference = "before-role-and-descriptions"
+repetitions = 5
+rerun_failed = 0
+max_wall_seconds = 7200
+max_tokens = 8000000
+tasks = ["fixtures/01-backoff", "fixtures/02-line-decoder", "fixtures/03-planner"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "standard"
+
+[[arm]]
+source = "binary"
+name = "before-role-and-descriptions"
+commit = "894d132f91a4e34a75b39d3c3d44c1b15426c86d"
+
+[[arm]]
+source = "binary"
+name = "task-role-and-descriptions"
+commit = "a29a4ac5b217fb8585b02cec0db69ff7f006274a"
