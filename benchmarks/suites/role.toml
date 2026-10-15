@@ -1,7 +1,7 @@
 name = "role"
 tier = "working"
 design = "interleaved"
-reference = "before-role-and-descriptions"
+reference = "before-role-batching"
 repetitions = 5
 rerun_failed = 0
 max_wall_seconds = 7200
@@ -15,10 +15,10 @@ config = "standard"
 
 [[arm]]
 source = "binary"
-name = "before-role-and-descriptions"
-commit = "894d132f91a4e34a75b39d3c3d44c1b15426c86d"
+name = "before-role-batching"
+commit = "f5bf11e25c75215ee21060850bf396551dcdda6e"
 
 [[arm]]
 source = "binary"
-name = "task-role-and-descriptions"
-commit = "a29a4ac5b217fb8585b02cec0db69ff7f006274a"
+name = "batched-role"
+commit = "e70802564bcdf4a50f0934819b2cc51b84a3a327"
