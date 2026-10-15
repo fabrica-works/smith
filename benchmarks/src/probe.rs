@@ -286,7 +286,7 @@ fn request(
         teardown_ms: 10_000,
         grace_ms: 1_000,
         settlement_ms: 3_000,
-        setup_deadline_seconds: 15,
+        setup_deadline_seconds: 900,
         max_stdout_bytes: 2 * 1024 * 1024,
         max_stderr_bytes: 2 * 1024 * 1024,
         disk_estimate_bytes: 16 * 1024 * 1024,
