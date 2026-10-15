@@ -16,7 +16,7 @@ fn limits() -> Limits {
         path_bytes: 64,
         file_bytes: 16,
         tool_payload: 64,
-        entries: 2,
+        entries: 4,
         entry_bytes: 512,
         processes: 2,
         output_bytes: 64,
@@ -900,17 +900,52 @@ fn listed_entry(path: &[u8], kind: tools::Kind) -> tools::Entry {
 
 #[test]
 fn selected_files_derive_a_sorted_tree_and_count_distinct_entries_at_the_cap() {
-    // a.b sorts before a/x among files, but directory a must sort before a.b.
+    // rg walks a before the sibling a.b; retained entries use byte order.
+    const ENTRY_CAP: u32 = 2;
+    const ENTRY_BYTES: u64 = 512;
     assert_eq!(
-        listed(b"./a.b\0./a/x\0./a/y\0./b\0", tools::Depth::Whole, 2, 512, None),
+        listed(b"./a/x\0./a/y\0./a.b\0./b\0", tools::Depth::Whole, ENTRY_CAP, ENTRY_BYTES, None),
         tools::Done::Listed {
             entries: Box::new([listed_entry(b"a", tools::Kind::Directory), listed_entry(b"a.b", tools::Kind::File)]),
             more: 3
         }
     );
+}
+
+#[test]
+fn one_listing_slot_keeps_the_first_entry_and_count() {
+    const ENTRY_CAP: u32 = 1;
+    const ENTRY_BYTES: u64 = 512;
     assert_eq!(
-        listed(b"./a.b\0./a/x\0./a/y\0./b\0", tools::Depth::Whole, 1, 512, None),
+        listed(b"./a/x\0./a/y\0./a.b\0./b\0", tools::Depth::Whole, ENTRY_CAP, ENTRY_BYTES, None),
         tools::Done::Listed { entries: Box::new([listed_entry(b"a", tools::Kind::Directory)]), more: 4 }
+    );
+}
+
+#[test]
+fn rgs_sorted_listing_with_a_name_and_its_prefixed_sibling_is_listed() {
+    const ENTRY_CAP: u32 = 4;
+    const ENTRY_BYTES: u64 = 512;
+    assert_eq!(
+        listed(b"./a/x\0./a.b\0", tools::Depth::Whole, ENTRY_CAP, ENTRY_BYTES, None),
+        tools::Done::Listed {
+            entries: Box::new([
+                listed_entry(b"a", tools::Kind::Directory),
+                listed_entry(b"a.b", tools::Kind::File),
+                listed_entry(b"a/x", tools::Kind::File),
+            ]),
+            more: 0,
+        }
+    );
+}
+
+#[test]
+fn a_prefixed_sibling_before_its_namesake_directory_is_refused() {
+    const ENTRY_CAP: u32 = 2;
+    const ENTRY_BYTES: u64 = 512;
+    assert_eq!(
+        listed(b"./a.b\0./a/x\0", tools::Depth::Whole, ENTRY_CAP, ENTRY_BYTES, None),
+        tools::Done::Failed { fault: tools::Fault::Other }
     );
 }
 

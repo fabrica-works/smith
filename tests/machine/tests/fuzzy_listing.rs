@@ -11,6 +11,8 @@ static HEAP: Counting = Counting;
 
 #[test]
 fn seeded_selected_paths_keep_the_exact_tree_prefix_and_omitted_count_within_memory() {
+    const BRANCHES: u64 = 4;
+    const CHILDREN: u64 = 3;
     for seed in 0..128 {
         let mut rng = Rng::new(seed);
         let depth = match rng.below(4) {
@@ -22,8 +24,15 @@ fn seeded_selected_paths_keep_the_exact_tree_prefix_and_omitted_count_within_mem
         let mut selected = BTreeSet::new();
         selected.insert(b".Git/config".to_vec());
         for index in 0..24 {
-            selected.insert(format!("a{}/deep{}/file{index:02}", rng.below(4), rng.below(3)).into_bytes());
+            let branch = rng.below(BRANCHES);
+            let child = rng.below(CHILDREN);
+            selected.insert(format!("a{branch}/deep{child}/file{index:02}").into_bytes());
+            selected.insert(format!("a{branch}/deep{child}.rs").into_bytes());
+            selected.insert(format!("a{branch}-b/file{index:02}").into_bytes());
+            selected.insert(format!("a{branch}.rs").into_bytes());
         }
+        let mut selected: Vec<_> = selected.into_iter().collect();
+        selected.sort_by_key(|path| path.split(|byte| *byte == b'/').map(Vec::from).collect::<Vec<_>>());
         let mut all = BTreeMap::new();
         let levels = match depth {
             tools::Depth::Whole => u32::MAX,

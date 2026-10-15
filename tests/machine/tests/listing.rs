@@ -12,7 +12,7 @@ fn limits() -> Limits {
         path_bytes: 64,
         file_bytes: 16,
         tool_payload: 64,
-        entries: 2,
+        entries: 8,
         entry_bytes: 512,
         processes: 2,
         output_bytes: 64,
@@ -160,10 +160,9 @@ fn listed_entry(path: &[u8], kind: tools::Kind) -> tools::Entry {
     tools::Entry { name: Box::from(path), kind }
 }
 
-#[test]
-fn native_rg_selects_empty_files_and_ignores_empty_unmatched_and_ignored_directories() {
-    use std::{fs, process::Command};
-    let root = std::env::temp_dir().join(format!("smith-list-tree-{}", std::process::id()));
+fn selected_native_output(suffix: &str) -> Vec<u8> {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!("smith-list-tree-{suffix}-{}", std::process::id()));
     fs::create_dir(&root).expect("unique scratch");
     for directory in ["src/deep", "ignored", "empty", ".git", "unmatched"] {
         fs::create_dir_all(root.join(directory)).expect("fixture directory");
@@ -174,6 +173,14 @@ fn native_rg_selects_empty_files_and_ignores_empty_unmatched_and_ignored_directo
     {
         fs::write(root.join(file), b"").expect("empty selected file fixture");
     }
+    let output = native_output(&root);
+    fs::remove_dir_all(&root).expect("scratch reclaimed");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.stdout.as_slice(), b"./src/deep/only.rs\0./src/empty.rs\0");
+    output.stdout
+}
+
+fn native_output(root: &std::path::Path) -> std::process::Output {
     let mut component = component();
     let mut up = Queue::with_capacity(2);
     let mut down = Queue::with_capacity(2);
@@ -217,27 +224,71 @@ fn native_rg_selects_empty_files_and_ignores_empty_unmatched_and_ignored_directo
             panic!("list spawns rg")
         }
     };
-    let mut command = Command::new(std::str::from_utf8(&spawn.program).expect("fixed program"));
-    command.current_dir(&root).env_clear();
+    let mut command = std::process::Command::new(std::str::from_utf8(&spawn.program).expect("fixed program"));
+    command.current_dir(root).env_clear();
     for word in &spawn.args {
         command.arg(std::str::from_utf8(word).expect("fixture arguments"));
     }
-    let output = command.output().expect("native rg fixture");
-    fs::remove_dir_all(&root).expect("scratch reclaimed");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(output.stdout.as_slice(), b"./src/deep/only.rs\0./src/empty.rs\0");
+    command.output().expect("native rg fixture")
+}
+
+#[test]
+fn native_rg_selects_empty_files_and_ignores_empty_unmatched_and_ignored_directories() {
+    const DIRECT_CHILDREN: u32 = 1;
+    const ENTRY_CAP: u32 = 2;
+    const ENTRY_BYTES: u64 = 512;
+    let output = selected_native_output("selection");
     assert_eq!(
-        listed(&output.stdout, tools::Depth::Levels(1), 2, 512, Some(b"*.rs")),
+        listed(&output, tools::Depth::Levels(DIRECT_CHILDREN), ENTRY_CAP, ENTRY_BYTES, Some(b"*.rs")),
         tools::Done::Listed { entries: Box::new([listed_entry(b"src", tools::Kind::Directory)]), more: 0 }
     );
+}
+
+#[test]
+fn a_native_rg_listing_counts_entries_below_its_cap() {
+    const ENTRY_CAP: u32 = 2;
+    const ENTRY_BYTES: u64 = 512;
+    let output = selected_native_output("count");
     assert_eq!(
-        listed(&output.stdout, tools::Depth::Whole, 2, 512, Some(b"*.rs")),
+        listed(&output, tools::Depth::Whole, ENTRY_CAP, ENTRY_BYTES, Some(b"*.rs")),
         tools::Done::Listed {
             entries: Box::new([
                 listed_entry(b"src", tools::Kind::Directory),
                 listed_entry(b"src/deep", tools::Kind::Directory)
             ]),
             more: 2
+        }
+    );
+}
+
+#[test]
+fn a_native_rg_listing_of_a_file_beside_its_namesake_directory_is_listed() {
+    use std::fs;
+    const ENTRY_CAP: u32 = 8;
+    const ENTRY_BYTES: u64 = 512;
+    let root = std::env::temp_dir().join(format!("smith-list-namesakes-{}", std::process::id()));
+    fs::create_dir(&root).expect("unique scratch");
+    for file in ["src/a/x.rs", "src/a.rs", "src/a-b/y.rs"] {
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().expect("fixture parent")).expect("fixture directory");
+        fs::write(path, b"").expect("selected file fixture");
+    }
+    let output = native_output(&root);
+    fs::remove_dir_all(root).expect("scratch reclaimed");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.stdout.as_slice(), b"./src/a/x.rs\0./src/a-b/y.rs\0./src/a.rs\0");
+    assert_eq!(
+        listed(&output.stdout, tools::Depth::Whole, ENTRY_CAP, ENTRY_BYTES, Some(b"*.rs")),
+        tools::Done::Listed {
+            entries: Box::new([
+                listed_entry(b"src", tools::Kind::Directory),
+                listed_entry(b"src/a", tools::Kind::Directory),
+                listed_entry(b"src/a-b", tools::Kind::Directory),
+                listed_entry(b"src/a-b/y.rs", tools::Kind::File),
+                listed_entry(b"src/a.rs", tools::Kind::File),
+                listed_entry(b"src/a/x.rs", tools::Kind::File),
+            ]),
+            more: 0,
         }
     );
 }

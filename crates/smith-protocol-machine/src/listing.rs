@@ -1,11 +1,15 @@
 //! A bounded tree prefix from sorted, NUL-delimited `rg --files` output.
 //! Only selected files and their ancestors exist here; no filesystem, ignore
 //! rule or glob is interpreted. Sorted files let one previous path prove which
-//! ancestors are new. Depth filters emitted entries, not the selected files.
+//! ancestors are new. Selected paths compare name by name, each name as bytes.
+//! Depth filters emitted entries, not the selected files.
 //! Contract: domain/tools.md, section 3; programming-model.md, sections 4.4 and 6.3.
 
 use alloc::boxed::Box;
-use core::mem::{replace, size_of};
+use core::{
+    cmp::Ordering,
+    mem::{replace, size_of},
+};
 
 use skein_io::kernel;
 use skein_lib::List;
@@ -68,7 +72,7 @@ impl Listing {
             Some(path) => Box::from(path),
             None => Box::from(raw),
         };
-        if path.is_empty() || path.as_ref() <= self.previous.as_ref() || !relative(&path) {
+        if path.is_empty() || compare_paths(&path, &self.previous).is_le() || !relative(&path) {
             self.failed = true;
             return;
         }
@@ -173,6 +177,21 @@ impl Listing {
         let more = self.total.checked_sub(u64::from(self.kept)).expect("retained prefix belongs to the count");
         tools::Done::Listed { entries: entries.into_boxed(), more }
     }
+}
+
+fn compare_paths(left: &[u8], right: &[u8]) -> Ordering {
+    for (left, right) in left.iter().zip(right.iter()) {
+        if left != right {
+            if *left == b'/' {
+                return Ordering::Less;
+            }
+            if *right == b'/' {
+                return Ordering::Greater;
+            }
+            return left.cmp(right);
+        }
+    }
+    left.len().cmp(&right.len())
 }
 
 fn relative(path: &[u8]) -> bool {
