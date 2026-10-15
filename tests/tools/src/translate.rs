@@ -12,6 +12,9 @@ use smith_domain_tools::{Done, Exit, Expect, Fault, Hit, Name, Op, Part, Path, P
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn path(text: &[u8]) -> Path {
+    if text.is_empty() {
+        return Path { absolute: false, parts: Box::new([Part::Current]) };
+    }
     let mut parts = Vec::new();
     for part in text.split(|byte| *byte == b'/') {
         match part {

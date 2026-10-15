@@ -438,6 +438,9 @@ fn decimal(text: &[u8]) -> Option<u32> {
 }
 
 fn path(text: &[u8]) -> Result<tools::Path, llm::Problem> {
+    if text.is_empty() {
+        return Ok(tools::Path { absolute: false, parts: Box::new([tools::Part::Current]) });
+    }
     let absolute = text.first() == Some(&b'/');
     let capacity = u32::try_from(text.len()).or(Err(llm::Problem::TooLarge))?;
     let mut parts = List::with_capacity(capacity);
@@ -449,9 +452,6 @@ fn path(text: &[u8]) -> Result<tools::Path, llm::Problem> {
         }
     }
     append_part(&mut parts, text.get(start..).ok_or(llm::Problem::TooLarge)?)?;
-    if parts.is_empty() && !absolute {
-        return Err(bad_value(b"path"));
-    }
     Ok(tools::Path { absolute, parts: parts.into_boxed() })
 }
 

@@ -556,7 +556,9 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         caps.shell_timeout = Duration::from_secs(12);
         caps.tool_deadline = Duration::from_secs(43);
         settings.limits.run.directory_name_bytes = 37;
-        let client = skein_llm_world::limits();
+        let mut client = skein_llm_world::limits();
+        client.request = 16384;
+        client.http.request = 16384;
         let bounds = Limits {
             client,
             tool_bytes: 32768,
@@ -587,10 +589,10 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         for (name, parameters, detail) in [
             (b"read".as_slice(), 3, b"default 73 bytes; max 257 bytes".as_slice()),
             (b"list", 3, b"max 37 bytes"),
-            (b"search", 3, b"Search pattern"),
+            (b"search", 3, b"Regular expression for rg"),
             (b"write", 2, b"max 257 bytes"),
             (b"edit", 5, b"max 257 bytes"),
-            (b"shell", 3, b"43000 ms"),
+            (b"shell", 3, b"43 seconds"),
         ] {
             let tool = offered.iter().find(|tool| tool.name.as_ref() == name).expect("actual offered tool");
             let schema = std::str::from_utf8(&tool.parameters).expect("native schema text");

@@ -360,3 +360,72 @@ fn shell_budgets_decode_by_unit_and_a_unitless_timeout_is_ignored() {
         assert_eq!(actual.as_ref(), field);
     }
 }
+
+#[test]
+fn the_empty_path_decodes_as_the_working_directory_for_each_path_field() {
+    for (name, input) in [
+        (b"read".as_slice(), br#"{"path":""}"#.as_slice()),
+        (b"list", br#"{"path":""}"#),
+        (b"write", br#"{"path":"","content":"text"}"#),
+        (b"edit", br#"{"path":"","edits":[{"old":"before","new":"after"}]}"#),
+        (b"search", br#"{"path":"","pattern":"text"}"#),
+    ] {
+        let decoded = adapter::decode(name, input, grants(), &[], llm::Asker::Main, &limits());
+        let llm::Decoded::Owned { call } = decoded else { panic!("{name:?}: {decoded:?}") };
+        let path = match call {
+            tools::Call::Read { path, .. }
+            | tools::Call::List { path, .. }
+            | tools::Call::Write { path, .. }
+            | tools::Call::Edit { path, .. }
+            | tools::Call::Search { path, .. } => path,
+            tools::Call::Shell { .. } | tools::Call::Job { .. } => panic!("a path field"),
+        };
+        assert_eq!(path, tools::Path { absolute: false, parts: Box::new([tools::Part::Current]) }, "{name:?}");
+    }
+}
+
+#[test]
+fn each_description_states_its_facts() {
+    let schemas = adapter::schemas(&prompt(), &limits().stated);
+    for name in [b"read".as_slice(), b"list", b"search", b"write", b"edit"] {
+        let schema = schemas.iter().find(|schema| schema.name.as_ref() == name).expect("path tool");
+        let text = std::str::from_utf8(&schema.schema).expect("schema text");
+        for fact in [
+            "The dot (.) and the empty path both name the working directory",
+            "Count each name, . and .., with one separator between each two",
+            "repeated, leading and trailing separators count nothing",
+            "Keep the same bound once resolved, . and .. removed, from the workspace root",
+        ] {
+            assert!(text.contains(fact), "{name:?}: {fact}");
+        }
+    }
+    for (name, facts) in [
+        (b"list".as_slice(), ["List . for the working directory", "omitted files and directories counted once"]),
+        (b"search", ["Search files with rg using a regular expression", "Regular expression for rg"]),
+        (b"shell", ["Seconds; default deadline 30 seconds", "effective maximum 120 seconds"]),
+    ] {
+        let schema = schemas.iter().find(|schema| schema.name.as_ref() == name).expect("fact tool");
+        let text =
+            format!("{} {}", String::from_utf8_lossy(&schema.description), String::from_utf8_lossy(&schema.schema));
+        for fact in facts {
+            assert!(text.contains(fact), "{name:?}: {fact}");
+        }
+    }
+}
+
+#[test]
+fn one_directory_listing_hides_the_directory_names_instruction() {
+    let schemas = adapter::schemas(&prompt(), &limits().stated);
+    let list = schemas.iter().find(|schema| schema.name.as_ref() == b"list").expect("list tool");
+    assert!(!String::from_utf8_lossy(&list.description).contains("List /"));
+}
+
+#[test]
+fn several_directories_offer_listing_the_directory_names() {
+    let mut prompt = prompt();
+    prompt.namespace =
+        tools::Namespace::Several { working: tools::Name::new(b"work".as_slice().into()).expect("name") };
+    let schemas = adapter::schemas(&prompt, &limits().stated);
+    let list = schemas.iter().find(|schema| schema.name.as_ref() == b"list").expect("list tool");
+    assert!(String::from_utf8_lossy(&list.description).contains("List / for directory names"));
+}

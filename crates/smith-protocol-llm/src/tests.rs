@@ -342,11 +342,11 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             3_usize,
         ),
         (
-            "List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max 11 entries; omitted files and directories counted once. List / for directory names. Batch independent reads, lists and searches side by side.",
+            "List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max 11 entries; omitted files and directories counted once. List . for the working directory. Batch independent reads, lists and searches side by side.",
             3,
         ),
         (
-            "Search files; max 13 matches, 127 bytes; cuts are marked. Batch independent reads, lists and searches side by side.",
+            "Search files with rg using a regular expression; max 13 matches, 127 bytes; cuts are marked. Batch independent reads, lists and searches side by side.",
             3,
         ),
         (
@@ -386,8 +386,8 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             b"edit" => assert_eq!(text.matches("max 257 bytes").count(), 2),
             b"shell" => assert!(
                 text.contains("Seconds")
-                    && text.contains("12000 ms")
-                    && text.contains("43000 ms")
+                    && text.contains("12 seconds")
+                    && text.contains("43 seconds")
                     && text.contains("max 401 bytes")
             ),
             _ => panic!("only the six workspace tools"),
@@ -517,13 +517,20 @@ fn oversized_call_feedback_states_size_bound_and_batched_recovery_within_its_cap
 fn fixed_own_schema_measurement_matches_the_complete_fixed_inventory() {
     let stated = crate::Stated::from_tools(&tools(), 2048).expect("bounded quantities");
     let mut prompt = described_prompt();
-    prompt.namespace = tools::Namespace::One;
     prompt.served = Box::new([smith_domain::llm::Served::Wait, smith_domain::llm::Served::SubAgent]);
-    let inventory = crate::schemas(&prompt, &stated);
-    let rendered =
-        inventory.iter().map(|tool| tool.name.len() + tool.description.len() + tool.schema.len()).sum::<usize>();
-    assert_eq!(crate::fixed_schema_bytes(&stated), u64::try_from(rendered).ok());
-    assert_eq!(inventory.len(), 8);
+    let mut largest = 0;
+    for namespace in [
+        tools::Namespace::One,
+        tools::Namespace::Several { working: tools::Name::new(b"work".as_slice().into()).expect("name") },
+    ] {
+        prompt.namespace = namespace;
+        let inventory = crate::schemas(&prompt, &stated);
+        let rendered =
+            inventory.iter().map(|tool| tool.name.len() + tool.description.len() + tool.schema.len()).sum::<usize>();
+        largest = largest.max(rendered);
+        assert_eq!(inventory.len(), 8);
+    }
+    assert_eq!(crate::fixed_schema_bytes(&stated), u64::try_from(largest).ok());
 }
 
 #[test]

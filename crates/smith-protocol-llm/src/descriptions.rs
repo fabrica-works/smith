@@ -29,11 +29,11 @@ impl Text {
     }
 }
 
-pub(crate) fn description(tool: Tool, stated: &Stated) -> Box<[u8]> {
+pub(crate) fn description(tool: Tool, stated: &Stated, namespace: &Namespace) -> Box<[u8]> {
     let mut measure = Text { length: 0, writer: None };
-    words(tool, stated, &mut measure);
+    words(tool, stated, namespace, &mut measure);
     let mut output = Text { length: 0, writer: Some(Writer::new(measure.length)) };
-    words(tool, stated, &mut output);
+    words(tool, stated, namespace, &mut output);
     output.finish()
 }
 
@@ -45,7 +45,7 @@ pub(crate) fn schema(tool: Tool, stated: &Stated, namespace: &Namespace) -> Box<
     output.finish()
 }
 
-fn words(tool: Tool, stated: &Stated, output: &mut Text) {
+fn words(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) {
     match tool {
         Tool::Read => {
             output.put(b"Read whole lines in byte windows; default ");
@@ -57,10 +57,15 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
         Tool::List => {
             output.put(b"List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max ");
             output.number(u64::from(stated.list_entries));
-            output.put(b" entries; omitted files and directories counted once. List / for directory names. ");
+            output.put(b" entries; omitted files and directories counted once. ");
+            match namespace {
+                Namespace::One => output.put(b"List . for the working directory. "),
+                Namespace::Several { .. } => output.put(b"List / for directory names. "),
+                Namespace::NoWorkspace => {}
+            }
         }
         Tool::Search => {
-            output.put(b"Search files; max ");
+            output.put(b"Search files with rg using a regular expression; max ");
             output.number(u64::from(stated.search_hits));
             output.put(b" matches, ");
             output.number(u64::from(stated.search_bytes));
@@ -107,7 +112,7 @@ fn path(stated: &Stated, namespace: &Namespace, output: &mut Text) {
         Namespace::Several { .. } => output.put(b"Relative to the working directory or /name/...; max "),
     }
     output.number(u64::from(stated.path_bytes));
-    output.put(br#" bytes."}"#);
+    output.put(br#" bytes. The dot (.) and the empty path both name the working directory. Count each name, . and .., with one separator between each two; repeated, leading and trailing separators count nothing. Keep the same bound once resolved, . and .. removed, from the workspace root."}"#);
 }
 
 fn input(stated: &Stated, output: &mut Text) {
@@ -141,7 +146,7 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
         }
         Tool::Search => {
             path(stated, namespace, output);
-            output.put(br#", "pattern":{"type":"string","description":"Search pattern."#);
+            output.put(br#", "pattern":{"type":"string","description":"Regular expression for rg."#);
             input(stated, output);
             output.put(br#""},"glob":{"type":"string","description":"Optional file glob."#);
             input(stated, output);
@@ -170,10 +175,10 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
             output.put(
                 br#""},"timeout_seconds":{"type":"integer","minimum":1,"description":"Seconds; default deadline "#,
             );
-            output.number(stated.shell_timeout.as_nanos() / 1_000_000);
-            output.put(b" ms; effective maximum ");
-            output.number(stated.tool_deadline.as_nanos() / 1_000_000);
-            output.put(br#" ms, within the remaining session time. Larger requests are clamped and reported."},"output_bytes":{"type":"integer","minimum":1,"description":"Retained output bytes; default "#);
+            output.number(stated.shell_timeout.as_nanos() / 1_000_000_000);
+            output.put(b" seconds; effective maximum ");
+            output.number(stated.tool_deadline.as_nanos() / 1_000_000_000);
+            output.put(br#" seconds, within the remaining session time. Larger requests are clamped and reported."},"output_bytes":{"type":"integer","minimum":1,"description":"Retained output bytes; default "#);
             output.number(u64::from(stated.shell_output));
             output.put(b" bytes; max ");
             output.number(u64::from(stated.output_ceiling));

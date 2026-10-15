@@ -69,14 +69,21 @@ pub fn schemas_for_contract(
 /// Contract-generated finish and deliver declarations belong to the host's part.
 #[must_use]
 pub fn fixed_schema_bytes(stated: &crate::Stated) -> Option<u64> {
+    let several = tools::Namespace::Several {
+        working: tools::Name::new(b"work".as_slice().into()).expect("fixed directory name"),
+    };
+    Some(fixed_namespace_bytes(stated, &tools::Namespace::One)?.max(fixed_namespace_bytes(stated, &several)?))
+}
+
+fn fixed_namespace_bytes(stated: &crate::Stated, namespace: &tools::Namespace) -> Option<u64> {
     let mut bytes = 0_u64;
     for schema in [
-        owned(tools::Tool::Read, b"read", stated, &tools::Namespace::One),
-        owned(tools::Tool::List, b"list", stated, &tools::Namespace::One),
-        owned(tools::Tool::Search, b"search", stated, &tools::Namespace::One),
-        owned(tools::Tool::Write, b"write", stated, &tools::Namespace::One),
-        owned(tools::Tool::Edit, b"edit", stated, &tools::Namespace::One),
-        owned(tools::Tool::Shell, b"shell", stated, &tools::Namespace::One),
+        owned(tools::Tool::Read, b"read", stated, namespace),
+        owned(tools::Tool::List, b"list", stated, namespace),
+        owned(tools::Tool::Search, b"search", stated, namespace),
+        owned(tools::Tool::Write, b"write", stated, namespace),
+        owned(tools::Tool::Edit, b"edit", stated, namespace),
+        owned(tools::Tool::Shell, b"shell", stated, namespace),
         waiting(),
         sub_agent(stated.host_part),
     ] {
@@ -155,7 +162,7 @@ fn owned(tool: tools::Tool, name: &[u8], stated: &crate::Stated, namespace: &too
     ToolSchema {
         kind: ToolKind::Owned(tool),
         name: name.into(),
-        description: crate::descriptions::description(tool, stated),
+        description: crate::descriptions::description(tool, stated, namespace),
         schema: crate::descriptions::schema(tool, stated, namespace),
     }
 }
