@@ -1060,6 +1060,13 @@ changes what section 8.4 holds.
 135. **12.1's row: 3.60, from shell-cwd's real cost** (steer of 2026-10-15T02:29:39Z).
      Row 12.1 becomes 117 attempts and $13.60: the 59 spent ($1.59), and the session file's "about $12" for the 58. Ruling 133's $3.30 priced the 58 at $0.029 an attempt, from a run whose only shell-cwd attempt was refused at setup; in gate task 3788, smith's shell-cwd attempts cost $1.61, $1.20 and $0.73, against $0.03 to $0.11 for a fixture attempt (the check of 2026-10-15T02:24Z). The row answers rule 10's 1.5× question for 12.1 while its notional stays under $20.40. "For the user" now projects about $32 of the $50, not under $10. Rule 10's 340 attempts and $50, and the user's open question, are unchanged.
 
+136. **12.1's run is the baseline; 03.s2 makes its section verify** (cross-session scope, smith 12's block of 2026-10-15T03:31:05Z).
+     A harness defect, outside 12.1's Files. The run `parity-744e0820-20261015T002817Z` is 12.1's baseline: 58 of 58 attempts passed, with no setup refusal, and only `parity`'s verification refused its section ("committed parity section disagrees with attempt rows", `benchmarks/src/parity.rs:262-264`). No suite runs again.
+
+     1. **`smith-03.s2`** is a new step in session 03, needing nothing (`smith/03-results.md`, 03.s2). `summarise` sets the section with the same `from_summary` that `verify` calls (`benchmarks/src/summary.rs:519`), so the difference comes from the summary's JSON round trip; 03.s2 finds the field and corrects it, within a budget of 3 runs and 30 minutes, and regenerates the summary offline from the run's raw results if the stored section is the wrong one. 12.1 needs it.
+     2. **12.1 keeps its worktree and the untracked summary,** and waits for 03.s2. Then it rebases, runs the `parity` command on that summary (or on 03.s2's regenerated one) with `--commit 744e08206cfdb1a63b1a6cbc0e28ab747e1d09ae`, and commits and lands it as its Shape says. Its `Live:` trailer counts 117 attempts and $9.80 notional, inside row 12.1's $13.60 (ruling 135).
+     3. **The stored criteria are not yet the baseline's;** the commit body gives the ones the verified command prints. A failing criterion is the baseline's finding, not a block: the stored section says RT 1.293 [0.909, 1.539] against 1.20.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At

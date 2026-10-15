@@ -39,7 +39,7 @@ meanwhile (implementer.md, section 8.7).
 |---|---|---|---|
 | `01-tasks.md` | 01: the graded tasks: fixtures and `shell-cwd` at version 2, what decides a graded task, comparison budgets refused, `/tmp` listed | — | — |
 | `02-pins.md` | 02: each agent as it ships: smith's pins as product layers, one face, Codex as it ships | — | — |
-| `03-results.md` | 03: priced spend from smith's presets with the formats' version 3, a summary row per attempt, the time record, Codex's children, large effects; 03.s1, a retried failure's tokens (ruling 131), before 12.1's run | — | — |
+| `03-results.md` | 03: priced spend from smith's presets with the formats' version 3, a summary row per attempt, the time record, Codex's children, large effects; 03.s1, a retried failure's tokens (ruling 131), and 03.s2, the parity section verified (ruling 136), before 12.1 lands | — | — |
 | `04-probes.md` | 04: calibration in task files, `history` version 2, the `parity` suite and command, probes gated by calibration, `first-request` calibrated; 04.s4, a setup deadline a cold build fits (ruling 133), before 12.1's run | — | 04.4: smith 03's attempt rows [03.2]; 04.6: smith 02's pins and one face [02.1, 02.2], smith 03's summary version 3 [03.1] |
 | `05-product.md` | 05: `gpt-6.1-sol` and the working tier, one effort bound, a failed start ends `smith exec` | — | — |
 | `06-text.md` | 06: the empty path and the descriptions' facts, then the task role | the baseline `parity` run's summary on `main` [12.1]; smith 08's vocabulary [08.1] | — |

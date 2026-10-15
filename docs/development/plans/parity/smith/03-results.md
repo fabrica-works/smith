@@ -267,6 +267,41 @@ Don't: write a zero for a retried failure, or leave it out of the
 Size: 80 lines.
 Removes: nothing.
 
+### 03.s2 The committed parity section and its rows agree
+Scope: benchmarks.md 16.4 ("refuses a section that disagrees"); ruling 136.
+Needs: nothing (03.s1 and 04.4 landed).
+Budget: 3 runs, 30 minutes (rule 5), for the cause.
+Files: `benchmarks/src/parity.rs` (`measured`, `:73`; `from_summary`,
+  `:226`; `verify`, `:257`), `benchmarks/src/summary.rs` (`summarise`,
+  `:454`, which sets `summary.parity = Some(crate::parity::from_summary(&summary)?)`
+  at `:519`, before the file is written), the row types whose JSON the
+  section's inputs pass through, `benchmarks/tests/parity.rs`.
+Shape: `parity benchmarks/summaries/parity-744e0820-20261015T002817Z.json
+  --commit 744e0820…` (the summary is untracked in w31's worktree; copy it
+  to a scratch path) exits 2, "committed parity section disagrees with
+  attempt rows": all 58 attempts passed, and one smith row (attempt 53)
+  has a spend that misses only retried failures (ruling 131). The writer
+  and `verify` call the same `from_summary`, so the difference comes from
+  the JSON round trip: find the first field of `Parity` that differs
+  between the stored section and `from_summary` of the summary read back,
+  and the row field whose round trip changes it, with a diagnostic that
+  does not land. Correct that field's serialization or its reading, so
+  that a summary read back computes the section it was written with. If
+  the stored section is the wrong one, regenerate the summary offline
+  from the same run's raw results under `~/.local/state/smith-bench/runs/`
+  (`summarise`), with the corrected code; no attempt runs again.
+Test shape: `parity.rs`:
+  `a_summary_with_a_retried_failure_row_verifies_against_its_own_section`
+  (03.s1's excerpt as one smith row among literal rows, written to JSON
+  and read back). Under 20 ms.
+Proof: unit, that test; the offline command on that summary, once,
+  prints the five criteria and exits with the verdict's code; the smoke
+  (rule 8).
+Don't: change a criterion, a margin, the seed, the exact comparison in
+  `verify`, or a format's version (rule 12); run a live attempt.
+Size: 30 lines.
+Removes: nothing.
+
 ## Interface sketches
 
 ```rust
