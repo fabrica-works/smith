@@ -58,7 +58,7 @@ Needs: smith 01's graded tasks [01.1, 01.2, 01.3]; smith 02's pins
   [02.1, 02.2, 02.3]; smith 03's priced spend, attempt rows and time
   record [03.1, 03.2, 03.3]; smith 04's `parity` suite and command [04.3,
   04.4]; smith 05's working tier [05.1]; smith 07's compaction [07.3];
-  smith 03's retried failures [03.s1].
+  smith 03's retried failures [03.s1]; smith 04's setup deadline [04.s4].
 Files: `benchmarks/summaries/parity-*.json`.
 Shape: no code. `heavy cargo run -p smith-bench -- build HEAD`, then
   `heavy --gate cargo run -p smith-bench -- suite parity --arm <dir>`,
@@ -76,6 +76,13 @@ Shape: no code. `heavy cargo run -p smith-bench -- build HEAD`, then
     above once, as a new run, from a new build of `HEAD`. Rule 9 applies
     to that run as to a first one: the harness's rule, which 03.s1
     changes, ended the first command, not the provider.
+  - The run on `1ea86da7`, `parity-1ea86da7-20261014T230756Z`, is spent
+    too (ruling 133): all 48 fixture attempts passed, and attempt 49,
+    shell-cwd's first, was refused at setup (`Signal(15)` at the 15 s
+    setup deadline). 49 attempts, $1.41 notional; its summary is not
+    committed. Once 04.s4 is on `main`, the step rebases and runs the
+    three commands once more, as a new run, from a new build of `HEAD`.
+    A setup refusal in that run stops the step on a block.
 Test shape: none.
 Proof: live, once: the run, 58 attempts, about $12 and 4 hours; its five
   criteria lines, the verdict's exit, and each arm's time-record medians

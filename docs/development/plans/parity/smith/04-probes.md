@@ -397,6 +397,31 @@ Don't: change `prompt-within-window`, `compaction-carried`,
 Size: 70 lines.
 Removes: nothing.
 
+### 04.s4 A setup deadline a cold build fits
+Scope: benchmarks.md 4's `setup` ("A task that builds warms its build in
+  `setup`"), 8.3's `Refused(setup)`; ruling 133.
+Needs: nothing (04.4 and 01.2 landed).
+Files: `benchmarks/src/probe.rs` (`setup_deadline_seconds: 15`, `:289`),
+  and any further copy of that value the tests name.
+Shape: the prepared request's `setup_deadline_seconds` becomes 900, from
+  15, for every task: it bounds a hung setup, and a fast one ends at once.
+  shell-cwd's setup, `cargo build --offline --locked --workspace
+  --all-targets` (task.toml `:8`), was killed at 15 s (`Signal(15)`) in
+  `parity-1ea86da7-20261014T230756Z` attempt 49. Before the change,
+  measure that setup once: unbundle the seed that `seed/bundle.toml`
+  names, from `~/.local/state/smith-bench/bundles/`, into a scratch
+  directory, and run `/usr/bin/time -f %e heavy cargo build --offline
+  --locked --workspace --all-targets` there with `CARGO_TARGET_DIR` an
+  empty scratch directory. Its seconds go in the commit body. Past 450 s,
+  stop on a question instead of landing.
+Test shape: none new; the existing tests, as they are.
+Proof: unit, the crate's tests; the measurement; the smoke (rule 8).
+  The live proof is 12.1's next run.
+Don't: change a task's `setup`, a task version, the format's version
+  (rule 12), or the grader's deadlines.
+Size: 5 lines.
+Removes: nothing.
+
 ## Interface sketches
 
 ```rust

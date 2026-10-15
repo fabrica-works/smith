@@ -1039,3 +1039,24 @@ changes what section 8.4 holds.
      1. smith 03 reruns its dependents command once, as it ran at 22:57Z, on the saved commit `33346dbc`. If it passes, 03.s1 goes on as its session file says (the smoke, then `land`), and its commit body names the 22:57Z panic and its log, `logs/smith-03/03.s1-dependents.log`, in one line. `probe_command`'s "source repository is dirty" failure of the same run needs nothing more: the saved commit made the tree clean.
      2. If the same test fails again with the same panic, 03.s1 stops and reports a block (kind: process) that quotes the second panic's lines; it changes nothing in `smith-local-domain`. Any other failure is reported as implementer.md 8.7 says.
      3. Until the run's end, any session whose gate or dependents run fails only on this test, with this panic, reruns that command once in the same way, and names the panic in its commit body or report in one line; a second failure is a block, as in point 2. The supervisor then opens a step for it. later.md records the panic.
+
+133. **12.1's setup refusal: 04.s4 gives setup 900 s, then 12.1 once more** (plan defect, smith 12's block of 2026-10-15T00:09:52Z).
+     A plan defect: 01.2 gave shell-cwd a setup build, `cargo build --offline --locked --workspace --all-targets`, and no step gave setup the time a cold build takes; the harness bounds every setup command by `setup_deadline_seconds: 15` (`benchmarks/src/probe.rs:289`). benchmarks.md 4 asks for the build: "A task that builds warms its build in `setup`."
+
+     1. **`smith-04.s4`** is a new step in session 04, needing nothing: the setup deadline becomes 900 s, after one measurement of shell-cwd's setup (`smith/04-probes.md`, 04.s4). 12.1 needs it.
+     2. **The run on `1ea86da7` is spent,** as ruling 131's two were: 49 attempts, $1.41 notional, its summary not committed. Its numbers (FT 0.965 [0.891, 1.046], FC 0.438 [0.402, 0.477], all 48 fixture attempts passing) are not the baseline: benchmarks.md 16.1 asks for "58 attempts, interleaved in one session … with no rerun". No attempt of it runs again.
+     3. **12.1 runs once more,** once 04.s4 is on `main`: it rebases, builds `HEAD`, and runs its three commands as a new run. A setup refusal in that run stops the step on a block. Row 12.1 becomes 117 attempts and $3.30: the 59 spent, and 58, at this run's $0.029 an attempt. That answers rule 10's 1.5× question for 12.1, until that run's end.
+     4. **The run's 340 attempts** will not hold all the rows left: about 395 with 12.3 at none, and under $10 of the $50. The question is the user's, in decisions.md's "For the user". Until an answer, rule 10 holds as written; 12.1's next run fits (about 245 of 340).
+
+## For the user
+
+- **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At
+  ruling 133 the landed total was 128 attempts, $1.35; 12.1 has spent 59
+  unlanded and needs 58 more. With the rows left (06.2 30, 11.3 24, 12.2
+  20, 12.4 58, the reserve 6, about 10 smokes), the run comes to about
+  395 attempts, past 340, with 12.3 at none. Its notional spend comes to
+  under $10 of the $50: the 49 attempts of 12.1's second run cost $1.41,
+  against the README's $12 for 58. Asked: raise the cap to 420 attempts,
+  with $50 unchanged? Until an answer, rule 10 holds as written: a
+  command that would pass 340 stops on a question, and offline work goes
+  on.
