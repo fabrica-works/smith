@@ -1081,6 +1081,14 @@ changes what section 8.4 holds.
      3. **Unchanged:** the Shape's `Check::HostPartHoldsTheRole`, `Configuration.role_bound: Option<u32>`, its four tests, the live proof (30 attempts, $3), the Don't, and Size (150 lines, a guide: past it, say why in the commit body).
      4. **Further users:** a `Configuration` literal or a `host_bytes` caller the change reaches outside Files: adapt it, and list it in the commit body. temper builds its declarations through smith's world function (`tests/one-process/src/fixtures.rs:171`), and this plan repins no downstream repository.
 
+140. **smith-03.s3: a suite's binary arms are prepared** (cross-session scope, smith 06's block of 2026-10-15T05:03:10Z).
+     Ruling 140: a harness defect, outside 06.2's Files, fixed as a step of its own, as the report proposes. The design names binary arms as an experiment's own kind: "An arm is a binary, a configuration override or an agent. Two arms make an experiment: a **fix** (before and after)" (benchmarks.md 3). `task_requests` prepares override arms only (`probe.rs:316-323`), so `check_requests` refuses any suite of binary arms (`batch.rs:283-291`); no suite on `main` has one, and 06.2's `role` is the plan's only user.
+
+     1. **`smith-03.s3`, "A suite's binary arms are prepared",** is a new step in session 03 (`smith/03-results.md`, 03.s3), needing nothing, and checked by this ruling: it starts `ready`. `prepare` resolves each binary arm once with `archived` and gives each build the run's own face check; `task_requests` runs one execution per binary arm, as per override arm, with `identity.arm` the arm's name. Its test: `a_suite_with_two_binary_arms_prepares_each_arm_by_its_name`, 30 requests for 06.2's shape, with `ArmRef::Built` fixtures. Its proof: that test and the smoke (rule 8). No live suite.
+     2. **Who:** by default 06.2's implementer (w38), which found the defect, in session 03's worktree (`wt/smith-03`, clean since 03.s2) reset to `origin/main`, landing 03.s3 on its own. A fresh implementer instead if w38's context is past the limit.
+     3. **06.2 waits for 03.s3,** then rebases `parity/smith-06-2` on `main` and runs its proof as written, its arms as built: before `894d132f`, after `a29a4ac5`. The suite's 30 attempts and $3 are 06.2's, unchanged; 03.s3 adds its one smoke attempt.
+     4. **Unchanged:** `check_requests`, override and agent arms, 06.2's Shape, Test shape and Don't. A further caller of `task_requests` the change reaches: adapt it, and list it in the commit body.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15). At

@@ -302,6 +302,37 @@ Don't: change a criterion, a margin, the seed, the exact comparison in
 Size: 30 lines.
 Removes: nothing.
 
+### 03.s3 A suite's binary arms are prepared
+Scope: benchmarks.md 3 ("An arm is a binary, a configuration override or
+  an agent. Two arms make an experiment: a **fix** (before and after)");
+  06.2's block of 2026-10-15T05:03:10Z.
+Needs: nothing. 06.2's proof needs it.
+Files: `benchmarks/src/probe.rs` (`task_requests`, `:297-339`; `prepare`,
+  its face check `:430-437` and its call `:444`; `archived`, `:476`),
+  `benchmarks/tests/overrides/suite.rs`.
+Shape: `task_requests` builds requests for override arms only
+  (`:316-323`), so `check_requests` (`batch.rs:283-291`) refuses a suite
+  of `binary` arms: "prepared requests omit a selected comparison arm".
+  `prepare` resolves each `Arm::Binary { name, commit }` once, before the
+  tasks' loop, with `archived(repository, &Source::Commit(commit))`, and
+  gives each build the face check the run's own arm gets (`:430-437`).
+  `task_requests` then runs one execution per binary arm, in the suite's
+  order, as it does per override arm: `repetitions` requests, each with
+  that arm's build as its program and `identity.arm` its `name`. A suite
+  with binary arms runs no request on the run's own arm, as with
+  overrides. Override suites and suites without arms prepare what they
+  prepare now; agent arms stay as they are.
+Test shape: `suite.rs`: `a_suite_with_two_binary_arms_prepares_each_arm_by_its_name`
+  (06.2's `role` shape: three tasks, 5 per arm, interleaved, two binary
+  arms, with two `ArmRef::Built` fixtures as in `fixture()` in place of
+  the archive): 30 requests, 15 per arm name, each naming its build's
+  commit and SHA-256. Under 0.5 s.
+Proof: unit, that test; the smoke (rule 8).
+Don't: run a live suite; change `check_requests`, an override's or an
+  agent arm's requests, or a format's version (rule 12).
+Size: 60 lines, the test included.
+Removes: nothing.
+
 ## Interface sketches
 
 ```rust

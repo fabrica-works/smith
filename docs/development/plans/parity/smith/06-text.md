@@ -188,6 +188,9 @@ these; where a line below and the text above differ, the line below holds.
   (`:83-86`), which both `smith check` (`check.rs:76`) and a run
   (`compose.rs:107-109`) call. Files gain it; `compose.rs` changes only
   where the bound must reach a later step there.
+- 06.2's proof Needs `smith-03.s3` (the harness prepares binary arms;
+  from its block of 2026-10-15T05:03:10Z). Its arms stay as built:
+  before `894d132f`, after `a29a4ac5`.
 
 ## Questions to raise when reached
 
