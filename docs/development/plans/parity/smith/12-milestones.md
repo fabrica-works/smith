@@ -214,7 +214,7 @@ Shape:
      with `jq` and not to redo another way:
      - smith's fixture responses went from 185 to 231 over 24 attempts,
        and Codex's from 145 to 145. Seconds of request per response rose
-       about alike (smith 9.1 to 10.4, Codex 11.3 to 13.5), so the count
+       about alike (smith 9.2 to 10.5, Codex 11.4 to 13.6), so the count
        carries FT's move;
      - a response holding only a `shell` call, before the first `edit`
        or `write`: in 1 attempt of 24, then in 15. The first shell call
