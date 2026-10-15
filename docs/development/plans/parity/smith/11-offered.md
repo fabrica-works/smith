@@ -195,6 +195,37 @@ Don't: change the machine's job handling, the agent service's routing,
 Size: 40 lines, the test included.
 Removes: the `unreachable!` at `translate.rs:513`.
 
+### 11.s2 A closing session tells its tools' facts before its end
+Scope: protocol/events.md 9 ("one `.completed` per `.started` …, and
+  one `.closed` per `conversation.opened`"; a job's terminal "before its
+  conversation's `conversation.closed`"); tools.md 5 ("The session ends
+  after those records"); 11.3's block of 2026-10-15T08:36:24Z.
+Needs: 11.s1. 11.3's repository proof needs it.
+Files: `crates/smith-domain-session/src/session.rs` (`settle`,
+  `:1222-1225`), `crates/smith-domain-session/src/jobs.rs` (`Jobs::empty`,
+  `:22-24`), `crates/smith-domain-session/src/tests.rs`
+  (`a_session_tells_what_happens_as_facts`, `:1886`),
+  `tests/session/tests/jobs.rs`.
+Shape: a session closing while a `job` read waits (11.3's smith attempt
+  at its deadline) cancels the job; the job's end answers the read, the
+  kit closes in the same step, the jobs table empties, and `settle`
+  skips `pass_on_facts` (`:1223`), so the read's `Answered` is told
+  after `Ended`; the agent service has dropped the scope by then, and
+  `calls.rs:218`'s `expect` panics. `settle` calls `pass_on_facts`
+  whenever the session is settled; `Jobs::empty` goes. `:1886`'s expected
+  order becomes `[Tools Closed, Ended]`. `calls.rs` stays as it is.
+Test shape: `tests/session/tests/jobs.rs`:
+  `a_session_closing_while_a_job_read_waits_answers_the_read_before_it_ends`,
+  beside `a_session_closing_with_a_job_running_tells_its_job_ended`
+  (`:221`): a job, a waiting `job` read, the session closed, the job
+  ended cancelled; the facts' order is the read's answer, then the end
+  (on `main` it is the reverse). Under 20 ms.
+Proof: world, that test; the smoke (rule 8). Its live effect is 11.3's
+  repository suite, rerun on an arm rebuilt on it.
+Don't: make `calls.rs` tolerate a missing scope, or drop a fact.
+Size: 30 lines, the test included.
+Removes: `Jobs::empty`.
+
 ## Done when
 
 - The README's "Done when" item 4 prints at least 1 for

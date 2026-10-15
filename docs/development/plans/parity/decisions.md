@@ -1109,6 +1109,15 @@ changes what section 8.4 holds.
 
      Unchanged: what each step runs (12.4 still runs its 58 attempts once; 11.3 its 24), rule 9's per-command limits (a `probe` at most 12 a call; a `calibrate` at most 12 on its arm and 2 on its control, benchmarks.md's "ten passes within twelve"), and the gates' time budgets (15 s and 60 s; the last gates took 4.8 s and 5.2 s), which are the design's and none of which is near stopping the run.
 
+144. **smith-11.s2: a closing session tells its tools' facts before its end** (cross-session scope, smith 11's block of 2026-10-15T08:36:24Z).
+     Ruling 144: a production defect outside 11.3's Files, fixed as a step of its own, `smith-11.s2` ("A closing session tells its tools' facts before its end", `smith/11-offered.md`), needing 11.s1, checked by this ruling: it starts `ready`. Then 11.3's repository suite runs once more, whole.
+
+     1. **The cause** (a read-only diagnosis, reproduced on `main` in a scratch copy): smith's attempt reached the task's deadline while a `job` read of job 13 waited. The session's close cancelled the job; its end answered the read and the kit closed in the same step; the jobs table emptied, so `settle` skipped `pass_on_facts` (`smith-domain-session/src/session.rs:1223`), and the read's `Answered` was told after `Ended`. The agent service had dropped the conversation's scope at `Ended` (`responses.rs:672-675`), and `calls.rs:218`'s `expect` panicked. The design puts the answer first: "exactly one later record reports its end, a `tool.completed` or a `job.ended`, before its conversation's `conversation.closed`" (protocol/events.md 9); "The session ends after those records" (tools.md 5). So the fix is at the emitter: `settle` passes the facts on whenever the session settles. `calls.rs` stays as it is.
+     2. **11.s2** runs first, by default in session 11's thread (w41, 99K), from `origin/main`; its proof is the session-world test and the smoke.
+     3. **11.3 then** rebases on 11.s2, rebuilds its arm, and runs `suite repository-check --arm <dir>` once more, all 10 attempts, as its Proof says. Its calibration (10 of 10 on `4164598d`) stands and is not rerun. The 2 attempts of `repository-check-4164598d-20261015T075928Z` count in 11.3's `Live:` trailer; its partial summary does not land (delete it from the branch, keep the file under the run's logs). 11.3's row is 48 attempts and $14 (ruling 143): 15 used, 10 more fit.
+     4. **smith's attempt 01 timed out** at 1,200,000 ms where Codex passed in 607 s: that is the suite's evidence, not a defect; RT and RC report it.
+     5. **Unchanged:** 11.3's Files, Shape and Don't; `rerun_failed` 0; README rules 9, 10 and 17.
+
 ## For the user
 
 - **The live budget's 340 attempts** (rule 10; ruling 133, 2026-10-15).
