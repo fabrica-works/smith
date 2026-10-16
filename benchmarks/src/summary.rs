@@ -89,6 +89,25 @@ pub struct SummaryComparison {
     pub large_effect: Option<crate::LargeEffect>,
 }
 
+/// The process boundary attached to the peak retained in an attempt row.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PeakScope {
+    /// The agent reports its own process's resident peak.
+    Process,
+    /// The harness counts the agent's process tree.
+    Tree,
+}
+
+fn peak(result: &AttemptResult) -> (Measure<u64>, PeakScope) {
+    match &result.resources.own_peak_rss_bytes {
+        value @ Measure::Observed { .. } => (value.clone(), PeakScope::Process),
+        Measure::LowerBound { .. } | Measure::Unavailable { .. } => {
+            (result.resources.peak_rss_bytes.clone(), PeakScope::Tree)
+        }
+    }
+}
+
 /// One attempt's evidence, retained by the builder for an offline verdict.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -101,6 +120,9 @@ pub struct AttemptRow {
     pub passed: bool,
     pub task_wall_ms: Measure<u64>,
     pub priced_usd: Measure<f64>,
+    pub responses: Measure<u64>,
+    pub peak_rss_bytes: Measure<u64>,
+    pub peak_rss_scope: PeakScope,
     pub fresh_tokens: Measure<u64>,
     pub cache_read_tokens: Measure<u64>,
     pub output_tokens: Measure<u64>,
@@ -108,6 +130,7 @@ pub struct AttemptRow {
 
 fn attempt_row(result: &AttemptResult) -> AttemptRow {
     let total = result.tokens.iter().find(|record| record.role == ScopeKind::Total);
+    let (peak_rss_bytes, peak_rss_scope) = peak(result);
     AttemptRow {
         attempt: result.identity.attempt.clone(),
         task: result.identity.task.clone(),
@@ -117,6 +140,9 @@ fn attempt_row(result: &AttemptResult) -> AttemptRow {
         passed: crate::judge(result) == crate::Judgment::Pass,
         task_wall_ms: result.timing.task_wall_ms.clone(),
         priced_usd: result.spend.priced.clone(),
+        responses: result.counts.responses.clone(),
+        peak_rss_bytes,
+        peak_rss_scope,
         fresh_tokens: total
             .map_or_else(|| Measure::unavailable("total tokens not reported"), |record| record.usage.fresh.clone()),
         cache_read_tokens: total.map_or_else(
@@ -167,7 +193,7 @@ fn observed(value: f64) -> Measure<f64> {
     Measure::Observed { value }
 }
 
-fn measure_u64(measure: &Measure<u64>) -> Measure<f64> {
+pub(crate) fn measure_u64(measure: &Measure<u64>) -> Measure<f64> {
     // Integers above 2^53 are not exactly representable by the statistics.
     let convert = |value: u64| {
         if value <= (1_u64 << 53) {
@@ -192,6 +218,13 @@ fn measure_u64(measure: &Measure<u64>) -> Measure<f64> {
 
 fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
     let mut values = BTreeMap::new();
+    values.insert("responses".into(), measure_u64(&result.counts.responses));
+    let (peak, scope) = peak(result);
+    let scope = match scope {
+        PeakScope::Process => "process",
+        PeakScope::Tree => "tree",
+    };
+    values.insert(format!("peak_rss_bytes/{scope}"), measure_u64(&peak));
     for (name, value) in [
         ("process_wall_ms", &result.timing.process_wall_ms),
         ("task_wall_ms", &result.timing.task_wall_ms),

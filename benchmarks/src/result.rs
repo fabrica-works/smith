@@ -289,6 +289,7 @@ pub struct Resources {
     pub cpu_ms: Measure<u64>,
     pub peak_memory_scope: ResourceScope,
     pub peak_rss_bytes: Measure<u64>,
+    pub own_peak_rss_bytes: Measure<u64>,
 }
 
 /// The basis attached by the adapter to its spend figure.

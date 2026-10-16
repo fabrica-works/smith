@@ -49,9 +49,9 @@ pub use suite::{
     choose_guards_with_costs, include, read_suite, validate_suite,
 };
 pub use summary::{
-    ArmSummary, AttemptRow, BASELINE_VERSION, Baseline, MetricSummary, PassCounts, RunSummary, SUMMARY_VERSION,
-    SummaryComparison, baseline, baseline_group, committed_costs, read_baseline, read_results, read_summary, summarise,
-    write_summary,
+    ArmSummary, AttemptRow, BASELINE_VERSION, Baseline, MetricSummary, PassCounts, PeakScope, RunSummary,
+    SUMMARY_VERSION, SummaryComparison, baseline, baseline_group, committed_costs, read_baseline, read_results,
+    read_summary, summarise, write_summary,
 };
 pub use tokens::{Convention, ResponseTokens, ScopeKind, TokenCounts, TokenLedger, TokenRecord, Usage};
 

@@ -213,6 +213,7 @@
         "unreaped process accounting"
       ]
     },
+    "own_peak_rss_bytes": {"state": "unavailable", "reason": "not reported"},
     "peak_memory_scope": "pidfd-walk",
     "peak_rss_bytes": {
       "state": "observed",

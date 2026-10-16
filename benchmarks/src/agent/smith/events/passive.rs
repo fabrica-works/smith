@@ -168,6 +168,20 @@ fn limit_failure(event: &Event) -> bool {
     failure.is_some_and(|failure| failure.class == smith_events::FailureClass::Limit)
 }
 
+pub(super) fn own_peak_rss_bytes(observer: &Observer) -> Measure<u64> {
+    let mut peak = None;
+    for session in &observer.sessions {
+        let Some(ended) = &session.ended else {
+            return Measure::unavailable("session.ended not reported");
+        };
+        let Some(rss) = &ended.peak_rss_bytes else {
+            return Measure::unavailable("session.ended reported peak_rss_bytes null: resource usage unread");
+        };
+        peak = Some(peak.map_or(rss.self_bytes, |value: u64| value.max(rss.self_bytes)));
+    }
+    peak.map_or_else(|| Measure::unavailable("session.ended not reported"), |value| Measure::Observed { value })
+}
+
 fn unread_resources(observer: &Observer, health: &mut Health) {
     let unread = observer
         .sessions

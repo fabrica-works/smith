@@ -113,6 +113,7 @@ fn blank(identity: Identity) -> AttemptResult {
             cpu_ms: Measure::unavailable(missing),
             peak_memory_scope: ResourceScope::Unavailable,
             peak_rss_bytes: Measure::unavailable(missing),
+            own_peak_rss_bytes: Measure::unavailable(missing),
         },
         spend: Spend {
             priced: Measure::unavailable(missing),
@@ -280,6 +281,7 @@ fn resources(process: &ProcessResult) -> Result<Resources, String> {
         cpu_ms: Measure::Observed { value: milliseconds(cpu) },
         peak_memory_scope,
         peak_rss_bytes,
+        own_peak_rss_bytes: Measure::unavailable("not reported"),
     })
 }
 
@@ -591,6 +593,7 @@ fn collect_observation(
                     result,
                     &observing.observer.response_tokens().map_err(|error| error.what)?,
                 );
+                result.resources.own_peak_rss_bytes = observing.observer.own_peak_rss_bytes();
                 result.counts = observing.counts();
                 result.delegation = observing.delegation();
             }

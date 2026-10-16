@@ -286,6 +286,12 @@ impl Observer {
         delegation::delegation(self)
     }
 
+    /// Read the agent process's peak from its authoritative session ends.
+    #[must_use]
+    pub fn own_peak_rss_bytes(&self) -> crate::Measure<u64> {
+        passive::own_peak_rss_bytes(self)
+    }
+
     /// Counts are exact only where the session explicitly reports no event loss.
     #[must_use]
     pub fn counts(&self) -> Counts {

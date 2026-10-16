@@ -64,6 +64,7 @@ pub struct Parity {
     pub priced_at: String,
     pub criteria: Vec<Criterion>,
     pub verdict: Verdict,
+    pub reported: BTreeMap<String, BTreeMap<String, Measure<f64>>>,
 }
 
 fn criterion(name: &str, statistic: f64, interval: (f64, f64), margin: f64) -> Criterion {
@@ -145,6 +146,40 @@ fn repository_criterion(rows: &[&AttemptRow], cost: bool, seed: u64) -> Result<C
     Ok(criterion(name, result.ratio, (result.interval_95.lower, result.interval_95.upper), margin))
 }
 
+fn reported(rows: &[AttemptRow]) -> BTreeMap<String, BTreeMap<String, Measure<f64>>> {
+    let mut values: BTreeMap<String, BTreeMap<String, Vec<f64>>> = BTreeMap::new();
+    for row in rows {
+        let scope = match row.peak_rss_scope {
+            crate::PeakScope::Process => "process",
+            crate::PeakScope::Tree => "tree",
+        };
+        for (name, measure) in
+            [("responses".into(), &row.responses), (format!("peak_rss_bytes/{scope}"), &row.peak_rss_bytes)]
+        {
+            let samples = values.entry(row.arm.clone()).or_default().entry(name).or_default();
+            if let Measure::Observed { value } = crate::summary::measure_u64(measure) {
+                samples.push(value);
+            }
+        }
+    }
+    values
+        .into_iter()
+        .map(|(arm, metrics)| {
+            (
+                arm,
+                metrics
+                    .into_iter()
+                    .map(|(name, samples)| {
+                        let median = crate::median(&samples)
+                            .map_or_else(Measure::unavailable, |value| Measure::Observed { value });
+                        (name, median)
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
 /// Recompute criteria from rows and the smith commit retained by the arm groups.
 pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: &str) -> Result<Parity, String> {
     if rows.len() > 58 {
@@ -219,6 +254,7 @@ pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: 
         priced_at: priced_at.into(),
         criteria,
         verdict,
+        reported: reported(rows),
     })
 }
 
