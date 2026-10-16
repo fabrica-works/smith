@@ -1,6 +1,6 @@
 # smith
 
-Provisional, 2026-10-05. smith is a kit for building flexible LLM
+Provisional, 2026-10-05, revised 2026-10-16. smith is a kit for building flexible LLM
 agents, and a standard agent built from it. Like temper, it is built on
 skein and follows skein's foundation documents. It grew from temper's
 agent, and temper is its first host. Nothing here depends on temper:
@@ -276,7 +276,7 @@ What changes from temper's agent:
 - **The agent's protocol layer** is smith's, and its channel smith's own,
   which temper's worker speaks as a host (host.md, section 3).
 - **One transcript version.** smith's transcripts are the conversation
-  vocabulary's third version, which reads no other
+  vocabulary's current version, which reads no other
   (`protocol/transcript.md`, section 6); the first, and the legacy run
   that opens it, stay with temper until its cutover.
 

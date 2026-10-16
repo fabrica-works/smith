@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-15. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-16. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -621,7 +621,10 @@ source = "borrow"
   window. A charter's prices stay flat (domain/run.md, section 9), so
   spend is never under-counted. A person who wants the lower rates
   declares a window at or below the tier's size; prices a person sets
-  are used as set.
+  are used as set. The tiers are a prompt's: the benchmarks price each
+  response at the rates its own prompt reaches, as the provider bills
+  it (benchmarks.md, 8.1), and smith's own spend stays at the flat
+  rates its window can reach.
 - **Raw byte limits are not settings.** Tests may override them; a person
   declares quantities (protocol/limits.md).
 
@@ -684,9 +687,12 @@ profile (2.1).
 | `anthropic` | `claude-sonnet-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
 | `anthropic` | `claude-haiku-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
 
-- **`window`** is usable input tokens; **`output`** is the most output
-  tokens, the wire's cap where the dialect sends one and the reservation
-  in the window check (domain/session.md, section 8.1).
+- **`window`** is usable input tokens, the most one prompt may hold
+  with a completion's output beside it; **`output`** is the most output
+  tokens, the wire's cap where the dialect sends one, and the output the
+  headroom above the threshold holds for the completion whose results a
+  compaction carries (protocol/limits.md, 2.1 and 3.9; domain/session.md,
+  section 8.1).
 - **`efforts`** are the reasoning efforts a model accepts, each a name
   within 32 bytes, as its provider documents them for that model. They
   are the model's, not the dialect's: a provider's models differ, and
@@ -699,8 +705,9 @@ profile (2.1).
   model declares none.
 - **The Anthropic models take 1,000,000 input and 128,000 output
   tokens.** The preset declares less, so that a window is compacted
-  before its cost grows and the check reserves a likely output. Settings
-  raise them.
+  before its cost grows and the headroom holds a likely output. Settings
+  raise them, a window at most what protocol/limits.md, 2.1, allows
+  beside the output declared.
 - **All per-model values are provisional.** The history probe validates
   `window`, the large-write probe `output`, and the slow-completion probe
   `reasoning_item`, `head` and `idle`.
@@ -723,7 +730,10 @@ profile (2.1).
   token (protocol/limits.md, 3.9), is 96,000 tokens for the Anthropic
   models and 153,600 for the Codex models, and the headroom above the
   threshold, less one output, is 8,000 and 22,400. Both pass
-  `fresh-window` and `compaction-headroom`. Halved after smith's own
+  `fresh-window` and `compaction-headroom`. Less the summary instruction
+  and a marker for each of `calls_per_response` calls, that is each
+  model's spare, the room between its threshold and its line
+  (protocol/limits.md, 3.9). Halved after smith's own
   part, the room bounds one offer, and so a message, a person's line or
   a headless prompt, near 20 KiB when an Anthropic model is declared and
   near 34 KiB with the Codex models alone; `smith check` prints the
@@ -760,7 +770,7 @@ The declared quantities of protocol/limits.md, section 2.2:
 | `search_hits`, `search_bytes` | 100 and 16 KiB | provisional; the tool-output probe |
 | `list_entries` | 512 | provisional |
 | `llm_pool` | 128 MiB | provisional; peak memory in `session.ended` |
-| `memory` | 2 GiB | decided as at most 2 GiB; the derived worst case must fit it |
+| `memory` | 2 GiB | decided: as large as smith's work needs, within the real memory a person's machine can spare, and never smaller than the derived worst case. A change whose worst case passes it raises it, naming the part and its bytes (protocol/limits.md, section 5) |
 
 ### 6.4 Run defaults
 
@@ -806,13 +816,18 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
   and tasks alike.
 - **Its topics, in this order:**
   1. carrying the request to its end, within its scope;
-  2. finding files, with `list` and `search` first;
-  3. batching independent calls in one response: reads, lists, searches,
-     and commands that change nothing;
+  2. finding files, with `list` and `search` first, then reading the
+     lines the work needs: a window from where a search found them, a
+     whole file only when the work needs all of it;
+  3. batching in one response every call that waits on no other's
+     answer: reads, lists, searches and commands that change nothing,
+     with a running job's poll beside them; and a change's edits,
+     across its files, then the command that checks them;
   4. changing files with `edit` and `write`, never through the shell,
-     the smallest change first;
+     the smallest change first, with every replacement one file needs
+     in one `edit`;
   5. running the tests the change needs, and long commands as jobs
-     (domain/tools.md, section 5);
+     whose polls go beside other work (domain/tools.md, section 5);
   6. not reverting changes the model did not make;
   7. the report that `finish` carries;
   8. that a compaction does not end the work.
@@ -826,7 +841,8 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
   response of its own is a round trip to the provider. The words ask for
   no such step that the work does not need: what can go together goes
   together, and a command is made a job only when it runs long. A change
-  to them is proven by the `compare` suite (benchmarks.md, section 4.2).
+  to them is proven by the `compare` suite, or, on the way to a verdict,
+  by the `parity-change` suite (benchmarks.md, sections 4.2 and 16.6).
 - **It is a run's instructions,** so it counts where a charter's
   instructions count: in the window's host part (protocol/limits.md,
   3.9).

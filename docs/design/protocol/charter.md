@@ -1,6 +1,6 @@
 # The charter and the result
 
-Provisional, 2026-10-07, revised 2026-10-13. Two records:
+Provisional, 2026-10-07, revised 2026-10-16. Two records:
 
 - **the charter:** how a run is set up (domain/run.md, 3.1);
 - **the result:** what a run declares to finish (domain/run.md, section 7).
@@ -89,12 +89,14 @@ A versioned record (skein's `codec.md`, section 3):
     without it, the provider's default. It is fixed for the
     conversation's life and may differ in the next activation
     (domain/session.md, section 3);
-  - **`window`:** its usable input tokens, the most one prompt may hold.
-    The session compacts its conversation before a prompt would pass it
+  - **`window`:** its usable input tokens, the most one prompt may hold,
+    with a completion's output beside it (limits.md, 2.1). The session
+    compacts its conversation before a prompt would pass it
     (domain/session.md, section 8);
   - **`output`:** the most output tokens a completion may have, thinking
-    included. It is sent where the dialect takes it, and reserved before
-    each completion;
+    included. It is sent where the dialect takes it, its budget reserves
+    it before each completion (domain/run.md, section 9), and the window
+    above its threshold holds it (limits.md, 3.9);
   - its prices: positive integer amounts per a positive number of
     tokens, for input, cached input, output and, optionally, cache
     writes. Without a cache-write rate, cache writes are priced at the
@@ -182,8 +184,9 @@ domain's `Limits` check the charter as a whole at the entrance:
 - its reserve, within its budget: fewer turns and less time than the
   budget's, and a derived spend within its spend;
 - each LLM's `window` and `output`, at most what the configuration
-  declares for its model, and leaving at least the room the agent's
-  limits were derived for (limits.md, 3.9);
+  declares for its model, leaving at least the room the agent's limits
+  were derived for, and a spare that is not negative (limits.md, 3.9
+  and 4);
 - its instructions, brief and host tools, with a guide at its bound for
   each of the start's directories, within a window's host part
   (limits.md, 3.9).
@@ -209,7 +212,8 @@ and a refusal names what was too large.
   - each refusal of domain/run.md, section 4;
   - an endpoint name the configuration lacks;
   - a model the configuration does not declare, and a window or an output
-    above its declaration, or leaving less room than the limits assume;
+    above its declaration, or leaving less room than the limits assume,
+    or a negative spare;
   - text past a window's host part;
   - a reserve its budget cannot hold;
   - a charter in a version the agent does not read.

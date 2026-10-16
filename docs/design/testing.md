@@ -1,6 +1,6 @@
 # Testing smith
 
-Provisional, 2026-10-08, revised 2026-10-14. How smith is tested. The
+Provisional, 2026-10-08, revised 2026-10-16. How smith is tested. The
 strategy is skein's `docs/foundation/testing-strategy.md`: the tiers,
 faults, what every fake shares, what every world checks, scenarios and
 the referee, the two suites, and where a failure is fixed. This document
@@ -380,6 +380,12 @@ Every world checks what the strategy lists (testing-strategy.md, section
 - **Memory** is measured per step, against each process's worst case,
   derived from the declared values the world chose, at every iteration
   in the simulated worlds and the real loop.
+- **Memory returns when its use ends** (protocol/limits.md, sections 5
+  and 11): in the agent's simulated world, the counting allocator shows
+  the live heap falling once a compacted window's history is released,
+  and no larger at the same point of each repetition of a story that
+  compacts, reads jobs to their end, and opens and closes
+  conversations.
 - **Replay** compares traces, and digests of the state once skein's
   harness takes them.
 - **The teardown invariant,** inherited from skein's world harness: a
@@ -424,8 +430,9 @@ run by the commands in `docs/development/workflow.md`:
   harness's offline tests;
 - **fuzzy tests:** each world's `tests/fuzzy_*.rs`, sweeps over seeds
   under faults; the run's world also draws message timings, budgets and
-  shares (domain/run.md, section 13), the session's world its usage and
-  appended sizes (domain/session.md, section 10), and the tools' world
+  shares (domain/run.md, section 13), the session's world its usage,
+  appended sizes, rendered sizes and their bytes-to-token ratios
+  (domain/session.md, section 10), and the tools' world
   its jobs' polls, stops and ends among edits (domain/tools.md, section
   7).
 

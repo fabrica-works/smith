@@ -1,6 +1,6 @@
 # LLM calls
 
-Provisional, 2026-10-07, revised 2026-10-14. `smith-protocol-llm` is the
+Provisional, 2026-10-07, revised 2026-10-16. `smith-protocol-llm` is the
 agent's component for LLM calls. It translates `smith-domain`'s LLM
 vocabulary to skein's LLM client and back:
 
@@ -158,9 +158,11 @@ A completion's prompt is built from what the domain gives:
     from its start;
   - `job`: that it reads a job's output since its last answer, and its
     end once it has ended; `wait_seconds` in seconds, its default and
-    its ceiling `job_wait`; `stop`, which stops the job and answers its
-    end; and `jobs`, the most a session may hold, a job holding its
-    place until an answer reports its end;
+    its ceiling `job_wait`; that called with reads, adjacent in one
+    response, it waits no longer than they run, so such a poll costs
+    nothing; `stop`, which
+    stops the job and answers its end; and `jobs`, the most a session
+    may hold, a job holding its place until an answer reports its end;
   - `search`: that it runs `rg`, and that its `pattern` is a regular
     expression;
   - each path field: that `.` and the empty path both name the working
@@ -173,7 +175,9 @@ A completion's prompt is built from what the domain gives:
   listings and searches may be called together in one response, and run
   side by side, and that writes, edits and commands may be called
   together too, and run one at a time in call order (domain/session.md,
-  section 5). They also say that a `job` call without `stop` is a read,
+  section 5): a change's edits across its files, then the command that
+  checks them. They say that a write that fails leaves the writes and
+  commands after it in its response not run. They also say that a `job` call without `stop` is a read,
   and runs beside them, that one with `stop` is a write, and that a job
   running between calls holds no place in a later batch. No description says that a tool runs alone unless the
   session runs it alone, and none asks the LLM to call a tool by itself.
@@ -306,8 +310,9 @@ A completion's prompt is built from what the domain gives:
   within the bound, so the cut is a safeguard, not a tool's limit.
 - **A compaction's results are cut to its room.** The results owed to a
   compaction are rendered within what the window leaves above the
-  compaction's history, less the summary instruction and one output,
-  each cut with its marker as the rest require (limits.md, 3.9). Only
+  compaction's history, less the summary instruction, each cut with its
+  marker as the rest require; its summary is its output, beside its
+  prompt (limits.md, 2.1 and 3.9). Only
   that request's tail and its tool choice change: the history before it
   is as it was sent, so the cached prefix holds, but for the messages'
   cache on the Anthropic dialect (2.2).
@@ -317,7 +322,8 @@ A completion's prompt is built from what the domain gives:
   large names the size and the bound, and what to do instead.
 - **Not run and withdrawn** are short fixed texts saying which. A call
   outside the tool choice is not run, and its text says which calls may
-  be made now.
+  be made now. A write or a command not run after a failed write names
+  that call, and says that its changes were not made.
 - **Text the domain wrote,** a served tool's or a host tool's, goes as
   written, its error flag mapped to the dialect's.
 
@@ -332,6 +338,17 @@ A completion's prompt is built from what the domain gives:
   the domain or the channel (channel.md, section 8). The deltas go to
   the service's event sink as `text.delta` records, only under the
   capture policy or when a front end asks (events.md, section 3.5).
+- **The guard, before an ordinary request is sent.** When the session
+  gives a request the line, its last prompt's reported size and where
+  the new part starts (domain/session.md, 8.1), this layer measures the
+  new part, the last answer and every block after it, as it renders
+  them: each block's text bytes, a byte a token, and its framing at the
+  prompt allowance's share for a block (limits.md, 3.2). When the last
+  prompt's size plus that measure passes the line, the request is not
+  sent: the call fails as *context too long*, with evidence `unsent`,
+  and its detail names the line and the measure. The same rendering
+  serves the measure and the request, so the measure is the request's,
+  not an estimate of it.
 - **Measured for the event stream:** the request's bytes as encoded,
   measured before it is sent; the time to the response's first byte; and
   the largest gap between its events. They go to the event sink beside
@@ -447,6 +464,11 @@ component and skein's client against scripted byte peers, in each dialect.
     accepts as replayable;
   - a compaction whose owed results pass its room, cut with their
     markers, its history unchanged before them;
+  - the guard: a request whose new part, as rendered, keeps the last
+    prompt within the line, sent; one a byte past it, failed as *context
+    too long*, unsent, naming the line; blocks of short lines and of
+    escaped bytes measured as they render, not as the session counts
+    them;
   - a compaction asked with `None` in a conversation asked with `Auto`
     and in one narrowed to `Only`, and the new window's first request
     asked with the conversation's choice, in each dialect;

@@ -1,6 +1,6 @@
 # Tools
 
-Provisional, 2026-10-05, revised 2026-10-14. What a smith session does to
+Provisional, 2026-10-05, revised 2026-10-16. What a smith session does to
 its workspace, as a domain layer: read, list, search, write, edit, shell
 and job. It is the child domain `smith-domain-tools`, under the session
 (session.md). A run with no workspace has none of these tools; its LLM
@@ -146,8 +146,9 @@ modify (`write`, `edit`), shell (`shell`, `job`).
   job's kept output since its last answer, then `running`, or the job's
   end: `exited`, with its exit; `timed_out`, naming its deadline;
   `stopped`; or `cancelled`. It waits up to `wait_seconds` for the end
-  before it answers `running`. With `stop: true`, it stops the job first
-  and answers its end (section 5).
+  before it answers `running`, and no longer than the other calls of its
+  batch run (session.md, section 5). With `stop: true`, it stops the job
+  first and answers its end (section 5).
 - **Output budgets are the LLM's to choose.** A `read`'s window, a
   command's kept output and a job's answer's are asked for per call, and
   clamped to the profile's ceilings; the outcome says when a request was
@@ -268,6 +269,11 @@ modify (`write`, `edit`), shell (`shell`, `job`).
     its exit, `timed_out` naming the deadline it passed, `stopped`, or
     `cancelled`. It waits for the end up to `wait_seconds`, whose default
     and ceiling are `job_wait`, before it answers `running`.
+  - **A wait ended early.** The session ends a `job` call's wait once
+    every call beside it in its batch that is not a `job` call has
+    answered (session.md, section 5). The call then answers at once, as
+    its wait's end would: the output since its last answer, then
+    `running`, or the end if the job has ended.
   - **Stopping it.** `job` with `stop: true` stops the job's group in the
     steps a deadline uses (protocol/agent.md, section 2), then answers
     its end, `stopped`, with its output since its last answer. A job that
@@ -349,8 +355,9 @@ The machine's faces for files and processes, and the programs they run
   it exits; one read past its kept output's ceiling, the bytes dropped
   counted once; one stopped, and one stopped after it had exited; one
   past its deadline, `timed_out`; a yield and a wait asked past
-  `job_wait`, clamped and said; reads, edits and other commands while a
-  job runs; a `shell` call with a yield while `jobs` jobs are running, and
+  `job_wait`, clamped and said; a wait ended early by its session,
+  answered `running` with the output so far; reads, edits and other
+  commands while a job runs; a `shell` call with a yield while `jobs` jobs are running, and
   `job` calls naming an unknown number or an end already answered, each
   invalid; jobs cancelled for a check, `cancelled` at their next read; a
   session closing with one job running and one exited unread, each told

@@ -1,6 +1,6 @@
 # Limits
 
-Provisional, 2026-10-09, revised 2026-10-14. How an agent's limits are
+Provisional, 2026-10-09, revised 2026-10-16. How an agent's limits are
 made:
 
 - the quantities a deployment declares;
@@ -36,7 +36,10 @@ the rules and the arithmetic's shape, not the values.
 - **The window bounds the material, not the reverse.** A byte counts as
   at most one token. What a window holds at its opening, and what a
   compaction carries, is bounded from the model's window, so every
-  window can open and close within it (3.9).
+  window can open and close within it (3.9). The session's check
+  estimates appended bytes at a measured ratio; a guard holds each
+  prompt sent within the line below which a compaction always fits
+  (3.9).
 - **Every relationship is checked at startup, by name** (section 4). A
   violation refuses the configuration and names the relationship and the
   values that broke it. What startup can find is never found in the
@@ -67,8 +70,8 @@ settings override them (`docs/design/shell.md`).
 
 | Quantity | Unit | What it is |
 |---|---|---|
-| `window` | tokens | the usable input window: the most one prompt may hold |
-| `output` | tokens | the most one completion may produce, thinking included: sent where the dialect takes it, and what the session reserves |
+| `window` | tokens | the usable input window: the most one prompt may hold, with a completion of `output` beside it |
+| `output` | tokens | the most one completion may produce, thinking included: sent where the dialect takes it, what a completion's budget reserves (domain/run.md, section 9), and what the window above its threshold holds for the answer a compaction carries (3.9) |
 | `reasoning_item` | bytes | the largest opaque reasoning item the model returns for replay |
 | `head` | duration | from the request sent to the response's first byte |
 | `idle` | duration | the largest gap between two events of a streaming response |
@@ -78,6 +81,11 @@ settings override them (`docs/design/shell.md`).
   configuration declares for it (charter.md, section 2). The agent
   derives its limits from the configuration's, the largest any charter
   may name; the session enforces the charter's.
+- **A window is a prompt's, never its output's.** No request's output
+  takes room in `window`: the session's check bounds the next prompt,
+  and a compaction's summary is its output (domain/session.md, 8.1 and
+  8.2). Where a provider counts a request's output within its context, a
+  model's `window` is declared as that context less `output`.
 - **An oversized reasoning item fails by default.** A model's
   declaration may opt into dropping it instead: the completion is kept,
   the item is left out of later requests, and the event stream says so
@@ -262,17 +270,18 @@ declarations:
 - **a window's history:** the messages, blocks and bytes one window may
   hold, set so that the window's check is reached before any of them
   (domain/session.md, 8.1). Its bytes come from the window's side, by
-  rule 4: the threshold's tokens at `TOKEN_BYTES` bytes each, plus what
+  rule 4: the line's tokens at `TOKEN_BYTES` bytes each (3.9), plus what
   the window must receive before its next check, which is one
-  completion's reserve beyond its answer and one batch's results: the
+  completion's whole reserve, its answer included, since no output is
+  reserved below the threshold, and one batch's results: the
   calls that run together, at most `parallel_tools` (domain/session.md,
   section 5), each at its render bound. A completion's later batches run
   within what is left (domain/session.md, 8.1), never in more history. So `window-first`
   holds by construction. Its messages and blocks are
   those bytes over a block's cell in memory, by rule 3, and they are
   also skein's declared history items (skein's `llm.md`, 4.2). A prompt
-  the session admits is within skein's request, because the threshold
-  bounds it in tokens and the request is derived from the same window. A
+  the session sends is within skein's request, because the line bounds
+  it in tokens and the request is derived from the same window. A
   request-size `Limit` cannot follow a passed admission: should one
   fire, a fault in this derivation, the session takes it as *context too
   long* (domain/session.md, section 4). With
@@ -282,8 +291,9 @@ declarations:
   section 3.9;
 - **the prompt's allowance:** what the protocol layer and the provider add
   to a prompt beyond the bytes the session counts, from the LLM
-  component's framing, for the window's check and the budget's
-  reservation (domain/run.md, section 9);
+  component's framing, for the window's check, the guard's measure of
+  each block (3.9) and the budget's reservation (domain/run.md, section
+  9);
 - **a completion's bytes,** by rules 1 and 2:
   - its answer once, for its text and its calls' encoded arguments;
   - once more for the decoded arguments and the identifiers copied from
@@ -330,7 +340,7 @@ them (transcript.md, section 7):
     offer of held-back messages.
 
   So one declared number bounds both the completion and the message of
-  its results, in the transcript's third version;
+  its results, in the transcript (transcript.md, section 6);
 - **a turn's bytes:** from a completion's answer, its calls' inputs, its
   results at their render bounds and its reasoning, one reasoning block
   holding at most the completion's share (3.2), which the schema's
@@ -424,17 +434,37 @@ section 5).
 ### 3.9 A window's room
 
 A window is counted in tokens and most of what fills it in bytes. A
-token is at least one byte, so a byte count bounds a token count: the
-session's check and these bounds count each byte as one token
-(domain/session.md, 8.1). Where that would not fit, the derivation bounds
-what a window holds, never the window, which is the model's.
+token is at least one byte, so a byte count bounds a token count: these
+bounds count each byte as one token, and so does the guard, which
+measures a request as rendered. The session's check estimates instead:
+it counts the bytes appended since its last prompt at that window's
+measured ratio (domain/session.md, 8.1). Where the material, a byte a
+token, would not fit, the derivation bounds what a window holds, never
+the window, which is the model's.
 
 For each model the configuration declares:
 
 - **The room** is its `window` at `compaction_threshold`, less two
-  `output`s: one for the summary that opens a new window, one reserved
-  for the completion that follows it. The summary counts as the tokens
-  its compaction reported, or `output` when none was, never as its bytes.
+  `output`s: one for the summary that opens a new window, one for the
+  output of that window's first completion, so that the check holds it
+  below the threshold (domain/session.md, 8.1). The summary counts as
+  the tokens its compaction reported, or `output` when none was, never
+  as its bytes.
+- **The line** is its `window` less one `output`, the summary
+  instruction and a cut result's marker for each of `calls_per_response`
+  calls. No ordinary prompt is sent past it: the guard measures what a
+  request adds since its window's last prompt as rendered, a byte a
+  token, each block's framing at the prompt allowance's share (3.2), and
+  refuses, unsent, a request whose last prompt and that measure pass the
+  line (domain/session.md, 8.1; llm.md, section 6). The compaction after
+  a prompt within the line, carrying that prompt's answer of at most
+  `output`, fits the window.
+- **The spare** is what lies between the threshold and the line: the
+  window above `compaction_threshold` less one `output`, the summary
+  instruction and the markers, what `compaction-headroom` leaves (section
+  4). It is the room the session's estimate may miss by before the guard
+  refuses a request. A charter's effective `window` and `output` give the
+  line and the spare its session uses.
 - **smith's own part** is taken first: the run's sections at their
   largest, smith's tools' schemas, the opening's and the summary's
   instructions, the summary preamble, and the prompt's allowance (3.2).
@@ -493,16 +523,16 @@ a model's `window` or `output`, but not so far that its room falls below
 the one the limits were derived for (charter.md, section 6).
 
 A window closes by compaction: its history, the results owed to it, and
-the summary instruction, then a summary of up to `output`
-(domain/session.md, 8.2). The check before each completion keeps the
-prompt and its output within the threshold, so what the compaction adds
-must fit above it. **The results owed to a compaction** are rendered
-within what the window leaves after the history before them, the
-summary instruction and one `output`, never less than the window above
-its threshold less those two; each is cut with its marker where they
-would pass it (llm.md, section 5). History before them is unchanged, so
-the compaction still reads the cached prefix, but for what its tool
-choice costs on the Anthropic dialect (llm.md, 2.2).
+the summary instruction, then a summary of up to `output`, the
+compaction's output, beside its prompt (2.1; domain/session.md, 8.2).
+The guard keeps each prompt sent within the line, and its output is at
+most `output`, so the history a compaction carries leaves above it at
+least the summary instruction and a marker for each owed result. **The results owed to a
+compaction** are rendered within what the window leaves after the
+history before them and the summary instruction; each is cut with its
+marker where they would pass it (llm.md, section 5). History before
+them is unchanged, so the compaction still reads the cached prefix, but
+for what its tool choice costs on the Anthropic dialect (llm.md, 2.2).
 
 ## 4. Checked at startup
 
@@ -523,9 +553,9 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `derived` | every derived limit fits its type; the first that overflows is named |
 | `fresh-window` | for each declared model, a new window at its largest (smith's own part, the host's part, the task as its instruction and one offer, a summary of `output` tokens, and one offer of held-back messages) and one `output` fit within the window at the compaction threshold, counting a byte as a token (3.9). The parts are derived so that this holds whenever smith's own part fits the room, for every shipped preset among them (`docs/design/shell.md`, 6.1); the check refuses a model whose room smith's own part fills |
 | `host-part-holds-the-role` | for each declared model, the host's part (3.9) holds the task role at its bound (`docs/design/shell.md`, 6.6) beside a guide at `guide` for each of the start's directories, so that the product's own default never makes a start too large for the entrance |
-| `compaction-headroom` | for each declared model, the window above its threshold holds one `output`, the summary instruction and a cut result's marker for each of `calls_per_response` results, so the compaction the check calls for always fits, its results cut to what is left (3.9; domain/session.md, 8.1) |
+| `compaction-headroom` | for each declared model, the window above its threshold holds one `output` (that of the completion whose results a compaction carries), the summary instruction and a cut result's marker for each of `calls_per_response` results: the line is at or above the threshold, and the compaction the check or the guard calls for always fits, its results cut to what is left; what it leaves is the spare (3.9; domain/session.md, 8.1) |
 | `output-in-window` | each model's `output` is less than its `window` |
-| `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound: the threshold at `TOKEN_BYTES` bytes a token, plus one completion's reserve beyond its answer and one batch's results, within the history's bytes (rule 4 of section 3). It holds by construction for 3.2's derivation, and guards it |
+| `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound: the line at `TOKEN_BYTES` bytes a token, plus one completion's whole reserve and one batch's results, within the history's bytes (rule 4 of section 3). It holds by construction for 3.2's derivation, and guards it |
 | `calls-in-transcript` | a message's blocks, derived from `calls_per_response`, are at least a completion's blocks and within the transcript schema's ceiling |
 | `resume-holds-window` | the resume limit holds the most a session holds in one window |
 | `turn-in-transcript` | the largest turn fits the transcript schema's ceilings |
@@ -552,8 +582,9 @@ them:
 What a run asks for is checked at its entrance, not at startup
 (domain/run.md, section 4): a model the configuration does not declare;
 each model entry's `window` and `output` against the model's
-declaration, and its room against the one the limits were derived for
-(3.9); the charter's text, with its directories' guides at their bound,
+declaration, its room against the one the limits were derived for, and
+its window above the threshold against one `output`, the summary
+instruction and the markers, so that its spare is not negative (3.9); the charter's text, with its directories' guides at their bound,
 against the host's part; the budget against the ceilings; and the
 reserve against the budget.
 
@@ -562,7 +593,26 @@ reserve against the budget.
 - **A real target.** `memory` is what the process may use. The product's
   presets keep it within the real memory a person's machine can spare
   (`docs/design/shell.md`). The shell refuses to start when the worst
-  case exceeds it (programming-model.md, section 6.3).
+  case exceeds it (programming-model.md, section 6.3). Within what a
+  machine can spare, the cap is as large as the work needs (below).
+- **A cap, not an allocation.** What the process allocates follows what
+  it holds, not the worst case:
+  - bytes are allocated when they arrive, at their final length, and
+    freed with their owner when its use ends: a compacted window's
+    history once the new window opens, a job's kept output once an
+    answer has carried it, a closed conversation's history and calls;
+  - capacity reserved up front, slabs' and queues' (programming-model.md,
+    section 6.1), is the exception: sized by the limits, counted in the
+    worst case, held for the process's life.
+- **Room is made by raising the cap.** A change whose worst case passes
+  `memory` raises the profile's `memory`, and its commit names the part
+  that grew and by how many bytes. It never shaves another part's
+  accounting to fit. The startup check of the worst case stays.
+- **Use is measured, beside the cap.** The worlds' counting allocator
+  holds the live heap within the worst case at every iteration, and
+  shows it returning when a use ends (section 11). The benchmarks read
+  smith's own peak resident memory beside its time and cost
+  (benchmarks.md, 16.1).
 - **Admission to the LLM pool.** Every LLM call in flight draws on
   `llm_pool`, which skein's connection component keeps (skein's
   `llm-connection.md`, section 7). At admission a call reserves its
@@ -746,6 +796,16 @@ version of it (events.md, section 6).
   LLM pool full and every conversation open, each holding `jobs` jobs at
   their kept output's ceiling, in the agent's simulated world (agent.md,
   section 8).
+- **Memory returns** (section 5), with the same allocator, in the
+  agent's simulated world:
+  - **a compaction:** the live heap falls, once the new window opens, by
+    at least the payload bytes of the compacted history's blocks less
+    those of the new window's opening, cells left out, since a window's
+    message list keeps its capacity;
+  - **repeated uses:** across a story that compacts, reads jobs to
+    their end, and opens and closes conversations, several times each,
+    the live heap at the same point of each repetition is no larger than
+    at the first.
 - **Jobs and batches,** in the session's world with small values: a
   `shell` call with a yield refused while `jobs` jobs are held; a yield and a
   wait clamped to `job_wait`; more adjacent reads than `parallel_tools`,
@@ -760,6 +820,11 @@ version of it (events.md, section 6).
 
 ## 13. Open questions
 
+- **Capacity reserved up front:** how much of smith's measured peak is
+  slabs' and queues' capacity, allocated at startup at the limits'
+  bounds (programming-model.md, section 6.1). Whether that rule should
+  give way to capacity allocated as it fills is skein's question, which
+  jig and temper share; smith measures first.
 - **Calls past `calls_per_response`:** whether skein marks the calls
   beyond the bound as calls of their own, answered as not run, so the
   completion completes, as an oversized call's does.

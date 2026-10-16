@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-14. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-16. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -168,6 +168,9 @@ child domain `smith-domain-session`, whose own child is the tools domain
   3.2). Should one fire anyway, a fault in that derivation, it is taken
   as *context too long*: one compaction, and a second in the same window
   fails the session.
+- **A request past the line,** which the guard refuses before it is
+  sent (8.1), is taken as *context too long*, unsent: one compaction, and
+  a second in the same window fails the session.
 - **Context too long** compacts the window once; a second in the same
   window fails the session (section 8.2).
 - **A call cut off at the output limit,** which skein marks, never enters
@@ -203,6 +206,24 @@ child domain `smith-domain-session`, whose own child is the tools domain
   effect follows from its tools; a host tool's is as its charter
   declares; `finish` and `deliver` are writes; `job` is a read, and a
   write with `stop` (tools.md, section 5).
+- **A job's wait gives way to its batch.** A `job` call waits for its
+  job's end no longer than the other calls of its batch run: once every
+  call of its batch that is not a `job` call has answered, it answers at
+  once, `running` if its job still runs (tools.md, section 5). A batch
+  of `job` calls alone waits as each call asks. A poll beside reads
+  costs the reads' time, never its own wait.
+- **A failed write stops the writes after it.** When a write of a
+  completion fails, the completion's later writes and commands are
+  answered as not run, naming that call; its later reads still run. So
+  a change made in several calls of one completion is never checked
+  half made.
+  - **A write fails** when it is answered `invalid`, whatever its tool,
+    or when a `write` or an `edit` is answered `conflict`, `missing`,
+    `too_large` or `failed`: it changed nothing it was asked to change
+    (tools.md, section 4; protocol/events.md, 3.6's verdicts).
+  - **Nothing else stops them:** a command's end, whatever its exit,
+    `timed_out` included; a host tool's `error`; a sub-agent's answer;
+    a call not run or withdrawn.
 - **Jobs run beside the turns.** A `shell` call stays a write until it
   answers, `running` or ended. A job that is running holds no place in
   any later batch: the session's later reads, writes and commands run by
@@ -321,37 +342,78 @@ window, history only grows (section 3).
   as the charter's model entry says (protocol/charter.md).
 - **What the session tracks:** the last prompt's size, from its usage,
   the sum of its input, cache reads and cache writes, which do not
-  overlap (section 6), each counted as reported; and an upper bound on
-  what has been appended since: that completion's output, then the
-  results and messages after it, counting a byte as at most one token,
-  since a token is at least a byte. With no earlier prompt in the window
-  (a conversation's first completion, a window's first, the first after
-  a resume from a window turn), or with usage that reports no input
-  count, the bound is the whole prompt's bytes plus the allowance the
-  session's limits give for what the protocol layer and the provider add
-  (run.md, section 9). In a new window's first check, the summary that
-  opens it counts as the output tokens its compaction reported, or the
-  model's most output when none were reported, never as its bytes.
-- **The check,** before each completion: the last prompt, plus the last
-  output, plus the appended bound, plus the output reservation, is at
-  most the window times its threshold. The output reservation is the
-  completion's most output tokens; the threshold is a fraction of the
-  window that the session's limits give (protocol/limits.md). The
-  arithmetic is checked. A completion that fails the check is not made:
-  the session compacts instead (8.2).
+  overlap (section 6), each counted as reported; that completion's
+  output, as reported, or the model's most output when none was; the
+  bytes the session counts in that prompt; and the bytes it counts in
+  what was appended since, the results and messages after that output.
+  The session counts one measure throughout: the payload bytes of each
+  block's text, call, result and replay as it holds them, never the
+  cells that hold them, recounted from the history it loaded after a
+  resume.
+- **The appended count** turns those appended bytes into tokens at the
+  window's measured ratio: the last prompt's counted bytes over its
+  reported size, at least one byte a token and at most `TOKEN_BYTES`
+  (protocol/limits.md, rule 4 of section 3). It is an estimate: content
+  that the provider counts at more tokens a byte than the window so far
+  passes it, and the line holds what it misses (below).
+  - **Without a ratio:** with no earlier prompt in the window (a
+    conversation's first completion, a window's first, the first after
+    a resume from a window turn), or with usage that reports no input
+    count, the bound is the whole prompt's bytes plus the allowance the
+    session's limits give for what the protocol layer and the provider
+    add (run.md, section 9), a byte a token. In a new window's first
+    check, the summary that opens it counts as the output tokens its
+    compaction reported, or the model's most output when none were
+    reported, never as its bytes.
+- **The check,** before each completion: the last prompt, plus its
+  output, plus the appended count, is at most the window times its
+  threshold, a fraction of the window that the session's limits give
+  (protocol/limits.md). The arithmetic is checked. A completion that
+  fails the check is not made: the session compacts instead (8.2).
+  - **No output is reserved below the threshold.** The window bounds a
+    prompt, and a completion's output is beside it (protocol/limits.md,
+    2.1). What that output adds to the next prompt is held above the
+    threshold.
+  - **So the threshold is the prompt's.** A session compacts when its
+    next prompt would pass the threshold's share of the window, as
+    counted, not when that prompt and a completion's most output would.
+- **The line holds a compaction.** The line is the window less one
+  completion's most output, the summary instruction and a cut result's
+  marker for each of `calls_per_response` calls; the spare is what lies
+  between the threshold and the line (protocol/limits.md, 3.9). No
+  ordinary completion is sent whose prompt may pass the line:
+  - **the guard.** With each ordinary completion that has an earlier
+    prompt in its window, the session gives the protocol layer the line,
+    the last prompt's reported size, and where that completion's answer
+    starts in the history. Before it sends the request, the protocol
+    layer measures that answer and everything after it as the request
+    renders them, a byte a token, with each block's framing at the
+    prompt allowance's share (protocol/llm.md, section 6). When the last
+    prompt's size plus that measure passes the line, the request is not
+    sent, and the completion fails as *context too long*, unsent
+    (section 4): the window's one compaction (8.2);
+  - **why it holds.** A token stands for at least one byte of the text
+    it is read from, so the rendered measure bounds what the new part
+    adds in tokens, whatever its ratio. A prompt the guard lets through
+    is within the line. Its output is at most the model's most output,
+    so the compaction after it, carrying both, finds above them the
+    summary instruction and a marker for each owed result.
 - **The headroom holds a compaction.** Two relationships are checked at
   startup (protocol/limits.md):
-  - the window above its threshold holds the most one turn can append,
-    the summary instruction and a completion's output, so a compaction
-    the check triggers always fits the window;
+  - the window above its threshold holds a completion's most output,
+    the summary instruction and a cut result's marker for each of
+    `calls_per_response` calls, so the line is at or above the
+    threshold, and a compaction the check or the guard calls for always
+    fits the window, its owed results cut to what is left;
   - a new window's opening at its largest (the system text, the task,
     the summary preamble, a summary of a completion's most output, and
     the messages held back, at most one offer of its opener's, which the
-    opener bounds for this in messages and bytes, run.md, section 6)
-    passes the check, so a window just opened can make its first
-    completion. Where a declared window would not hold that material,
-    the derivation lowers the material's bounds, never the window
-    (protocol/limits.md).
+    opener bounds for this in messages and bytes, run.md, section 6) and
+    one completion's most output fit within the window at its threshold,
+    so a window just opened makes its first completion and holds that
+    completion's output below its threshold. Where a declared window
+    would not hold that material, the derivation lowers the material's
+    bounds, never the window (protocol/limits.md).
 - **The history's other bounds** (its messages, blocks and bytes) are
   derived so that the window check is reached first (protocol/limits.md).
   A history that would cross one of them anyway is compacted as a full
@@ -371,7 +433,7 @@ window, history only grows (section 3).
 ### 8.2 Compaction
 
 - **Its trigger:** a failed window check (8.1), a provider's *context
-  too long* (section 4), or a session opened from a window whose last
+  too long* or the guard's (section 4; 8.1), or a session opened from a window whose last
   turn's model is not its charter's main model, as when a person chose
   another (`docs/design/shell.md`, 4.1). That compaction runs with the
   window's own model, when the agent's configuration declares it, and
@@ -388,8 +450,10 @@ window, history only grows (section 3).
   user message: the summary instruction, which the run gives at open
   (run.md, section 3.3). The results owed to it are rendered within the
   room the window leaves for them, each cut with its marker where they
-  would pass it (protocol/limits.md, section 3.9). The history before
-  them is the ordinary prompt's, unchanged:
+  would pass it (protocol/limits.md, section 3.9). Its summary is its
+  output, beside its prompt as every completion's is, and takes no room
+  in the window (protocol/limits.md, 2.1). The history before them is
+  the ordinary prompt's, unchanged:
   - **on the Codex dialect,** which keeps the tool choice outside the
     cached prefix, the request reads the cached prefix;
   - **on the Anthropic dialect,** a changed choice keeps the cache of the
@@ -492,9 +556,15 @@ budgets.
   - a conversation that yields and is continued;
   - reads in parallel and a write alone; more adjacent reads than
     `parallel_tools`, the rest run in the next batch;
+  - edits of several files and a command in one completion, run in call
+    order; an edit among them that does not match, the writes and the
+    command after it answered as not run, naming it, and a read after
+    it run;
   - a command answered `running` while the session reads, edits and
-    completes, then read to its end with `job`; a `job` with `stop`
-    alone in its batch; jobs cancelled by the opener before another
+    completes, then read to its end with `job`; a `job` call with the
+    default wait beside reads, answered `running` once they have
+    answered; a `job` call alone, waiting for its job's end; a `job`
+    with `stop` alone in its batch; jobs cancelled by the opener before another
     writer, `cancelled` at their next read; a session closing with a job
     running, telling its `job.ended`;
   - every failure class retried or given up; head and idle timeouts
@@ -510,6 +580,14 @@ budgets.
     long; context too long on the compaction, failing; calls in a
     compaction's answer not run; a request skein finds too large, taken
     once as context too long;
+  - the appended count at the window's measured ratio: a window whose
+    prompts the provider counts at several bytes a token, then a turn
+    whose results it counts at one byte a token, admitted by the check
+    and refused unsent by the guard, then compacted within its window;
+    a turn whose new part measures just within the line, sent; a
+    completion of the most output just within the line, then its
+    compaction fitting; a ratio below one byte a token, or above
+    `TOKEN_BYTES`, taken at that bound;
   - a compaction asked with `None` and the window's tools; one in a
     conversation narrowed to `Only`, whose new window asks with `Only`
     again; a child's final turn falling due during a compaction;
@@ -533,11 +611,22 @@ budgets.
     boundary per compaction; every compaction asked with `None`;
   - every job's end told once, and no job running once its session has
     closed;
-  - no prompt whose bound exceeds its window;
+  - no prompt whose bound exceeds its window, and no prompt, a
+    compaction's included, whose size as the provider reports it does;
+  - no ordinary completion made whose check, as 8.1 counts it, passes
+    the threshold, and none sent whose reported prompt passes the line;
   - no failure detail in a prompt.
-- **The fuzzy suite** draws usage and appended sizes, and checks that no
-  request's bound exceeds its window and that no session ends for its
-  history's length.
+- **The provider counts tokens from bytes.** Where a story or the fuzzy
+  suite reports usage, the world's LLM effect gives each block a
+  rendered size, drawn at least its counted bytes, and counts its tokens
+  at a ratio it draws between one byte of that size a token and
+  `TOKEN_BYTES`, so that the appended count's error reaches its bounds
+  both ways. It applies the guard as the protocol layer does, from that
+  rendered size (8.1).
+- **The fuzzy suite** draws usage, appended sizes, rendered sizes and
+  those ratios, and checks that no request's bound or reported size
+  exceeds its window, that none sent passes the line, and that no
+  session ends for its history's length.
 
 ## 11. Open questions
 
@@ -552,11 +641,6 @@ budgets.
 - **A job's end between completions:** the model learns a job's end only
   from a `job` call (section 5); whether the session appends a note of
   it, by the path messages mid-work take (run.md, section 6).
-- **A failed call and the calls after it:** a call's failure changes
-  nothing for the calls after it in the same response, which run in
-  section 5's batches; whether a write or a command after a failed call
-  should be answered as not run instead, and the tools' descriptions say
-  so.
 - **An unreported input or output count:** section 6 charges the
   reservation in its place. To confirm against each dialect's reporting.
 - **Calls past the completion's bound:** failing the completion, as
