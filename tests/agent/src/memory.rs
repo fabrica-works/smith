@@ -57,6 +57,10 @@ enum Asked {
         asker: smith_domain::llm::Asker,
         cancelled: bool,
     },
+    Job {
+        owner: Token,
+        act: smith_domain_tools::JobAct,
+    },
     Io {
         owner: Token,
         op: OpKind,
@@ -113,6 +117,7 @@ struct Driver {
     asked: Vec<Asked>,
     runs: Vec<(Token, Token)>,
     workers: u64,
+    running: Option<smith_domain_tools::JobNumber>,
     /// Requests seen, by kind: completions, io, looks, checks, pushes,
     /// Requests: completions, io, looks, checks, pushes, answers; then actual
     /// full searches, passing/failing checks, delivered/stale/failed delivery,
@@ -187,7 +192,7 @@ impl Driver {
                     };
                     self.ask(Asked::Io { owner, op, cancelled: false });
                 }
-                Request::Job { .. } => unreachable!("the tools issue no job act yet"),
+                Request::Job { owner, act } => self.ask(Asked::Job { owner, act }),
                 Request::CancelIo { owner } => self.cancel(Family::Io, owner),
                 Request::Read { owner, .. } => {
                     self.seen[2] += 1;
@@ -217,6 +222,9 @@ impl Driver {
                             self.seen[14] += 1;
                         }
                         smith_domain::llm::Returned::Invalid { .. } => self.seen[17] += 1,
+                        smith_domain::llm::Returned::Owned {
+                            outcome: smith_domain_tools::Outcome::Running { job, .. },
+                        } => self.running = Some(*job),
                         smith_domain::llm::Returned::Text { .. }
                         | smith_domain::llm::Returned::Served { .. }
                         | smith_domain::llm::Returned::Owned { .. }
@@ -242,7 +250,7 @@ impl Driver {
                 Asked::Io { owner, cancelled, .. } => (Family::Io, (owner, cancelled)),
                 Asked::Check { owner, aborted } => (Family::Check, (owner, aborted)),
                 Asked::Delivery { owner, stopped, .. } => (Family::Delivery, (owner, stopped)),
-                Asked::Read { .. } | Asked::Probe { .. } => continue,
+                Asked::Read { .. } | Asked::Probe { .. } | Asked::Job { .. } => continue,
             };
             if of == family && *cancelled.0 == owner {
                 *cancelled.1 = true;
@@ -310,6 +318,7 @@ impl Driver {
                 Event::Done { owner, done: Done::Cancelled }
             }
             Asked::Io { owner, op, .. } => Event::Done { owner, done: self.done(limits, op) },
+            Asked::Job { owner, act } => Event::Done { owner, done: random::job_done(act) },
             Asked::Read { owner } => {
                 let read = match self.rng.below(4) {
                     0 => run::Read::Missing,
@@ -355,7 +364,8 @@ impl Driver {
                 | Asked::Io { .. }
                 | Asked::Read { .. }
                 | Asked::Probe { .. }
-                | Asked::Check { .. } => None,
+                | Asked::Check { .. }
+                | Asked::Job { .. } => None,
             })
         } else {
             None
@@ -403,6 +413,7 @@ pub fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
         asked: Vec::with_capacity(4096),
         runs: Vec::with_capacity(usize::try_from(rounds).expect("small")),
         workers: 0,
+        running: None,
         seen: [0; 18],
     };
     let meter = Meter::new();

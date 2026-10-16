@@ -22,6 +22,7 @@ impl Memory {
             asked: Vec::with_capacity(4096),
             runs: Vec::with_capacity(64),
             workers: 0,
+            running: None,
             seen: [0; 18],
         };
         let out = Queue::with_capacity(max_out(&limits));
@@ -99,7 +100,11 @@ impl Memory {
                     let event = match self.driver.asked.swap_remove(at) {
                         Asked::Read { owner } => Event::Read { owner, read: smith_domain::run::Read::Missing },
                         Asked::Probe { owner } => Event::Probed { owner, executable: false },
-                        Asked::Complete { .. } | Asked::Io { .. } | Asked::Check { .. } | Asked::Delivery { .. } => {
+                        Asked::Complete { .. }
+                        | Asked::Io { .. }
+                        | Asked::Check { .. }
+                        | Asked::Delivery { .. }
+                        | Asked::Job { .. } => {
                             unreachable!("selected preparation")
                         }
                     };
@@ -117,6 +122,7 @@ impl Memory {
     fn reclaim(&mut self) {
         self.driver.drain(&mut self.out);
         while self.domain.pop_fact().is_some() {}
+        while self.domain.pop_content().is_some() {}
         self.domain.reclaim();
     }
 
@@ -145,6 +151,23 @@ impl Memory {
             .expect("the scripted IO was requested");
         let Asked::Io { owner, .. } = self.driver.asked.swap_remove(at) else { unreachable!("selected IO") };
         owner
+    }
+
+    /// The running job number received by the model in its last prompt.
+    pub fn running_job(&mut self) -> smith_domain_tools::JobNumber {
+        self.driver.running.take().expect("a running shell result was sent")
+    }
+
+    /// Take the next read or stop of a held command.
+    pub fn job(&mut self) -> (Token, smith_domain_tools::JobAct) {
+        let at = self
+            .driver
+            .asked
+            .iter()
+            .position(|asked| matches!(asked, Asked::Job { .. }))
+            .expect("a job act was requested");
+        let Asked::Job { owner, act } = self.driver.asked.swap_remove(at) else { unreachable!("selected a job act") };
+        (owner, act)
     }
 
     /// Answer a completion and run to its next request.

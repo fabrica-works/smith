@@ -216,3 +216,14 @@ pub(super) fn completion_owned(completion: &Completion) -> (u64, u64) {
     }
     (owned, decoded)
 }
+
+/// Return unread capture at an ended read, or a stopped group.
+pub(super) fn job_done(act: smith_domain_tools::JobAct) -> Done {
+    let (head, tail, end) = match act {
+        smith_domain_tools::JobAct::Read { head, tail, .. } => {
+            (head, tail, smith_domain_tools::JobEnd::Ended(Exit::Code { code: 0 }))
+        }
+        smith_domain_tools::JobAct::Stop { head, tail } => (head, tail, smith_domain_tools::JobEnd::Stopped),
+    };
+    Done::Job { head: bytes(u64::from(head)), tail: bytes(u64::from(tail)), dropped: 0, end }
+}
