@@ -117,7 +117,10 @@ Shape: `run::Limits` gains `compaction_material: u64`, set by the profile
   `Invalid::Llm`, for the main model and each sub-agent model, beside
   `has_room`. The conversation's model entry at open gains `line: u64`,
   `window - output - compaction_material` of the charter's effective
-  values; the session keeps it with the window it opens. The effective
+  values; the session's `Spec` (`boundary.rs:261`) takes it as `line`.
+  The session's `Conversation` does not keep it in 03.1: its first
+  reader, 04.1, adds it as a named field. `model_window` and its reads,
+  in `compaction.rs` among them, stay as they are. The effective
   limits name it `run.compaction_material`; `smith_events::VERSION` = 3.
 Test shape: `crates/smith-domain-run/src/tests.rs`, beside the room's
   refusal tests (`rg -n 'Invalid::Room' crates/smith-domain-run/src/tests.rs`

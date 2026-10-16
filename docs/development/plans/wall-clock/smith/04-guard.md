@@ -108,7 +108,7 @@ Files: `crates/smith-domain-session/src/llm.rs` (`Purpose`, `:242-247`;
   `tests/session/tests/compaction.rs`, `tests/session/src/recorded.rs`.
 Shape: the sketch below. `complete` sets `guard: Some(..)` for an
   ordinary completion whose window has a reported last prompt, with the
-  conversation's line (03.1), that prompt's size, and `from` at the
+  conversation's line, that prompt's size, and `from` at the
   index where the last answer starts (`following - 1`); `None` only for
   a window with no reported last prompt: a window's first completion,
   and the first after a resume from a window turn. A resume from an
@@ -117,6 +117,14 @@ Shape: the sketch below. `complete` sets `guard: Some(..)` for an
   `:2221` builds `Purpose::Ordinary { guard: Some(Guard { .. }) }` and
   `Purpose::Ordinary { guard: None }` in its arms, with no `Option::map`
   (banned) and no match returning an `Option` (clippy's `manual_map`).
+  The conversation's line is a named field 04.1 adds,
+  `Conversation.line: u64` beside `model_window` (`session.rs:184`), set
+  at open from `Spec.line` (03.1) where `model_window` is (`:2082`), and
+  read by `complete`; never a value inside a tuple, or any other type,
+  that a lint would not see unread. If 03.1 landed `model_window` as a
+  tuple, 04.1 makes it `u32` again, with its reads as on `ba1fef5b`.
+  `change_model`'s swap (`compaction.rs:58`, `:230`) leaves the line as
+  it is.
   In `start`, between the output ceiling (`:403-406`) and
   `observed_prompt` (`:408`), one call, `guard::check`, measures the new
   part's bytes with `guard::measure`; when `last_prompt + measure >
