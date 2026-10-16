@@ -502,3 +502,12 @@ Reversible, and none a product decision; the widest in reach:
      - README, rule 13: attempt ids are already two digits (`probe.rs:259`), and `printf %02d "08"` fails in bash as octal; the counts read `…/runs/<run>/$a/result.json`.
 
      The small `parity-change` run exits 2 whatever its stop (`probe.rs:661-666`, `:733-735`), and `change` exits 0 on a stored section it agrees with, as step 4 expects.
+
+112. **smith 07's Shapes against main** (ready check of smith-07.1).
+     The ready check of smith 07 (07.1 against smith `main` at `22b64718`; 07.1's check sketched in a scratch worktree, the full gate then passing, default 2327/2327 and fuzzy 43/43, with no provider called; 06.1, its need, not landed) corrected `smith/07-window-check.md`:
+
+     - The session crate does not depend on skein-llm, so the clamp's `TOKEN_BYTES` is a `token_bytes` field of the session `Limits` (`limits.rs:26`, `:221`, `:269`), set by the service from `shared::TOKEN_BYTES` as `line_bytes` is (`profile.rs:448`, `:550`); Files add its three other `Limits` literals.
+     - `prompt_bytes` drops `Descriptor` (`spec_cost`, `session.rs:2547-2548`) and `Token` (`choice_bytes`, `:753-761`) cells too. The referee walks payload bytes itself for the ratio; `Prompt::input_bytes` stays for `route.rs:701`. The profile's startup room (`room.rs`, two outputs below the threshold) stays as it is.
+     - Moved lines: the room at `session.rs:2202-2222`, `receive_completion`'s `completed` at `:2519-2523`, the resume in `compaction.rs` (`:426`, `:457`, `:467-471`), the unit tests at `:2912`.
+     - Fixtures 07.1 changes: the three window unit tests; `a_compaction_carries_no_guard`'s room, 64,466 → 65,490; the session world's `usage()` (`compaction.rs:9-11`), input 1,300 so that it still compacts; the agent world's `data.txt` (`tests/agent/tests/compaction.rs:47`) and `fill_window` (`memory_returns.rs:69`, `:77`), grown until they compact as before.
+     - The room test uses the unit harness's 26-byte instruction (`tests.rs:307`): 272,000 − 232,000 − 26 = 39,974, not 39,610.

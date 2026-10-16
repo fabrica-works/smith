@@ -87,29 +87,53 @@ Files: `crates/smith-domain-session/src/window.rs` (`Window`, `:23-33`;
   `completed`, `:55-62`; `check`, `:65-77`; `bound`, `:88-99`),
   `crates/smith-domain-session/src/compaction.rs` (`due`, `:66-84`;
   `appended_bytes`, `:86-94`; `prompt_bytes`, `:97-113`),
-  `crates/smith-domain-session/src/session.rs` (`:2199-2219`, the
-  compaction's room; `:2506-2510`; the resume's recount), its unit tests
-  (`:2894`), `tests/session/src/window_referee.rs` (`:30-64`),
-  `tests/session/tests/compaction.rs`, `tests/session/tests/fuzzy_simulation.rs`
-  (`:114`, the `+512` at `:135`), `benchmarks/summaries/` (its
-  `parity-change` summary).
+  `crates/smith-domain-session/src/session.rs` (`:2202-2222`, the
+  compaction's room, its cells at `:2203-2207`; `receive_completion`'s
+  `window.completed`, `:2519-2523`; `spec_cost`, `:2547-2548`, and
+  `choice_bytes`, `:753-761`, as `prompt_bytes` counts them),
+  `compaction.rs`'s resume (`restore`, `:426`; `Window::fresh`, `:457`;
+  its `completed`, `:467-471`), `crates/smith-domain-session/src/limits.rs`
+  (a `token_bytes` field beside `threshold`, `:26`, `:221`, `:269`), set
+  by `crates/smith-agent-service/src/profile.rs` (`:550`) from
+  `shared::TOKEN_BYTES`, as `line_bytes` is at `:448`, and the other
+  `Limits` literals (`crates/smith-domain/src/tests.rs:109`,
+  `crates/smith-domain-session/src/tests.rs:59`,
+  `tests/session/src/world.rs:207`), its unit tests (`:2912`; the three
+  window tests at `:2912-2947`, and `a_compaction_carries_no_guard`,
+  `:3023`, whose room becomes 65,490),
+  `tests/session/src/window_referee.rs` (`:30-64`),
+  `tests/session/tests/compaction.rs` (its `usage()`, `:9-11`, takes
+  `input_tokens: Some(1_300)` so that it still compacts),
+  `tests/session/tests/fuzzy_simulation.rs` (`:114`, the `+512` at
+  `:135`), `tests/agent/tests/compaction.rs` (`data.txt`, `:47`) and
+  `tests/agent/tests/memory_returns.rs` (`fill_window`, `:69`, `:77`),
+  whose sizes grow until they compact as before (the check found 3,700
+  bytes, and `0..7` with `turn < 6`, on its own sketch), and
+  `benchmarks/summaries/` (its `parity-change` summary).
 Shape: `Window` gains `last_prompt_bytes: u64`, the payload bytes counted
   in the prompt `completed` records. `bound` adds `last_prompt +
   last_output + appended`, where `appended` is the appended count above,
   and no longer adds `output`. `prompt_bytes`, the bound without a
-  ratio, counts payload bytes, not `size_of::<Prompt>()`, `Message` or
-  `Block` cells. The compaction's room is the window less its history
+  ratio, counts payload bytes, not `size_of::<Prompt>()`, `Message`,
+  `Block`, `Descriptor` (`spec_cost`) or `Token` (`choice_bytes`) cells.
+  The session crate does not depend on skein-llm: the clamp's
+  `TOKEN_BYTES` is the session `Limits`' `token_bytes`, set by the
+  service. The compaction's room is the window less its history
   before the owed results (the last prompt and its output, or, without
   a ratio, the counted payload bytes and the allowance, with no
-  `content_cost` or `size_of::<Message>()` cells, `session.rs:2199-2203`)
+  `content_cost` or `size_of::<Message>()` cells, `session.rs:2203-2207`)
   and less `instruction_bytes`: no `min` with the threshold, no floor,
   and no `output` subtracted (limits.md 3.9). After a resume the counted bytes are recounted
   from the loaded history. The referee asserts each reported prompt
   within its window (no `max_tokens` added) and each ordinary completion
-  made within the threshold as 8.1 counts it; the fuzzy test's `+512`
-  goes.
+  made within the threshold as 8.1 counts it: it walks the request's
+  payload bytes itself for the ratio, in place of the cells it subtracts
+  today (`window_referee.rs:47-53`, `:60`); `Prompt::input_bytes`
+  (`llm.rs:294`) stays, for `route.rs:701`. The fuzzy test's `+512`
+  goes. The profile's startup room (`smith-agent-service/src/profile/room.rs`,
+  two outputs below the threshold, `:14`, `:78`, `:98`) stays as it is.
 Test shape: `crates/smith-domain-session/src/tests.rs`, beside
-  `the_check_counts_reported_usage` (`:2894`):
+  `the_check_counts_reported_usage` (`:2912`):
   `the_check_reserves_no_output_below_the_threshold`,
   `appended_bytes_count_at_the_windows_measured_ratio`,
   `a_ratio_below_one_byte_a_token_is_taken_at_one`,
@@ -117,8 +141,9 @@ Test shape: `crates/smith-domain-session/src/tests.rs`, beside
   `without_a_ratio_the_bound_counts_payload_bytes_and_the_allowance`,
   `a_compactions_room_keeps_no_output_for_its_summary`,
   `a_compactions_room_past_the_threshold_keeps_the_window` (a last
-  prompt of 230,000 and an output of 2,000 on the standard Codex model:
-  a room of 39,610, so the compaction's prompt stays within 272,000);
+  prompt of 230,000 and an output of 2,000 on the standard Codex model,
+  with the unit harness's 26-byte instruction, `tests.rs:307`: a room of
+  39,974, so the compaction's prompt stays within 272,000);
   each with its
   numbers as literals (attempt 49's: 152,588 reported, 224 output,
   34,469 bytes appended at a ratio of 3.5 bytes a token: 162,661, which
