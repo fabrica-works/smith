@@ -304,7 +304,7 @@ fn described_prompt() -> smith_domain::llm::Prompt {
     use smith_domain::llm;
     llm::Prompt {
         effort: None,
-        purpose: llm::Purpose::Ordinary,
+        purpose: llm::Purpose::Ordinary { guard: None },
         choice: llm::ToolChoice::Auto,
         namespace: tools::Namespace::One,
         asker: llm::Asker::Main,

@@ -1079,7 +1079,7 @@ impl Counted {
 
     fn until_compaction(&mut self, configuration: &Configuration, cycles: u32) {
         let complete = self.complete.take().expect("actual restored ordinary request");
-        assert_eq!(complete.prompt.purpose, llm::Purpose::Ordinary);
+        assert!(matches!(complete.prompt.purpose, llm::Purpose::Ordinary { guard: Some(_) }));
         let event = self.native(complete, configuration, cycles);
         self.step(event);
         for _ in 0..100 {

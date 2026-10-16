@@ -1422,7 +1422,7 @@ impl World {
         let messages = u32::try_from(prompt.messages.len()).expect("a small transcript");
         assert!(
             match prompt.purpose {
-                agent::llm::Purpose::Ordinary => messages < self.settings.agent.history_messages,
+                agent::llm::Purpose::Ordinary { .. } => messages < self.settings.agent.history_messages,
                 agent::llm::Purpose::Compaction { .. } => messages <= self.settings.agent.history_messages,
             },
             "session {opener}'s transcript has room for the answer"

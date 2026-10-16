@@ -2210,7 +2210,7 @@ fn a_full_owned_batch_leaves_a_summary_instruction_and_compacts() {
     let (_, prompt) = calling(h.step(ran(runs.as_slice()[0], &[b'x'; 4096])));
     match prompt.purpose {
         crate::llm::Purpose::Compaction { .. } => {}
-        crate::llm::Purpose::Ordinary => panic!("history compacts"),
+        crate::llm::Purpose::Ordinary { .. } => panic!("history compacts"),
     }
     let expected = [result(b"a", read(&[b'x'; 4096])), result(b"b", read(&[b'y'; 4096]))];
     assert_eq!(&*h.turn_records.get(0).expect("ordinary turn").messages[2].content, &expected);
@@ -2996,4 +2996,66 @@ fn a_later_command_keeps_its_head_and_tail_within_its_share() {
     let Op::Spawn { head, tail, .. } = operation else { panic!("command") };
     assert_eq!((head, tail), (32, 32));
     close_later_call(&mut h, session, owner);
+}
+
+#[test]
+fn an_ordinary_completion_after_a_prompt_carries_the_guard() {
+    let mut harness = Harness::new(&LIMITS);
+    let owner = harness.yielded();
+    let (_, prompt) = calling(harness.step(Event::Continue { session: owner, content: bytes(b"continue") }));
+    assert_eq!(
+        prompt.purpose,
+        crate::llm::Purpose::Ordinary {
+            // USAGE's input + cache read + cache write = 10 + 3 + 2.
+            guard: Some(crate::llm::Guard { line: 64_512, last_prompt: 15, from: 1 }),
+        }
+    );
+}
+
+#[test]
+fn a_windows_first_completion_carries_no_guard() {
+    let mut harness = Harness::new(&LIMITS);
+    let (_, prompt) = harness.open(1);
+    assert_eq!(prompt.purpose, crate::llm::Purpose::Ordinary { guard: None });
+}
+
+#[test]
+fn a_compaction_carries_no_guard() {
+    let mut harness = Harness::new(&LIMITS);
+    let owner = harness.yielded();
+    let (_, prompt) = calling(harness.step(Event::Continue { session: owner, content: bytes(b"continue") }));
+    assert_eq!(
+        prompt.purpose,
+        crate::llm::Purpose::Ordinary { guard: Some(crate::llm::Guard { line: 64_512, last_prompt: 15, from: 1 }) }
+    );
+    let (_, compacted) = calling(harness.step(Event::Failed {
+        owner,
+        failure: Failure::ContextTooLong,
+        evidence: crate::llm::Evidence::Unsent,
+        detail: bytes(b"past the line"),
+    }));
+    // Window - last prompt - output - summary instruction - reserved output.
+    assert_eq!(compacted.purpose, crate::llm::Purpose::Compaction { room: 64_466 });
+}
+
+#[test]
+fn a_resumed_ordinary_window_carries_the_guard() {
+    let mut original = Harness::new(&LIMITS);
+    original.yielded();
+    let mut resumed = Harness::new(&LIMITS);
+    let mut opening = opening(spec());
+    opening.transcript = Some(crate::record::Transcript {
+        version: crate::record::VERSION,
+        endpoint: Endpoint(0),
+        dialect: 1,
+        turns: original.turn_records.to_boxed(),
+    });
+    step(&mut resumed.domain, &resumed.env, Event::Open { opener: Token::new(2), opening }, &mut resumed.out);
+    let Some(Request::Opened { opener, .. }) = resumed.next() else { panic!("restored session opens") };
+    assert_eq!(opener, Token::new(2));
+    let (_, prompt) = calling(resumed.one());
+    assert_eq!(
+        prompt.purpose,
+        crate::llm::Purpose::Ordinary { guard: Some(crate::llm::Guard { line: 64_512, last_prompt: 15, from: 1 }) }
+    );
 }

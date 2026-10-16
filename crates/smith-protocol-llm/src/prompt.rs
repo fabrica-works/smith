@@ -142,7 +142,7 @@ fn translate(
 
 fn owed_result_bound(purpose: llm::Purpose, messages: &[llm::Message], maximum: u32) -> Result<u32, Error> {
     let room = match purpose {
-        llm::Purpose::Ordinary => return Ok(maximum),
+        llm::Purpose::Ordinary { .. } => return Ok(maximum),
         llm::Purpose::Compaction { room } => room,
     };
     let message = match messages.len().checked_sub(2) {

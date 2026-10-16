@@ -29,6 +29,7 @@ mod endpoints;
 mod failure;
 mod framing;
 mod grants;
+mod guard;
 mod limits;
 mod prompt;
 mod render;

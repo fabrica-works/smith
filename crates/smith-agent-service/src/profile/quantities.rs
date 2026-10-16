@@ -51,7 +51,7 @@ pub struct Declared {
     pub guide: u32,
     /// Shared LLM admission memory, in bytes.
     pub llm_pool: u64,
-    /// The process's real memory, in bytes: `standard()` declares 2 GiB.
+    /// The process's real memory, in bytes: `standard()` declares 2,112 MiB.
     pub memory: u64,
 }
 

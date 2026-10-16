@@ -162,7 +162,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
     assert!(live_text.ends_with(b"[next line 6] [window clamped: 99 bytes to 32 bytes]"));
     let history = llm::Prompt {
         effort: None,
-        purpose: llm::Purpose::Ordinary,
+        purpose: llm::Purpose::Ordinary { guard: None },
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
@@ -195,7 +195,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
 fn written_text_and_mechanical_feedback_keep_their_error_flags() {
     let history = llm::Prompt {
         effort: None,
-        purpose: llm::Purpose::Ordinary,
+        purpose: llm::Purpose::Ordinary { guard: None },
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
@@ -247,7 +247,7 @@ fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
     for name in [b"write".as_slice(), b"edit"] {
         let history = llm::Prompt {
             effort: None,
-            purpose: llm::Purpose::Ordinary,
+            purpose: llm::Purpose::Ordinary { guard: None },
             choice: smith_domain::llm::ToolChoice::Auto,
             namespace: tools::Namespace::One,
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
@@ -343,7 +343,7 @@ fn owed_results_prompt(purpose: llm::Purpose) -> llm::Prompt {
         effort: None,
         purpose,
         choice: match purpose {
-            llm::Purpose::Ordinary => llm::ToolChoice::Only(Box::new([llm::Served::Finish])),
+            llm::Purpose::Ordinary { .. } => llm::ToolChoice::Only(Box::new([llm::Served::Finish])),
             llm::Purpose::Compaction { .. } => llm::ToolChoice::None,
         },
         namespace: tools::Namespace::One,
@@ -406,8 +406,8 @@ fn retained_history(ordinary: &skein_llm::Prompt, summary: &skein_llm::Prompt) {
 fn a_compactions_owed_results_are_cut_and_its_history_is_unchanged() {
     let bounds = limits();
     let finish = [finish_tool()];
-    let ordinary =
-        adapter::prompt(owed_results_prompt(llm::Purpose::Ordinary), &finish, &bounds).expect("admitted prompt");
+    let ordinary = adapter::prompt(owed_results_prompt(llm::Purpose::Ordinary { guard: None }), &finish, &bounds)
+        .expect("admitted prompt");
     let summary = adapter::prompt(owed_results_prompt(llm::Purpose::Compaction { room: 160 }), &finish, &bounds)
         .expect("admitted prompt");
     retained_history(&ordinary, &summary);

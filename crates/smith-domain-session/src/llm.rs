@@ -240,10 +240,21 @@ pub struct Affinity {
 /// Why the session asks for a completion (domain/session.md, section 8.2).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Purpose {
-    /// An ordinary completion keeps every result at its declared render bound.
-    Ordinary,
+    /// An ordinary completion, guarded when its window has a reported last prompt.
+    Ordinary { guard: Option<Guard> },
     /// A summary completion shares this room in bytes among its owed results.
     Compaction { room: u64 },
+}
+
+/// What the protocol layer checks before an ordinary request (domain/session.md, section 8.1).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Guard {
+    /// The conversation's line, in tokens.
+    pub line: u64,
+    /// The window's last reported prompt, in tokens.
+    pub last_prompt: u64,
+    /// The message index where the last answer starts.
+    pub from: usize,
 }
 
 /// One call to an LLM: everything it needs to produce the next assistant

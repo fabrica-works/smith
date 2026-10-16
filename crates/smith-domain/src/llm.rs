@@ -18,8 +18,8 @@ use smith_domain_run as run;
 use smith_domain_tools as tools;
 
 pub use smith_domain_session::llm::{
-    Affinity, Cap, CompletionName, Endpoint, Evidence, Failure, Limit, Phase, Problem, Purpose, Replay, Role, Stop,
-    Usage,
+    Affinity, Cap, CompletionName, Endpoint, Evidence, Failure, Guard, Limit, Phase, Problem, Purpose, Replay, Role,
+    Stop, Usage,
 };
 
 /// One call to an LLM: everything it needs to produce the next assistant

@@ -90,7 +90,7 @@ Unknown models need declarations, including positive prices, under
 each within 32 bytes. A model declaring none accepts any bounded effort;
 a provider refusal then becomes the request's failure. Presets declare
 no effort lists. Profiles derive limits and check memory before a run.
-The defaults remain five conversations and 2 GiB.
+The defaults remain five conversations and 2,112 MiB.
 
 ## Durable chats, traces and exits
 

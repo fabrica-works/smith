@@ -1083,7 +1083,7 @@ pub(crate) mod tests {
     pub(crate) fn prompt(thread: u32) -> llm::Prompt {
         llm::Prompt {
             effort: Some(b"medium".as_slice().into()),
-            purpose: llm::Purpose::Ordinary,
+            purpose: llm::Purpose::Ordinary { guard: None },
             endpoint: llm::Endpoint(0),
             affinity: llm::Affinity { key: [0; 16], thread },
             asker: llm::Asker::Main,

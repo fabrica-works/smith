@@ -622,3 +622,29 @@ fn a_restored_window_reads_its_summary_after_the_preamble() {
     assert!(!is_summary(&world));
     world.close();
 }
+
+#[test]
+fn the_guards_refusal_compacts_the_window_once() {
+    let mut world = started(4799);
+    world.complete(said(b"first"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    continue_with(&mut world, b"go on");
+    let detail = b"past the line: last prompt 1000 + new part 600 > line 1488";
+    for _ in 0..2 {
+        world.step(session::Event::Failed {
+            owner: world.completing.expect("ordinary request then compaction"),
+            failure: llm::Failure::ContextTooLong,
+            evidence: llm::Evidence::Unsent,
+            detail: detail.as_slice().into(),
+        });
+    }
+    assert_eq!(
+        world.end,
+        Some(session::End::Failed {
+            failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 2_000 },
+            evidence: llm::Evidence::Unsent,
+            attempts: 1,
+        })
+    );
+    assert_eq!(world.prompts.len(), 3);
+    assert_eq!(world.turns.len(), 1);
+}

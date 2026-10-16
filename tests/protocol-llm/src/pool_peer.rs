@@ -83,6 +83,12 @@ impl Peer {
     /// Build a peer with declared calls and a lowered endpoint share.
     #[must_use]
     pub fn configured(calls: u32, per_endpoint: u32) -> Self {
+        Self::for_provider(calls, per_endpoint, skein_llm::Provider::OpenAiCodex)
+    }
+
+    /// Build the same actual component peer for either wire dialect.
+    #[must_use]
+    pub fn for_provider(calls: u32, per_endpoint: u32, provider: skein_llm::Provider) -> Self {
         let mut limits = limits();
         limits.connection.calls = calls;
         limits.connection.connections = calls;
@@ -98,7 +104,10 @@ impl Peer {
                     credential: skein_llm::client::CredentialLimits { access_token: 128, account_id: 128 },
                     address: "127.0.0.1:443".parse().expect("fixture address"),
                     transport: skein_llm_connection::Transport::Plaintext,
-                    llm: skein_llm::Endpoint::codex(),
+                    llm: match provider {
+                        skein_llm::Provider::OpenAiCodex => skein_llm::Endpoint::codex(),
+                        skein_llm::Provider::Anthropic => skein_llm::Endpoint::anthropic(),
+                    },
                 },
                 account: 0,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
@@ -112,9 +121,12 @@ impl Peer {
         component
             .grant(
                 GrantName { account: 0, generation: 1 },
-                skein_llm::Credential {
-                    access_token: b"fake".as_slice().into(),
-                    account_id: b"fake".as_slice().into(),
+                match provider {
+                    skein_llm::Provider::OpenAiCodex => skein_llm::Credential {
+                        access_token: b"fake".as_slice().into(),
+                        account_id: b"fake".as_slice().into(),
+                    },
+                    skein_llm::Provider::Anthropic => skein_llm::Credential::anthropic(b"fake".as_slice().into()),
                 },
                 Time::ZERO.saturating_add(Duration::from_secs(1000)),
             )
@@ -155,29 +167,43 @@ impl Peer {
         whole: u64,
         observation: Option<smith_protocol_llm::Observation>,
     ) {
+        let prompt = llm::Prompt {
+            effort: None,
+            purpose: llm::Purpose::Ordinary { guard: None },
+            choice: smith_domain::llm::ToolChoice::Auto,
+            namespace: smith_domain::tools::Namespace::One,
+            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            asker: llm::Asker::Main,
+            endpoint: llm::Endpoint(0),
+            model: b"fixture".as_slice().into(),
+            system: b"timed reasoning".as_slice().into(),
+            tools: tools::Grants { inspect: true, modify: false, shell: false },
+            served: Box::new([]),
+            messages: Box::new([llm::Message {
+                role: llm::Role::User,
+                content: Box::new([llm::Block::Text { text: b"begin".as_slice().into(), replay: None }]),
+            }]),
+            max_tokens: 4096,
+        };
+        self.start_prompt(owner, head, idle, whole, prompt, observation);
+    }
+
+    /// Submit caller-owned history through the production guard and byte peer.
+    pub fn start_prompt(
+        &mut self,
+        owner: u64,
+        head: u64,
+        idle: u64,
+        whole: u64,
+        prompt: llm::Prompt,
+        observation: Option<smith_protocol_llm::Observation>,
+    ) {
         self.component.from_domain(
             &self.env,
             FromDomain::Complete {
                 owner: Token::new(owner),
                 grant: GrantName { account: 0, generation: 1 },
-                prompt: llm::Prompt {
-                    effort: None,
-                    purpose: llm::Purpose::Ordinary,
-                    choice: smith_domain::llm::ToolChoice::Auto,
-                    namespace: smith_domain::tools::Namespace::One,
-                    affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
-                    asker: llm::Asker::Main,
-                    endpoint: llm::Endpoint(0),
-                    model: b"fixture".as_slice().into(),
-                    system: b"timed reasoning".as_slice().into(),
-                    tools: tools::Grants { inspect: true, modify: false, shell: false },
-                    served: Box::new([]),
-                    messages: Box::new([llm::Message {
-                        role: llm::Role::User,
-                        content: Box::new([llm::Block::Text { text: b"begin".as_slice().into(), replay: None }]),
-                    }]),
-                    max_tokens: 4096,
-                },
+                prompt,
                 deadlines: smith_domain::session::Deadlines {
                     head: Duration::from_secs(head),
                     idle: Duration::from_secs(idle),

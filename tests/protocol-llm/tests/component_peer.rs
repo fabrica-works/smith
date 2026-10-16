@@ -174,7 +174,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             grant: GrantName { account: 0, generation: 1 },
             prompt: llm::Prompt {
                 effort: None,
-                purpose: llm::Purpose::Ordinary,
+                purpose: llm::Purpose::Ordinary { guard: None },
                 choice: smith_domain::llm::ToolChoice::Auto,
                 namespace: smith_domain::tools::Namespace::One,
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },

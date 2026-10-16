@@ -381,6 +381,7 @@ impl Component {
                 return;
             }
         };
+        let purpose = prompt.purpose;
         let adapter = crate::Limits { client: options.client, ..self.limits.adapter };
         let (mut translated, context) =
             match crate::prompt::prepare_component(owner, prompt, &outcome, deliver.as_ref(), bounds, &adapter) {
@@ -404,7 +405,12 @@ impl Component {
             Self::refusal(owner, Error::from_shared(error), bounds.max_failure_bytes, to_domain);
             return;
         }
-        let index = options.index;
+        if let Some(event) =
+            crate::guard::check(purpose, &mut translated, &credential, options, owner, bounds.max_failure_bytes)
+        {
+            Self::domain_event(event, to_domain);
+            return;
+        }
         let captured = match observed_prompt(&translated, &credential, options, observation) {
             Ok(captured) => captured,
             Err(error) => {
@@ -433,7 +439,7 @@ impl Component {
         };
         let request = connection::Request::Start {
             call: owner,
-            endpoint: index,
+            endpoint: options.index,
             prompt: translated,
             credential,
             deadlines,

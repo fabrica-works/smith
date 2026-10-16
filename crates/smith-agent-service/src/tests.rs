@@ -544,7 +544,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
     let Some(run::Request::Open { opening, .. }) = out.pop() else { panic!("admitted opening") };
     let prompt = llm::Prompt {
         effort: None,
-        purpose: llm::Purpose::Ordinary,
+        purpose: llm::Purpose::Ordinary { guard: None },
         choice: llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: llm::Affinity { key: [0; 16], thread: 0 },
