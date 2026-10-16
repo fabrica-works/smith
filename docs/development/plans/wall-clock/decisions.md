@@ -493,3 +493,12 @@ Reversible, and none a product decision; the widest in reach:
 
 110. **06.1 needs 02.4** (ready check of smith-06.1, re-checked).
      06.1 needs smith-02.4. 02.3 landed (`78e84cb8`) split under README rule 1: "Named inputs, SHA-256 checking and command integration remain for smith-02.4". On `main` at `78e84cb8`, `suite` takes no `--baseline-run` (`probe.rs:550`: `"--attempts", "--seed", "--commit", "--arm", "--include", "--parent", "--parent-arm"`), and `main.rs` has no `change` command, both of which 06.1's step 4 runs. `smith/06-baseline.md` now names 02.4 among 06.1's Needs; 06.1's ready check is re-run against `main` once 02.4 lands.
+
+111. **smith 06's Shapes after 02.4** (ready check of smith-06.1, re-checked).
+     The re-check of smith 06 after 02.4 (smith `34e0c51b`; `build HEAD` run, smith-bench's suites 301/301 and fuzzy 3/3, every 06.1 command parsed offline with no provider called) found 06.1's commands as its Shape gives them, and corrected three lines:
+
+     - 06.1, step 2: `suite parity` prints `summary <run> attempts=68 verdict=…`, not a path (`probe.rs:677-689`); its summary is `benchmarks/summaries/<run>.json`.
+     - 06.1, Proof: a group's `passes` is a count object and its `attempts` a list of ids (`summary.rs:67-69`); the line is `jq -c '.groups[] | {task, arm, passed: .passes.passed, attempts: (.attempts | length)}' <its summary>`.
+     - README, rule 13: attempt ids are already two digits (`probe.rs:259`), and `printf %02d "08"` fails in bash as octal; the counts read `…/runs/<run>/$a/result.json`.
+
+     The small `parity-change` run exits 2 whatever its stop (`probe.rs:661-666`, `:733-735`), and `change` exits 0 on a stored section it agrees with, as step 4 expects.

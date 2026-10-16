@@ -66,6 +66,8 @@ Files: `benchmarks/summaries/parity-*.json`.
 Shape: no code. On a worktree at `origin/main`:
   1. `heavy cargo run -p smith-bench -- build HEAD` gives `<dir>`;
   2. `heavy --gate cargo run -p smith-bench -- suite parity --arm <dir>`;
+     it prints `summary <run> attempts=68 verdict=…`, and its summary is
+     `benchmarks/summaries/<run>.json`;
   3. `heavy cargo run -q -p smith-bench -- parity <its summary> --commit
      <SHA>`, where `<SHA>` is the full 40-hex `git rev-parse HEAD`, taken
      before the summary is committed. On an exit of 2, the summary is not
@@ -84,7 +86,7 @@ Test shape: none: no code; the runs are the proof.
 Proof: live, once each: the baseline, 68 attempts, about $17 and 6
   hours, and the small run, 8 attempts, about 40 minutes. In the commit
   body and the report: the five criteria lines and the verdict's exit;
-  `jq -c '.groups[] | {task, arm, passes, attempts}' <its summary>`;
+  `jq -c '.groups[] | {task, arm, passed: .passes.passed, attempts: (.attempts | length)}' <its summary>`;
   README rule 13's counts beside, for `shell-cwd`; the small run's
   `change` lines; and the count of smith attempts in which the guard
   refused a request, `rg -l -g trace.jsonl 'past the line: last prompt'

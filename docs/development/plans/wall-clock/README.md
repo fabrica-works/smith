@@ -233,7 +233,7 @@ the run ends.
     The counts beside a report come from its run's attempts, once:
 
     ```
-    jq -r '.attempts[] | select(.task == "repository/shell-cwd") | "\(.attempt) \(.arm)"' <summary> | while read a arm; do printf '%s %s ' "$arm" "$a"; jq -c '[.counts.compactions, .counts.responses, .counts.tool_calls]' ~/.local/state/smith-bench/runs/<run>/$(printf %02d "$a")/result.json; done
+    jq -r '.attempts[] | select(.task == "repository/shell-cwd") | "\(.attempt) \(.arm)"' <summary> | while read a arm; do printf '%s %s ' "$arm" "$a"; jq -c '[.counts.compactions, .counts.responses, .counts.tool_calls]' ~/.local/state/smith-bench/runs/<run>/$a/result.json; done
     ```
 
     prints each `shell-cwd` attempt's arm, compactions, responses and
