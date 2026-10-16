@@ -53,9 +53,9 @@ fn payload_bytes_come_from_the_actual_matching_terminal_not_input_or_another_run
     let original = common::events::balanced();
     let mut values = original.clone();
     let mut start =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_started_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_started_everything.jsonl"));
     let mut end =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
     if let Event::ToolStarted(value) = &mut start.event {
         value.run = 0;
         value.conversation = 0;
@@ -122,9 +122,9 @@ fn timeouts_require_the_native_equal_bound_exact_request_clamp_and_complete_join
     let original = common::events::balanced();
     let mut values = original.clone();
     let mut start =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_started_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_started_everything.jsonl"));
     let mut end =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
     if let Event::ToolStarted(value) = &mut start.event {
         value.run = 0;
         value.conversation = 0;
@@ -234,9 +234,9 @@ const JOB_TERMINAL_AT: usize = 10;
 
 fn shell_records() -> (Record, Record) {
     let mut shell =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_started_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_started_everything.jsonl"));
     let mut running =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
     if let Event::ToolStarted(value) = &mut shell.event {
         value.run = 0;
         value.conversation = 0;

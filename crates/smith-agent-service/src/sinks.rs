@@ -1201,7 +1201,7 @@ pub(crate) mod tests {
             sinks.record(&Record { t_ms: 37, event: Event::RunCompleted(answer) });
             // The same policy grants the request's content in 02.6.
             let request =
-                golden(include_bytes!("../../smith-events/golden/v2/response_started_everything.jsonl"), &limits);
+                golden(include_bytes!("../../smith-events/golden/v3/response_started_everything.jsonl"), &limits);
             let Event::ResponseStarted(expected) = &request.event else { panic!("golden request") };
             let expected = expected.prompt.clone();
             sinks.record(&request);
@@ -1404,7 +1404,7 @@ pub(crate) mod tests {
         let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         let mut expected = Vec::new();
-        let start = golden(include_bytes!("../../smith-events/golden/v2/session_started_none.jsonl"), &limits);
+        let start = golden(include_bytes!("../../smith-events/golden/v3/session_started_none.jsonl"), &limits);
         sinks.record(&start);
         expected.push(start);
         for name in 0..count {
@@ -1416,10 +1416,10 @@ pub(crate) mod tests {
             expected.push(record);
         }
         assert!(!sinks.takes(), "the actual output cap holds the next fact");
-        let completed = golden(include_bytes!("../../smith-events/golden/v2/run_completed_none.jsonl"), &limits);
+        let completed = golden(include_bytes!("../../smith-events/golden/v3/run_completed_none.jsonl"), &limits);
         sinks.record(&completed);
         expected.push(completed);
-        let end = golden(include_bytes!("../../smith-events/golden/v2/session_ended_none.jsonl"), &limits);
+        let end = golden(include_bytes!("../../smith-events/golden/v3/session_ended_none.jsonl"), &limits);
         sinks.record(&end);
         expected.push(end);
         sinks.finish();

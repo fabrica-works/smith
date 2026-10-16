@@ -47,7 +47,7 @@ pub mod wire;
 
 mod world;
 
-pub use limits::{BUDGET, LIMITS, TIGHT};
+pub use limits::{BUDGET, LIMITS, MODEL_WINDOW, TIGHT};
 
 pub use script::{JOBS, Job};
 

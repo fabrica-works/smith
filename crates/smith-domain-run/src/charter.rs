@@ -346,10 +346,16 @@ fn check_window_parts(
         Some(bytes) if bytes <= limits.host_part => limits.host_part.checked_sub(bytes).expect("host fits"),
         Some(_) | None => return Err(Invalid::HostPart { bound: limits.host_part }),
     };
+    if !has_spare(llm, limits) {
+        return Err(Invalid::Llm);
+    }
     if !has_room(llm, limits) {
         return Err(Invalid::Room { bound: limits.room });
     }
     for model in models {
+        if !has_spare(model, limits) {
+            return Err(Invalid::Llm);
+        }
         if !has_room(model, limits) {
             return Err(Invalid::Room { bound: limits.room });
         }
@@ -488,6 +494,32 @@ fn valid_host_tools(tools: &[HostTool], limits: &Limits) -> bool {
         }
     }
     true
+}
+
+pub(crate) fn line(llm: &Llm, material: u64) -> u64 {
+    u64::from(llm.window)
+        .checked_sub(u64::from(llm.output))
+        .expect("admitted window holds output")
+        .checked_sub(material)
+        .expect("admitted model leaves compaction material above its line")
+}
+
+fn has_spare(llm: &Llm, limits: &Limits) -> bool {
+    let [numerator, denominator] = limits.compaction_threshold;
+    let within = match u64::from(llm.window).checked_mul(u64::from(numerator)) {
+        Some(product) => product.checked_div(u64::from(denominator)),
+        None => None,
+    };
+    match within {
+        Some(within) => match u64::from(llm.window).checked_sub(within) {
+            Some(headroom) => match u64::from(llm.output).checked_add(limits.compaction_material) {
+                Some(required) => headroom >= required,
+                None => false,
+            },
+            None => false,
+        },
+        None => false,
+    }
 }
 
 fn has_room(llm: &Llm, limits: &Limits) -> bool {

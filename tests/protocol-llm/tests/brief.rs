@@ -76,7 +76,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        window: 16_384,
+        window: smith_protocol_llm_world::MODEL_WINDOW,
         output: 4096,
     };
     run::Charter {

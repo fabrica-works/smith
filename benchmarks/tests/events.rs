@@ -125,7 +125,7 @@ fn agent_exit_tracks_the_sent_answer_and_forced_pending_stays_unknown() {
     if let Event::SessionStarted(value) = &mut values[0].event {
         value.mode = smith_events::Mode::Agent;
     }
-    let failed = record(include_str!("../../crates/smith-events/golden/v2/status_failed.jsonl"));
+    let failed = record(include_str!("../../crates/smith-events/golden/v3/status_failed.jsonl"));
     if let Event::RunCompleted(source) = failed.event
         && let Event::RunCompleted(value) = &mut values[6].event
     {
@@ -151,7 +151,7 @@ fn agent_exit_tracks_the_sent_answer_and_forced_pending_stays_unknown() {
         health.passive_checks.iter().find(|check| check.check == "exit-agrees").expect("exit check").passed,
         Measure::Unavailable { .. }
     ));
-    let failure = record(include_str!("../../crates/smith-events/golden/v2/failure_class_limit.jsonl"));
+    let failure = record(include_str!("../../crates/smith-events/golden/v3/failure_class_limit.jsonl"));
     if let Event::RunCompleted(source) = failure.event
         && let Event::ResponseCompleted(value) = &mut values[4].event
     {
@@ -202,15 +202,15 @@ fn child_and_compaction_usage_belongs_to_its_native_scope_and_run() {
 
 fn unknown_types_are_skipped_and_version_or_partial_records_fault() {
     let mut observer = Observer::new(&LIMITS).expect("bounds");
-    observer.feed(b"{\"v\":2,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown prefix skipped");
+    observer.feed(b"{\"v\":3,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown prefix skipped");
     observer.feed(&bytes(&balanced()[..1])).expect("startup");
-    observer.feed(b"{\"v\":2,\"type\":\"future.record\",\"t_ms\":1,\"field\":true}\n").expect("unknown type");
+    observer.feed(b"{\"v\":3,\"type\":\"future.record\",\"t_ms\":1,\"field\":true}\n").expect("unknown type");
     assert_eq!(observer.sessions()[0].records.len(), 1);
-    let error = observer.feed(b"{\"v\":3,\"type\":\"future.record\",\"t_ms\":1}\n").expect_err("version");
-    assert!(error.what.contains("version 3"));
+    let error = observer.feed(b"{\"v\":4,\"type\":\"future.record\",\"t_ms\":1}\n").expect_err("version");
+    assert!(error.what.contains("version 4"));
     assert!(observer.feed(&bytes(&balanced())).is_err(), "a fault cannot be silently cleared");
     let mut partial = Observer::new(&LIMITS).expect("bounds");
-    partial.feed(b"{\"v\":2").expect("partial bytes held");
+    partial.feed(b"{\"v\":3").expect("partial bytes held");
     assert!(partial.finish().is_err());
     let invalid = Limits { string: 128, content: 65_536, items: 128 };
     assert!(Observer::new(&invalid).is_err(), "receiving cardinalities must fit the codec bound");
@@ -312,7 +312,7 @@ fn observed_passive_contradictions_survive_loss_but_missing_records_do_not() {
     values.remove(5);
     values.remove(5);
     assert!(matches!(passed(&observe(&values), "paired"), Measure::Unavailable { .. }));
-    let failed = record(include_str!("../../crates/smith-events/golden/v2/failure_class_limit.jsonl"));
+    let failed = record(include_str!("../../crates/smith-events/golden/v3/failure_class_limit.jsonl"));
     if let Event::RunCompleted(source) = failed.event
         && let Event::RunCompleted(value) = &mut values[5].event
     {
@@ -324,7 +324,7 @@ fn observed_passive_contradictions_survive_loss_but_missing_records_do_not() {
 }
 
 fn every_codec_golden_remains_readable_as_outside_recorded_bytes() {
-    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates/smith-events/golden/v2");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates/smith-events/golden/v3");
     let mut files: Vec<_> =
         std::fs::read_dir(directory).expect("codec goldens").map(|entry| entry.expect("entry").path()).collect();
     files.sort();
@@ -571,7 +571,7 @@ fn child_run() -> Vec<Record> {
         value.call = Some(Box::from(&b"child-call"[..]));
         value.share = Some(smith_events::Share { turns: 2, time_ms: 1000, spend: 10 });
     }
-    let mut returned = record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
+    let mut returned = record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
     if let Event::ToolCompleted(value) = &mut returned.event {
         value.run = 0;
         value.conversation = 0;
@@ -804,7 +804,7 @@ fn spend_ceiling_uses_exact_currency_and_never_charges_terminals_again() {
 fn spend_ceiling_retains_over_budget_snapshots_and_multiple_run_totals() {
     let check = smith_bench::EventCheck::SpendWithin { ceiling_usd: 3.0 };
     let mut values = balanced();
-    let mut budget = record(include_str!("../../crates/smith-events/golden/v2/budget_ordinary.jsonl"));
+    let mut budget = record(include_str!("../../crates/smith-events/golden/v3/budget_ordinary.jsonl"));
     if let Event::Budget(value) = &mut budget.event {
         value.run = 0;
         value.spend.used = 4;
@@ -986,7 +986,7 @@ fn build_visible_child() -> Vec<Record> {
         value.turns.used = 2;
         value.time_ms.used = 8;
     }
-    let mut returned = record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
+    let mut returned = record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
     if let Event::ToolCompleted(value) = &mut returned.event {
         value.run = 0;
         value.conversation = 0;
@@ -1522,7 +1522,7 @@ fn emitted_inventory_compares_received_types_with_each_destination_loss() {
     let mut observer = Observer::new(&LIMITS).expect("bounds");
     for value in &balanced() {
         if matches!(value.event, Event::SessionEnded(_)) {
-            observer.feed(b"{\"v\":2,\"type\":\"future.record\",\"t_ms\":6}\n").expect("future record");
+            observer.feed(b"{\"v\":3,\"type\":\"future.record\",\"t_ms\":6}\n").expect("future record");
         }
         observer.feed(&bytes(std::slice::from_ref(value))).expect("typed stream");
     }

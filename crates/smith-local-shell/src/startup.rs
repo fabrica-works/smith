@@ -99,7 +99,7 @@ pub fn stream_header(
         capture: capture.encoded(),
         delivery: delivery.encoded(),
         versions: smith_events::Versions {
-            events: 2,
+            events: 3,
             channel: 2,
             charter: 2,
             transcript: 4,

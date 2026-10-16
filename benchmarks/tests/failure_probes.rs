@@ -44,7 +44,7 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
     assert!(matches!(empty.check(&EventCheck::NoRequest, "task").passed, Measure::Unavailable { .. }));
     assert_eq!(empty.check(&EventCheck::NoRun, "task").passed, Measure::Observed { value: true });
     assert!(matches!(empty.classify(Exit::Code(2), Forced::No).end, End::HarnessError { .. }));
-    empty.feed(b"{\"v\":2,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown native record");
+    empty.feed(b"{\"v\":3,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown native record");
     empty.finish().expect("complete unknown line");
     assert_eq!(empty.check(&EventCheck::NoRun, "task").passed, Measure::Observed { value: false });
 }

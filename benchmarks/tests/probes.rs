@@ -325,7 +325,7 @@ fn follow_up_chat_judges_one_completion_per_exchange() {
     assert!(task.event.contains(&smith_bench::EventCheck::HandledOnce));
     let mut records = common::events::balanced();
     let mut received =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/message_received_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/message_received_everything.jsonl"));
     if let smith_events::Event::MessageReceived(value) = &mut received.event {
         value.run = 0;
         value.label = Some(b"person".as_slice().into());

@@ -283,6 +283,8 @@ pub struct Spec {
     pub prompt: Box<[u8]>,
     /// The model's usable context window in tokens.
     pub window: u32,
+    /// Run-derived largest ordinary prompt in tokens.
+    pub line: u64,
     /// Run-owned instruction supplied to each compaction completion.
     pub summary: Box<[u8]>,
     /// The run's text introducing the summary in a new window.

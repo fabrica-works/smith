@@ -669,6 +669,8 @@ pub struct Opening {
     pub generated_schema_bytes: u64,
     /// The LLM it talks to.
     pub llm: Llm,
+    /// Largest ordinary prompt, in tokens, leaving compaction material above it.
+    pub line: u64,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.
     pub system: Box<[u8]>,
     /// The first user message.
@@ -1012,7 +1014,7 @@ pub enum Invalid {
     /// A model is unpriced at this rate, refused before effects (domain/run.md, section 9).
     Price(crate::Rate),
     /// A model is undeclared, its effective window/output are zero or above its
-    /// declaration, or the charter repeats a model or exceeds its model count.
+    /// declaration, its spare is negative, or the charter repeats a model or exceeds its model count.
     Llm,
     /// The requested effort is outside the model’s declared values.
     Effort,

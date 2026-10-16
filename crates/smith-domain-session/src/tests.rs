@@ -303,6 +303,7 @@ fn spec() -> Spec {
         effort: None,
         final_turn: None,
         window: 65_536,
+        line: 64_512,
         summary: b"Summarise the work so far.".as_slice().into(),
         preamble: b"Earlier window summary:".as_slice().into(),
         affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },

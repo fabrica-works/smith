@@ -813,7 +813,7 @@ fn compaction_answer(book: &mut crate::responses::Book, owner: skein_lib::Token,
         llm::Stop::EndTurn | llm::Stop::ToolUse | llm::Stop::MaxTokens => "end",
     };
     let literal = alloc::format!(
-        "{{\"v\":2,\"type\":\"response.completed\",\"t_ms\":5,\"run\":7,\"conversation\":1,\"response\":1,\"outcome\":\"completed\",\"stop\":\"{end}\",\"blocks\":0,\"calls\":0,\"invalid\":0,\"oversized\":0,\"cut\":0,\"usage\":{{\"input_tokens\":2,\"cache_read_tokens\":null,\"cache_write_tokens\":null,\"output_tokens\":3,\"reasoning_tokens\":null}},\"spent\":7,\"request_bytes\":null,\"first_byte_ms\":null,\"largest_gap_ms\":null,\"duration_ms\":1}}"
+        "{{\"v\":3,\"type\":\"response.completed\",\"t_ms\":5,\"run\":7,\"conversation\":1,\"response\":1,\"outcome\":\"completed\",\"stop\":\"{end}\",\"blocks\":0,\"calls\":0,\"invalid\":0,\"oversized\":0,\"cut\":0,\"usage\":{{\"input_tokens\":2,\"cache_read_tokens\":null,\"cache_write_tokens\":null,\"output_tokens\":3,\"reasoning_tokens\":null}},\"spent\":7,\"request_bytes\":null,\"first_byte_ms\":null,\"largest_gap_ms\":null,\"duration_ms\":1}}"
     );
     assert_stream_record(records.get(0).unwrap(), literal.as_bytes());
 }
@@ -830,13 +830,13 @@ fn a_compaction_is_a_conversation_of_kind_compaction_in_the_stream() {
         Time::ZERO,
         &fact(2, session::FactKind::compaction_started(owner, 1, b"actual-model", 123, 7, Some(b"medium")), 3, None),
     );
-    assert_stream_record(opened.get(0).unwrap(), br#"{"v":2,"type":"conversation.opened","t_ms":2,"run":7,"conversation":1,"kind":"compaction","parent":0,"thread":0,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"}}"#);
+    assert_stream_record(opened.get(0).unwrap(), br#"{"v":3,"type":"conversation.opened","t_ms":2,"run":7,"conversation":1,"kind":"compaction","parent":0,"thread":0,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"}}"#);
     compaction_intent(&mut book, owner, 1);
     let started = book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
-    assert_stream_record(&started, br#"{"v":2,"type":"response.started","t_ms":4,"run":7,"conversation":1,"response":1,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"},"messages":0,"output_tokens":7,"tool_choice":"only"}"#);
+    assert_stream_record(&started, br#"{"v":3,"type":"response.started","t_ms":4,"run":7,"conversation":1,"response":1,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"},"messages":0,"output_tokens":7,"tool_choice":"only"}"#);
     assert_stream_record(
         &book.delta(at(4), Time::ZERO, Token::new(99), 0, b"summary".as_slice().into()),
-        br#"{"v":2,"type":"text.delta","t_ms":4,"run":7,"conversation":1,"response":1,"block":0,"text":"summary"}"#,
+        br#"{"v":3,"type":"text.delta","t_ms":4,"run":7,"conversation":1,"response":1,"block":0,"text":"summary"}"#,
     );
     book.prompt_recorded(Token::new(99), 4);
     compaction_answer(&mut book, owner, llm::Stop::EndTurn);
@@ -849,10 +849,10 @@ fn a_compaction_is_a_conversation_of_kind_compaction_in_the_stream() {
             None,
         ),
     );
-    assert_stream_record(closed.get(0).unwrap(), br#"{"v":2,"type":"conversation.closed","t_ms":7,"run":7,"conversation":1,"end":"closed","turns":1,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":5}"#);
+    assert_stream_record(closed.get(0).unwrap(), br#"{"v":3,"type":"conversation.closed","t_ms":7,"run":7,"conversation":1,"end":"closed","turns":1,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":5}"#);
     compaction_intent(&mut book, owner, 2);
     let next = book.request(at(8), Time::ZERO, Token::new(100), &prompt(0));
-    assert_stream_record(&next, br#"{"v":2,"type":"response.started","t_ms":8,"run":7,"conversation":0,"response":2,"turn":3,"attempt":0,"window":2,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"},"messages":0,"output_tokens":7,"tool_choice":"only"}"#);
+    assert_stream_record(&next, br#"{"v":3,"type":"response.started","t_ms":8,"run":7,"conversation":0,"response":2,"turn":3,"attempt":0,"window":2,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"},"messages":0,"output_tokens":7,"tool_choice":"only"}"#);
     assert!(book.observation(Token::new(100)).first);
     assert_eq!(book.observation(Token::new(100)).messages, 0);
     assert_eq!(book.next_conversation(7), 2);
@@ -882,7 +882,7 @@ fn a_refused_compaction_closes_failed_with_no_completion_failure() {
             None,
         ),
     );
-    assert_stream_record(closed.get(0).unwrap(), br#"{"v":2,"type":"conversation.closed","t_ms":7,"run":7,"conversation":1,"end":"failed","turns":1,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":5}"#);
+    assert_stream_record(closed.get(0).unwrap(), br#"{"v":3,"type":"conversation.closed","t_ms":7,"run":7,"conversation":1,"end":"failed","turns":1,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":5}"#);
     let parent = book.fact(
         Time::ZERO,
         &fact(
@@ -897,7 +897,7 @@ fn a_refused_compaction_closes_failed_with_no_completion_failure() {
             None,
         ),
     );
-    assert_stream_record(parent.get(0).unwrap(), br#"{"v":2,"type":"conversation.closed","t_ms":7,"run":7,"conversation":0,"end":"failed","turns":3,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":6}"#);
+    assert_stream_record(parent.get(0).unwrap(), br#"{"v":3,"type":"conversation.closed","t_ms":7,"run":7,"conversation":0,"end":"failed","turns":3,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":6}"#);
 }
 
 #[test]

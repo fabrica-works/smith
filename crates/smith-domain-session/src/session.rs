@@ -181,7 +181,8 @@ struct Conversation {
     choice: ToolChoice,
     final_turn: crate::final_turn::Final,
     output: u32,
-    model_window: u32,
+    /// Effective window and its run-derived line, both in tokens.
+    model_window: (u32, u64),
     window: crate::window::Window,
     compaction: compaction::Compaction,
     task: Box<[u8]>,
@@ -2079,7 +2080,7 @@ fn admit(
         choice: ToolChoice::Auto,
         final_turn,
         output: spec.output,
-        model_window: spec.window,
+        model_window: (spec.window, spec.line),
         window: crate::window::Window::fresh(1, 0),
         compaction: compaction::Compaction::Idle,
         task,
@@ -2206,7 +2207,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, retry: u32, limits: &L
             Some(prompt) => prompt.0.saturating_add(conversation.window.last_output.0),
             None => history.saturating_add(conversation.protocol_allowance),
         };
-        let window = u64::from(conversation.model_window);
+        let window = u64::from(conversation.model_window.0);
         let threshold = window
             .checked_mul(u64::from(limits.threshold[0]))
             .expect("u32 product fits")

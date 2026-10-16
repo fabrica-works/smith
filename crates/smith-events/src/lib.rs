@@ -31,7 +31,7 @@ pub use words::{DETAIL_BYTES, clip, effort_words, words};
 pub use write::{write, write_with_ceiling};
 
 /// The event vocabulary version emitted and accepted by this codec.
-pub const VERSION: u64 = 2;
+pub const VERSION: u64 = 3;
 
 /// A codec refusal naming unsupported versions and malformed or oversized values.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

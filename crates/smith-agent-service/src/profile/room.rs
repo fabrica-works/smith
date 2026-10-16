@@ -35,6 +35,14 @@ pub fn own_part(tools: &smith_domain::tools::Limits, call_input_bytes: u32, allo
         .checked_add(allowance)
 }
 
+/// Bytes above the line for the run's summary instruction and owed-result markers.
+#[must_use]
+pub fn compaction_material(calls_per_response: u32, summary_bytes: u64) -> Option<u64> {
+    u64::from(calls_per_response)
+        .checked_mul(u64::from(smith_protocol_llm::CUT_MARKER_BYTES))?
+        .checked_add(summary_bytes)
+}
+
 /// Check all declared models and split their smallest room after Smith's own part.
 /// `summary_bytes` is the measured instruction that compaction adds above the
 /// threshold; it is already included in `own`. A byte counts as a token.
@@ -77,14 +85,9 @@ pub fn room(profile: &Profile, configuration: &Configuration, own: u64, summary_
                 });
             }
             let headroom = window.checked_sub(within).expect("proper threshold within the window");
-            let markers = u64::from(profile.declared.calls_per_response)
-                .checked_mul(u64::from(smith_protocol_llm::CUT_MARKER_BYTES))
+            let material = compaction_material(profile.declared.calls_per_response, summary_bytes)
                 .ok_or(derived("compaction_headroom"))?;
-            let required = output
-                .checked_add(summary_bytes)
-                .ok_or(derived("compaction_headroom"))?
-                .checked_add(markers)
-                .ok_or(derived("compaction_headroom"))?;
+            let required = output.checked_add(material).ok_or(derived("compaction_headroom"))?;
             if required > headroom {
                 return Err(Refusal::Broken {
                     check: Check::CompactionHeadroom,

@@ -514,6 +514,8 @@ fn derive_domain(
         message: parts.message,
         room: parts.room,
         compaction_threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
+        compaction_material: room::compaction_material(declared.calls_per_response, run::summary_bytes())
+            .ok_or(derived(Layer::Run, "compaction_material"))?,
         schema_costs,
     }) {
         Ok(limits) => limits,

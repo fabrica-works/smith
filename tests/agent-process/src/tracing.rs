@@ -144,7 +144,7 @@ impl Host for Tracing {
                     capture: self.capture.encoded(),
                     delivery: smith_events::Delivery::Complete,
                     versions: smith_events::Versions {
-                        events: 2,
+                        events: 3,
                         channel: 2,
                         charter: 2,
                         transcript: 4,

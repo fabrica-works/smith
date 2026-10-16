@@ -248,7 +248,7 @@ fn a_failed_main_answer_also_closes_person_input_and_preserves_its_budget_end() 
 
 fn failed_recording() -> Vec<u8> {
     let mut records = common::events::balanced();
-    let failed = common::events::record(include_str!("../../crates/smith-events/golden/v2/answer_class_budget.jsonl"));
+    let failed = common::events::record(include_str!("../../crates/smith-events/golden/v3/answer_class_budget.jsonl"));
     let smith_events::Event::RunCompleted(mut failed) = failed.event else { panic!("run terminal") };
     failed.run = 0;
     failed.failure.as_mut().expect("budget").which = Some(Box::from(&b"time"[..]));
@@ -279,7 +279,7 @@ fn person_capture(trace: &Path) -> Capture {
 fn person_recording() -> Vec<u8> {
     let mut records = common::events::balanced();
     let mut started =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_started_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_started_everything.jsonl"));
     started.t_ms = 4;
     if let smith_events::Event::ToolStarted(value) = &mut started.event {
         value.run = 0;

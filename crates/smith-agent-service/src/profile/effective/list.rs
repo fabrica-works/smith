@@ -208,6 +208,7 @@ fn run(inventory: &mut Inventory, limits: &smith_domain::run::Limits) -> Option<
         host_part,
         room,
         compaction_threshold,
+        compaction_material,
         schema_costs: _,
         directories,
         directory_name_bytes,
@@ -250,6 +251,7 @@ fn run(inventory: &mut Inventory, limits: &smith_domain::run::Limits) -> Option<
     inventory.value("brief_sections", Value::Count(u64::from(brief_sections)))?;
     inventory.value("host_part", Value::Bytes(host_part))?;
     inventory.value("room", Value::Tokens(room))?;
+    inventory.value("compaction_material", Value::Tokens(compaction_material))?;
     inventory.value(
         "compaction_threshold",
         Value::Fraction(super::super::Fraction {

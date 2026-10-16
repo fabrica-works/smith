@@ -30,8 +30,9 @@ pub(crate) fn main(
     found: &Found,
     spent: Spend,
     left: Duration,
-    costs: &crate::SchemaCosts,
+    limits: &crate::Limits,
 ) -> Opening {
+    let costs = &limits.schema_costs;
     let mut generated_schema_bytes = costs
         .finish(&charter.outcome)
         .expect("admitted contract schema arithmetic")
@@ -55,6 +56,7 @@ pub(crate) fn main(
         host_tools: charter.grants.host_tools.clone(),
         deliver: charter.grants.deliver.is_some(),
         llm: charter.llm.clone(),
+        line: super::charter::line(&charter.llm, limits.compaction_material),
         system: prompt::system(charter, workspace, found, charter.budget.remainder(spent, left)),
         prompt: copy_of(prompt::BEGIN),
         summary: copy_of(prompt::SUMMARY),

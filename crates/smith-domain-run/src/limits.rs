@@ -54,6 +54,8 @@ pub struct Limits {
     pub room: u64,
     /// The window threshold numerator and denominator supplied by startup.
     pub compaction_threshold: [u32; 2],
+    /// Summary instruction and owed-result markers above each conversation's line.
+    pub compaction_material: u64,
     /// Exact protocol renderer projections, measured at startup.
     pub schema_costs: crate::SchemaCosts,
     /// Directories a present workspace may list; empty present workspaces refuse.
@@ -225,6 +227,8 @@ pub struct Derivation {
     pub message: u32,
     pub room: u64,
     pub compaction_threshold: [u32; 2],
+    /// Summary instruction and owed-result markers above each conversation's line.
+    pub compaction_material: u64,
     pub schema_costs: crate::SchemaCosts,
 }
 
@@ -258,6 +262,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         host_part: inputs.host,
         room: inputs.room,
         compaction_threshold: inputs.compaction_threshold,
+        compaction_material: inputs.compaction_material,
         schema_costs: inputs.schema_costs,
         directories: 2,
         directory_name_bytes: 256,

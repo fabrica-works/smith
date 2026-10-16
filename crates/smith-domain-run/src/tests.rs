@@ -41,6 +41,7 @@ pub(crate) const LIMITS: Limits = Limits {
     host_part: 1 << 20,
     room: 0,
     compaction_threshold: [4, 5],
+    compaction_material: 0,
     schema_costs: crate::SchemaCosts::NONE,
     directories: 2,
     directory_name_bytes: 256,
@@ -408,6 +409,7 @@ fn an_admitted_run_reads_its_checkout_then_opens_main_with_the_whole_budget() {
         host_tools: charter().grants.host_tools,
         deliver: false,
         llm: charter().llm,
+        line: 7168,
         system: super::prompt::system(&charter(), Some(&workspace()), &found, BUDGET),
         prompt: bytes(super::prompt::BEGIN),
         summary: bytes(super::prompt::SUMMARY),
@@ -5086,4 +5088,63 @@ fn the_summary_instruction_and_its_preamble_fit_smiths_own_part() {
     assert!(fixed.ends_with(b"Summarise the work so far. The work is not finished: a new context window will continue it, opening with the task's own words. Answer with text only; call no tool. Write what the next window needs that the task does not say: what was done and found, with exact values, names and paths as they were read; what remains; and the decisions taken. Do not restate the task or its required answer.What follows is your own summary of an earlier context window. The work continues in this window:"));
     assert_eq!(super::prompt::summary_bytes(), 390);
     assert!(super::prompt::fixed_prompt_bytes().expect("bounded own part") <= 8_192);
+}
+
+#[test]
+fn a_charter_model_with_a_negative_spare_is_refused() {
+    let mut selected = charter();
+    selected.llm.window = 10_000;
+    selected.llm.output = 1019;
+    let mut harness = Harness::new(Limits { compaction_material: 982, ..LIMITS });
+    let requests = harness.start(1, selected);
+    let [Request::Answer { answer, .. }] = requests.as_ref() else { panic!("refused: {requests:?}") };
+    assert_eq!(*answer, Answer::Refused(Refusal::Invalid(Invalid::Llm)));
+}
+
+#[test]
+fn a_charter_model_with_a_spare_of_zero_is_admitted() {
+    let mut selected = charter();
+    selected.llm.window = 10_000;
+    selected.llm.output = 1018;
+    let mut harness = Harness::new(Limits { compaction_material: 982, ..LIMITS });
+    let requests = harness.start(1, selected);
+    let [Request::Admitted { host_run, .. }, Request::Read { .. }] = requests.as_ref() else {
+        panic!("admitted: {requests:?}")
+    };
+    assert_eq!(*host_run, Token::new(1));
+}
+
+#[test]
+fn a_sub_agent_model_with_a_negative_spare_is_refused() {
+    let mut selected = agents();
+    selected.models[0].window = 10_000;
+    selected.models[0].output = 1019;
+    let mut harness = Harness::new(Limits { compaction_material: 982, ..LIMITS });
+    let requests = harness.start(1, selected);
+    let [Request::Answer { answer, .. }] = requests.as_ref() else { panic!("refused: {requests:?}") };
+    assert_eq!(*answer, Answer::Refused(Refusal::Invalid(Invalid::Llm)));
+}
+
+#[test]
+fn each_conversation_opens_with_its_line() {
+    let mut selected = agents();
+    selected.llm.window = 272_000;
+    selected.llm.output = 32_000;
+    selected.models[0].window = 272_000;
+    selected.models[0].output = 32_000;
+    let mut harness = Harness::new(Limits { compaction_material: 982, ..LIMITS });
+    let requests = harness.start(1, selected);
+    let [Request::Admitted { run, .. }, Request::Read { .. }] = requests.as_ref() else {
+        panic!("admitted: {requests:?}")
+    };
+    let requests = harness.step(Event::Read { owner: *run, read: Read::Missing });
+    let [Request::Open { conversation: main, opening }] = requests.as_ref() else {
+        panic!("main opening: {requests:?}")
+    };
+    assert_eq!(opening.line, 239_018);
+    let main = *main;
+    drop(harness.step(Event::Started { conversation: main, peer: Token::new(100) }));
+    let requests = harness.step(ask(main, 7, families(true, false, false), Some(bytes(b"model-b")), None));
+    let [Request::Open { opening, .. }] = requests.as_ref() else { panic!("child opening: {requests:?}") };
+    assert_eq!(opening.line, 239_018);
 }

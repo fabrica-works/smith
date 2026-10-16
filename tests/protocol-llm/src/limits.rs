@@ -4,6 +4,9 @@
 use skein_lib::Duration;
 use smith_domain::{Limits, run, session, tools};
 
+/// Fixture window leaving one 4096-token output above its four-fifths threshold.
+pub const MODEL_WINDOW: u32 = 20_480;
+
 /// The most a charter may ask for in the calm world, which every session may
 /// take.
 ///
@@ -37,6 +40,7 @@ pub const LIMITS: Limits = Limits {
         host_part: u64::MAX,
         room: 0,
         compaction_threshold: [4, 5],
+        compaction_material: 0,
         schema_costs: run::SchemaCosts::NONE,
         directories: 2,
         directory_name_bytes: 256,

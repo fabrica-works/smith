@@ -20,7 +20,7 @@ fn unanswering_end_goldens_keep_the_first_cause_under_every_capture_policy() {
         ("agent_signal", AnswerClass::Agent, None, Some(AgentExit::Signal(15)), None),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../../crates/smith-events/golden/v2/end_{name}.jsonl"));
+            .join(format!("../../crates/smith-events/golden/v3/end_{name}.jsonl"));
         let frozen = std::fs::read(path).expect("frozen end golden");
         let record = read(&frozen, &limits()).expect(name).expect("completed run");
         let Event::RunCompleted(completed) = &record.event else { panic!("completed run") };
@@ -57,7 +57,7 @@ fn every_record_and_listed_value_reads_back_to_its_written_values() {
 
 #[test]
 fn response_block_counts_are_required_exact_metadata_under_every_capture() {
-    let base = r#"{"v":2,"type":"response.completed","t_ms":0,"run":1,"conversation":2,"response":3,"outcome":"completed","blocks":9,"calls":7,"invalid":2,"oversized":18446744073709551615,"cut":9007199254740993,"usage":{"input_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":null,"reasoning_tokens":null},"spent":0,"request_bytes":null,"first_byte_ms":null,"largest_gap_ms":null,"duration_ms":0}"#;
+    let base = r#"{"v":3,"type":"response.completed","t_ms":0,"run":1,"conversation":2,"response":3,"outcome":"completed","blocks":9,"calls":7,"invalid":2,"oversized":18446744073709551615,"cut":9007199254740993,"usage":{"input_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":null,"reasoning_tokens":null},"spent":0,"request_bytes":null,"first_byte_ms":null,"largest_gap_ms":null,"duration_ms":0}"#;
     let record = read(base.as_bytes(), &limits()).expect("independent wire").expect("response");
     let Event::ResponseCompleted(response) = &record.event else { panic!("response") };
     assert_eq!(response.oversized, u64::MAX);
@@ -88,7 +88,7 @@ fn response_block_counts_are_required_exact_metadata_under_every_capture() {
 
 #[test]
 fn response_tool_choice_is_metadata_with_bounded_unknown_values_and_a_required_string() {
-    let base = r#"{"v":2,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
+    let base = r#"{"v":3,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
     for (spelling, expected) in [
         ("auto", smith_events::ToolChoice::Auto),
         ("none", smith_events::ToolChoice::None),
@@ -188,7 +188,7 @@ fn capture_filters_only_content_fields_and_live_text() {
 #[test]
 fn unknown_types_fields_and_listed_values_are_tolerated_within_this_version() {
     let limits = limits();
-    assert_eq!(read(b"{\"v\":2,\"type\":\"future\",\"t_ms\":0,\"extra\":[{}]}\n", &limits), Ok(None));
+    assert_eq!(read(b"{\"v\":3,\"type\":\"future\",\"t_ms\":0,\"extra\":[{}]}\n", &limits), Ok(None));
     let (_, record, capture) = fixtures::samples()
         .into_iter()
         .find(|(_, record, _)| matches!(record.event, Event::Notice(_)))
@@ -229,10 +229,10 @@ fn unknown_types_fields_and_listed_values_are_tolerated_within_this_version() {
 #[test]
 fn malformed_known_shapes_and_overflowing_integers_are_refused() {
     for line in [
-        b"{\"v\":2,\"v\":2,\"type\":\"notice\",\"t_ms\":0}".as_slice(),
-        b"{\"v\":2,\"type\":\"notice\",\"t_ms\":18446744073709551616}",
-        b"{\"v\":2,\"type\":\"notice\",\"t_ms\":-1}",
-        b"{\"v\":2,\"type\":\"notice\",\"t_ms\":1.5}",
+        b"{\"v\":3,\"v\":3,\"type\":\"notice\",\"t_ms\":0}".as_slice(),
+        b"{\"v\":3,\"type\":\"notice\",\"t_ms\":18446744073709551616}",
+        b"{\"v\":3,\"type\":\"notice\",\"t_ms\":-1}",
+        b"{\"v\":3,\"type\":\"notice\",\"t_ms\":1.5}",
     ] {
         assert!(read(line, &limits()).is_err());
     }
@@ -253,11 +253,11 @@ fn a_chunked_stream_checks_each_version_and_rejects_an_unterminated_tail() {
         }
     }
     reader.finish().expect("whole stream");
-    let unknown = reader.feed(b"{\"v\":2,\"type\":\"future\",\"t_ms\":0}\ntrailing").expect("skip unknown line");
+    let unknown = reader.feed(b"{\"v\":3,\"type\":\"future\",\"t_ms\":0}\ntrailing").expect("skip unknown line");
     assert!(unknown.complete && unknown.record.is_none());
     assert_eq!(
-        reader.feed(b"{\"v\":3,\"type\":\"future\",\"t_ms\":0}\n").expect_err("stream version checked"),
-        Error::Version(3)
+        reader.feed(b"{\"v\":4,\"type\":\"future\",\"t_ms\":0}\n").expect_err("stream version checked"),
+        Error::Version(4)
     );
     reader.feed(b"{").expect("partial");
     assert_eq!(reader.finish(), Err(Error::Malformed));
@@ -266,9 +266,9 @@ fn a_chunked_stream_checks_each_version_and_rejects_an_unterminated_tail() {
 #[test]
 fn a_frozen_line_of_another_version_is_refused_by_name() {
     let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-events/golden/unsupported-v3.jsonl");
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-events/golden/unsupported-v4.jsonl");
     let line = std::fs::read(path).expect("unsupported golden");
-    assert_eq!(read(&line, &limits()), Err(Error::Version(3)));
+    assert_eq!(read(&line, &limits()), Err(Error::Version(4)));
 }
 
 #[test]
@@ -305,13 +305,13 @@ fn configured_boundaries_and_unknown_content_kinds_are_checked() {
 
 #[test]
 fn a_reasoning_drop_notice_keeps_its_size_under_every_capture() {
-    let frozen = include_bytes!("../../../crates/smith-events/golden/v2/notice_kind_reasoning_dropped.jsonl");
+    let frozen = include_bytes!("../../../crates/smith-events/golden/v3/notice_kind_reasoning_dropped.jsonl");
     let record = read(frozen, &limits()).expect("drop notice").expect("known event");
     for capture in [Capture::None, Capture::Calls, Capture::Everything] {
         assert_eq!(write(&record, &capture, &limits()).expect("write").expect("notice").as_ref(), frozen);
     }
     assert_eq!(
-        read(br#"{"v":2,"type":"notice","t_ms":0,"level":"warning","kind":"reasoning_dropped"}"#, &limits()),
+        read(br#"{"v":3,"type":"notice","t_ms":0,"level":"warning","kind":"reasoning_dropped"}"#, &limits()),
         Err(Error::Shape)
     );
 }
@@ -599,7 +599,7 @@ fn message_label_text_and_unknown_refusal_obey_their_separate_bounds() {
 
 #[test]
 fn message_shapes_reject_missing_null_duplicate_and_inexact_fields() {
-    let line = br#"{"v":2,"type":"message.received","t_ms":0,"run":1,"name":2,"bytes":3}"#;
+    let line = br#"{"v":3,"type":"message.received","t_ms":0,"run":1,"name":2,"bytes":3}"#;
     let line = std::str::from_utf8(line).expect("UTF8");
     for changed in [
         line.replace("\"name\":2,", ""),
@@ -617,9 +617,9 @@ fn message_shapes_reject_missing_null_duplicate_and_inexact_fields() {
     let future = line.replace("\"bytes\":3", "\"bytes\":3,\"future\":{\"name\":4}");
     assert_eq!(read(future.as_bytes(), &limits()), read(line.as_bytes(), &limits()));
     for malformed in [
-        br#"{"v":2,"type":"message.read","t_ms":0,"run":1,"name":2}"#.as_slice(),
-        br#"{"v":2,"type":"message.read","t_ms":0,"run":1,"name":2,"turn":null}"#,
-        br#"{"v":2,"type":"message.unread","t_ms":0,"run":1,"name":null}"#,
+        br#"{"v":3,"type":"message.read","t_ms":0,"run":1,"name":2}"#.as_slice(),
+        br#"{"v":3,"type":"message.read","t_ms":0,"run":1,"name":2,"turn":null}"#,
+        br#"{"v":3,"type":"message.unread","t_ms":0,"run":1,"name":null}"#,
     ] {
         assert_eq!(read(malformed, &limits()), Err(Error::Shape));
     }
@@ -628,10 +628,10 @@ fn message_shapes_reject_missing_null_duplicate_and_inexact_fields() {
 #[test]
 fn chunked_message_records_preserve_the_independent_terminal_vocabulary() {
     let lines: [&[u8]; 4] = [
-        b"{\"v\":2,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":3}\n",
-        b"{\"v\":2,\"type\":\"message.read\",\"t_ms\":1,\"run\":1,\"name\":2,\"turn\":4}\n",
-        b"{\"v\":2,\"type\":\"message.unread\",\"t_ms\":2,\"run\":1,\"name\":3}\n",
-        b"{\"v\":2,\"type\":\"message.received\",\"t_ms\":3,\"run\":2,\"name\":4,\"bytes\":5,\"refused\":\"start_refused\"}\n",
+        b"{\"v\":3,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":3}\n",
+        b"{\"v\":3,\"type\":\"message.read\",\"t_ms\":1,\"run\":1,\"name\":2,\"turn\":4}\n",
+        b"{\"v\":3,\"type\":\"message.unread\",\"t_ms\":2,\"run\":1,\"name\":3}\n",
+        b"{\"v\":3,\"type\":\"message.received\",\"t_ms\":3,\"run\":2,\"name\":4,\"bytes\":5,\"refused\":\"start_refused\"}\n",
     ];
     let mut reader = smith_events::Reader::new(&limits()).expect("bounded reader");
     for line in lines {
@@ -760,8 +760,8 @@ fn model_window_requires_an_unsigned_integer() {
 
 #[test]
 fn conversation_thread_and_response_window_are_required_exact_metadata_under_every_capture() {
-    let conversation = r#"{"v":2,"type":"conversation.opened","t_ms":0,"run":1,"conversation":2,"kind":"main","thread":0,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null}}"#;
-    let response = r#"{"v":2,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
+    let conversation = r#"{"v":3,"type":"conversation.opened","t_ms":0,"run":1,"conversation":2,"kind":"main","thread":0,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null}}"#;
+    let response = r#"{"v":3,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
     for (base, field, initial) in [(conversation, "thread", 0), (response, "window", 1)] {
         let initial_field = format!("\"{field}\":{initial}");
         for value in [0, 1, 9_007_199_254_740_993, u64::MAX] {
@@ -805,8 +805,8 @@ fn conversation_thread_and_response_window_are_required_exact_metadata_under_eve
 
 #[test]
 fn entrance_reserve_and_terminal_wind_down_are_required_metadata_in_every_capture() {
-    let started = r#"{"v":2,"type":"run.started","t_ms":0,"run":1,"resumed":false,"messages":1,"main":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"budget":{"turns":4,"spend":8,"time_ms":1000,"reserve":{"turns":2,"time_ms":750,"spend":3}},"tools":{"families":[],"wait":false,"deliver":false,"host":[]},"contract":[]}"#;
-    let completed = r#"{"v":2,"type":"run.completed","t_ms":0,"run":1,"wind_down":false,"status":"parked","turns":2,"spent":3,"usage":{"input_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":null,"reasoning_tokens":null},"read":null,"unread":0,"duration_ms":750}"#;
+    let started = r#"{"v":3,"type":"run.started","t_ms":0,"run":1,"resumed":false,"messages":1,"main":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"budget":{"turns":4,"spend":8,"time_ms":1000,"reserve":{"turns":2,"time_ms":750,"spend":3}},"tools":{"families":[],"wait":false,"deliver":false,"host":[]},"contract":[]}"#;
+    let completed = r#"{"v":3,"type":"run.completed","t_ms":0,"run":1,"wind_down":false,"status":"parked","turns":2,"spent":3,"usage":{"input_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":null,"reasoning_tokens":null},"read":null,"unread":0,"duration_ms":750}"#;
     for wire in [started.to_owned(), completed.to_owned(), completed.replace("false", "true")] {
         let record = read(wire.as_bytes(), &limits()).expect("independent wire").expect("run event");
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
@@ -841,7 +841,7 @@ fn five_kind_check_exits_are_decoded_without_command_exit_shape() {
         ("{\"kind\":\"cancelled\"}", "Cancelled"),
     ] {
         let line = format!(
-            "{{\"v\":2,\"t_ms\":0,\"type\":\"check.completed\",\"run\":7,\"exit\":{exit},\"passed\":false,\"duration_ms\":19}}\n"
+            "{{\"v\":3,\"t_ms\":0,\"type\":\"check.completed\",\"run\":7,\"exit\":{exit},\"passed\":false,\"duration_ms\":19}}\n"
         );
         let parsed = read(line.as_bytes(), &limits());
         let Ok(Some(smith_events::Record { event: Event::CheckCompleted(value), .. })) = parsed else {
@@ -865,7 +865,7 @@ fn check_exit_tags_values_and_unknown_kinds_are_bounded() {
         ("{\"kind\":\"future🌍\"}", false),
     ] {
         let line = format!(
-            "{{\"v\":2,\"type\":\"check.completed\",\"t_ms\":0,\"run\":7,\"exit\":{exit},\"passed\":{passed},\"duration_ms\":19}}"
+            "{{\"v\":3,\"type\":\"check.completed\",\"t_ms\":0,\"run\":7,\"exit\":{exit},\"passed\":{passed},\"duration_ms\":19}}"
         );
         let record = read(line.as_bytes(), &limits()).expect("valid kind").expect("check terminal");
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
@@ -878,7 +878,7 @@ fn check_exit_tags_values_and_unknown_kinds_are_bounded() {
             );
         }
     }
-    let base = r#"{"v":2,"type":"check.completed","t_ms":0,"run":7,"exit":EXIT,"passed":false,"duration_ms":19}"#;
+    let base = r#"{"v":3,"type":"check.completed","t_ms":0,"run":7,"exit":EXIT,"passed":false,"duration_ms":19}"#;
     for exit in [
         "{}",
         "{\"code\":0}",
@@ -917,7 +917,7 @@ fn check_exit_tags_values_and_unknown_kinds_are_bounded() {
 
 #[test]
 fn failure_metadata_is_typed_and_detail_remains_capture_selected_and_bounded() {
-    let source = include_bytes!("../../../crates/smith-events/golden/v2/failure_phase_head.jsonl");
+    let source = include_bytes!("../../../crates/smith-events/golden/v3/failure_phase_head.jsonl");
     let record = read(source, &limits()).expect("bounded failure fixture").expect("bounded failure fixture");
     for capture in [Capture::None, Capture::Calls, Capture::Everything] {
         let line =
@@ -961,7 +961,7 @@ fn failure_metadata_is_typed_and_detail_remains_capture_selected_and_bounded() {
 fn budget_goldens_keep_the_usage_lines_call_under_every_capture() {
     for (name, call) in [("budget_ordinary", None), ("budget_told", Some(b"child-7".as_slice()))] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../../crates/smith-events/golden/v2/{name}.jsonl"));
+            .join(format!("../../crates/smith-events/golden/v3/{name}.jsonl"));
         let frozen = std::fs::read(path).expect("budget golden");
         let record = read(&frozen, &limits()).expect("bounded budget record").expect("budget event");
         let Event::Budget(value) = &record.event else { panic!("budget") };
@@ -977,7 +977,7 @@ fn budget_goldens_keep_the_usage_lines_call_under_every_capture() {
 
 #[test]
 fn a_budget_call_is_bounded_like_a_tool_call() {
-    let frozen = include_bytes!("../../../crates/smith-events/golden/v2/budget_told.jsonl");
+    let frozen = include_bytes!("../../../crates/smith-events/golden/v3/budget_told.jsonl");
     let mut record = read(frozen, &limits()).expect("bounded budget record").expect("budget event");
     let Event::Budget(value) = &mut record.event else { panic!("budget") };
     value.call = Some(b"provider-child-7".as_slice().into());
@@ -1008,7 +1008,7 @@ fn session_started_chat_round_trips() {
 
 #[test]
 fn a_forced_exit_notice_keeps_the_kits_evidence_under_every_capture() {
-    let frozen = include_bytes!("../../../crates/smith-events/golden/v2/notice_forced_exit.jsonl");
+    let frozen = include_bytes!("../../../crates/smith-events/golden/v3/notice_forced_exit.jsonl");
     let record = read(frozen, &limits()).expect("forced exit golden").expect("notice");
     let Event::Notice(notice) = &record.event else { panic!("notice") };
     assert_eq!(notice.kind, smith_events::NoticeKind::ForcedExit);
@@ -1023,7 +1023,7 @@ fn a_forced_exit_notice_keeps_the_kits_evidence_under_every_capture() {
 #[test]
 fn forced_exit_notices_round_trip_known_and_unknown_evidence_and_reject_missing_fields() {
     let base =
-        r#"{"v":2,"type":"notice","t_ms":0,"level":"warning","kind":"forced_exit","exit":null,"forced":"terminated"}"#;
+        r#"{"v":3,"type":"notice","t_ms":0,"level":"warning","kind":"forced_exit","exit":null,"forced":"terminated"}"#;
     for (exit, forced) in
         [("null", "no"), ("{\"code\":7}", "terminated"), ("{\"signal\":15}", "killed"), ("null", "future")]
     {

@@ -50,8 +50,8 @@ fn channel_schema_matches_generated_code_and_all_goldens() {
 mod events;
 
 #[test]
-fn event_records_and_every_listed_value_match_frozen_version_two_goldens() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-events/golden/v2");
+fn event_records_and_every_listed_value_match_frozen_version_three_goldens() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-events/golden/v3");
     let limits = smith_events::Limits { string: 64, content: 1024, items: 8 };
     let samples = events::samples();
     assert_eq!(fs::read_dir(&root).expect("event goldens").count(), samples.len(), "every golden is covered");

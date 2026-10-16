@@ -55,7 +55,7 @@ pub(super) fn change_model(conversation: &mut Conversation, llm: crate::record::
     conversation.next_llm = Some(crate::record::Llm {
         effort: mem::replace(&mut conversation.effort, llm.effort),
         model: mem::replace(&mut conversation.model, llm.model),
-        window: mem::replace(&mut conversation.model_window, llm.window),
+        window: mem::replace(&mut conversation.model_window.0, llm.window),
         output: mem::replace(&mut conversation.output, llm.output),
         prices: mem::replace(&mut conversation.recording.prices, llm.prices),
     });
@@ -75,7 +75,7 @@ pub(super) fn due(conversation: &mut Conversation, limits: &Limits) -> bool {
                 bytes,
                 conversation.protocol_allowance,
                 conversation.output,
-                conversation.model_window,
+                conversation.model_window.0,
                 limits.threshold,
             ) == Admission::Compact
         }
@@ -125,7 +125,7 @@ pub(super) fn instruction_bytes(conversation: &Conversation) -> usize {
 }
 
 pub(super) fn window_limit(conversation: &Conversation, evidence: Evidence, attempts: u32) -> End {
-    let failure = Failure::Limit { which: Limit::Window, bound: u64::from(conversation.model_window) };
+    let failure = Failure::Limit { which: Limit::Window, bound: u64::from(conversation.model_window.0) };
     End::Failed { failure, evidence, attempts }
 }
 
@@ -227,7 +227,7 @@ pub(super) fn open_window(
     if let Some(llm) = conversation.next_llm.take() {
         conversation.model = llm.model;
         conversation.effort = llm.effort;
-        conversation.model_window = llm.window;
+        conversation.model_window.0 = llm.window;
         conversation.output = llm.output;
         conversation.recording.prices = llm.prices;
     }
@@ -385,7 +385,7 @@ pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Fa
                     opener,
                     conversation.window.number,
                     &conversation.model,
-                    conversation.model_window,
+                    conversation.model_window.0,
                     conversation.output,
                     conversation.effort.as_deref(),
                 ));

@@ -37,6 +37,7 @@ pub const LIMITS: Limits = Limits {
         host_part: 1 << 20,
         room: 0,
         compaction_threshold: [4, 5],
+        compaction_material: 0,
         schema_costs: run::SchemaCosts::NONE,
         directories: 2,
         directory_name_bytes: 256,

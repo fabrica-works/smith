@@ -121,21 +121,21 @@ fn build_balanced() -> Vec<Record> {
     // sweep still reads every unmodified maximum-value codec record.
     let model = model();
     let mut values = vec![
-        record(include_str!("../../../crates/smith-events/golden/v2/session_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/run_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/conversation_opened_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/response_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/response_completed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/conversation_closed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/run_completed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v2/session_ended_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/session_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/run_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/conversation_opened_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/response_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/response_completed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/conversation_closed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/run_completed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v3/session_ended_everything.jsonl")),
     ];
     for (index, record) in values.iter_mut().enumerate() {
         record.t_ms = u64::try_from(index).expect("small index");
         match &mut record.event {
             Event::SessionStarted(value) => {
                 value.mode = smith_events::Mode::Exec;
-                value.versions.events = 2;
+                value.versions.events = 3;
             }
             Event::RunStarted(value) => {
                 value.run = 0;

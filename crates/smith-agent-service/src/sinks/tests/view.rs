@@ -83,7 +83,7 @@ fn usage() -> smith_events::Usage {
 fn shown() -> Vec<Record> {
     let opened = crate::responses::tests::opened(2, 0);
     vec![
-        golden(include_bytes!("../../../../smith-events/golden/v2/run_started_none.jsonl"), &limits(0)),
+        golden(include_bytes!("../../../../smith-events/golden/v3/run_started_none.jsonl"), &limits(0)),
         request(),
         Record { t_ms: 0, event: Event::ConversationOpened(opened) },
         Record {

@@ -285,7 +285,7 @@ mod tests {
         assert!(!rejected_responses(std::slice::from_ref(&session), 1));
         let mut session = rejection();
         session.records.push(test_events::record(include_str!(
-            "../../../../crates/smith-events/golden/v2/text_delta_everything.jsonl"
+            "../../../../crates/smith-events/golden/v3/text_delta_everything.jsonl"
         )));
         assert!(!rejected_responses(std::slice::from_ref(&session), 1));
         session.records.pop();

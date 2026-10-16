@@ -1720,7 +1720,7 @@ fn open(
         &run.found,
         run.spent,
         run.deadline.saturating_since(env.now),
-        &env.limits.schema_costs,
+        &env.limits,
     );
     let offered = run.inbox.offer(&env.limits);
     opening.prompt = prompt::opening(prompt::has_brief(&run.charter), offered);
@@ -2000,7 +2000,7 @@ fn sub_agent(
     asking.calls = asking.calls.saturating_add(1);
     run.conversations = run.conversations.saturating_add(1);
     run.next_ordinal = next_ordinal;
-    let opening = child_opening(run, &wanted.brief, plan, ordinal, env.limits.answer_bytes, env.limits.wrap_up);
+    let opening = child_opening(run, &wanted.brief, plan, ordinal, &env.limits);
     if plan_writing(conversations, child) {
         calls.get_mut(id).expect("admitted child call").work =
             Work::Child(Child::Cancelling { child, opening: Box::new(opening), deadline, why: None });
@@ -2016,18 +2016,11 @@ fn plan_writing(conversations: &Slab<Conversation>, child: Id<Conversation>) -> 
 }
 
 /// Render an admitted child's immutable opening from its effective grant.
-fn child_opening(
-    run: &Run,
-    brief: &[u8],
-    plan: agent::Plan,
-    ordinal: u32,
-    answer_bytes: u32,
-    wrap_up: Duration,
-) -> Opening {
+fn child_opening(run: &Run, brief: &[u8], plan: agent::Plan, ordinal: u32, limits: &Limits) -> Opening {
     Opening {
         final_turn: Some(crate::FinalTurn {
             note: prompt::child_final_note(),
-            allowance: agent::final_allowance(plan.budget.time, wrap_up),
+            allowance: agent::final_allowance(plan.budget.time, limits.wrap_up),
         }),
         generated_schema_bytes: 0,
         identity: run.identity,
@@ -2044,7 +2037,7 @@ fn child_opening(
             brief,
             plan.families,
             plan.granted,
-            answer_bytes,
+            limits.answer_bytes,
         ),
         prompt: copy_of(prompt::BEGIN),
         summary: copy_of(prompt::SUMMARY),
@@ -2054,6 +2047,7 @@ fn child_opening(
         budget: plan.budget,
         finish: false,
         families: plan.families,
+        line: charter::line(&plan.llm, limits.compaction_material),
         llm: plan.llm,
     }
 }

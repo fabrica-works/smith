@@ -747,7 +747,7 @@ fn read_versions(tokens: &[Token], _limits: &Limits) -> Result<Versions, Error> 
 #[cfg(test)]
 #[test]
 fn the_product_announces_its_chat_store_version() {
-    let wire = b"{\"v\":2,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":2,\"channel\":2,\"charter\":2,\"transcript\":4,\"chat_store\":1},\"limits\":{}}\n";
+    let wire = b"{\"v\":3,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":3,\"channel\":2,\"charter\":2,\"transcript\":4,\"chat_store\":1},\"limits\":{}}\n";
     let limits = Limits { string: 32, content: 1024, items: 16 };
     let record = read(wire, &limits).unwrap().unwrap();
     let Event::SessionStarted(started) = &record.event else { panic!("startup record") };

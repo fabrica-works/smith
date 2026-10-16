@@ -484,10 +484,10 @@ fn oversized_pieces_replay_successful_edits_and_keep_failed_edit_measurement() {
 
 fn piece(records: &mut Vec<smith_events::Record>, tool: &str, call: &str, input: &serde_json::Value, verdict: Verdict) {
     static START: std::sync::LazyLock<smith_events::Record> = std::sync::LazyLock::new(|| {
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_started_everything.jsonl"))
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_started_everything.jsonl"))
     });
     static END: std::sync::LazyLock<smith_events::Record> = std::sync::LazyLock::new(|| {
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"))
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"))
     });
     let mut started = START.clone();
     let mut completed = END.clone();
@@ -603,9 +603,9 @@ fn oversized_write_requires_the_overflow_and_both_accepted_repair_tools() {
 
 fn add_tool(records: &mut Vec<smith_events::Record>, tool: &str, verdict: Verdict) {
     let mut started =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_started_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_started_everything.jsonl"));
     let mut completed =
-        common::events::record(include_str!("../../crates/smith-events/golden/v2/tool_completed_everything.jsonl"));
+        common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
     started.t_ms = 4;
     completed.t_ms = 4;
     if let Event::ToolStarted(value) = &mut started.event {

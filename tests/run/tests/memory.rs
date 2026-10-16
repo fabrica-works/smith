@@ -63,6 +63,7 @@ const LIMITS: Limits = Limits {
     host_part: 1 << 20,
     room: 0,
     compaction_threshold: [4, 5],
+    compaction_material: 0,
     schema_costs: smith_domain_run::SchemaCosts::NONE,
     directories: 1,
     directory_name_bytes: 64,
@@ -598,6 +599,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
         host_part: 1 << 20,
         room: 0,
         compaction_threshold: [4, 5],
+        compaction_material: 0,
         schema_costs: smith_domain_run::SchemaCosts::NONE,
         ..LIMITS
     };

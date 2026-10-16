@@ -200,6 +200,7 @@ const fn calm_run_limits() -> run::Limits {
         host_part: 1 << 20,
         room: 0,
         compaction_threshold: [4, 5],
+        compaction_material: 0,
         schema_costs: smith_domain_run::SchemaCosts::NONE,
         directories: 4,
         directory_name_bytes: 256,
