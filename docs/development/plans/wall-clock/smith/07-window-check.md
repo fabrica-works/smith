@@ -12,6 +12,19 @@ output reserved below the threshold; the guard (smith 04) bounds what
 the estimate misses. This step changes when smith compacts, so it is
 proven by its `parity-change` run (benchmarks.md 16.6).
 
+The baseline, `parity-c10edbe5-20261016T184102Z`, missed FT, RT and RC.
+smith compacted in each of its 10 `shell-cwd` attempts, for 44 to 70
+seconds, and Codex in none: this step addresses RT. It may move RC the
+wrong way: a window compacted later carries its history into each
+request until then, and cause 2's tokens (cached +2.1 to +4.6 million,
+fresh -43,000 to -93,000, output -3,000 to -5,000) cost about $0.09 to
+$0.22 more an attempt at the presets' base rates (cached $0.10, fresh
+$2, output $10 a million: `presets.rs`, `list_prices`), against smith's
+median $1.552.
+Nothing in this step changes for it: 08.1 and 10.1 address RC, and the
+stop decides (README, rule 12). No fixture attempt compacted, so this
+step does not address FT.
+
 ## Read first
 
 - smith `docs/design/domain/session.md`, sections 8.1 (what the session
@@ -162,7 +175,8 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   about 3 hours, run once; its exit decides (README, rule 12). Its
   summary is amended into the step's commit and named in
   `Change-Summary:`; the commit body gives its criteria, projection and
-  stop lines, README rule 13's counts beside, and names cause 2.
+  stop lines, README rule 13's counts beside, and names cause 2 and the
+  criterion it addresses, RT, with the baseline's figures above.
 Don't: change the threshold, the window or `output`; count cells
   anywhere in the check.
 Size: 150 lines.

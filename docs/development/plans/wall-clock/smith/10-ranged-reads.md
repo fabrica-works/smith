@@ -11,6 +11,12 @@ window from where a search found them, a whole file only when the work
 needs all of it (decisions.md, section 8). This step changes the role,
 so it is proven by its `parity-change` run.
 
+In the baseline, `parity-c10edbe5-20261016T184102Z`, fresh tokens were
+59% of RC's excess: on `shell-cwd`, smith's cost $0.614 an attempt to
+Codex's $0.367, of $1.552 to $1.131 in total (means; cached $0.680 to
+$0.562, output $0.258 to $0.202). This step addresses RC, and RT
+through prompts further from the threshold.
+
 ## Read first
 
 - smith `docs/design/shell.md`, section 6.6 (topic 2, and "A change to
@@ -64,7 +70,8 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   summary is amended into the step's commit and named in
   `Change-Summary:`; the commit body gives its criteria, projection and
   stop lines, README rule 13's counts beside, with the report's fresh tokens per arm, and names the fresh
-  tokens' cause.
+  tokens' cause and the criteria it addresses, RC and RT, with the
+  baseline's figures above.
 Don't: change `read`'s schema or `read_window`.
 Size: 10 lines.
 Removes: nothing.

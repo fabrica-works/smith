@@ -13,6 +13,19 @@ answered as not run, naming it, a why new in transcript version 5
 (decisions.md, section 6). This step changes what the model is sent, so
 it is proven by its `parity-change` run.
 
+The baseline, `parity-c10edbe5-20261016T184102Z`, missed FT, RT and RC,
+and causes 1 and 3 are FT's cause too. On the fixtures, none of smith's
+71 responses that held an edit held a second edit or a command, and
+smith made 194 responses in 24 attempts to Codex's 148; Codex ran its
+check in the call that made a patch in 23 of its 24 attempts. The
+responses this step folds into the one before them (an edit after an
+edit, a command after an edit) are 70 there, about 111 of smith's 1,919
+seconds: by that estimate, FT about 1.11, from 1.18. On `shell-cwd`,
+smith made 70.1 responses an attempt to Codex's 45.5, and causes 1 and 3
+are about 3.8 million cached tokens an attempt (`findings/causes.md`),
+$0.38 at the base rate, of smith's median $1.552 against Codex's $1.103.
+This step addresses FT, RT and RC.
+
 ## Read first
 
 - smith `docs/design/domain/session.md`, section 5 ("A failed write stops
@@ -178,7 +191,8 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   summary is amended into the step's commit and named in
   `Change-Summary:`; the commit body gives its criteria, projection and
   stop lines, README rule 13's counts beside, with each arm's `edit` and `shell` calls an attempt from its
-  `tool_calls`, and names causes 1 and 3.
+  `tool_calls`, and names causes 1 and 3 and the criteria they address,
+  FT, RT and RC, with the baseline's figures above.
 Don't: stop reads; stop calls after a command's end; name a task's files
   or commands in the role or the descriptions.
 Size: 260 lines.

@@ -12,6 +12,11 @@ early today: the machine waits until the job ends or the wait's time
 passes (findings A23). This step changes what a tool answers when a
 call asks for nothing, so it is proven by its `parity-change` run.
 
+In the baseline, `parity-c10edbe5-20261016T184102Z`, smith's `shell-cwd`
+attempts spent a median 73.1 seconds in tools to Codex's 45.7: this step
+addresses RT. No smith fixture attempt made a `job` call, so it does not
+address FT.
+
 ## Read first
 
 - smith `docs/design/domain/session.md`, section 5 ("A job's wait gives
@@ -119,7 +124,8 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   about 3 hours, run once; its exit decides (README, rule 12). Its
   summary is amended into the step's commit and named in
   `Change-Summary:`; the commit body gives its criteria, projection and
-  stop lines, README rule 13's counts beside, with the report's tools seconds per arm, and names cause 4.
+  stop lines, README rule 13's counts beside, with the report's tools seconds per arm, and names cause 4
+  and the criterion it addresses, RT, with the baseline's figures above.
 Don't: shorten `job_wait`; tell a job's end between completions
   (decisions.md 7, deferred).
 Size: 220 lines.
