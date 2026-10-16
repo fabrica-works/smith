@@ -242,3 +242,67 @@ fn a_suite_with_two_binary_arms_prepares_each_arm_by_its_name() {
         assert_ne!(block[0].identity.arm, block[1].identity.arm);
     }
 }
+
+fn change_fixture() -> (PathBuf, Suite, Vec<(String, ArmRef)>) {
+    let (root, _, binaries) = binary_fixture();
+    let suite = crate::read_suite(&root.join("suites/parity-change.toml")).expect("change suite");
+    let binaries = binaries.into_iter().zip(["change", "parent"]).map(|((_, arm), name)| (name.into(), arm)).collect();
+    (root, suite, binaries)
+}
+
+#[test]
+fn a_change_suite_runs_a_change_and_its_parent() {
+    let (root, suite, binaries) = change_fixture();
+    let prepared = binary_requests(&root, &suite, &binaries);
+    let ordered = crate::batch::ordered(&suite, prepared, 17).expect("interleaved change arms");
+    assert_eq!(ordered.len(), 40);
+    for block in ordered.chunks_exact(2) {
+        assert_eq!(block[0].identity.task, block[1].identity.task);
+        assert_ne!(block[0].identity.arm, block[1].identity.arm);
+    }
+    for request in ordered {
+        assert_eq!(request.identity.agent, Agent::Smith);
+        let commit = match request.identity.arm.as_str() {
+            "change" => "0".repeat(40),
+            "parent" => "2".repeat(40),
+            name => panic!("unexpected arm {name}"),
+        };
+        assert_eq!(request.identity.agent_version, commit);
+    }
+}
+
+#[test]
+fn a_change_suite_without_a_parent_is_refused() {
+    let arguments = ["parity-change", "--commit", "HEAD"].map(str::to_owned);
+    assert_eq!(
+        command("suite", &arguments).expect_err("missing parent"),
+        "change suite requires --parent or --parent-arm"
+    );
+}
+
+#[test]
+fn a_parent_given_to_another_suite_is_refused() {
+    for option in ["--parent", "--parent-arm"] {
+        let arguments = ["parity", option, "unused"].map(str::to_owned);
+        assert_eq!(command("suite", &arguments).expect_err("unexpected parent"), "only change suites accept a parent");
+    }
+}
+
+#[test]
+fn a_change_suite_declaring_arms_is_refused() {
+    let (root, entry, _, _) = fixture();
+    let (_, mut suite, _) = change_fixture();
+    suite.tasks = vec![entry.name.clone()];
+    suite.arms.push(crate::Arm::Binary { name: "extra".into(), commit: "0".repeat(40) });
+    let models = crate::read_model_tiers(&root.join("agents/models.toml")).expect("models");
+    let error =
+        crate::validate_suite(&root.join("suites/parity-change.toml"), &suite, &[entry], &root.join("agents"), &models)
+            .expect_err("declared arms");
+    assert_eq!(error.key, "change");
+}
+
+#[test]
+fn the_change_suites_reference_is_its_parent() {
+    let (_, suite, _) = change_fixture();
+    assert_eq!(suite.reference_arm(), Some("parent"));
+}

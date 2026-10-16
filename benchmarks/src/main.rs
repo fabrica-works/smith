@@ -147,7 +147,7 @@ fn summarize_command(
         let reference = reference.map(smith_bench::read_baseline).transpose().map_err(|error| error.to_string())?;
         let reference_arm = if design == smith_bench::Design::Interleaved {
             let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("suites").join(format!("{suite}.toml"));
-            smith_bench::read_suite(&file).map_err(|error| error.to_string())?.reference
+            smith_bench::read_suite(&file).map_err(|error| error.to_string())?.reference_arm().map(str::to_owned)
         } else {
             None
         };

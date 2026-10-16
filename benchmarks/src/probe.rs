@@ -316,6 +316,11 @@ fn task_requests(
             arm
         };
         let mut executions = Vec::new();
+        if suite.change {
+            for (name, binary) in binaries {
+                executions.push((Some(name), binary, Vec::new()));
+            }
+        }
         for comparison in &suite.arms {
             match comparison {
                 crate::Arm::Binary { name, .. } => {
@@ -385,19 +390,21 @@ pub fn plan(repository: &Path, order: &Order, arm: &ArmRef) -> Result<Planned, S
         return Err("invalid probe order".into());
     }
     let value = narrowed(&repository.join("benchmarks/suites/probes.toml"), order)?;
-    prepare(repository, &order.probe, &value, arm, true, &[])
+    prepare(repository, &order.probe, &value, (arm, None), true, &[])
 }
 
 fn prepare(
     repository: &Path,
     name: &str,
     value: &toml::Value,
-    arm: &ArmRef,
+    arms: (&ArmRef, Option<&ArmRef>),
     logical: bool,
     asked: &[String],
 ) -> Result<Planned, String> {
     let harness_commit = crate::arm::commit(repository, "HEAD")?;
     let suite: Suite = value.clone().try_into().map_err(|error| error.to_string())?;
+    let (arm, parent_arm) = arms;
+    check_parent(&suite, parent_arm.is_some())?;
     let (stamp, started) = utc()?;
     let source = match arm {
         ArmRef::Built(build) => build.arm.commit.clone(),
@@ -440,6 +447,11 @@ fn prepare(
     let names = if name == "smoke" { gating::smoke_tasks(&entries, &names)? } else { names };
     let face = arm_face(repository, arm)?;
     let mut binaries = Vec::new();
+    if let Some(parent_arm) = parent_arm {
+        arm_face(repository, parent_arm)?;
+        binaries.push(("change".into(), arm.clone()));
+        binaries.push(("parent".into(), parent_arm.clone()));
+    }
     for comparison in &suite.arms {
         if let crate::Arm::Binary { name, commit } = comparison {
             let binary = archived(repository, &Source::Commit(commit.clone()))?;
@@ -513,6 +525,18 @@ fn archived(repository: &Path, source: &Source) -> Result<ArmRef, String> {
     Err(format!("no archived arm for {commit}; run build {reference} first"))
 }
 
+fn check_parent(suite: &Suite, has_parent: bool) -> Result<(), String> {
+    if suite.change != has_parent {
+        return Err(if suite.change {
+            "change suite requires --parent or --parent-arm"
+        } else {
+            "only change suites accept a parent"
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Execute a parsed command with frozen arms, printing each settled attempt and summary.
 pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> {
     let (name, flags) = arguments.split_first().ok_or("a task or suite name is required")?;
@@ -523,7 +547,7 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
         "probe" => &["--agent", "--attempts", "--commit", "--arm"],
         "calibrate" => &["--attempts", "--passes", "--control", "--commit", "--arm"],
         "fix" => &["--parent", "--commit"],
-        "suite" => &["--seed", "--commit", "--arm", "--include"],
+        "suite" => &["--seed", "--commit", "--arm", "--include", "--parent", "--parent-arm"],
         _ => return Err("unknown probe command".into()),
     };
     let mut options = std::collections::BTreeMap::new();
@@ -540,6 +564,9 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
     if options.contains_key("--commit") && options.contains_key("--arm") {
         return Err("choose commit or arm".into());
     }
+    if options.contains_key("--parent") && options.contains_key("--parent-arm") {
+        return Err("choose parent commit or parent arm".into());
+    }
     let agent = match options.get("--agent").copied().unwrap_or("smith") {
         "smith" => Agent::Smith,
         "codex" if command == "probe" => Agent::Codex,
@@ -547,6 +574,14 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
     };
     let source = options.get("--commit").map_or(Source::Head, |commit| Source::Commit((*commit).into()));
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().ok_or("workspace missing")?;
+    if command == "suite" {
+        let suite = crate::read_suite(&repository.join("benchmarks/suites").join(format!("{name}.toml")))
+            .map_err(|error| error.to_string())?;
+        check_parent(&suite, options.contains_key("--parent") || options.contains_key("--parent-arm"))?;
+        if suite.change && !options.contains_key("--commit") && !options.contains_key("--arm") {
+            return Err("change suite requires --commit or --arm".into());
+        }
+    }
     crate::arm::resolve_commit(repository, "HEAD")?;
     let arm = if agent == Agent::Codex {
         codex(repository, "standard")?
@@ -576,7 +611,14 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
         "suite" => {
             let file = repository.join("benchmarks/suites").join(format!("{name}.toml"));
             let value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
-            let planned = prepare(repository, name, &value, &arm, false, &asked)?;
+            let parent = if let Some(directory) = options.get("--parent-arm") {
+                Some(ArmRef::Built(crate::arm::read_build(&Path::new(directory).join("smith"))?))
+            } else if let Some(commit) = options.get("--parent") {
+                Some(archived(repository, &Source::Commit((*commit).into()))?)
+            } else {
+                None
+            };
+            let planned = prepare(repository, name, &value, (&arm, parent.as_ref()), false, &asked)?;
             if name == "smoke" && planned.requests.is_empty() {
                 println!("summary {} attempts=0 verdict=incomplete", planned.run);
                 return Ok(Judgment::Incomplete);

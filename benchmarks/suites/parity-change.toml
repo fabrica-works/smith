@@ -1,0 +1,14 @@
+name = "parity-change"
+tier = "working"
+design = "interleaved"
+change = true
+repetitions = 5
+rerun_failed = 0
+max_wall_seconds = 28800
+max_tokens = 150000000
+tasks = ["fixtures/01-backoff", "fixtures/02-line-decoder", "fixtures/03-planner", "repository/shell-cwd"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "standard"

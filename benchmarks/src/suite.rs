@@ -70,6 +70,9 @@ pub struct Suite {
     pub design: Design,
     #[serde(default)]
     pub reference: Option<String>,
+    /// Compare two smith builds supplied at invocation (benchmarks.md, 16.6).
+    #[serde(default)]
+    pub change: bool,
     pub repetitions: u32,
     /// Suite-authored counts for exact task and variant names (benchmarks.md, 5.3).
     #[serde(default)]
@@ -91,6 +94,12 @@ pub struct Suite {
 }
 
 impl Suite {
+    /// The reference selected by the suite, including a change suite’s parent.
+    #[must_use]
+    pub fn reference_arm(&self) -> Option<&str> {
+        if self.change { Some("parent") } else { self.reference.as_deref() }
+    }
+
     pub(crate) fn task_repetitions(&self, name: &str, authored: Option<u32>, logical: bool) -> Result<u32, String> {
         let repetitions = self.repetitions_by_task.get(name).copied().unwrap_or(self.repetitions);
         if logical {
@@ -167,6 +176,7 @@ pub fn validate_suite(
             "name, agents and positive budgets/repetitions are required; at most one failure rerun",
         ));
     }
+    validate_change(file, suite)?;
     let mut selected = BTreeSet::new();
     for name in &suite.tasks {
         if !task_exists(name, tasks) {
@@ -240,7 +250,7 @@ pub fn validate_suite(
     }
     let has_codex = suite.agents.iter().any(|agent| agent.agent == Agent::Codex)
         || suite.arms.iter().any(|arm| matches!(arm, Arm::Agent { agent: Agent::Codex, .. }));
-    if suite.design == Design::Interleaved && !has_codex {
+    if suite.design == Design::Interleaved && !has_codex && !suite.change {
         let Some(reference) = &suite.reference else {
             return Err(Refusal::new(file, "reference", "a comparison without Codex must name its reference arm"));
         };
@@ -249,6 +259,24 @@ pub fn validate_suite(
         }
     }
     Ok(selected.into_iter().collect())
+}
+
+fn validate_change(file: &Path, suite: &Suite) -> Result<(), Refusal> {
+    if suite.change
+        && (!suite.arms.is_empty()
+            || suite.reference.is_some()
+            || suite.agents.len() != 1
+            || suite.agents[0].agent != Agent::Smith
+            || suite.design != Design::Interleaved
+            || suite.rerun_failed != 0)
+    {
+        return Err(Refusal::new(
+            file,
+            "change",
+            "change suites require one smith agent, interleaving, no arms, reference or rerun",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_repetitions(file: &Path, suite: &Suite, selected: &BTreeSet<String>) -> Result<(), Refusal> {

@@ -280,6 +280,13 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
                 return Err("prepared requests omit a selected task/configuration".into());
             }
         }
+        if suite.change {
+            for name in ["change", "parent"] {
+                if !requests.iter().any(|request| request.identity.task == *task && request.identity.arm == name) {
+                    return Err("prepared requests omit a change suite arm".into());
+                }
+            }
+        }
         for arm in &suite.arms {
             let name = match arm {
                 crate::Arm::Binary { name, .. }

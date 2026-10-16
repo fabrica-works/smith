@@ -184,3 +184,10 @@ with `smith-bench parity benchmarks/summaries/RUN.json --commit SHA`: exit 0
 at parity, 1 when smith is not on par, and 2 for incomplete evidence or a
 conflicting section or smith source commit. Infinite bootstrap ratios are
 stored as `"infinite"` so that unsolved or incomplete sections round-trip.
+
+`smith-bench suite parity-change --commit SHA --parent PARENT` runs the
+four parity tasks five times per smith arm, interleaved without reruns.
+Both commits must be built first; `--arm DIRECTORY` and
+`--parent-arm DIRECTORY` select built directories instead. The arms are
+`change` and `parent`, with `parent` the reference. Other suites refuse
+parent options.
