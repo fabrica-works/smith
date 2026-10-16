@@ -528,3 +528,17 @@ Reversible, and none a product decision; the widest in reach:
      - The live record past 1.5 times the step's attempts (128 attempts, $26.07) is said in the report and the commit body, as README rule 10 says: "nothing stops on it".
      - 07 starts on 06.1's landing, as the plan says. The designer's answer, when it comes, arrives as its own unblock; until then, no session acts on FT or RC beyond its own session file.
      - Unchanged: rule 9 (no attempt rerun, no run of the same commits repeated to change a verdict), the stop (rule 12), 06.1's Don't.
+
+115. **The designer's answer to the baseline's misses of FT, RT and RC** (design gap, smith 06.1's block of 2026-10-16T23:20:46Z).
+     Ruling 115: the designer's answer to the baseline's misses, landed as smith 65a54642 (sessions 07 to 10 and `later.md`); ruling 114 stands. Its decision:
+
+
+     07 to 10 aim at all three; no step is added, and the plan ends short on nothing in advance. Each change's commit body names the criteria it addresses and their cause read from the baseline's attempts, as benchmarks.md 16.5 asks of a change that answers a failed verdict: "the criteria it addresses; their cause, read from the failed run's attempts ... against Codex's in that run". Sessions 07 to 10 now carry those figures.
+
+     - **FT: 08.1 (causes 1 and 3).** In smith's 24 fixture attempts, none of the 71 responses that held an edit held a second edit or a command; smith made 194 responses to Codex's 148, and Codex ran its check in the call that made a patch in 23 of its 24. Folding an edit after an edit, or a command after an edit, removes 70 responses, about 111 s of 1,919: by that estimate FT about 1.11, its upper bound about 1.18. 07.1 and 09.1 change nothing the fixtures exercise (no fixture attempt compacted; no smith fixture attempt made a `job` call).
+     - **RC: 08.1 and 10.1.** smith's mean `shell-cwd` spend is $1.552 to Codex's $1.131: fresh $0.614 to $0.367 (59% of the excess), cached $0.680 to $0.562, output $0.258 to $0.202. 10.1 addresses the fresh tokens ($0.12 to $0.18, `findings/causes.md`), 08.1 the cached (3.8 million, $0.38).
+     - **07.1 may move RC the wrong way, and goes on as written.** Cause 2's tokens in `causes.md` are +$0.09 to +$0.22 an attempt at the presets' base rates, not "about neutral". Nothing in 07.1 changes for it; the stop decides (README, rule 12).
+     - **RT: as planned.** Causes 1 to 4 hold in the baseline: 70.1 responses an attempt to Codex's 45.5, a compaction in each of smith's 10 attempts (44 to 70 s), tools a median 73.1 s to 45.7 s.
+     - **The stop stays as benchmarks.md 16.6 says:** "A plan's position within the baseline's interval is within what it already measures as noise, and goes on." No bound is added for a missed criterion.
+     - **Deferred, with its `later.md` row:** FT's output in writing responses (74,522 tokens to Codex's 67,569), which batching does not shorten: `smith-11.s1`'s diagnosis starts from it if FT is short at 11.1.
+     - **Unchanged:** 07 starts on 06.1's landing (06's "Choices"); 11's closing runs end the plan short on whatever the last misses (benchmarks.md 16.5: "When the last it holds is short of parity, the plan ends with its target unmet").
