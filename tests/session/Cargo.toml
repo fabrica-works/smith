@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 smith-domain.workspace = true
 skein-llm-world.workspace = true
+skein-llm.workspace = true
 skein-lib.workspace = true
 smith-domain-session.workspace = true
 smith-domain-tools.workspace = true
@@ -21,7 +22,6 @@ skein-world.workspace = true
 [dev-dependencies]
 smith-agent-service.workspace = true
 smith-protocol-channel.workspace = true
-skein-llm.workspace = true
 
 # Ordinary Rust (programming-model.md, section 10.2), so not the step crates' lints.
 # tests/clippy.toml bans what would make a run unrepeatable.

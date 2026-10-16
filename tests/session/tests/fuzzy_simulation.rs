@@ -188,3 +188,39 @@ fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing_over_many_seeds() 
     }
     assert!(holds > 0, "actual pending work was held for native facts");
 }
+
+#[test]
+fn drawn_ratios_and_rendered_sizes_send_nothing_past_the_line() {
+    use skein_lib::{Rng, Time};
+    use smith_session_world::{Count, Settings, spec};
+    const SEEDS: u64 = 1_000;
+    const LINE_MIN: u64 = 512;
+    const LINE_MAX: u64 = 2_048;
+    const TASK_BYTES: u64 = 32;
+    let mut ratios = BTreeSet::new();
+    let (mut guarded, mut refused, mut expanded) = (0, 0, 0);
+    let mut rng = Rng::new(4102);
+    for seed in 0..SEEDS {
+        let calm = Settings::calm(seed);
+        let settings = Settings { nudges: Count { min: 0, max: 2 }, ..calm };
+        let mut world = World::new(settings);
+        let line = rng.between(LINE_MIN, LINE_MAX);
+        let bytes = usize::try_from(rng.between(1, TASK_BYTES)).expect("small task");
+        let opener = world.submit(Time::ZERO, smith_domain_session::Spec { line, ..spec(&vec![b'x'; bytes]) });
+        world.run(ITERATIONS);
+        for prompt in &world.session(opener).measures {
+            guarded += u32::from(prompt.guard.is_some());
+            refused += u32::from(!prompt.sent);
+            if prompt.sent && prompt.ordinary {
+                assert!(prompt.input <= line, "seed {seed}: {prompt:?}");
+            }
+            for block in &prompt.blocks {
+                ratios.insert(block.ratio);
+                assert!((block.counted..=block.counted * 6).contains(&block.rendered), "seed {seed}: {block:?}");
+                expanded += u32::from(block.rendered > block.counted);
+            }
+        }
+    }
+    assert_eq!(ratios, (1..=u64::from(skein_llm::TOKEN_BYTES)).collect());
+    assert!(guarded > 0 && refused > 0 && expanded > 0, "the sweep exercised drawn additions and unsent guards");
+}

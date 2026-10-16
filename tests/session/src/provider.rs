@@ -3,6 +3,10 @@
 //! fake only selects bounded opaque menu entries. Contract: domain/session.md,
 //! sections 9 and 12; testing-strategy.md, sections 4 and 7.
 
+mod counting;
+pub(crate) use counting::{Counting, report};
+pub use counting::{MeasuredBlock, MeasuredPrompt};
+
 use skein_fake_llm_domain::api::{InvalidInput, Menu};
 
 /// Complete application-owned random inputs, including the preserved deliberate

@@ -110,3 +110,13 @@ fn assert_compaction_prompt(previous: &Prompt, current: &Prompt, session: &Sessi
         Box::new([Block::Text { text: session.summary_instruction.clone(), replay: None }]) as Box<[Block]>
     );
 }
+
+/// Check the provider's independently drawn size only when a request is sent.
+pub(super) fn measured(session: &Session, prompt: &crate::provider::MeasuredPrompt) {
+    if prompt.sent {
+        assert!(prompt.input <= u64::from(session.window), "the provider reports no prompt past its window");
+        if prompt.ordinary {
+            assert!(prompt.input <= session.line, "no ordinary request sent past its line");
+        }
+    }
+}

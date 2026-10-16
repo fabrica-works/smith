@@ -14,6 +14,7 @@ use crate::fixture;
 use crate::tickets::{SERVED, Ticketed, Tickets};
 use crate::translate;
 
+mod llm;
 #[path = "window_referee.rs"]
 mod window_referee;
 
@@ -529,6 +530,10 @@ pub struct Told {
 #[derive(Debug)]
 pub struct Session {
     previous_prompt: Option<Prompt>,
+    counting: crate::provider::Counting,
+    /// Every rendered request, including those the guard refused unsent.
+    pub measures: Vec<crate::provider::MeasuredPrompt>,
+    line: u64,
     compacting: Option<u32>,
     opening: Option<Box<[agent::llm::Message]>>,
     window: u32,
@@ -788,6 +793,7 @@ struct Call {
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     opener: u64,
     served: Box<[Descriptor]>,
+    input: u64,
 }
 
 /// Real domain plus scripted typed peers, pending terminals and external observations for this component story.
@@ -1162,27 +1168,7 @@ impl World {
                 self.ended(opener.raw(), Ended { end, turns, usage });
             }
             agent::Request::Complete { owner, prompt, deadlines, .. } => {
-                let opener = self.openers[&owner];
-                window_referee::prompt(self.sessions.get_mut(&opener).expect("known session"), &prompt);
-                self.affordable(owner, &prompt);
-                in_call_order(&prompt);
-                self.check_results(owner, &prompt);
-                self.stats.not_run += not_run(&prompt);
-                let call = self.wire.name();
-                let head = self.now.saturating_add(deadlines.head);
-                let phase = if deadlines.whole <= head {
-                    smith_domain_session::llm::Phase::Whole
-                } else {
-                    smith_domain_session::llm::Phase::Head
-                };
-                let deadline = self.schedule(deadlines.whole.min(head), Delivery::Deadline { call, phase });
-                let opener = *self.openers.get(&owner).expect("a session calls the LLM while it lives");
-                let served = prompt.delegated.clone();
-                self.calls.open(call, Call { owner, deadline, opener, served });
-                assert!(self.calling.insert(owner, call).is_none(), "a session has one call in flight");
-                let query = translate::query(prompt, &self.tickets);
-                self.send(Delivery::Query { call, query });
-                self.stats.calls += 1;
+                self.complete(owner, prompt, deadlines);
             }
             agent::Request::Cancel { owner } => {
                 let opener = self.openers[&owner];
@@ -1778,12 +1764,16 @@ impl World {
                     // The fake refuses a transcript a provider would:
                     // a call without its result, a result without its call.
                     assert!(result != Err(provider::api::Error::InvalidRequest), "the agent sends well-formed queries");
-                    if let Some(Call { owner, opener, served, .. }) = self.end_call(call) {
+                    if let Some(Call { owner, opener, served, input, .. }) = self.end_call(call) {
                         if self.cancel_lost.remove(&owner) {
                             match result {
                                 Ok(_) => self.stats.answered_after_cancel += 1,
                                 Err(_) => self.stats.failed_after_cancel += 1,
                             }
+                        }
+                        let mut result = result;
+                        if let Ok(answer) = &mut result {
+                            crate::provider::report(&mut answer.usage, input);
                         }
                         let event = translate::outcome(owner, result, &mut self.tickets, opener, &served);
                         self.agent_stage.push(event);
@@ -1842,6 +1832,9 @@ impl World {
         let abandon = self.rng.chance(self.settings.abandon);
         let session = Session {
             previous_prompt: None,
+            counting: crate::provider::Counting::new(self.settings.seed ^ opener),
+            measures: Vec::new(),
+            line: spec.line,
             compacting: None,
             opening: None,
             window: spec.window,

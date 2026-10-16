@@ -672,3 +672,38 @@ fn more_adjacent_reads_than_parallel_tools_run_in_the_next_batch() {
     assert_eq!(world.stats().most_parallel, 2, "reads respect the configured batch width");
     assert_eq!(world.stats().results, 5, "every read waits for its batch and answers");
 }
+
+#[test]
+fn the_worlds_provider_counts_blocks_at_their_drawn_ratios() {
+    let calm = Settings::calm(104);
+    let mut world = World::new(Settings { provider: Config { tool_rounds: 0, ..calm.provider }, ..calm });
+    let opener = world.submit(Time::ZERO, spec(b"fix the build"));
+    world.run(ITERATIONS);
+    let session = world.session(opener);
+    let measured = &session.measures[0];
+    let draws: Vec<_> = measured.blocks.iter().map(|block| (block.counted, block.rendered, block.ratio)).collect();
+    assert_eq!(draws, [(23, 108, 3), (13, 14, 4)]);
+    // ceil(108 / 3) + ceil(14 / 4), counted independently for the two blocks.
+    assert_eq!(measured.input, 40);
+    assert_eq!(session.records[0].usage.cache_write_tokens, Some(40));
+    assert_eq!(session.records[0].usage.input_tokens, Some(0));
+    assert_eq!(session.records[0].usage.cache_read_tokens, Some(0));
+}
+
+#[test]
+fn a_guarded_request_past_the_line_is_refused_by_the_world() {
+    const LINE: u64 = 200;
+    let mut world = World::new(Settings::calm(104));
+    let opener = world.submit(Time::ZERO, Spec { line: LINE, ..spec(b"fix the build") });
+    world.run(ITERATIONS);
+    let measures = &world.session(opener).measures;
+    let refused: Vec<_> = measures.iter().filter(|prompt| !prompt.sent).collect();
+    assert_eq!(refused.len(), 1);
+    for prompt in refused {
+        let guard = prompt.guard.expect("the guard refused this request");
+        assert!(guard.last_prompt + prompt.new_part > LINE);
+    }
+    assert_eq!((world.stats().calls, world.stats().provider_calls), (3, 2));
+    assert_eq!(measures[1].new_part, 481);
+    assert_eq!(measures[1].guard.expect("guarded request").last_prompt, 40);
+}
