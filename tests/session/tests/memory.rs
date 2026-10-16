@@ -48,6 +48,7 @@ fn size(of: usize) -> u64 {
 
 const LIMITS: Limits = Limits {
     threshold: [4, 5],
+    token_bytes: skein_llm::TOKEN_BYTES,
     sessions: 1,
     spend: 1,
     protocol_allowance: 0,

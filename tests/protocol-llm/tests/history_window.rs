@@ -62,6 +62,7 @@ fn fixture(provider: skein_llm::Provider) -> Fixture {
         detail: client.detail_bytes,
         protocol_allowance: allowance,
         threshold: [4, 5],
+        token_bytes: skein_llm::TOKEN_BYTES,
     })
     .expect("native history derives");
     let decoded = u64::from(client.input)

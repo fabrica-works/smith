@@ -74,7 +74,7 @@ pub(super) fn due(conversation: &mut Conversation, limits: &Limits) -> bool {
                 &conversation.window,
                 bytes,
                 conversation.protocol_allowance,
-                conversation.output,
+                limits.token_bytes,
                 conversation.model_window,
                 limits.threshold,
             ) == Admission::Compact
@@ -95,19 +95,21 @@ fn appended_bytes(conversation: &Conversation) -> Option<u64> {
 
 /// Count the same owned prompt form as the session's emitted request without copying it.
 pub(super) fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
-    let fixed = spec_cost(&conversation.model, &conversation.system, &conversation.delegated, &[])?.checked_add(
-        match &conversation.effort {
-            Some(effort) => u64::try_from(effort.len()).ok()?,
-            None => 0,
-        },
-    )?;
-    let mut bytes = fixed
-        .checked_add(u64::try_from(size_of::<crate::llm::Prompt>()).ok()?)?
-        .checked_add(conversation.namespace.owned_bytes()?)?
-        .checked_add(if conversation.compaction.asking() { 0 } else { super::choice_bytes(&conversation.choice) })?;
-    let cell = u64::try_from(size_of::<Message>()).ok()?;
-    for message in &conversation.transcript {
-        bytes = bytes.checked_add(cell)?.checked_add(content_cost(&message.content)?)?;
+    prompt_prefix_bytes(conversation, usize::try_from(conversation.transcript.len()).ok()?)
+}
+
+pub(super) fn prompt_prefix_bytes(conversation: &Conversation, messages: usize) -> Option<u64> {
+    let mut bytes = u64::try_from(conversation.model.len())
+        .ok()?
+        .checked_add(u64::try_from(conversation.system.len()).ok()?)?
+        .checked_add(conversation.namespace.owned_bytes()?)?;
+    if let Some(effort) = &conversation.effort {
+        bytes = bytes.checked_add(u64::try_from(effort.len()).ok()?)?;
+    }
+    for message in conversation.transcript.iter().take(messages) {
+        for block in &message.content {
+            bytes = bytes.checked_add(payload_cost(block)?)?;
+        }
     }
     Some(bytes)
 }
@@ -430,8 +432,14 @@ pub(super) fn restore(
 ) -> Result<(), crate::record::Refusal> {
     let first = transcript.turns.first().expect("validated nonempty transcript");
     let mut messages = 0_u32;
+    let mut following = 0_u32;
     for turn in &transcript.turns {
-        messages = messages.checked_add(super::count(turn.messages.len())).ok_or(crate::record::Refusal::TooLarge)?;
+        for message in &turn.messages {
+            messages = messages.checked_add(1).ok_or(crate::record::Refusal::TooLarge)?;
+            if message.role == Role::Assistant {
+                following = messages;
+            }
+        }
     }
     for message in &first.messages {
         if message.role == Role::User {
@@ -469,7 +477,8 @@ pub(super) fn restore(
             conversation.window.completed(
                 transcript.turns.last().expect("nonempty").usage,
                 conversation.output,
-                messages,
+                following,
+                0,
             );
         }
     }

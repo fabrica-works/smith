@@ -2,12 +2,14 @@ use skein_lib::Token;
 use smith_domain_session::{self as session, llm, record};
 use smith_session_world::recorded::{World, opening, transcript};
 
+const SIMULATION_ITERATIONS: u32 = 10_000;
+
 fn said(text: &[u8]) -> Box<[llm::Block]> {
     Box::new([llm::Block::Text { text: text.into(), replay: None }])
 }
 
 fn usage() -> llm::Usage {
-    llm::Usage { input_tokens: Some(900), output_tokens: Some(300), ..llm::Usage::ZERO }
+    llm::Usage { input_tokens: Some(1_300), output_tokens: Some(300), ..llm::Usage::ZERO }
 }
 
 fn started(seed: u64) -> World {
@@ -647,4 +649,68 @@ fn the_guards_refusal_compacts_the_window_once() {
     );
     assert_eq!(world.prompts.len(), 3);
     assert_eq!(world.turns.len(), 1);
+}
+
+#[test]
+fn a_turn_counted_a_byte_a_token_is_refused_by_the_guard_then_compacted() {
+    use smith_session_world::{Settings, World as Simulated, spec};
+    const LINE: u64 = 200;
+    let mut world = Simulated::new(Settings::calm(123));
+    let opener = world.submit(skein_lib::Time::ZERO, session::Spec { line: LINE, ..spec(b"fix the build") });
+    world.run(SIMULATION_ITERATIONS);
+    let measures = &world.session(opener).measures;
+
+    assert_eq!(measures[0].blocks.iter().map(|block| block.ratio).collect::<Vec<_>>(), [4, 3]);
+    assert_eq!(measures[1].blocks[3].ratio, 1);
+    assert_eq!(measures.iter().filter(|prompt| !prompt.sent).count(), 1);
+    assert!(!measures[2].ordinary && measures[2].sent);
+}
+
+#[test]
+fn a_new_part_just_within_the_line_is_sent() {
+    use smith_session_world::{Settings, World as Simulated, spec};
+    const LINE: u64 = 521;
+    let mut world = Simulated::new(Settings::calm(104));
+    let opener = world.submit(skein_lib::Time::ZERO, session::Spec { line: LINE, ..spec(b"fix the build") });
+    world.run(SIMULATION_ITERATIONS);
+    let prompt = &world.session(opener).measures[1];
+    assert_eq!(prompt.new_part, 481);
+    assert_eq!(prompt.guard.expect("guarded request").last_prompt, 40);
+    assert!(prompt.sent);
+}
+
+#[test]
+fn the_most_output_just_within_the_line_then_compacts_within_the_window() {
+    use smith_session_world::{Settings, World as Simulated, spec};
+    const LINE: u64 = 451;
+    const WINDOW: u32 = 1_520;
+    const OUTPUT: u32 = 1_024;
+    const SUMMARY_TOKENS: u64 = 8;
+    use skein_fake_llm_domain::api::{Finish, Line, Script, Turn};
+    let read = Turn {
+        finish: Finish::ToolCalls,
+        tokens: u64::from(OUTPUT),
+        lines: Box::new([Line::Call {
+            name: b"read".as_slice().into(),
+            arguments: br#"{"path":"src/lib.rs"}"#.as_slice().into(),
+        }]),
+    };
+    let summary = Turn {
+        finish: Finish::Stop,
+        tokens: SUMMARY_TOKENS,
+        lines: Box::new([Line::Text { text: b"summary".as_slice().into() }]),
+    };
+    let script =
+        Script { cue: b"You are a coding agent.".as_slice().into(), turns: Box::new([read.clone(), read, summary]) };
+    let mut world = Simulated::with_scripts(Settings::calm(104), Box::new([script]));
+    let opener = world.submit(
+        skein_lib::Time::ZERO,
+        session::Spec { line: LINE, window: WINDOW, output: OUTPUT, ..spec(b"fix the build") },
+    );
+    world.run(SIMULATION_ITERATIONS);
+    let session = world.session(opener);
+    assert_eq!(session.records[0].usage.output_tokens, Some(u64::from(OUTPUT)));
+    assert_eq!(session.measures[1].new_part, 411);
+    assert!(session.measures[1].sent);
+    assert!(!session.measures[2].ordinary && session.measures[2].sent);
 }

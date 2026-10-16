@@ -132,7 +132,7 @@ fn drawn_small_windows_compact_within_them() {
         world.complete(text(b"summary"), llm::Stop::EndTurn, llm::Usage { output_tokens: Some(8), ..usage });
         assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
         let prompt = world.prompts.last().expect("new window prompt");
-        smith_session_world::assert_prompt_bound(prompt.input_bytes().expect("bounded") - 7 + 8 + 512, window);
+        smith_session_world::assert_prompt_bound(prompt.input_bytes().expect("bounded") - 7 + 8, window);
         world.close();
     }
 }

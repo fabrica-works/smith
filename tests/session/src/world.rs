@@ -205,6 +205,7 @@ impl Settings {
             seed,
             agent: agent::Limits {
                 threshold: [4, 5],
+                token_bytes: skein_llm::TOKEN_BYTES,
                 sessions: 4,
                 spend: 1,
                 protocol_allowance: 0,

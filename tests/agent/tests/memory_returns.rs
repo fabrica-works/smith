@@ -66,15 +66,20 @@ fn read(input_tokens: u64) -> Completion {
 }
 
 fn fill_window(memory: &mut Memory) {
-    for turn in 0..6 {
+    const TURNS: u64 = 7;
+    const RESULT_BYTES: usize = 32_768;
+    for turn in 0..TURNS {
         let owner = memory.completion(Asker::Main, false);
-        memory.answer(owner, read(turn * 32_768));
+        memory.answer(owner, read(turn * u64::try_from(RESULT_BYTES).expect("result bytes")));
         let owner = memory.io();
         memory.step(Event::Done {
             owner,
-            done: Done::Loaded { content: vec![b'x'; 32_768].into_boxed_slice(), version: Version::new([1, 0, 0, 0]) },
+            done: Done::Loaded {
+                content: vec![b'x'; RESULT_BYTES].into_boxed_slice(),
+                version: Version::new([1, 0, 0, 0]),
+            },
         });
-        if turn < 5 {
+        if turn + 1 < TURNS {
             memory.settle();
         }
     }

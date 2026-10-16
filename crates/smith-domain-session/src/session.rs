@@ -2202,23 +2202,18 @@ fn complete(id: Id<Session>, conversation: &Conversation, retry: u32, limits: &L
     let purpose = if conversation.compaction.asking() {
         let mut history = compaction::prompt_bytes(conversation).unwrap_or(u64::MAX);
         for message in conversation.transcript.iter().rev().take(2) {
-            history = history.saturating_sub(content_cost(&message.content).unwrap_or(0));
-            history = history.saturating_sub(u64::try_from(size_of::<Message>()).expect("fixed cell fits"));
+            for block in &message.content {
+                history = history.saturating_sub(payload_cost(block).unwrap_or(0));
+            }
         }
         let history = match conversation.window.last_prompt {
             Some(prompt) => prompt.0.saturating_add(conversation.window.last_output.0),
             None => history.saturating_add(conversation.protocol_allowance),
         };
         let window = u64::from(conversation.model_window);
-        let threshold = window
-            .checked_mul(u64::from(limits.threshold[0]))
-            .expect("u32 product fits")
-            .checked_div(u64::from(limits.threshold[1]))
-            .expect("validated threshold");
         let room = window
-            .saturating_sub(history.min(threshold))
-            .saturating_sub(u64::try_from(compaction::instruction_bytes(conversation)).expect("bounded summary"))
-            .saturating_sub(u64::from(conversation.output));
+            .saturating_sub(history)
+            .saturating_sub(u64::try_from(compaction::instruction_bytes(conversation)).expect("bounded summary"));
         crate::llm::Purpose::Compaction { room }
     } else {
         match conversation.window.last_prompt {
@@ -2520,6 +2515,7 @@ fn receive_completion(conversation: &mut Conversation, content: &[Block], calls:
         conversation.recording.pending.expect("ordinary completion usage retained"),
         conversation.output,
         conversation.transcript.len().checked_add(1).expect("reserved assistant slot"),
+        compaction::prompt_bytes(conversation).unwrap_or(u64::MAX),
     );
     assert!(fits, "valid actual completion consumes space reserved before provider work");
     true
@@ -3091,6 +3087,11 @@ fn restore(
             conversation.transcript.push(message).expect("history counted before allocation");
         }
     }
+    conversation.window.last_prompt_bytes = compaction::prompt_prefix_bytes(
+        conversation,
+        usize::try_from(conversation.window.following.saturating_sub(1)).expect("bounded history"),
+    )
+    .ok_or(Refusal::TooLarge)?;
     let last = conversation.transcript.last().expect("nonempty history");
     let content = match last.role {
         Role::Assistant => {

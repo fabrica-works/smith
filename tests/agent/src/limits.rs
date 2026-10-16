@@ -76,6 +76,7 @@ pub const LIMITS: Limits = Limits {
     },
     session: session::Limits {
         threshold: [4, 5],
+        token_bytes: 8,
         sessions: 6,
         spend: 10_000,
         protocol_allowance: 4096,
@@ -144,6 +145,7 @@ pub const TIGHT: Limits = Limits {
     },
     session: session::Limits {
         threshold: [4, 5],
+        token_bytes: 8,
         sessions: 4,
         spend: 10_000,
         protocol_allowance: 4096,

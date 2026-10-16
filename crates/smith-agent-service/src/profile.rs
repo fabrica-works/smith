@@ -548,6 +548,7 @@ fn derive_domain(
         detail: path.client.detail_bytes,
         protocol_allowance: parts.own.checked_add(parts.host).ok_or(derived(Layer::Session, "protocol_allowance"))?,
         threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
+        token_bytes: shared::TOKEN_BYTES,
         tools,
     }) {
         Ok(limits) => limits,

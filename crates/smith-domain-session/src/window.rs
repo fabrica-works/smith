@@ -5,7 +5,7 @@
 
 use crate::llm::Usage;
 
-/// A token count; one retained byte is conservatively one token.
+/// A reported token count or an appended payload-byte count.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Tokens(pub(crate) u64);
 
@@ -24,6 +24,7 @@ pub(crate) struct Window {
     pub(crate) number: u32,
     pub(crate) last_prompt: Option<Tokens>,
     pub(crate) last_output: Tokens,
+    pub(crate) last_prompt_bytes: u64,
     pub(crate) appended: Tokens,
     pub(crate) stage: Stage,
     /// First message after the last ordinary completion.
@@ -45,6 +46,7 @@ impl Window {
             number,
             last_prompt: None,
             last_output: Tokens(output),
+            last_prompt_bytes: 0,
             appended: Tokens(0),
             stage: Stage::Fresh,
             following: 0,
@@ -52,8 +54,9 @@ impl Window {
         }
     }
 
-    pub(crate) fn completed(&mut self, usage: Usage, output: u32, following: u32) {
+    pub(crate) fn completed(&mut self, usage: Usage, output: u32, following: u32, prompt_bytes: u64) {
         self.last_prompt = prompt_tokens(usage);
+        self.last_prompt_bytes = prompt_bytes;
         self.last_output = Tokens(usage.output_tokens.unwrap_or(u64::from(output)));
         self.appended = Tokens(0);
         self.stage = Stage::Used;
@@ -66,11 +69,11 @@ pub(crate) fn check(
     window: &Window,
     prompt_bytes: u64,
     allowance: u64,
-    output: u32,
+    token_bytes: u32,
     model: u32,
     threshold: [u32; 2],
 ) -> Admission {
-    let Some(bound) = bound(window, prompt_bytes, allowance, output) else { return Admission::Compact };
+    let Some(bound) = bound(window, prompt_bytes, allowance, token_bytes) else { return Admission::Compact };
     let Some(limit) = u64::from(model).checked_mul(u64::from(threshold[0])) else { return Admission::Compact };
     let Some(limit) = limit.checked_div(u64::from(threshold[1])) else { return Admission::Compact };
     if bound <= limit { Admission::Fits } else { Admission::Compact }
@@ -85,15 +88,26 @@ fn prompt_tokens(usage: Usage) -> Option<Tokens> {
     Some(Tokens(tokens))
 }
 
-fn bound(window: &Window, bytes: u64, allowance: u64, output: u32) -> Option<u64> {
-    let prompt = match window.last_prompt {
-        Some(prompt) => prompt.0.checked_add(window.last_output.0)?.checked_add(window.appended.0)?,
-        None => match window.stage {
-            Stage::Used => bytes.checked_add(allowance)?,
+pub(crate) fn bound(window: &Window, bytes: u64, allowance: u64, token_bytes: u32) -> Option<u64> {
+    match window.last_prompt {
+        Some(prompt) if window.last_prompt_bytes > 0 => {
+            let minimum = window
+                .appended
+                .0
+                .checked_div(u64::from(token_bytes))?
+                .checked_add(u64::from(window.appended.0.checked_rem(u64::from(token_bytes))? > 0))?;
+            let measured = window.appended.0.checked_mul(prompt.0)?;
+            let appended = measured
+                .checked_div(window.last_prompt_bytes)?
+                .checked_add(u64::from(measured.checked_rem(window.last_prompt_bytes)? > 0))?
+                .clamp(minimum, window.appended.0);
+            prompt.0.checked_add(window.last_output.0)?.checked_add(appended)
+        }
+        Some(_) | None => match window.stage {
+            Stage::Used => bytes.checked_add(allowance),
             Stage::Fresh => {
-                bytes.checked_sub(window.summary_bytes)?.checked_add(window.last_output.0)?.checked_add(allowance)?
+                bytes.checked_sub(window.summary_bytes)?.checked_add(window.last_output.0)?.checked_add(allowance)
             }
         },
-    };
-    prompt.checked_add(u64::from(output))
+    }
 }

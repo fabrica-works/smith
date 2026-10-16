@@ -8,6 +8,7 @@ use smith_domain::{
 };
 
 const ITERATIONS: u32 = 10_000;
+const DATA_BYTES: usize = 3_700;
 
 fn history(input: u64) -> smith_domain::Transcript {
     let content = |text: &[u8]| Box::new([llm::Block::Text { text: text.into(), replay: None }]);
@@ -44,7 +45,7 @@ fn world(refused: bool, immediate: bool) -> World {
     charter.models = Box::new([]);
     let mut disk = Checkout::new();
     disk.mkdir(b"work");
-    disk.write(b"work/data.txt", &[b'd'; 3_200]);
+    disk.write(b"work/data.txt", &[b'd'; DATA_BYTES]);
     let workspace = run::Workspace {
         directories: Box::new([run::Directory {
             host: b"/host".as_slice().into(),

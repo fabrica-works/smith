@@ -24,6 +24,8 @@ pub const MAX_PARALLEL: u32 = 8;
 pub struct Limits {
     /// Fraction of the model window admitted before compaction.
     pub threshold: [u32; 2],
+    /// Most payload bytes per token for the measured appended count.
+    pub token_bytes: u32,
     /// Sessions at once. An `Open` beyond them is refused as busy.
     pub sessions: u32,
     /// Largest deployment-unit budget admitted by the parent opening.
@@ -219,6 +221,8 @@ pub struct Derivation {
     pub protocol_allowance: u64,
     /// Numerator and denominator of the compaction share.
     pub threshold: [u32; 2],
+    /// Most payload bytes per token for the measured appended count.
+    pub token_bytes: u32,
 }
 
 /// The first field this layer cannot derive, returned to its parent before effects.
@@ -267,6 +271,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     }
     let mut limits = Limits {
         threshold: inputs.threshold,
+        token_bytes: inputs.token_bytes,
         sessions: inputs.conversations,
         spend: inputs.max_spend,
         protocol_allowance: inputs.protocol_allowance,

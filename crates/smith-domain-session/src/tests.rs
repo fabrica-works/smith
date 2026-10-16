@@ -57,6 +57,7 @@ const TOOLS: tools::Limits = tools::Limits {
 
 const LIMITS: Limits = Limits {
     threshold: [4, 5],
+    token_bytes: 8,
     sessions: 2,
     spend: 100,
     protocol_allowance: 0,
@@ -2815,6 +2816,7 @@ fn history_derivation() -> crate::Derivation {
         detail: DETAIL_BYTES,
         protocol_allowance: ALLOWANCE_BYTES,
         threshold: [4, 5],
+        token_bytes: 8,
     }
 }
 
@@ -2922,19 +2924,20 @@ fn the_check_counts_reported_usage() {
         },
         512,
         2,
+        1_400,
     );
     window.appended = Tokens(100);
-    assert_eq!(check(&window, 1, 0, 400, 2_500, [4, 5]), Admission::Fits);
-    assert_eq!(check(&window, 1, 0, 401, 2_500, [4, 5]), Admission::Compact);
+    assert_eq!(check(&window, 1, 0, LIMITS.token_bytes, 2_000, [4, 5]), Admission::Fits);
+    assert_eq!(check(&window, 1, 0, LIMITS.token_bytes, 1_999, [4, 5]), Admission::Compact);
 }
 
 #[test]
 fn the_check_counts_bytes_without_usage() {
     use crate::window::{Admission, Window, check};
     let mut window = Window::fresh(1, 0);
-    window.completed(Usage::NONE, 512, 2);
-    assert_eq!(check(&window, 800, 100, 100, 1_250, [4, 5]), Admission::Fits);
-    assert_eq!(check(&window, 801, 100, 100, 1_250, [4, 5]), Admission::Compact);
+    window.completed(Usage::NONE, 512, 2, 0);
+    assert_eq!(check(&window, 900, 100, LIMITS.token_bytes, 1_250, [4, 5]), Admission::Fits);
+    assert_eq!(check(&window, 901, 100, LIMITS.token_bytes, 1_250, [4, 5]), Admission::Compact);
 }
 
 #[test]
@@ -2942,9 +2945,13 @@ fn an_overflow_answers_compact() {
     use crate::window::{Admission, Tokens, Window, check};
     let mut window = Window::fresh(1, 0);
     window.last_prompt = Some(Tokens(u64::MAX));
-    assert_eq!(check(&window, 0, 0, 1, u32::MAX, [4, 5]), Admission::Compact);
-    assert_eq!(check(&Window::fresh(1, 0), u64::MAX, 1, 0, u32::MAX, [4, 5]), Admission::Compact);
+    window.last_prompt_bytes = 1;
+    window.appended = Tokens(2);
+    assert_eq!(check(&window, 0, 0, LIMITS.token_bytes, u32::MAX, [4, 5]), Admission::Compact);
+    assert_eq!(check(&Window::fresh(1, 0), u64::MAX, 1, LIMITS.token_bytes, u32::MAX, [4, 5]), Admission::Compact);
 }
+
+mod window;
 
 fn later_owned_call(call: Call) -> (Harness, Token, Token, Op) {
     let first = Call::Read { path: path(b"file"), offset: 1, window: tools::Budget::Asked(u32::MAX) };
@@ -3034,8 +3041,8 @@ fn a_compaction_carries_no_guard() {
         evidence: crate::llm::Evidence::Unsent,
         detail: bytes(b"past the line"),
     }));
-    // Window - last prompt - output - summary instruction - reserved output.
-    assert_eq!(compacted.purpose, crate::llm::Purpose::Compaction { room: 64_466 });
+    // Window - last prompt - output - summary instruction.
+    assert_eq!(compacted.purpose, crate::llm::Purpose::Compaction { room: 65_490 });
 }
 
 #[test]
