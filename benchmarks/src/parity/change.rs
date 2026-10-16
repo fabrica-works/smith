@@ -9,6 +9,8 @@ use crate::{Measure, RunSummary};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeSection {
+    pub projection: Vec<Projection>,
+    pub stop: Option<Stop>,
     pub change_commit: String,
     pub parent_commit: String,
     pub ratios: Vec<Ratio>,
@@ -101,6 +103,8 @@ pub fn from_summary(summary: &RunSummary, parent_commit: &str) -> Result<ChangeS
         })
         .collect();
     Ok(ChangeSection {
+        projection: Vec::new(),
+        stop: Some(Stop::Incomplete { why: "baseline run missing".into() }),
         reference_lower_bounds,
         change_commit: change_commit.into(),
         parent_commit: parent_commit.into(),
@@ -157,4 +161,111 @@ fn beside(rows: &[crate::AttemptRow], group: &crate::ArmSummary) -> Beside {
         tools_s: median(selected.iter().map(|row| tools(row))),
         fresh_tokens: median(selected.iter().map(|row| crate::summary::measure_u64(&row.fresh_tokens))),
     }
+}
+
+/// A criterion projected onto the baseline, supplied beside its original interval.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Projection {
+    pub name: String,
+    #[serde(with = "super::number")]
+    pub statistic: f64,
+    #[serde(with = "super::number::interval")]
+    pub baseline_interval: (f64, f64),
+}
+
+/// The first reason a change cannot proceed, supplied to the suite's exit.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Stop {
+    /// Evidence required for the report is missing.
+    Incomplete { why: String },
+    /// One criterion moved past its baseline or parent's bound.
+    Moved { criterion: String },
+}
+
+impl ChangeSection {
+    /// The suite's stable exit code, independent of comparison significance.
+    #[must_use]
+    pub const fn code(&self) -> u8 {
+        match self.stop {
+            None => 0,
+            Some(Stop::Moved { .. }) => 1,
+            Some(Stop::Incomplete { .. }) => 2,
+        }
+    }
+}
+
+/// Recompute projections from the named run summaries, never from drift baselines.
+pub fn project(
+    summary: &RunSummary,
+    parent_commit: &str,
+    baseline: &RunSummary,
+    landed: &[RunSummary],
+) -> Result<ChangeSection, String> {
+    let baseline = baseline
+        .parity
+        .as_ref()
+        .filter(|_| baseline.suite == "parity")
+        .ok_or("baseline run must be a parity summary with a parity section")?;
+    let mut report = from_summary(summary, parent_commit)?;
+    let landed: Vec<_> = landed
+        .iter()
+        .map(|summary| {
+            summary
+                .change
+                .as_ref()
+                .filter(|_| summary.suite == "parity-change")
+                .ok_or("landed input must be a parity-change summary with a change section")
+        })
+        .collect::<Result<_, _>>()?;
+    for ratio in &report.ratios {
+        let baseline =
+            baseline.criteria.iter().find(|value| value.name == ratio.name).ok_or("baseline criterion missing")?;
+        let mut statistic = baseline.statistic * ratio.value.statistic;
+        for previous in &landed {
+            statistic *= previous
+                .ratios
+                .iter()
+                .find(|value| value.name == ratio.name)
+                .ok_or("landed criterion missing")?
+                .value
+                .statistic;
+        }
+        report.projection.push(Projection {
+            name: ratio.name.clone(),
+            statistic,
+            baseline_interval: baseline.interval,
+        });
+    }
+    report.stop = stop(summary, &report);
+    Ok(report)
+}
+
+fn stop(summary: &RunSummary, report: &ChangeSection) -> Option<Stop> {
+    let unavailable = report.ratios.iter().any(|ratio| {
+        !ratio.value.statistic.is_finite() || !ratio.value.interval.0.is_finite() || !ratio.value.interval.1.is_finite()
+    }) || report.projection.iter().any(|value| {
+        !value.statistic.is_finite() || !value.baseline_interval.0.is_finite() || !value.baseline_interval.1.is_finite()
+    });
+    let no_pass = TASKS.iter().any(|task| {
+        [&report.change_commit, &report.parent_commit].iter().any(|commit| {
+            !summary.attempts.iter().any(|row| row.task == *task && row.agent_version == **commit && passed(row))
+        })
+    });
+    if unavailable
+        || no_pass
+        || summary.attempts.iter().any(|row| !matches!(row.end.as_str(), "completed" | "failed" | "timeout" | "budget"))
+    {
+        return Some(Stop::Incomplete { why: "criterion unavailable or an arm has no pass on a task".into() });
+    }
+    for value in &report.projection {
+        if value.statistic > value.baseline_interval.1 {
+            return Some(Stop::Moved { criterion: value.name.clone() });
+        }
+    }
+    if f64::from(report.outcome.change_passes) < report.outcome.parent_lower * f64::from(report.outcome.attempts) {
+        return Some(Stop::Moved { criterion: "O".into() });
+    }
+    None
 }

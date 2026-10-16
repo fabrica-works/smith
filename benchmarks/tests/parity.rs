@@ -365,3 +365,142 @@ fn the_parity_section_is_unchanged_by_the_arm_arguments() {
         assert_eq!((&*value.name, value.statistic, value.interval, value.holds), (name, statistic, interval, holds));
     }
 }
+
+#[test]
+fn a_projection_just_below_the_baselines_upper_bound_goes_on() {
+    const CHANGE_WALL_MS: u64 = 109_999;
+    let mut summary = common::change_summary();
+    for row in &mut summary.attempts {
+        if row.agent_version == common::CHANGE_COMMIT {
+            row.task_wall_ms = Measure::Observed { value: CHANGE_WALL_MS };
+        }
+    }
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[]).expect("projection");
+    assert_eq!(report.projection[0].statistic.to_bits(), 1.099_99_f64.to_bits());
+    assert_eq!(report.projection[0].baseline_interval, (0.9, 1.1));
+    assert_eq!(report.stop, None);
+    assert_eq!(report.code(), 0);
+}
+
+#[test]
+fn a_projection_just_above_the_baselines_upper_bound_stops() {
+    const CHANGE_WALL_MS: u64 = 110_001;
+    let mut summary = common::change_summary();
+    for row in &mut summary.attempts {
+        if row.agent_version == common::CHANGE_COMMIT {
+            row.task_wall_ms = Measure::Observed { value: CHANGE_WALL_MS };
+        }
+    }
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[]).expect("projection");
+    assert_eq!(report.projection[0].statistic.to_bits(), 1.100_01_f64.to_bits());
+    assert_eq!(report.stop, Some(parity::change::Stop::Moved { criterion: "FT".into() }));
+    assert_eq!(report.code(), 1);
+}
+
+#[test]
+fn the_projection_multiplies_every_landed_changes_ratio() {
+    let summary = common::change_summary();
+    let mut landed = common::change_summary();
+    let mut report = parity::change::from_summary(&landed, common::PARENT_COMMIT).expect("ratios");
+    for ratio in &mut report.ratios {
+        ratio.value.statistic = 0.5;
+    }
+    landed.change = Some(report);
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[landed.clone(), landed])
+            .expect("projection");
+    for projection in &report.projection {
+        assert_eq!(projection.statistic.to_bits(), 0.25_f64.to_bits(), "{}", projection.name);
+    }
+    assert_eq!(report.stop, None);
+}
+
+#[test]
+fn o_just_within_the_parents_bound_goes_on() {
+    const FAILURES: usize = 3;
+    let mut summary = common::change_summary();
+    for row in summary
+        .attempts
+        .iter_mut()
+        .filter(|row| row.agent_version == common::CHANGE_COMMIT && row.task == "repository/shell-cwd")
+        .take(FAILURES)
+    {
+        row.passed = false;
+    }
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[]).expect("projection");
+    assert_eq!(report.outcome.change_passes, 17);
+    assert_eq!(report.stop, None);
+}
+
+#[test]
+fn o_just_past_the_parents_bound_stops() {
+    const FAILURES: usize = 4;
+    let mut summary = common::change_summary();
+    for row in summary
+        .attempts
+        .iter_mut()
+        .filter(|row| row.agent_version == common::CHANGE_COMMIT && row.task == "repository/shell-cwd")
+        .take(FAILURES)
+    {
+        row.passed = false;
+    }
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[]).expect("projection");
+    assert_eq!(report.outcome.change_passes, 16);
+    assert_eq!(report.stop, Some(parity::change::Stop::Moved { criterion: "O".into() }));
+}
+
+#[test]
+fn an_arm_without_a_pass_on_a_task_is_incomplete() {
+    let mut summary = common::change_summary();
+    for row in summary
+        .attempts
+        .iter_mut()
+        .filter(|row| row.agent_version == common::CHANGE_COMMIT && row.task == "repository/shell-cwd")
+    {
+        row.passed = false;
+    }
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[]).expect("projection");
+    assert_eq!(
+        report.stop,
+        Some(parity::change::Stop::Incomplete { why: "criterion unavailable or an arm has no pass on a task".into() })
+    );
+    assert_eq!(report.code(), 2);
+}
+
+#[test]
+fn a_landed_input_that_is_not_a_change_summary_is_refused() {
+    let summary = common::change_summary();
+    assert_eq!(
+        parity::change::project(
+            &summary,
+            common::PARENT_COMMIT,
+            &common::change_baseline(),
+            &[common::change_baseline()]
+        ),
+        Err("landed input must be a parity-change summary with a change section".into())
+    );
+}
+
+#[test]
+fn an_incomplete_report_stops_before_a_moved_criterion() {
+    const CHANGE_WALL_MS: u64 = 200_000;
+    let mut summary = common::change_summary();
+    for row in &mut summary.attempts {
+        if row.agent_version == common::CHANGE_COMMIT {
+            row.task_wall_ms = Measure::Observed { value: CHANGE_WALL_MS };
+        }
+    }
+    summary.attempts.last_mut().expect("parent row").priced_usd = Measure::unavailable("spend absent");
+    let report =
+        parity::change::project(&summary, common::PARENT_COMMIT, &common::change_baseline(), &[]).expect("projection");
+    assert_eq!(report.projection[0].statistic.to_bits(), 2.0_f64.to_bits());
+    assert_eq!(
+        report.stop,
+        Some(parity::change::Stop::Incomplete { why: "criterion unavailable or an arm has no pass on a task".into() })
+    );
+}

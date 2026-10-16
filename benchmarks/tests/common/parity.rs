@@ -32,3 +32,13 @@ pub fn change_summary() -> RunSummary {
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/parity/change.json");
     smith_bench::read_summary(&file).expect("recorded change")
 }
+
+pub fn change_baseline() -> RunSummary {
+    let mut summary = parity_summary(Rows::equal());
+    for criterion in &mut summary.parity.as_mut().expect("recorded parity").criteria {
+        if criterion.name != "O" {
+            criterion.interval = (0.9, 1.1);
+        }
+    }
+    summary
+}
