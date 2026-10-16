@@ -442,3 +442,11 @@ Reversible, and none a product decision; the widest in reach:
 2. The 15 summaries and two baselines of version 3 dropped (12.2).
 3. The event vocabulary's version 3 (question 4), which jig's and
    temper's next repins take with transcript version 5.
+
+## Rulings
+
+101. **smith 04's Shapes against main** (ready check of smith-04.1).
+     The ready check of smith 04 (04.1 and 04.2, against smith `main` at `ba1fef5b`, skein `7e8fb700`; the corrected sketches compiled under clippy, and the default and fuzzy profiles passed with the guard on and its line at `u64::MAX`) corrected `smith/04-guard.md`:
+
+     - 04.1: `start` is `component.rs:339-443`; the guard is one call, `guard::check`, between the output ceiling (`:403-406`) and `observed_prompt` (`:408`), returning `Option<Event>`. It builds the unsent *context too long* itself, since `refusal` maps only the crate's `Error` to fixed text; a measure's error goes through `refusal`. `guard::measure` takes `&mut shared::Prompt`, the credential and the `EndpointOptions`, as `shared::client::measure` needs. `complete` builds both `Ordinary` arms directly. Files add `lib.rs`'s `mod guard;`, `production_render.rs` and `root_memory.rs:1081`; the users-outside-Files rule now covers match patterns and names the six users found.
+     - 04.2: Files add `tests/session/Cargo.toml`, whose `skein-llm` moves to `[dependencies]` for `TOKEN_BYTES`.

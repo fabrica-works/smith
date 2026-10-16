@@ -65,7 +65,18 @@ baseline measures it (decisions.md, 12.1).
 
 - **Users outside Files** (README, rule 3): `Purpose::Ordinary` becomes
   `Purpose::Ordinary { guard }`; each construction outside Files takes
-  `guard: None`.
+  `guard: None`, and each match pattern `Purpose::Ordinary { .. }`. The
+  ready check found these on `ba1fef5b`: the pattern at
+  `tests/session/src/world.rs:1424`; the constructions at
+  `crates/smith-agent-service/src/responses.rs:1086`,
+  `crates/smith-agent-service/src/tests.rs:547`,
+  `crates/smith-protocol-llm/src/tests.rs:307`,
+  `tests/agent/tests/host_tools.rs:162` and
+  `tests/session/tests/referee.rs:8`. Change any further user the same
+  way, and list it in the commit body.
+- **The production subset** (`crates/clippy.toml`): no `Vec`, `into_vec`,
+  `mem::take`, `format!` or `Option::map` in the crates; `start` is near
+  clippy's 100-line limit, so the guard is one call in it.
 - **No second mechanism** (`code-organization.md`, section 7): the guard
   is the only check of a request's rendered size against the line.
 - **The smoke** (README, rule 8): the guard runs on each of its ordinary
@@ -84,10 +95,16 @@ Files: `crates/smith-domain-session/src/llm.rs` (`Purpose`, `:242-247`;
   `crates/smith-domain/src/llm.rs` (`:20-23`),
   `crates/smith-domain/src/peer.rs` (`:245-289`),
   `crates/smith-protocol-llm/src/prompt.rs` (`:76`, `:143-146`),
-  `crates/smith-protocol-llm/src/component.rs` (`start`, `:384-442`),
-  `crates/smith-protocol-llm/src/failure.rs` (`refusal`, `:70-84`), a
-  new `crates/smith-protocol-llm/src/guard.rs`,
-  `crates/smith-domain-session/src/tests.rs`, `tests/protocol-llm/`,
+  `crates/smith-protocol-llm/src/component.rs` (`start`, `:339-443`),
+  `crates/smith-protocol-llm/src/failure.rs` (`refusal`, `:70-84`, for
+  the measure's errors only), a new
+  `crates/smith-protocol-llm/src/guard.rs` and its `mod guard;` in
+  `crates/smith-protocol-llm/src/lib.rs`,
+  `crates/smith-domain-session/src/tests.rs`, `tests/protocol-llm/`
+  (constructions in `tests/production_render.rs` take `guard: None`, its
+  pattern at `:346` `Ordinary { .. }`; `tests/root_memory.rs:1081`, a
+  restored ordinary window, now asserts
+  `matches!(complete.prompt.purpose, llm::Purpose::Ordinary { guard: Some(_) })`),
   `tests/session/tests/compaction.rs`, `tests/session/src/recorded.rs`.
 Shape: the sketch below. `complete` sets `guard: Some(..)` for an
   ordinary completion whose window has a reported last prompt, with the
@@ -96,13 +113,21 @@ Shape: the sketch below. `complete` sets `guard: Some(..)` for an
   a window with no reported last prompt: a window's first completion,
   and the first after a resume from a window turn. A resume from an
   ordinary turn restores the last prompt (`compaction.rs:468-473`), and
-  its next completion carries the guard. In `start`, after
-  the request is prepared and its output ceiling set, and before it is
-  observed and submitted, `guard::measure` gives the new part's bytes;
-  when `last_prompt + measure > line`, `start` answers through
-  `refusal` with `Failure::ContextTooLong`, evidence `Unsent`, detail
-  `"past the line: last prompt <p> + new part <m> > line <l>"`, and
-  submits nothing. The session's `context_failure` already takes it as
+  its next completion carries the guard. In `complete`, the match at
+  `:2221` builds `Purpose::Ordinary { guard: Some(Guard { .. }) }` and
+  `Purpose::Ordinary { guard: None }` in its arms, with no `Option::map`
+  (banned) and no match returning an `Option` (clippy's `manual_map`).
+  In `start`, between the output ceiling (`:403-406`) and
+  `observed_prompt` (`:408`), one call, `guard::check`, measures the new
+  part's bytes with `guard::measure`; when `last_prompt + measure >
+  line`, it returns `Event::Failed { owner, failure:
+  llm::Failure::ContextTooLong, evidence: llm::Evidence::Unsent, detail
+  }`, detail `"past the line: last prompt <p> + new part <m> > line
+  <l>"` built with `Decimal` and `Writer` as `failure.rs:166` does and
+  clipped to `max_failure_bytes`, and `start` sends that event and
+  submits nothing. A measure's own error goes through `refusal`.
+  `refusal` cannot carry this failure: it maps the crate's `Error` to
+  fixed text. The session's `context_failure` already takes it as
   *context too long*.
 Test shape: `tests/protocol-llm/tests/`, beside
   `a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed`
@@ -159,8 +184,27 @@ pub struct Guard {
 }
 
 // crates/smith-protocol-llm/src/guard.rs
-/// The new part's encoded bytes: the whole request's body less the body cut at `from`.
-pub(crate) fn measure(request: &skein_llm::Prompt, from: usize) -> Result<u64, Failure>;
+/// The new part's encoded bytes: the whole request's body less the body cut at `from`,
+/// both through `shared::client::measure` (as `component.rs:701` calls it). `&mut`,
+/// because the cut moves the messages through two `skein_lib::List`s and back with
+/// `mem::replace`, rather than copying the prompt.
+pub(crate) fn measure(
+    request: &mut shared::Prompt,
+    credential: &Credential,
+    options: &EndpointOptions,
+    from: usize,
+) -> Result<u64, Error>;
+
+/// `None` when the purpose has no guard or the request is within its line;
+/// else the unsent *context too long* failure, or a measure's refusal.
+pub(crate) fn check(
+    purpose: llm::Purpose,
+    request: &mut shared::Prompt,
+    credential: &Credential,
+    options: &EndpointOptions,
+    owner: Token,
+    max_failure_bytes: u32,
+) -> Option<Event>;
 ```
 
 ### 04.2 The session world counts tokens from bytes
@@ -168,6 +212,9 @@ Scope: session.md 10 ("The provider counts tokens from bytes", the
   fuzzy suite, "none sent passes the line") (findings A4, A5).
 Needs: 04.1's guard [04.1].
 Files: `tests/session/src/world.rs` (its LLM effect),
+  `tests/session/Cargo.toml` (`skein-llm` moves from
+  `[dev-dependencies]` to `[dependencies]`, so that `src/world.rs` names
+  `skein_llm::TOKEN_BYTES`),
   `tests/session/src/translate.rs` (`:160-169`),
   `tests/session/src/window_referee.rs` (`:30-64`),
   `tests/session/tests/fuzzy_simulation.rs`,
