@@ -547,7 +547,7 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
         "probe" => &["--agent", "--attempts", "--commit", "--arm"],
         "calibrate" => &["--attempts", "--passes", "--control", "--commit", "--arm"],
         "fix" => &["--parent", "--commit"],
-        "suite" => &["--seed", "--commit", "--arm", "--include", "--parent", "--parent-arm"],
+        "suite" => &["--attempts", "--seed", "--commit", "--arm", "--include", "--parent", "--parent-arm"],
         _ => return Err("unknown probe command".into()),
     };
     let mut options = std::collections::BTreeMap::new();
@@ -608,35 +608,79 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
             let batch = crate::batch::run_probe(&planned.suite, &planned.directory, seed, name, attempts)?;
             Ok(summary(&planned, &batch))
         }
-        "suite" => {
-            let file = repository.join("benchmarks/suites").join(format!("{name}.toml"));
-            let value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
-            let parent = if let Some(directory) = options.get("--parent-arm") {
-                Some(ArmRef::Built(crate::arm::read_build(&Path::new(directory).join("smith"))?))
-            } else if let Some(commit) = options.get("--parent") {
-                Some(archived(repository, &Source::Commit((*commit).into()))?)
-            } else {
-                None
-            };
-            let planned = prepare(repository, name, &value, (&arm, parent.as_ref()), false, &asked)?;
-            if name == "smoke" && planned.requests.is_empty() {
-                println!("summary {} attempts=0 verdict=incomplete", planned.run);
-                return Ok(Judgment::Incomplete);
-            }
-            let batch = crate::batch::run(&planned.suite, &planned.directory, seed)?;
-            if name == "parity" {
-                return parity_summary(repository, &batch, seed);
-            }
-            if name == "probes" {
-                let verdict = gating::judgment(&batch, &gating::uncalibrated(&planned.requests)?);
-                println!("summary {} attempts={} verdict={}", planned.run, batch.results.len(), verdict_name(verdict));
-                return Ok(verdict);
-            }
-            Ok(summary(&planned, &batch))
-        }
+        "suite" => suite_command(repository, name, &arm, &options, &asked, seed, attempts),
         "calibrate" | "fix" => comparison(command, repository, &order, &arm, &options, seed),
         _ => Err("unknown probe command".into()),
     }
+}
+
+fn suite_attempts(value: &mut toml::Value, attempts: u32) -> Result<(), String> {
+    value
+        .as_table_mut()
+        .ok_or("suite must be a table")?
+        .insert("attempts".into(), toml::Value::Integer(i64::from(attempts)));
+    Ok(())
+}
+
+fn suite_command(
+    repository: &Path,
+    name: &str,
+    arm: &ArmRef,
+    options: &std::collections::BTreeMap<&str, &str>,
+    asked: &[String],
+    seed: u64,
+    attempts: u32,
+) -> Result<Judgment, String> {
+    let file = repository.join("benchmarks/suites").join(format!("{name}.toml"));
+    let mut value: toml::Value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
+    let suite: Suite = value.clone().try_into().map_err(|error| error.to_string())?;
+    if options.contains_key("--attempts") {
+        suite_attempts(&mut value, attempts)?;
+    }
+    let parent = if let Some(directory) = options.get("--parent-arm") {
+        Some(ArmRef::Built(crate::arm::read_build(&Path::new(directory).join("smith"))?))
+    } else if let Some(commit) = options.get("--parent") {
+        Some(archived(repository, &Source::Commit((*commit).into()))?)
+    } else {
+        None
+    };
+    let planned = prepare(repository, name, &value, (arm, parent.as_ref()), false, asked)?;
+    if name == "smoke" && planned.requests.is_empty() {
+        println!("summary {} attempts=0 verdict=incomplete", planned.run);
+        return Ok(Judgment::Incomplete);
+    }
+    let small = planned.requests.iter().try_fold(false, |small, request| -> Result<bool, String> {
+        let task = crate::read_task(&request.task).map_err(|error| error.to_string())?;
+        Ok(small
+            || options.contains_key("--attempts")
+                && attempts < suite.task_repetitions(&request.identity.task, task.repetitions, false)?)
+    })?;
+    let batch = crate::batch::run(&planned.suite, &planned.directory, seed)?;
+    if small {
+        let guard = Guard::from_environment()?;
+        let directory = crate::arm::state_root(&guard)?.join("runs").join(&planned.run);
+        return small_summary(&batch, &suite, seed, &directory);
+    }
+    if name == "parity" {
+        return parity_summary(repository, &batch, seed);
+    }
+    if name == "probes" {
+        let verdict = gating::judgment(&batch, &gating::uncalibrated(&planned.requests)?);
+        println!("summary {} attempts={} verdict={}", planned.run, batch.results.len(), verdict_name(verdict));
+        return Ok(verdict);
+    }
+    Ok(summary(&planned, &batch))
+}
+
+fn small_summary(batch: &crate::batch::Batch, suite: &Suite, seed: u64, directory: &Path) -> Result<Judgment, String> {
+    let summary =
+        crate::summarise(&batch.results, &suite.name, &suite.tier, suite.design, seed, None, suite.reference_arm())?;
+    let path = directory.join("summary.json");
+    fs::create_dir_all(path.parent().ok_or("run directory missing")?).map_err(|error| error.to_string())?;
+    crate::write_summary(&path, &summary)?;
+    println!("{}", path.display());
+    println!("summary {} attempts={} verdict=incomplete", summary.run, batch.results.len());
+    Ok(Judgment::Incomplete)
 }
 
 fn parity_summary(repository: &Path, batch: &crate::batch::Batch, seed: u64) -> Result<Judgment, String> {

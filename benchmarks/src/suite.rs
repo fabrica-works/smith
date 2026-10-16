@@ -74,6 +74,9 @@ pub struct Suite {
     #[serde(default)]
     pub change: bool,
     pub repetitions: u32,
+    /// An invocation may replace every task's attempts per arm.
+    #[serde(default)]
+    pub attempts: Option<u32>,
     /// Suite-authored counts for exact task and variant names (benchmarks.md, 5.3).
     #[serde(default)]
     pub repetitions_by_task: BTreeMap<String, u32>,
@@ -101,6 +104,9 @@ impl Suite {
     }
 
     pub(crate) fn task_repetitions(&self, name: &str, authored: Option<u32>, logical: bool) -> Result<u32, String> {
+        if let Some(attempts) = self.attempts {
+            return Ok(attempts);
+        }
         let repetitions = self.repetitions_by_task.get(name).copied().unwrap_or(self.repetitions);
         if logical {
             repetitions.checked_mul(authored.unwrap_or(1)).ok_or_else(|| "probe repetition count overflow".into())
@@ -165,6 +171,7 @@ pub fn validate_suite(
 ) -> Result<Vec<String>, Refusal> {
     if suite.name.is_empty()
         || suite.repetitions == 0
+        || suite.attempts == Some(0)
         || suite.rerun_failed > 1
         || suite.max_wall_seconds == 0
         || suite.max_tokens == 0

@@ -178,7 +178,9 @@ and the optional issuer-refresh story retain their current invocation until
 product sign-in lands (decisions.md, 13.108).
 
 `smith-bench suite parity --commit SHA` runs the three fixtures eight
-times per arm and `shell-cwd` five times, interleaved without reruns.
+times per arm and `shell-cwd` ten times, interleaved without reruns.
+A pipeline check with `--attempts 1` runs each task once per arm, writes
+`summary.json` in its run directory, and exits 2 (incomplete).
 Its summary records the five non-inferiority criteria. Recompute them offline
 with `smith-bench parity benchmarks/summaries/RUN.json --commit SHA`: exit 0
 at parity, 1 when smith is not on par, and 2 for incomplete evidence or a

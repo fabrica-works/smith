@@ -182,8 +182,8 @@ fn reported(rows: &[AttemptRow]) -> BTreeMap<String, BTreeMap<String, Measure<f6
 
 /// Recompute criteria from rows and the smith commit retained by the arm groups.
 pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: &str) -> Result<Parity, String> {
-    if rows.len() > 58 {
-        return Err("parity has more than 58 attempts".into());
+    if rows.len() > 68 {
+        return Err("parity has more than 68 attempts".into());
     }
     let mut arms: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     let mut ids = BTreeSet::new();
@@ -211,7 +211,7 @@ pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: 
     } else {
         crate::pass_interval(pass_count("codex"), codex_count)?
     };
-    let threshold = (interval.lower * 29.0).ceil();
+    let threshold = (interval.lower * f64::from(codex_count)).ceil();
     let outcome = Criterion {
         name: "O".into(),
         statistic: f64::from(pass_count("smith")),
@@ -228,7 +228,8 @@ pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: 
     ];
     let sizes_complete = TASKS.iter().enumerate().all(|(index, task)| {
         ["smith", "codex"].iter().all(|agent| {
-            rows.iter().filter(|row| row.task == *task && row.agent == *agent).count() == if index == 3 { 5 } else { 8 }
+            rows.iter().filter(|row| row.task == *task && row.agent == *agent).count()
+                == if index == 3 { 10 } else { 8 }
         })
     });
     let complete = sizes_complete

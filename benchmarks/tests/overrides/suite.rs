@@ -137,7 +137,7 @@ fn the_parity_suite_runs_58_attempts_interleaved() {
     assert!(suite.agents.iter().all(|agent| agent.config == "standard" && agent.provider == crate::Provider::Codex));
     let prepared = parity_requests(&root, &suite, &requests(&root, &entry, &base, &arm)[0]);
     let ordered = crate::batch::ordered(&suite, prepared.clone(), 17).expect("interleaved");
-    assert_eq!(ordered.len(), 58);
+    assert_eq!(ordered.len(), 68);
     let repeated = crate::batch::ordered(&suite, prepared, 17).expect("repeated order");
     assert_eq!(
         repeated.iter().map(|request| &request.identity).collect::<Vec<_>>(),
@@ -147,7 +147,7 @@ fn the_parity_suite_runs_58_attempts_interleaved() {
         ("fixtures/01-backoff", 16),
         ("fixtures/02-line-decoder", 16),
         ("fixtures/03-planner", 16),
-        ("repository/shell-cwd", 10),
+        ("repository/shell-cwd", 20),
     ] {
         assert_eq!(ordered.iter().filter(|request| request.identity.task == name).count(), expected, "{name}");
     }
@@ -305,4 +305,27 @@ fn a_change_suite_declaring_arms_is_refused() {
 fn the_change_suites_reference_is_its_parent() {
     let (_, suite, _) = change_fixture();
     assert_eq!(suite.reference_arm(), Some("parent"));
+}
+
+#[test]
+fn a_suite_run_below_its_attempts_is_summarised_as_small() {
+    const ATTEMPTS: u32 = 1;
+    let (root, entry, base, arm) = fixture();
+    let mut value: toml::Value = crate::formats::read_document(&root.join("suites/parity.toml")).expect("suite table");
+    suite_attempts(&mut value, ATTEMPTS).expect("attempt override");
+    let suite: Suite = value.try_into().expect("overridden suite");
+    let requests = parity_requests(&root, &suite, &requests(&root, &entry, &base, &arm)[0]);
+    assert_eq!(crate::batch::ordered(&suite, requests, 17).expect("small order").len(), 8);
+    let mut result = crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("recorded");
+    result.identity.agent = Agent::Smith;
+    result.identity.agent_version = "0".repeat(40);
+    result.identity.run = "small-parity".into();
+    result.identity.task = "fixtures/01-backoff".into();
+    let batch =
+        crate::batch::Batch { results: vec![result], incomplete: false, probes: std::collections::BTreeMap::new() };
+    let directory = std::env::temp_dir().join(format!("smith-small-suite-{}", std::process::id()));
+    assert_eq!(small_summary(&batch, &suite, 17, &directory).expect("small summary"), Judgment::Incomplete);
+    let summary = crate::read_summary(&directory.join("summary.json")).expect("run-local summary");
+    assert_eq!(summary.parity.expect("section").verdict, crate::parity::Verdict::Incomplete);
+    fs::remove_dir_all(directory).expect("cleanup");
 }

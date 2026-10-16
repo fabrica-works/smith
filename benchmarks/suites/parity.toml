@@ -8,7 +8,7 @@ max_tokens = 150000000
 tasks = ["fixtures/01-backoff", "fixtures/02-line-decoder", "fixtures/03-planner", "repository/shell-cwd"]
 
 [repetitions_by_task]
-"repository/shell-cwd" = 5
+"repository/shell-cwd" = 10
 
 [[agents]]
 agent = "smith"

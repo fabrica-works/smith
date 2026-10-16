@@ -25,7 +25,7 @@ fn parity_passes_when_every_criterion_is_below_its_margin() {
         verdict.criteria.iter().map(|criterion| criterion.name.as_str()).collect::<Vec<_>>(),
         ["O", "FT", "FC", "RT", "RC"]
     );
-    assert_eq!(verdict.criteria[0].margin.to_bits(), 26.0_f64.to_bits());
+    assert_eq!(verdict.criteria[0].margin.to_bits(), 31.0_f64.to_bits());
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn timeouts_and_budget_ends_count_as_unsolved_with_their_wall() {
         }
         let verdict = recompute(&summary);
         assert_eq!(verdict.verdict, Verdict::NotOnPar, "{end}");
-        assert_eq!(verdict.criteria[0].statistic.to_bits(), 5.0_f64.to_bits());
+        assert_eq!(verdict.criteria[0].statistic.to_bits(), 10.0_f64.to_bits());
         assert_eq!(verdict.criteria[1].statistic.to_bits(), f64::INFINITY.to_bits());
     }
 }
@@ -210,4 +210,46 @@ fn the_stratified_bootstrap_keeps_each_tasks_size_in_every_draw() {
     assert!(varied.criteria[1].interval.0 >= 0.999);
     assert!(varied.criteria[1].interval.1 <= 1.001);
     assert_eq!(recompute(&summary), varied);
+}
+
+#[test]
+fn o_holds_at_thirty_one_when_codex_passes_thirty_four() {
+    const FAILURES: usize = 3;
+    let mut summary = common::parity_summary(Rows::equal());
+    for row in summary.attempts.iter_mut().filter(|row| row.agent == "smith").take(FAILURES) {
+        row.passed = false;
+        row.end = "refused".into();
+    }
+    let verdict = recompute(&summary);
+    assert_eq!(verdict.criteria[0].statistic.to_bits(), 31.0_f64.to_bits());
+    assert!(verdict.criteria[0].holds);
+}
+
+#[test]
+fn o_fails_at_thirty_when_codex_passes_thirty_four() {
+    const FAILURES: usize = 4;
+    let mut summary = common::parity_summary(Rows::equal());
+    for row in summary.attempts.iter_mut().filter(|row| row.agent == "smith").take(FAILURES) {
+        row.passed = false;
+        row.end = "refused".into();
+    }
+    let verdict = recompute(&summary);
+    assert_eq!(verdict.criteria[0].statistic.to_bits(), 30.0_f64.to_bits());
+    assert!(!verdict.criteria[0].holds);
+}
+
+#[test]
+fn a_parity_run_of_five_shell_cwd_attempts_is_incomplete() {
+    const ATTEMPTS: usize = 5;
+    let mut summary = common::parity_summary(Rows::equal());
+    let mut counts = std::collections::BTreeMap::new();
+    summary.attempts.retain(|row| {
+        let count = counts.entry(row.agent.clone()).or_insert(0);
+        if row.task != "repository/shell-cwd" {
+            return true;
+        }
+        *count += 1;
+        *count <= ATTEMPTS
+    });
+    assert_eq!(recompute(&summary).verdict, Verdict::Incomplete);
 }
