@@ -77,6 +77,11 @@ no prompt reaches the line.
   own kept above the worst case." At the base the larger,
   `PRODUCT_TOTAL`, leaves 120,442,167 bytes
   (`findings/planning-commands.md`; decisions.md 12.4, question 8).
+  The worst case is also each shipped startup's own `service.worst_case`,
+  which the startup check refuses past `declared.memory`: a face or
+  model the two totals do not cover (the `exec` faces on `gpt-6-luna`,
+  the pinned product check) counts, and `memory` is raised to the
+  smallest multiple of 64 MiB at or above the largest of them all.
 
 ## Rules that bind it
 
