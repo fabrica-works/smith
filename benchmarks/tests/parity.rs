@@ -504,3 +504,57 @@ fn an_incomplete_report_stops_before_a_moved_criterion() {
         Some(parity::change::Stop::Incomplete { why: "criterion unavailable or an arm has no pass on a task".into() })
     );
 }
+
+#[test]
+fn the_change_command_refuses_a_section_that_disagrees() {
+    let (mut summary, directory) = common::named_change("disagrees");
+    summary.change.as_mut().expect("section").ratios[0].value.statistic = 2.0;
+    let file = directory.join("change.json");
+    smith_bench::write_summary(&file, &summary).expect("changed section");
+    let code = parity::change::command(&file);
+    assert_eq!(code, 3);
+    assert_eq!(parity::change::verify(&summary), Err("committed change section disagrees with rows or inputs".into()));
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[test]
+fn the_change_command_agrees_with_a_stopped_section() {
+    const CHANGE_WALL_MS: u64 = 200_000;
+    let (mut summary, directory) = common::named_change("stopped");
+    for row in &mut summary.attempts {
+        if row.agent_version == common::CHANGE_COMMIT {
+            row.task_wall_ms = Measure::Observed { value: CHANGE_WALL_MS };
+        }
+    }
+    let baseline = directory.join("baseline.json");
+    parity::change::attach(&mut summary, &parity::change::Inputs { baseline_run: Some(baseline), landed: Vec::new() })
+        .expect("updated section");
+    let file = directory.join("change.json");
+    smith_bench::write_summary(&file, &summary).expect("stopped section");
+    let code = parity::change::command(&file);
+    assert_eq!(code, 0);
+    assert_eq!(summary.change.expect("section").stop, Some(parity::change::Stop::Moved { criterion: "FT".into() }));
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[test]
+fn a_change_command_refuses_an_input_whose_hash_differs() {
+    let (summary, directory) = common::named_change("digest");
+    let file = directory.join("change.json");
+    smith_bench::write_summary(&file, &summary).expect("stored section");
+    std::fs::write(directory.join("baseline.json"), b"changed input").expect("changed baseline");
+    let code = parity::change::command(&file);
+    assert_eq!(code, 3);
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[test]
+fn a_change_command_refuses_a_missing_input() {
+    let (summary, directory) = common::named_change("missing");
+    let file = directory.join("change.json");
+    smith_bench::write_summary(&file, &summary).expect("stored section");
+    std::fs::remove_file(directory.join("baseline.json")).expect("remove baseline");
+    let code = parity::change::command(&file);
+    assert_eq!(code, 3);
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}

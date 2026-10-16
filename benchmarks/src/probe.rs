@@ -540,6 +540,11 @@ fn check_parent(suite: &Suite, has_parent: bool) -> Result<(), String> {
 /// Execute a parsed command with frozen arms, printing each settled attempt and summary.
 pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> {
     let (name, flags) = arguments.split_first().ok_or("a task or suite name is required")?;
+    let (change_inputs, flags) = if command == "suite" {
+        crate::parity::change::Inputs::parse(flags)?
+    } else {
+        (crate::parity::change::Inputs::default(), flags.to_vec())
+    };
     if flags.len() % 2 != 0 {
         return Err("options require values".into());
     }
@@ -578,6 +583,9 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
         let suite = crate::read_suite(&repository.join("benchmarks/suites").join(format!("{name}.toml")))
             .map_err(|error| error.to_string())?;
         check_parent(&suite, options.contains_key("--parent") || options.contains_key("--parent-arm"))?;
+        if !suite.change && !change_inputs.is_empty() {
+            return Err("named run inputs require a change suite".into());
+        }
         if suite.change && !options.contains_key("--commit") && !options.contains_key("--arm") {
             return Err("change suite requires --commit or --arm".into());
         }
@@ -608,7 +616,7 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
             let batch = crate::batch::run_probe(&planned.suite, &planned.directory, seed, name, attempts)?;
             Ok(summary(&planned, &batch))
         }
-        "suite" => suite_command(repository, name, &arm, &options, &asked, seed, attempts),
+        "suite" => suite_command(repository, name, &arm, &options, (&asked, &change_inputs), seed, attempts),
         "calibrate" | "fix" => comparison(command, repository, &order, &arm, &options, seed),
         _ => Err("unknown probe command".into()),
     }
@@ -627,10 +635,11 @@ fn suite_command(
     name: &str,
     arm: &ArmRef,
     options: &std::collections::BTreeMap<&str, &str>,
-    asked: &[String],
+    selection: (&[String], &crate::parity::change::Inputs),
     seed: u64,
     attempts: u32,
 ) -> Result<Judgment, String> {
+    let (asked, inputs) = selection;
     let file = repository.join("benchmarks/suites").join(format!("{name}.toml"));
     let mut value: toml::Value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
     let suite: Suite = value.clone().try_into().map_err(|error| error.to_string())?;
@@ -656,10 +665,21 @@ fn suite_command(
                 && attempts < suite.task_repetitions(&request.identity.task, task.repetitions, false)?)
     })?;
     let batch = crate::batch::run(&planned.suite, &planned.directory, seed)?;
-    if small {
+    if small || suite.change {
         let guard = Guard::from_environment()?;
         let directory = crate::arm::state_root(&guard)?.join("runs").join(&planned.run);
-        return small_summary(&batch, &suite, seed, &directory);
+        return if suite.change {
+            change_summary(
+                &batch,
+                &suite,
+                seed,
+                &directory,
+                inputs,
+                small || batch.results.len() < planned.requests.len(),
+            )
+        } else {
+            small_summary(&batch, &suite, seed, &directory)
+        };
     }
     if name == "parity" {
         return parity_summary(repository, &batch, seed);
@@ -681,6 +701,44 @@ fn small_summary(batch: &crate::batch::Batch, suite: &Suite, seed: u64, director
     println!("{}", path.display());
     println!("summary {} attempts={} verdict=incomplete", summary.run, batch.results.len());
     Ok(Judgment::Incomplete)
+}
+
+fn change_summary(
+    batch: &crate::batch::Batch,
+    suite: &Suite,
+    seed: u64,
+    directory: &Path,
+    inputs: &crate::parity::change::Inputs,
+    small: bool,
+) -> Result<Judgment, String> {
+    let summary =
+        crate::summarise(&batch.results, &suite.name, &suite.tier, suite.design, seed, None, suite.reference_arm())?;
+    settle_change(summary, directory, inputs, small)
+}
+
+fn settle_change(
+    mut summary: crate::RunSummary,
+    directory: &Path,
+    inputs: &crate::parity::change::Inputs,
+    small: bool,
+) -> Result<Judgment, String> {
+    crate::parity::change::attach(&mut summary, inputs)?;
+    let path = directory.join("summary.json");
+    fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+    crate::write_summary(&path, &summary)?;
+    let code = summary.change.as_ref().expect("change section").code();
+    let verdict = if small {
+        Judgment::Incomplete
+    } else {
+        match code {
+            0 => Judgment::Pass,
+            1 => Judgment::Fail,
+            _ => Judgment::Incomplete,
+        }
+    };
+    println!("{}", path.display());
+    println!("summary {} attempts={} verdict={}", summary.run, summary.attempts.len(), verdict_name(verdict));
+    Ok(verdict)
 }
 
 fn parity_summary(repository: &Path, batch: &crate::batch::Batch, seed: u64) -> Result<Judgment, String> {

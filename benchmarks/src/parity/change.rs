@@ -1,5 +1,8 @@
 //! A change's criteria use its parent commit as the reference (benchmarks.md 16.6).
 
+mod inputs;
+pub use inputs::{Input, Inputs, attach, command, verify};
+
 use serde::{Deserialize, Serialize};
 
 use super::{ArmKey, Criterion, TASKS, criteria, passed};
@@ -9,6 +12,8 @@ use crate::{Measure, RunSummary};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeSection {
+    pub baseline_run: Option<Input>,
+    pub landed: Vec<Input>,
     pub projection: Vec<Projection>,
     pub stop: Option<Stop>,
     pub change_commit: String,
@@ -78,9 +83,6 @@ pub fn from_summary(summary: &RunSummary, parent_commit: &str) -> Result<ChangeS
             .expect("bounded attempts")
     };
     let attempts = count(&reference, false);
-    if attempts != count(&subject, false) {
-        return Err("change needs as many attempts as its parent".into());
-    }
     let outcome = Outcome {
         change_passes: count(&subject, true),
         parent_passes: count(&reference, true),
@@ -103,6 +105,8 @@ pub fn from_summary(summary: &RunSummary, parent_commit: &str) -> Result<ChangeS
         })
         .collect();
     Ok(ChangeSection {
+        baseline_run: None,
+        landed: Vec::new(),
         projection: Vec::new(),
         stop: Some(Stop::Incomplete { why: "baseline run missing".into() }),
         reference_lower_bounds,
@@ -203,12 +207,20 @@ pub fn project(
     baseline: &RunSummary,
     landed: &[RunSummary],
 ) -> Result<ChangeSection, String> {
+    project_report(summary, from_summary(summary, parent_commit)?, baseline, landed)
+}
+
+fn project_report(
+    summary: &RunSummary,
+    mut report: ChangeSection,
+    baseline: &RunSummary,
+    landed: &[RunSummary],
+) -> Result<ChangeSection, String> {
     let baseline = baseline
         .parity
         .as_ref()
         .filter(|_| baseline.suite == "parity")
         .ok_or("baseline run must be a parity summary with a parity section")?;
-    let mut report = from_summary(summary, parent_commit)?;
     let landed: Vec<_> = landed
         .iter()
         .map(|summary| {
@@ -253,7 +265,10 @@ fn stop(summary: &RunSummary, report: &ChangeSection) -> Option<Stop> {
             !summary.attempts.iter().any(|row| row.task == *task && row.agent_version == **commit && passed(row))
         })
     });
+    let unequal = summary.attempts.iter().filter(|row| row.agent_version == report.change_commit).count()
+        != usize::try_from(report.outcome.attempts).expect("bounded attempts");
     if unavailable
+        || unequal
         || no_pass
         || summary.attempts.iter().any(|row| !matches!(row.end.as_str(), "completed" | "failed" | "timeout" | "budget"))
     {

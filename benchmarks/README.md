@@ -193,3 +193,16 @@ Both commits must be built first; `--arm DIRECTORY` and
 `--parent-arm DIRECTORY` select built directories instead. The arms are
 `change` and `parent`, with `parent` the reference. Other suites refuse
 parent options.
+
+A change report takes its named run summaries with `--baseline-run SUMMARY`
+and repeated `--landed SUMMARY` options on `suite parity-change` or
+`summarise`. It records their paths and SHA-256 hashes, projects every
+landed ratio and this change onto the baseline, and stops on incomplete
+evidence or a criterion past its bound. The suite exits 0, 1 or 2 for no
+stop, a moved criterion or incomplete evidence; a run below its attempts
+always exits 2 and retains its run-local `summary.json`.
+
+`smith-bench change SUMMARY` rereads those inputs and recomputes the report.
+It exits 0 when the stored section agrees, including a stopped section,
+and 3 on missing or changed inputs or a disagreement. `check` applies
+that verification to every committed change summary.

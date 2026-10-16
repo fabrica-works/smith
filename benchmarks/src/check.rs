@@ -97,6 +97,10 @@ pub fn check_benchmark_tree_with_bundles(
             if file.path().extension().is_some_and(|extension| extension == "json") {
                 if name == "summaries" {
                     let summary = crate::read_summary(&file.path())?;
+                    if summary.suite == "parity-change" {
+                        crate::parity::change::verify(&summary)
+                            .map_err(|reason| Refusal::new(&file.path(), "change", reason))?;
+                    }
                     if let Some(parity) = &summary.parity {
                         crate::parity::verify(&summary, &parity.smith_commit)
                             .map_err(|reason| Refusal::new(&file.path(), "parity", reason))?;

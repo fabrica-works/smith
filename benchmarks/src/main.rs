@@ -27,11 +27,12 @@ fn main() -> ExitCode {
         [command, summary, flag, commit] if command == "parity" && flag == "--commit" => {
             parity_command(Path::new(summary), commit)
         }
+        [command, summary] if command == "change" => {
+            ExitCode::from(smith_bench::parity::change::command(Path::new(summary)))
+        }
         [command, names @ ..] if command == "validate" => validate_command(names),
-        [command, results, suite, tier, design, seed, reference @ ..]
-            if command == "summarise" && reference.len() <= 1 =>
-        {
-            summarize_command(Path::new(results), suite, tier, design, seed, reference.first().map(Path::new))
+        [command, results, suite, tier, design, seed, options @ ..] if command == "summarise" => {
+            summarize_command(Path::new(results), suite, tier, design, seed, options)
         }
         [command, summary, name] if command == "baseline" => baseline_command(Path::new(summary), name, None),
         [command, summary, name, flag, agent, configuration, model, effort]
@@ -49,7 +50,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench parity SUMMARY --commit SHA\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE] [--baseline-run SUMMARY] [--landed SUMMARY]...\n       smith-bench parity SUMMARY --commit SHA\n       smith-bench change SUMMARY\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
             );
             ExitCode::from(2)
         }
@@ -134,7 +135,7 @@ fn summarize_command(
     tier: &str,
     design: &str,
     seed: &str,
-    reference: Option<&Path>,
+    options: &[String],
 ) -> ExitCode {
     report_output((|| {
         let design = match design {
@@ -144,6 +145,14 @@ fn summarize_command(
         };
         let seed = seed.parse::<u64>().map_err(|error| error.to_string())?;
         let results = smith_bench::read_results(results).map_err(|error| error.to_string())?;
+        let (reference, flags) = options
+            .split_first()
+            .filter(|(first, _)| !first.starts_with("--"))
+            .map_or((None, options), |(first, rest)| (Some(Path::new(first)), rest));
+        let (inputs, rest) = smith_bench::parity::change::Inputs::parse(flags)?;
+        if !rest.is_empty() || (suite != "parity-change" && !inputs.is_empty()) {
+            return Err("named run inputs require a parity-change summary".into());
+        }
         let reference = reference.map(smith_bench::read_baseline).transpose().map_err(|error| error.to_string())?;
         let reference_arm = if design == smith_bench::Design::Interleaved {
             let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("suites").join(format!("{suite}.toml"));
@@ -151,8 +160,11 @@ fn summarize_command(
         } else {
             None
         };
-        let summary =
+        let mut summary =
             smith_bench::summarise(&results, suite, tier, design, seed, reference.as_ref(), reference_arm.as_deref())?;
+        if suite == "parity-change" {
+            smith_bench::parity::change::attach(&mut summary, &inputs)?;
+        }
         let output = committed_output("summaries", &summary.run)?;
         smith_bench::write_summary(&output, &summary)?;
         Ok(output)

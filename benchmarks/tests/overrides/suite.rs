@@ -329,3 +329,41 @@ fn a_suite_run_below_its_attempts_is_summarised_as_small() {
     assert_eq!(summary.parity.expect("section").verdict, crate::parity::Verdict::Incomplete);
     fs::remove_dir_all(directory).expect("cleanup");
 }
+
+#[test]
+fn a_change_run_below_its_attempts_exits_two_whatever_its_stop() {
+    const FIXTURE_ATTEMPTS: usize = 1;
+    const REPOSITORY_ATTEMPTS: usize = 5;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut recorded = crate::read_summary(&root.join("tests/recorded/parity/change.json")).expect("change rows");
+    let kept: std::collections::BTreeSet<_> = recorded
+        .groups
+        .iter()
+        .flat_map(|group| {
+            group
+                .attempts
+                .iter()
+                .take(if group.task == "repository/shell-cwd" { REPOSITORY_ATTEMPTS } else { FIXTURE_ATTEMPTS })
+                .cloned()
+        })
+        .collect();
+    recorded.attempts.retain(|row| kept.contains(&row.attempt));
+    let directory = std::env::temp_dir().join(format!("smith-small-change-{}", std::process::id()));
+    fs::create_dir(&directory).expect("run directory");
+    let mut baseline = crate::read_summary(&root.join("tests/recorded/parity/on-par.json")).expect("baseline");
+    baseline.attempts.clear();
+    baseline.groups.clear();
+    for (index, upper) in [1.1, 0.9].into_iter().enumerate() {
+        let run = directory.join(index.to_string());
+        fs::create_dir(&run).expect("run directory");
+        for criterion in &mut baseline.parity.as_mut().expect("section").criteria {
+            criterion.interval = (0.8, upper);
+        }
+        let file = run.join("baseline.json");
+        crate::write_summary(&file, &baseline).expect("baseline input");
+        let inputs = crate::parity::change::Inputs { baseline_run: Some(file), landed: Vec::new() };
+        assert_eq!(settle_change(recorded.clone(), &run, &inputs, true).expect("small run"), Judgment::Incomplete);
+        assert_eq!(crate::read_summary(&run.join("summary.json")).expect("run-local summary").suite, "parity-change");
+    }
+    fs::remove_dir_all(directory).expect("cleanup");
+}

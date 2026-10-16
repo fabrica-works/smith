@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use smith_bench::{Measure, RunSummary};
 
 /// Recorded arm walls and smith priced spend, supplied to the fixture.
@@ -35,10 +36,29 @@ pub fn change_summary() -> RunSummary {
 
 pub fn change_baseline() -> RunSummary {
     let mut summary = parity_summary(Rows::equal());
+    summary.attempts.clear();
+    summary.groups.clear();
     for criterion in &mut summary.parity.as_mut().expect("recorded parity").criteria {
         if criterion.name != "O" {
             criterion.interval = (0.9, 1.1);
         }
     }
     summary
+}
+
+pub fn named_change(name: &str) -> (RunSummary, std::path::PathBuf) {
+    let directory = std::env::temp_dir().join(format!("smith-change-{name}-{}", std::process::id()));
+    std::fs::create_dir(&directory).expect("temporary input directory");
+    let baseline = directory.join("baseline.json");
+    smith_bench::write_summary(&baseline, &change_baseline()).expect("baseline input");
+    let mut summary = change_summary();
+    let report = summary.change.as_mut().expect("recorded section");
+    report.baseline_run = Some(smith_bench::parity::change::Input {
+        sha256: Some(format!("{:x}", Sha256::digest(std::fs::read(&baseline).expect("baseline bytes")))),
+        path: baseline,
+    });
+    for projection in &mut report.projection {
+        projection.baseline_interval = (0.9, 1.1);
+    }
+    (summary, directory)
 }
