@@ -67,7 +67,7 @@ baseline measures it (decisions.md, 12.1).
   `Purpose::Ordinary { guard }`; each construction outside Files takes
   `guard: None`, and each match pattern `Purpose::Ordinary { .. }`. The
   ready check found these on `ba1fef5b`: the pattern at
-  `tests/session/src/world.rs:1424`; the constructions at
+  `tests/session/src/world.rs:1425`; the constructions at
   `crates/smith-agent-service/src/responses.rs:1086`,
   `crates/smith-agent-service/src/tests.rs:547`,
   `crates/smith-protocol-llm/src/tests.rs:307`,
@@ -90,7 +90,7 @@ Scope: session.md 4 and 8.1 ("the guard"); llm.md 6 ("The guard") and
 Needs: smith 03's line in each conversation [03.1].
 Files: `crates/smith-domain-session/src/llm.rs` (`Purpose`, `:242-247`;
   `Prompt`, `:252-276`), `crates/smith-domain-session/src/session.rs`
-  (`complete`, `:2196-2254`, the purpose at `:2221`),
+  (`complete`, `:2197-2255`, the purpose at `:2222`),
   `crates/smith-domain-session/src/window.rs` (`following`, read),
   `crates/smith-domain/src/llm.rs` (`:20-23`),
   `crates/smith-domain/src/peer.rs` (`:245-289`),
@@ -102,7 +102,7 @@ Files: `crates/smith-domain-session/src/llm.rs` (`Purpose`, `:242-247`;
   `crates/smith-protocol-llm/src/lib.rs`,
   `crates/smith-domain-session/src/tests.rs`, `tests/protocol-llm/`
   (constructions in `tests/production_render.rs` take `guard: None`, its
-  pattern at `:346` `Ordinary { .. }`; `tests/root_memory.rs:1081`, a
+  pattern at `:346` `Ordinary { .. }`; `tests/root_memory.rs:1082`, a
   restored ordinary window, now asserts
   `matches!(complete.prompt.purpose, llm::Purpose::Ordinary { guard: Some(_) })`),
   `tests/session/tests/compaction.rs`, `tests/session/src/recorded.rs`.
@@ -114,15 +114,17 @@ Shape: the sketch below. `complete` sets `guard: Some(..)` for an
   and the first after a resume from a window turn. A resume from an
   ordinary turn restores the last prompt (`compaction.rs:468-473`), and
   its next completion carries the guard. In `complete`, the match at
-  `:2221` builds `Purpose::Ordinary { guard: Some(Guard { .. }) }` and
+  `:2222` builds `Purpose::Ordinary { guard: Some(Guard { .. }) }` and
   `Purpose::Ordinary { guard: None }` in its arms, with no `Option::map`
   (banned) and no match returning an `Option` (clippy's `manual_map`).
   The conversation's line is a named field 04.1 adds,
-  `Conversation.line: u64` beside `model_window` (`session.rs:184`), set
-  at open from `Spec.line` (03.1) where `model_window` is (`:2082`), and
+  `Conversation.line: u64` beside `model_window` (`session.rs:185`), set
+  at open from `Spec.line` (03.1) where `model_window` is (`:2083`), and
   read by `complete`; never a value inside a tuple, or any other type,
-  that a lint would not see unread. If 03.1 landed `model_window` as a
-  tuple, 04.1 makes it `u32` again, with its reads as on `ba1fef5b`.
+  that a lint would not see unread. 03.1 landed `model_window: (u32, u64)`
+  (`0616a6c5`): 04.1 makes it `u32` again, its five `.0` reads in
+  `compaction.rs` (`:58`, `:78`, `:128`, `:230`, `:388`) and the one at
+  `session.rs:2210` as on `ba1fef5b`.
   `change_model`'s swap (`compaction.rs:58`, `:230`) leaves the line as
   it is.
   In `start`, between the output ceiling (`:403-406`) and
