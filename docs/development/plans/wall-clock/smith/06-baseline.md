@@ -59,7 +59,8 @@ Scope: benchmarks.md 16.1 to 16.4 on `main` as it then stands; 16.6's
   baseline; development.md 5.5's small run of the `parity-change`
   pipeline.
 Needs: smith 01's pricing, rows and ten attempts [01.1, 01.2, 01.3];
-  smith 02's stop [02.3]; smith 03's line and history bytes [03.1,
+  smith 02's stop [02.3], and its named inputs and `change` command,
+  split from 02.3 [02.4]; smith 03's line and history bytes [03.1,
   03.2]; smith 04's guard [04.1].
 Files: `benchmarks/summaries/parity-*.json`.
 Shape: no code. On a worktree at `origin/main`:
