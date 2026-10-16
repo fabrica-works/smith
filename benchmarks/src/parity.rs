@@ -2,6 +2,7 @@
 //! `recompute` judges attempt rows; `verify` checks the committed section and
 //! arm identity. Missing observations never establish parity (benchmarks.md, 16).
 
+pub mod change;
 mod number;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,7 +72,20 @@ fn criterion(name: &str, statistic: f64, interval: (f64, f64), margin: f64) -> C
     Criterion { name: name.into(), statistic, interval, margin, holds: interval.1 < margin }
 }
 
-fn measured(row: &AttemptRow, cost: bool) -> Option<f64> {
+/// An arm selected by its agent and recorded source version.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArmKey {
+    pub agent: String,
+    pub commit: String,
+}
+
+impl ArmKey {
+    fn contains(&self, row: &AttemptRow) -> bool {
+        row.agent == self.agent && row.agent_version == self.commit
+    }
+}
+
+fn measured(row: &AttemptRow, cost: bool, reference: &ArmKey) -> Option<f64> {
     let measurement = if cost {
         row.priced_usd.clone()
     } else {
@@ -85,12 +99,8 @@ fn measured(row: &AttemptRow, cost: bool) -> Option<f64> {
     };
     let value = match measurement {
         Measure::Observed { value } => value,
-        Measure::LowerBound { value, .. } if row.agent == "codex" => value,
-        Measure::LowerBound { value, missing }
-            if cost && row.agent == "smith" && crate::tokens::retried_failures(&missing) =>
-        {
-            value
-        }
+        Measure::LowerBound { value, .. } if reference.contains(row) => value,
+        Measure::LowerBound { value, missing } if cost && crate::tokens::retried_failures(&missing) => value,
         Measure::LowerBound { .. } | Measure::Unavailable { .. } => return None,
     };
     (value.is_finite() && value >= 0.0).then_some(value)
@@ -101,11 +111,17 @@ fn wall(value: u64) -> f64 {
         + f64::from(u32::try_from(value & 0xffff_ffff).expect("low half"))
 }
 
-fn metric(rows: &[&AttemptRow], cost: bool) -> Option<Vec<f64>> {
-    rows.iter().map(|row| measured(row, cost)).collect()
+fn metric(rows: &[&AttemptRow], cost: bool, reference: &ArmKey) -> Option<Vec<f64>> {
+    rows.iter().map(|row| measured(row, cost, reference)).collect()
 }
 
-fn fixture_criterion(rows: &[&AttemptRow], cost: bool, seed: u64) -> Result<Criterion, String> {
+fn fixture_criterion(
+    rows: &[&AttemptRow],
+    cost: bool,
+    seed: u64,
+    subject: &ArmKey,
+    reference: &ArmKey,
+) -> Result<Criterion, String> {
     let name = if cost { "FC" } else { "FT" };
     if rows.iter().any(|row| !matches!(row.end.as_str(), "completed" | "failed" | "timeout" | "budget")) {
         return Ok(criterion(name, f64::INFINITY, (f64::INFINITY, f64::INFINITY), 1.20));
@@ -113,9 +129,9 @@ fn fixture_criterion(rows: &[&AttemptRow], cost: bool, seed: u64) -> Result<Crit
     let mut strata = Vec::new();
     for task in &TASKS[..3] {
         let mut arms = Vec::new();
-        for agent in ["codex", "smith"] {
-            let selected: Vec<_> = rows.iter().copied().filter(|row| row.task == *task && row.agent == agent).collect();
-            let Some(values) = metric(&selected, cost) else {
+        for arm in [reference, subject] {
+            let selected: Vec<_> = rows.iter().copied().filter(|row| row.task == *task && arm.contains(row)).collect();
+            let Some(values) = metric(&selected, cost, reference) else {
                 return Ok(criterion(name, f64::INFINITY, (f64::INFINITY, f64::INFINITY), 1.20));
             };
             arms.push(values.into_iter().zip(selected.iter().map(|row| passed(row))).collect());
@@ -126,12 +142,18 @@ fn fixture_criterion(rows: &[&AttemptRow], cost: bool, seed: u64) -> Result<Crit
     Ok(criterion(name, ratio, interval, 1.20))
 }
 
-fn repository_criterion(rows: &[&AttemptRow], cost: bool, seed: u64) -> Result<Criterion, String> {
+fn repository_criterion(
+    rows: &[&AttemptRow],
+    cost: bool,
+    seed: u64,
+    subject: &ArmKey,
+    reference: &ArmKey,
+) -> Result<Criterion, String> {
     let name = if cost { "RC" } else { "RT" };
     let margin = if cost { 1.50 } else { 1.20 };
-    let arms: Vec<_> = ["codex", "smith"]
+    let arms: Vec<_> = [reference, subject]
         .into_iter()
-        .map(|agent| metric(&rows.iter().copied().filter(|row| row.agent == agent).collect::<Vec<_>>(), cost))
+        .map(|arm| metric(&rows.iter().copied().filter(|row| arm.contains(row)).collect::<Vec<_>>(), cost, reference))
         .collect();
     let (Some(reference), Some(candidate)) = (&arms[0], &arms[1]) else {
         return Ok(criterion(name, f64::INFINITY, (f64::INFINITY, f64::INFINITY), margin));
@@ -180,6 +202,35 @@ fn reported(rows: &[AttemptRow]) -> BTreeMap<String, BTreeMap<String, Measure<f6
         .collect()
 }
 
+fn criteria(rows: &[AttemptRow], subject: &ArmKey, reference: &ArmKey, seed: u64) -> Result<Vec<Criterion>, String> {
+    let fixtures: Vec<_> = rows.iter().filter(|row| row.task != TASKS[3]).collect();
+    let repository: Vec<_> = rows.iter().filter(|row| row.task == TASKS[3]).collect();
+    let pass_count = |arm: &ArmKey| {
+        u32::try_from(rows.iter().filter(|row| arm.contains(row) && passed(row)).count()).expect("attempt count")
+    };
+    let codex_count = u32::try_from(rows.iter().filter(|row| reference.contains(row)).count()).expect("attempt count");
+    let interval = if codex_count == 0 {
+        crate::Interval { lower: 0.0, upper: 1.0 }
+    } else {
+        crate::pass_interval(pass_count(reference), codex_count)?
+    };
+    let threshold = (interval.lower * f64::from(codex_count)).ceil();
+    let outcome = Criterion {
+        name: "O".into(),
+        statistic: f64::from(pass_count(subject)),
+        interval: (interval.lower, interval.upper),
+        margin: threshold,
+        holds: f64::from(pass_count(subject)) >= threshold,
+    };
+    Ok(vec![
+        outcome,
+        fixture_criterion(&fixtures, false, seed, subject, reference)?,
+        fixture_criterion(&fixtures, true, seed, subject, reference)?,
+        repository_criterion(&repository, false, seed, subject, reference)?,
+        repository_criterion(&repository, true, seed, subject, reference)?,
+    ])
+}
+
 /// Recompute criteria from rows and the smith commit retained by the arm groups.
 pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: &str) -> Result<Parity, String> {
     if rows.len() > 68 {
@@ -200,32 +251,14 @@ pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: 
         return Err("parity needs one arm per agent".into());
     }
     let reference_arm = arms.get("codex").and_then(|names| names.first()).copied().unwrap_or("");
+    let subject = ArmKey { agent: "smith".into(), commit: smith_commit.into() };
+    let reference = ArmKey {
+        agent: "codex".into(),
+        commit: rows.iter().find(|row| row.agent == "codex").map_or("", |row| row.agent_version.as_str()).into(),
+    };
+    let criteria = criteria(rows, &subject, &reference, seed)?;
     let fixtures: Vec<_> = rows.iter().filter(|row| row.task != TASKS[3]).collect();
     let repository: Vec<_> = rows.iter().filter(|row| row.task == TASKS[3]).collect();
-    let pass_count = |agent| {
-        u32::try_from(rows.iter().filter(|row| row.agent == agent && passed(row)).count()).expect("attempt count")
-    };
-    let codex_count = u32::try_from(rows.iter().filter(|row| row.agent == "codex").count()).expect("attempt count");
-    let interval = if codex_count == 0 {
-        crate::Interval { lower: 0.0, upper: 1.0 }
-    } else {
-        crate::pass_interval(pass_count("codex"), codex_count)?
-    };
-    let threshold = (interval.lower * f64::from(codex_count)).ceil();
-    let outcome = Criterion {
-        name: "O".into(),
-        statistic: f64::from(pass_count("smith")),
-        interval: (interval.lower, interval.upper),
-        margin: threshold,
-        holds: f64::from(pass_count("smith")) >= threshold,
-    };
-    let criteria = vec![
-        outcome,
-        fixture_criterion(&fixtures, false, seed)?,
-        fixture_criterion(&fixtures, true, seed)?,
-        repository_criterion(&repository, false, seed)?,
-        repository_criterion(&repository, true, seed)?,
-    ];
     let sizes_complete = TASKS.iter().enumerate().all(|(index, task)| {
         ["smith", "codex"].iter().all(|agent| {
             rows.iter().filter(|row| row.task == *task && row.agent == *agent).count()
@@ -235,8 +268,8 @@ pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: 
     let complete = sizes_complete
         && !rows.iter().any(|row| {
             !matches!(row.end.as_str(), "completed" | "failed" | "timeout" | "budget")
-                || measured(row, false).is_none()
-                || measured(row, true).is_none()
+                || measured(row, false, &reference).is_none()
+                || measured(row, true, &reference).is_none()
         })
         && [&fixtures, &repository].iter().all(|pool| pool.iter().any(|row| row.agent == "codex" && passed(row)));
     let verdict = if !complete {
@@ -259,21 +292,30 @@ pub fn recompute(rows: &[AttemptRow], seed: u64, priced_at: &str, smith_commit: 
     })
 }
 
+fn identified_rows(summary: &RunSummary) -> Result<&[AttemptRow], String> {
+    let mut ids = BTreeSet::new();
+    for row in &summary.attempts {
+        if !ids.insert(&row.attempt)
+            || !summary.groups.iter().any(|group| {
+                group.task == row.task
+                    && group.arm == row.arm
+                    && group.agent.directory() == row.agent
+                    && group.agent_version == row.agent_version
+                    && group.attempts.contains(&row.attempt)
+            })
+        {
+            return Err("parity attempt has no matching arm identity".into());
+        }
+    }
+    Ok(&summary.attempts)
+}
+
 /// Build the section from attempt rows and their recorded arm identity.
 pub fn from_summary(summary: &RunSummary) -> Result<Parity, String> {
     if summary.suite != "parity" || summary.tier != "working" || summary.design != crate::Design::Interleaved {
         return Err("parity needs its working, interleaved suite".into());
     }
-    for row in &summary.attempts {
-        if !summary.groups.iter().any(|group| {
-            group.task == row.task
-                && group.arm == row.arm
-                && group.agent.directory() == row.agent
-                && group.attempts.contains(&row.attempt)
-        }) {
-            return Err("parity attempt has no matching arm identity".into());
-        }
-    }
+    identified_rows(summary)?;
     let commits: BTreeSet<_> = summary
         .groups
         .iter()

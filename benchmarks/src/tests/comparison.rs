@@ -276,6 +276,8 @@ fn a_summary_keeps_each_attempts_row() {
             task: "probes/recorded".into(),
             arm: "codex-standard".into(),
             agent: "codex".into(),
+            agent_version: recorded_result().identity.agent_version,
+            time_record: recorded_result().timing.record,
             end: "completed".into(),
             passed: true,
             task_wall_ms: crate::Measure::Observed { value: 30 },

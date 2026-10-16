@@ -253,3 +253,115 @@ fn a_parity_run_of_five_shell_cwd_attempts_is_incomplete() {
     });
     assert_eq!(recompute(&summary).verdict, Verdict::Incomplete);
 }
+
+#[test]
+fn a_change_report_takes_its_parent_by_commit_whatever_the_names() {
+    const CHANGE_WALL_MS: u64 = 50_000;
+    let mut summary = common::change_summary();
+    for row in &mut summary.attempts {
+        if row.agent_version == common::CHANGE_COMMIT {
+            row.task_wall_ms = Measure::Observed { value: CHANGE_WALL_MS };
+        }
+    }
+    for (old, new) in [("a-smith", "parent"), ("z-reference", "change")] {
+        for row in &mut summary.attempts {
+            if row.arm == old {
+                row.arm = new.into();
+            }
+        }
+        for group in &mut summary.groups {
+            if group.arm == old {
+                group.arm = new.into();
+            }
+        }
+    }
+    let report = parity::change::from_summary(&summary, common::PARENT_COMMIT).expect("change report");
+    assert_eq!(report.change_commit, common::CHANGE_COMMIT);
+    assert_eq!(report.parent_commit, common::PARENT_COMMIT);
+    assert_eq!(report.ratios[0].value.statistic.to_bits(), 0.5_f64.to_bits());
+}
+
+#[test]
+fn a_change_report_gives_each_criterions_ratio_to_its_parent() {
+    const CHANGE_WALL_MS: u64 = 50_000;
+    const CHANGE_USD: f64 = 0.25;
+    let mut summary = common::change_summary();
+    for row in &mut summary.attempts {
+        if row.agent_version == common::CHANGE_COMMIT {
+            row.task_wall_ms = Measure::Observed { value: CHANGE_WALL_MS };
+            row.priced_usd = Measure::Observed { value: CHANGE_USD };
+        }
+    }
+    let report = parity::change::from_summary(&summary, common::PARENT_COMMIT).expect("change report");
+    for (ratio, (name, value)) in report.ratios.iter().zip([("FT", 0.5_f64), ("FC", 0.25), ("RT", 0.5), ("RC", 0.25)]) {
+        assert_eq!(ratio.name, name);
+        assert_eq!(ratio.value.statistic.to_bits(), value.to_bits(), "{name}");
+        assert_eq!(ratio.value.interval, (value, value), "{name}");
+    }
+}
+
+#[test]
+fn a_change_report_gives_o_as_each_arms_passes() {
+    let mut summary = common::change_summary();
+    let row = summary
+        .attempts
+        .iter_mut()
+        .find(|row| row.agent_version == common::CHANGE_COMMIT && row.task == "repository/shell-cwd")
+        .expect("change row");
+    row.passed = false;
+    let report = parity::change::from_summary(&summary, common::PARENT_COMMIT).expect("change report");
+    assert_eq!(report.outcome.change_passes, 19);
+    assert_eq!(report.outcome.parent_passes, 20);
+    assert_eq!(report.outcome.attempts, 20);
+    assert_eq!(report.outcome.parent_lower.to_bits(), 0.831_566_529_016_914_7_f64.to_bits());
+}
+
+#[test]
+fn a_change_report_keeps_responses_and_time_beside() {
+    let summary = common::change_summary();
+    let report = parity::change::from_summary(&summary, common::PARENT_COMMIT).expect("change report");
+    assert_eq!(report.beside.len(), 8);
+    for beside in &report.beside {
+        assert_eq!(beside.responses, Measure::Observed { value: 2.0 });
+        assert_eq!(beside.requests_s, Measure::Observed { value: 1.0 });
+        assert_eq!(beside.compaction_s, Measure::Observed { value: 2.0 });
+        assert_eq!(beside.tools_s, Measure::Observed { value: 7.0 });
+        assert_eq!(beside.fresh_tokens, Measure::Observed { value: 100.0 });
+    }
+}
+
+#[test]
+fn a_lower_bound_on_the_changes_side_is_incomplete() {
+    const WALL_MS: u64 = 100_000;
+    let mut summary = common::change_summary();
+    let row = summary.attempts.iter_mut().find(|row| row.agent_version == common::CHANGE_COMMIT).expect("change row");
+    row.task_wall_ms = Measure::LowerBound { value: WALL_MS, missing: vec!["answer absent".into()] };
+    let report = parity::change::from_summary(&summary, common::PARENT_COMMIT).expect("change report");
+    assert_eq!(report.ratios[0].value.statistic.to_bits(), f64::INFINITY.to_bits());
+}
+
+#[test]
+fn a_lower_bound_on_the_parents_side_is_taken_as_observed() {
+    const WALL_MS: u64 = 100_000;
+    let mut summary = common::change_summary();
+    let row = summary.attempts.iter_mut().find(|row| row.agent_version == common::PARENT_COMMIT).expect("parent row");
+    row.task_wall_ms = Measure::LowerBound { value: WALL_MS, missing: vec!["answer absent".into()] };
+    let report = parity::change::from_summary(&summary, common::PARENT_COMMIT).expect("change report");
+    assert_eq!(report.ratios[0].value.statistic.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(report.reference_lower_bounds, ["09: task_wall_ms"]);
+}
+
+#[test]
+fn the_parity_section_is_unchanged_by_the_arm_arguments() {
+    let summary = common::parity_summary(Rows::equal());
+    let report = recompute(&summary);
+    for (value, (name, statistic, interval, holds)) in report.criteria.iter().zip([
+        ("O", 34.0, (0.897_182_075_740_987_4, 1.0), true),
+        ("FT", 1.0, (1.0, 1.0), true),
+        ("FC", 1.0, (1.0, 1.0), true),
+        ("RT", 1.0, (1.0, 1.0), true),
+        ("RC", 1.0, (1.0, 1.0), true),
+    ]) {
+        assert_eq!((&*value.name, value.statistic, value.interval, value.holds), (name, statistic, interval, holds));
+    }
+}

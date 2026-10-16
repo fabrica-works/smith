@@ -24,3 +24,11 @@ pub fn parity_summary(rows: Rows) -> RunSummary {
     }
     summary
 }
+
+pub const CHANGE_COMMIT: &str = "0000000000000000000000000000000000000000";
+pub const PARENT_COMMIT: &str = "1111111111111111111111111111111111111111";
+
+pub fn change_summary() -> RunSummary {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/parity/change.json");
+    smith_bench::read_summary(&file).expect("recorded change")
+}

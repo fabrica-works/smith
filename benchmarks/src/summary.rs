@@ -116,6 +116,8 @@ pub struct AttemptRow {
     pub task: String,
     pub arm: String,
     pub agent: String,
+    pub agent_version: String,
+    pub time_record: crate::TimeRecord,
     pub end: String,
     pub passed: bool,
     pub task_wall_ms: Measure<u64>,
@@ -136,6 +138,8 @@ fn attempt_row(result: &AttemptResult) -> AttemptRow {
         task: result.identity.task.clone(),
         arm: result.identity.arm.clone(),
         agent: result.identity.agent.directory().into(),
+        agent_version: result.identity.agent_version.clone(),
+        time_record: result.timing.record.clone(),
         end: end_name(&result.outcome.end).into(),
         passed: crate::judge(result) == crate::Judgment::Pass,
         task_wall_ms: result.timing.task_wall_ms.clone(),
@@ -170,6 +174,8 @@ pub struct RunSummary {
     pub attempts: Vec<AttemptRow>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parity: Option<crate::parity::Parity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<crate::parity::change::ChangeSection>,
     pub groups: Vec<ArmSummary>,
     pub comparisons: Vec<SummaryComparison>,
     pub audits: Vec<String>,
@@ -543,6 +549,7 @@ pub fn summarise(
         date,
         attempts: results.iter().map(attempt_row).collect(),
         parity: None,
+        change: None,
         groups,
         comparisons,
         audits,
@@ -550,6 +557,15 @@ pub fn summarise(
     };
     if suite == "parity" {
         summary.parity = Some(crate::parity::from_summary(&summary)?);
+    } else if suite == "parity-change" {
+        let parent = summary
+            .groups
+            .iter()
+            .find(|group| Some(group.arm.as_str()) == reference_arm)
+            .ok_or("change needs its parent reference arm")?
+            .agent_version
+            .clone();
+        summary.change = Some(crate::parity::change::from_summary(&summary, &parent)?);
     }
     Ok(summary)
 }
