@@ -124,7 +124,8 @@ Files: `benchmarks/src/parity.rs` (the row selection by agent name,
   `:87-89`, `:115-116`, `:131-133`, `:164-173`; `from_summary`,
   `:240-248`), a new `benchmarks/src/parity/change.rs`,
   `benchmarks/src/summary.rs` (where `summarise` writes the parity
-  section, `:518-520`), `benchmarks/src/time_record.rs` (read),
+  section, `:518-520`; `AttemptRow`, `:114-129`, and `attempt_row`,
+  `:131`), `benchmarks/src/time_record.rs` (read),
   `benchmarks/tests/parity.rs`, `benchmarks/tests/common/parity.rs`, a
   new `benchmarks/tests/recorded/parity/change.json`.
 Shape: the criteria take their two arms as arguments: `fn
@@ -139,7 +140,15 @@ Shape: the criteria take their two arms as arguments: `fn
   interval) over as many attempts; and, per task and arm, the medians of
   responses, of the time record's requests, compaction and tools
   seconds, and of fresh tokens. The reference is the arm whose
-  `agent_version` is the parent's commit. Lower bounds follow 02's
+  `agent_version` is the parent's commit. `AttemptRow` gains
+  `agent_version: String` and `time_record: TimeRecord`, copied from
+  each result in `attempt_row`, both required: no `#[serde(default)]`,
+  no `Option`. The summary version stays 4: no version-4 summary is
+  committed but the recorded `on-par.json` (run `parity-recorded`,
+  synthetic), whose 68 rows take both fields, `agent_version` as its
+  groups give it and a time record of literal values; any further
+  recorded summary is refreshed so, and listed in the commit body.
+  Lower bounds follow 02's
   "Choices": the parent's taken as observed and flagged, the change's
   incomplete.
 Test shape: `benchmarks/tests/parity.rs`, beside
