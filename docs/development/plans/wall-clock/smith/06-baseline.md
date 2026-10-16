@@ -38,8 +38,11 @@ and changes no code.
   sends the baseline's failed criteria to the designer at once
   (development.md 5.1, 10.4); 07 starts on 06.1's landing, unless the
   designer's answer says otherwise.
-- The small `parity-change` run builds both arms from the same commit,
-  `HEAD`: it checks the pipeline, and its ratios are not read.
+- The small `parity-change` run builds its change arm from the
+  summary's commit and its parent arm from the baseline's, the summary
+  commit's parent: one code, two commits, so that the pipeline picks
+  the parent arm by its commit as benchmarks.md 16.6 says. It checks
+  the pipeline, and its ratios are not read.
 
 ## Rules that bind it
 
@@ -66,10 +69,11 @@ Shape: no code. On a worktree at `origin/main`:
      <SHA>`, where `<SHA>` is the full 40-hex `git rev-parse HEAD`, taken
      before the summary is committed. On an exit of 2, the summary is not
      committed, and the step stops on a question;
-  4. on 0 or 1, commit the summary, then `heavy --gate cargo run -p
-     smith-bench -- suite parity-change --arm <dir> --parent-arm <dir>
-     --attempts 1 --baseline-run benchmarks/summaries/<its file>`: 8
-     attempts. It passes when it exits 2 and `heavy cargo run -q -p
+  4. on 0 or 1, commit the summary; `heavy cargo run -p smith-bench --
+     build HEAD` gives `<dir2>`, the same code at the summary's commit;
+     then `heavy --gate cargo run -p smith-bench -- suite parity-change
+     --arm <dir2> --parent-arm <dir> --attempts 1 --baseline-run
+     benchmarks/summaries/<its file>`: 8 attempts. It passes when it exits 2 and `heavy cargo run -q -p
      smith-bench -- change <its small summary>` prints a line for each
      of FT, FC, RT, RC and O and exits 0; anything else stops the step
      on a question. Its summary is not committed;
@@ -82,7 +86,7 @@ Proof: live, once each: the baseline, 68 attempts, about $17 and 6
   `jq -c '.groups[] | {task, arm, passes, attempts}' <its summary>`;
   README rule 13's counts beside, for `shell-cwd`; the small run's
   `change` lines; and the count of smith attempts in which the guard
-  refused a request, `rg -l 'past the line'
+  refused a request, `rg -l -g trace.jsonl 'past the line: last prompt'
   ~/.local/state/smith-bench/runs/<its run>/ | wc -l` (expected 0; any
   other count is reported, and changes nothing).
 Don't: rerun an attempt, or change a task, a pin or a margin.

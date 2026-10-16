@@ -209,7 +209,9 @@ Shape: `summarise` and `suite parity-change` take `--baseline-run
   the order FT, FC, RT, RC, O (a projection above the baseline's upper
   bound, or O's change passes below `parent_lower`); otherwise `None`.
   The summary records each input's path and SHA-256. The suite exits 0
-  with no stop, 1 on `Moved`, 2 on `Incomplete`. `smith-bench change
+  with no stop, 1 on `Moved`, 2 on `Incomplete`; a run below its
+  suite's attempts exits 2 whatever its stop, as 01.3 makes every
+  `suite` do, and keeps its summary in its run directory. `smith-bench change
   <summary>` recomputes the section from the rows and the recorded
   inputs, prints one line per criterion, the projection and the stop,
   and exits 0 when it agrees with the stored section, 3 when it refuses
@@ -226,7 +228,8 @@ Test shape: `benchmarks/tests/parity.rs`:
   `a_landed_input_that_is_not_a_change_summary_is_refused`,
   `an_incomplete_report_stops_before_a_moved_criterion`,
   `the_change_command_refuses_a_section_that_disagrees`,
-  `the_change_command_agrees_with_a_stopped_section`. Each builds its
+  `the_change_command_agrees_with_a_stopped_section`,
+  `a_change_run_below_its_attempts_exits_two_whatever_its_stop`. Each builds its
   baseline and landed inputs from the recorded files, with literal
   statistics. Under 20 ms each.
 Proof: offline, those tests and `heavy cargo run -q -p smith-bench --
