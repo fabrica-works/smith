@@ -310,4 +310,135 @@ product decision. The ones with the widest reach:
 
 ## 12. The planner's
 
-Empty until the plan is written.
+How the plan applies sections 1 to 10, with the user's answers of
+2026-10-16 and the questions for the designer.
+
+### 12.1 The order
+
+- **Before the baseline,** everything that changes what the baseline
+  measures, or what the smith arms of 07.1 to 10.1 build on: the price
+  basis, the rows and the ten attempts (smith 01); the line, the spare
+  and the history's bytes (smith 03.1, 03.2); the guard (smith 04.1);
+  and, as section 10 lists, the `parity-change` suite with its report
+  and stop (smith 02), so that 06.1 runs its pipeline whole at one
+  attempt per task against the new baseline, before any full run
+  (development.md 5.5).
+- **The guard lands before the baseline,** not after it with the check.
+  Under today's check it is never reached on the suites' tasks: a
+  prompt the old check admits has at least 53,418 tokens below the line
+  (the line's 21,418 above the threshold and the 32,000 reserved), plus
+  that completion's output and the appended bytes, so the guard refuses
+  only an answer and appended part rendering past that; no main request
+  in the parity run produced more than 2,400 output tokens. Landing it
+  first lets the baseline measure it, keeps 07.1 to the check alone,
+  and runs the guard on 68 live attempts before the check depends on
+  it. 06.1 counts its refusals.
+- **The four changes, in the order of their causes' cost:** the check
+  (07.1, cause 2: 74 s and the re-reads after), the batched change
+  (08.1, causes 1 and 3: 152 s), polls (09.1, cause 4: 26 s), ranged
+  reads (10.1, fresh tokens). The check comes first although batching
+  costs more, because the check's own report is the cleanest: it
+  changes no words, and every later change runs in windows that no
+  longer compact early.
+
+### 12.2 Formats and committed files
+
+- The result and the summary move to version 4 in 01.1; the 15
+  committed summaries of version 3 and the two baselines cut from them
+  go, as the parity plan's 10.6 did at version 3: a version 4 reader
+  refuses them, and their spend is on the old basis. Git keeps them.
+  11's last `parity` run cuts the new baselines.
+- The event vocabulary moves to version 3 in 03.1, for the one new
+  effective limit (question 4); the transcript to 5 in 08.1, carrying
+  every not-run why, so that a resumed outside-the-choice call renders
+  as it was told (`findings/planning-audit.md` A15).
+
+### 12.3 The user's answers, 2026-10-16
+
+- **Two closing runs** (development.md 5.1; benchmarks.md 16.5): 11.1,
+  and 11.2 only after a change that answers 11.1's miss. A miss at 11.2
+  ends the plan with its aim unmet.
+- **Four change steps, one per cause,** each with its `parity-change`
+  run, one after another: about 12 hours of the gate lane.
+- **No repin** of jig or temper: temper's client-api run is changing
+  both on carbon-forge; their next repins take this plan's formats
+  (`later.md`).
+- And the planner's, within benchmarks.md 8.1's "each with its scope":
+  Codex's peak memory in a row is the harness's count over its process
+  tree, scope `tree`; smith's its own, scope `process`.
+
+### 12.4 Questions for the designer
+
+The design trace's questions (development.md 5.4): each is an
+observable rule the plan needed and the design did not settle, asked
+with the planner's default. **Answered** on 2026-10-16 by the designer,
+a sub-agent of the planner's session at the user's request, in smith
+`f1b33a17` (domain/session.md 5 and 8.1; protocol/llm.md 3, 5 and 6;
+protocol/limits.md 3.2, 3.9, 4 and 5; protocol/charter.md 6 and 8;
+protocol/events.md 6; protocol/transcript.md 2 and 6; benchmarks.md
+3.2, 8.1, 8.2, 11.1 and 14): questions 2 to 6 as their defaults; 1 with
+`unchanged` failing too, and any call answered `invalid`, a read's
+included; 7 widened to every response failed unsent, priced at nothing
+whether retried or compacted after, a retried failure being one whose
+evidence is `response`; 8 without the floor, since limits.md 5 keeps no
+margin above the worst case. The session files follow the answers.
+
+1. **Which of the code's verdicts are a failed write** (session.md 5)?
+   The design names `invalid`, `conflict`, `missing`, `too_large` and
+   `failed`; the code's verdicts are finer, and none is `conflict` or
+   `missing` (A16). And a `failed` write may have written part of its
+   change, against "it changed nothing". Default: a `write` or an `edit`
+   fails on every verdict but `written`, `edited` and `unchanged`, and
+   any call answered `invalid` fails.
+2. **How the not-run text names the failed call** (llm.md 5;
+   transcript.md 2). Default: by its position among the response's
+   calls, from 1, and its tool: `not run: call <n> (<tool>) failed
+   before it; this call's changes were not made`, the transcript keeping
+   the position.
+3. **A block's framing in the guard's measure** (llm.md 6; limits.md
+   3.2, 3.9): "at the prompt allowance's share for a block", but the
+   allowance is one number for a whole prompt, and no share for a block
+   is defined (A7). Default: the measure is the request's encoded body
+   less the encoded body of the same request cut where the new part
+   starts, both through skein's `client::measure`, so a block's framing
+   counts as encoded, a byte a token.
+4. **The line among the effective limits** (limits.md 9; benchmarks.md
+   11.1): the `history` probe reads the line "from the effective limits
+   `session.started` carries", which hold neither the summary
+   instruction's size nor the marker's (A13). Default: the run's
+   `Limits` gain `compaction_material`, the summary instruction's bytes
+   plus the markers', named `run.compaction_material`; the run gives
+   each conversation its line at open; the event vocabulary moves to
+   version 3 (events.md 6).
+5. **The refusal of a negative spare** (charter.md 6 and 8): which
+   refusal names it. Default: the existing `Invalid::Llm`, so that the
+   channel keeps version 2.
+6. **benchmarks.md 11.1's `history` condition** at the line: it changed
+   in the design's landing, but `STATUS.md` names no Left for 11.1.
+   Default: this plan's (03.3), since 07.1 would otherwise fail the
+   probe's `conversation-opened` on prompts between the threshold and
+   the line.
+7. **The price of a request the guard refused** (benchmarks.md 8.1,
+   8.2, 16.3): it reached no provider, has no usage, and is never
+   retried as such (the compaction after it is a new completion), so
+   by 8.1's words the attempt's priced spend would be unavailable and
+   the verdict incomplete, though 07.1's stories expect refusals.
+   Default: a response that failed unsent is priced at zero.
+8. **`memory` for 03.2's derivation** (limits.md 5; shell.md 6.3):
+   sections 2.6 and 9 have the step raise `memory` by what the
+   derivation adds, written when 28,783 bytes were left; at the base
+   the standard profile's larger worst case leaves 120,442,167 bytes
+   (`findings/planning-commands.md`), and limits.md 5 raises `memory`
+   when "a change whose worst case passes" it. Default: `memory` stays
+   2 GiB while the new worst case fits it, with a floor of 16 MiB that a
+   test holds (development.md 5.6), and 03.2's commit names each part
+   that grew and its bytes.
+
+### 12.5 For the user
+
+Reversible, and none a product decision; the widest in reach:
+
+1. The guard before the baseline (12.1).
+2. The 15 summaries and two baselines of version 3 dropped (12.2).
+3. The event vocabulary's version 3 (question 4), which jig's and
+   temper's next repins take with transcript version 5.

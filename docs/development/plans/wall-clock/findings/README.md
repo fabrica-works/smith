@@ -7,5 +7,7 @@ and 4.1), the parity run's follow-up: why smith's `shell-cwd` time (RT) stayed a
 |---|---|---|
 | `causes.md` | where smith's wall time goes against Codex's on `shell-cwd`, read from the last closing `parity` run's attempts; the compaction trigger's arithmetic; fresh tokens; the price basis; raising the window; the memory ceiling | decisions.md, sections 1, 2 and 4 to 8 |
 | `rt-power.md` | RT's power by attempts per arm, simulated from the three `parity` runs' spread | decisions.md, section 3 |
+| `planning-audit.md` | the planner's code audit, entries A1 to A27 | the increments that cite them |
+| `planning-commands.md` | the plan's commands, run once at the base, with their output | the commands' forms; the memory margin (03.2) |
 
 No spike was run. The user's decisions on this evidence are decisions.md, section 1.
