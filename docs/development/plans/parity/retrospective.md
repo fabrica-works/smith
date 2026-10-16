@@ -1077,21 +1077,46 @@ designer).
 
 ## 10. Decisions
 
+2026-10-16. The user delegated these decisions. Before the run ended:
+"if there are open questions to settle, tell the agents to use their
+judgement to settle them, because otherwise the new plan can't be
+started. Same for the smith plan currently in progress, in case it
+lands." Earlier, the designer's recommendation stands "unless there is
+something with long-term consequences and hard to change decisions"
+(2026-10-14). And on 2026-10-16: "my idea is to start a new design/plan
+for smith as follow-up of the parity one, with the goal of improving the
+wall clock performance of smith wrt codex. I'll wait for the designer to
+finish, then review its decisions and move ahead." None of these is hard
+to change, and none is a product decision; proposal 4, which would
+settle how a smith change shows its effect on the criteria, waits for
+that design. The designer decided them on the evidence of sections 5, 7
+and 8, as the rows say, and applied what is adopted in skein `30bc10f`
+(development.md and its two cards). The same landing round put this
+plan's `later.md` row for the repositories downstream of smith into
+their `STATUS.md`, under "Not planned" (jig `0290387`, temper
+`53b52a2`), as skein-ui's proposal 8 asks. Changes to the kit (`plan`,
+`land`, `numbers.sh`, the coordinator's Codex profile and the
+workspace's files) go on skein's branch `kit-after-parity`, which waits
+until temper's client-api run has ended: that run lands in skein, and
+its landing would bring a kit landed meanwhile into its machine's
+checkout mid-run. Where a kit part leaves the next run exposed, a text
+rule stands in until it lands (proposals 5 and 11).
+
 | Proposal | Decision | Where |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
-| 5 | open | |
-| 6 | open | |
-| 7 | open | |
-| 8 | open | |
-| 9 | open | |
-| 10 | open | |
-| 11 | open | |
-| 12 | open | |
-| 13 | open | |
-| 14 | open | |
-| 15 | open | |
-| 16 | open | |
+| 1 | adopted, taking in jig-protocol's proposal 14, its first half, never decided: a question for the user is pushed at once, in one line with the choice and the default | skein 30bc10f: development.md, 1 and 10.4; supervisor.md, 9 |
+| 2 | adopted | skein 30bc10f: development.md, 5.3 and 5.5 |
+| 3 | adopted, generalizing smith's benchmarks.md 16.5 (a plan that targets parity bounds its closing runs) to any plan whose aim is a measured verdict; a baseline's miss goes to the designer at once | skein 30bc10f: development.md, 5.1 and 10.4; supervisor.md, 4 |
+| 4 | deferred: to smith's wall-clock design, the parity run's follow-up. That design is to say how a change that alters what the model is sent reports its effect on the measures the criteria read (benchmarks.md 4.2 and 9, against 16.2), and whether a move the wrong way past the baseline's interval stops it, whatever its own comparison concludes. Until then, proposal 3's rule sends a baseline's miss to the designer | smith's wall-clock design: benchmarks.md, 4.2 and 16 |
+| 5 | adopted; the kit's: `plan idle` takes the ids of the queue tasks waited on, `plan watch` rings when they have ended, and `plan ring`, `plan resume` and the watch load an unloaded thread first, taking in client-composition's 4 and protocol's 8, its kit part, both deferred. Until it lands, the supervisor loads the thread by hand, as the parity run's supervisors did | skein's branch `kit-after-parity`: `plan` (`idle`, `watch`, `ring`, `resume`), with development.md, 7.4, 10.5 and 13, and supervisor.md, 2; meanwhile skein 30bc10f: development.md, 10.5 and 13; supervisor.md, 2 |
+| 6 | adopted, extending skein-ui's 3 (a resumed session past 150,000 tokens) to the handover between increments. `PLAN_CONTEXT_LIMIT`'s default is the kit's: until it moves to 150,000, the coordinator reads `plan contexts`' numbers, flagged or not | skein 30bc10f: development.md, 2.4, 5.3 and 7.3, step 4; implementer.md, 8.6; skein's branch `kit-after-parity`: `PLAN_CONTEXT_LIMIT` |
+| 7 | adopted in part: a session's `target/` goes after each of its landings, at most six sessions run below 60 GB of disk (ruling 108), and `kache gc` runs at every disk check below 80 GB (ruling 111), replacing protocol's 10 ("`kache gc` when the store is past its cap, once"); the run tested these, and no disk event followed. The start bound of 25 GB for each running session and 40 GB more is rejected: the run never tested it, and on the 133 to 158 GB its checks read it would have held the run to four or five sessions, where ruling 108's rules allowed eight with no disk event. The pulse's disk line is the kit's | skein 30bc10f: development.md, 11.4; implementer.md, 8.1; skein's branch `kit-after-parity`: `plan pulse` |
+| 8 | adopted; the kit's: pueued's unit restarts after a delay with no start limit, `plan check --fix` sets it up, and `plan watch` alerts when the daemon is down, with reliability's 20's `alerts.md`, deferred. Until then, development.md 10.6 holds (`plan check --fix` starts the daemon), and proposal 1 keeps the supervisor free to see the block | skein's branch `kit-after-parity`: `plan` (`check --fix`, `watch`), with development.md, 11.1 |
+| 9 | adopted, sharpening test-budgets' 12 (a design gap always reaches the designer) | skein 30bc10f: development.md, 10.4; supervisor.md, 3 |
+| 10 | adopted, the command's output in the plan's `findings/` (`planning-commands.md` was this plan's own file) | skein 30bc10f: development.md, 5.4 and 5.6 |
+| 11 | adopted; the kit's: `plan watch` prints an event when `supervision.md`'s last check is over 65 minutes old, and the hourly check needs no cron. Its word is the kit's to choose: `check:` already names the ready check. Until it lands, a successor or a restarted supervisor whose last check is over 45 minutes old runs one at once | skein's branch `kit-after-parity`: `plan watch`, with development.md, 14.1, and supervisor.md, 1, 2 and 6; meanwhile skein 30bc10f: supervisor.md, 1 |
+| 12 | adopted | skein 30bc10f: development.md, 14.1, step 5, and 14.4; supervisor.md, 6 |
+| 13 | adopted, amending reliability's 8 (the hourly check by a sub-agent) for an hour with no session running | skein 30bc10f: development.md, 14.1; supervisor.md, 6 |
+| 14 | adopted in part: a design and a plan are written in sessions of their own, started by the user or with `claude --bg`, never as a sub-agent of another session, extending client-composition's 7 (wait, and hand over past 300K) and test-budgets' planning in a fresh session. A bounded task of the designer's with one report, such as these decisions, may run as a fresh sub-agent, its landing naming both sessions. The workspace `AGENTS.md`'s "Starting things", and the metrics counting a named sub-agent's own sub-agents (proposal 15), are the kit's | skein 30bc10f: development.md, 2, 2.1 and 2.2; skein's branch `kit-after-parity`: `workspace/AGENTS.md` |
+| 15 | adopted; the kit's, taking in reliability's 17's deferred rest, protocol's 11 and client-composition's 9's deferred part: `plan metrics` and section 15.2's definitions change together | skein's branch `kit-after-parity`: `numbers.sh`, with development.md, 15.2 |
+| 16 | adopted | skein 30bc10f: development.md, 4.4, 14.1 (step 2) and 15.1; supervisor.md, 1 and 6 |
