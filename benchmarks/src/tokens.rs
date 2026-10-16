@@ -217,6 +217,26 @@ fn scoped_counts(usage: &TokenCounts, scope: &str) -> TokenCounts {
     }
 }
 
+/// One response's priced fields, retained by the adapter's token ledger.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResponseTokens {
+    /// The response id, including its adapter scope prefix.
+    pub scope: String,
+    pub model: String,
+    pub fresh: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub output: u64,
+}
+
+impl ResponseTokens {
+    /// The response's prompt size selects its provider's list-price tier.
+    #[must_use]
+    pub fn prompt_tokens(&self) -> u64 {
+        self.fresh.saturating_add(self.cache_read).saturating_add(self.cache_write)
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Scope {
     role: ScopeKind,
@@ -230,6 +250,7 @@ struct Scope {
 pub struct TokenLedger {
     scopes: BTreeMap<String, Scope>,
     responses: BTreeMap<String, Usage>,
+    priced_responses: Vec<ResponseTokens>,
 }
 
 impl TokenLedger {
@@ -260,13 +281,25 @@ impl TokenLedger {
     /// Count an immutable response once, returning false for an identical repeat.
     /// Conflicting repeats and convention changes fail rather than replace usage.
     pub fn record(&mut self, scope: &str, response: &str, usage: Usage) -> Result<bool, String> {
-        self.record_with_reason(scope, response, usage, None)
+        self.record_with_reason(scope, response, "", usage, None)
+    }
+
+    /// Count response usage with the model resolved by its conversation.
+    pub fn record_model(&mut self, scope: &str, response: &str, model: &str, usage: Usage) -> Result<bool, String> {
+        self.record_with_reason(scope, response, model, usage, None)
+    }
+
+    /// Read complete response records without replacing missing usage by zero.
+    #[must_use]
+    pub fn responses(&self) -> &[ResponseTokens] {
+        &self.priced_responses
     }
 
     pub(crate) fn record_with_reason(
         &mut self,
         scope: &str,
         response: &str,
+        model: &str,
         usage: Usage,
         reason: Option<&str>,
     ) -> Result<bool, String> {
@@ -275,7 +308,9 @@ impl TokenLedger {
             return Err("response needs an id and its scope's convention".into());
         }
         if let Some(previous) = self.responses.get(response) {
-            if previous != &usage {
+            if previous != &usage
+                || self.priced_responses.iter().any(|record| record.scope == response && record.model != model)
+            {
                 return Err(format!("conflicting repeated usage for response {response}"));
             }
             return Ok(false);
@@ -284,6 +319,22 @@ impl TokenLedger {
             Some(reason) => TokenCounts::unavailable(reason),
             None => usage.normalise()?,
         };
+        if let (
+            Measure::Observed { value: fresh },
+            Measure::Observed { value: cache_read },
+            Measure::Observed { value: cache_write },
+            Measure::Observed { value: output },
+        ) = (&counts.fresh, &counts.cache_read, &counts.cache_write, &counts.output)
+        {
+            self.priced_responses.push(ResponseTokens {
+                scope: response.into(),
+                model: model.into(),
+                fresh: *fresh,
+                cache_read: *cache_read,
+                cache_write: *cache_write,
+                output: *output,
+            });
+        }
         let normalised = scoped_counts(&counts, response);
         target.responses.insert(response.into(), normalised);
         self.responses.insert(response.into(), usage);

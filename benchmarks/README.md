@@ -88,9 +88,9 @@ estimates; missing costs remain unavailable.
 `summarise` reads result files recursively or one explicit result. It
 writes `benchmarks/summaries/<run>.json`, recording the suite, tier,
 design and seed. An optional baseline path is its final argument.
-Summaries use version 3 and name the harness commit as `priced_at`.
+Summaries use version 4 and name the harness commit as `priced_at`.
 Cross-agent comparisons retain both token conventions and use common priced
-spend from the product presets at that commit. Tool calls stay within each arm; only task
+spend from the product presets at that commit, pricing each response at the tier its own prompt reaches. The declared window does not select a rate. Tool calls stay within each arm; only task
 and process wall time, token fields and priced spend compare across agents.
 `baseline` freezes one binary, configuration and tier under
 `benchmarks/baselines/<name>.json`. For a suite with several configurations, `--group` selects one agent,

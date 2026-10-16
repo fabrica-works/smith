@@ -53,7 +53,7 @@ pub use summary::{
     SummaryComparison, baseline, baseline_group, committed_costs, read_baseline, read_results, read_summary, summarise,
     write_summary,
 };
-pub use tokens::{Convention, ScopeKind, TokenCounts, TokenLedger, TokenRecord, Usage};
+pub use tokens::{Convention, ResponseTokens, ScopeKind, TokenCounts, TokenLedger, TokenRecord, Usage};
 
 pub use judgment::{Judgment, judge, judge_suite};
 

@@ -26,10 +26,16 @@ fn loss(metric: &mut Measure<u64>, reason: &str) {
     }
 }
 
-fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenRecord>, String> {
+fn run_tokens(
+    session: &Session,
+    index: usize,
+    run: u64,
+    priced: &mut Vec<crate::ResponseTokens>,
+) -> Result<Vec<TokenRecord>, String> {
     let prefix = format!("session-{index}/run-{run}");
     let mut ledger = TokenLedger::default();
     let mut scopes = BTreeMap::new();
+    let mut models = BTreeMap::new();
     for record in &session.records {
         if let Event::ConversationOpened(conversation) = &record.event
             && conversation.run == run
@@ -48,6 +54,14 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
                     return Err(format!("unknown conversation kind {}", String::from_utf8_lossy(value)));
                 }
             };
+            models.insert(
+                conversation.conversation,
+                format!(
+                    "{}/{}",
+                    String::from_utf8_lossy(&conversation.model.endpoint),
+                    String::from_utf8_lossy(&conversation.model.model)
+                ),
+            );
             match scopes.insert(conversation.conversation, role.clone()) {
                 Some(previous) if previous != role => return Err("conversation scope changed its role".into()),
                 Some(_) | None => {}
@@ -87,17 +101,13 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
             ledger.record_with_reason(
                 &format!("{prefix}/conversation-{}", response.conversation),
                 &format!("{prefix}/response-{}", response.response),
-                Usage::SmithEvents {
-                    input: response.usage.input_tokens,
-                    cache_read: response.usage.cache_read_tokens,
-                    cache_write: response.usage.cache_write_tokens,
-                    output: response.usage.output_tokens,
-                    reasoning: response.usage.reasoning_tokens,
-                },
+                models.get(&response.conversation).map_or("", String::as_str),
+                response_usage(response),
                 reason,
             )?;
         }
     }
+    priced.extend_from_slice(ledger.responses());
     let mut records = ledger.records()?;
     if let Some(reason) = incomplete(session) {
         for record in &mut records {
@@ -115,6 +125,27 @@ fn run_tokens(session: &Session, index: usize, run: u64) -> Result<Vec<TokenReco
     Ok(records)
 }
 
+fn response_usage(response: &ResponseCompleted) -> Usage {
+    let unsent = response.failure.as_ref().is_some_and(|failure| failure.evidence == Evidence::Unsent);
+    if unsent {
+        Usage::SmithEvents {
+            input: Some(0),
+            cache_read: Some(0),
+            cache_write: Some(0),
+            output: Some(0),
+            reasoning: Some(0),
+        }
+    } else {
+        Usage::SmithEvents {
+            input: response.usage.input_tokens,
+            cache_read: response.usage.cache_read_tokens,
+            cache_write: response.usage.cache_write_tokens,
+            output: response.usage.output_tokens,
+            reasoning: response.usage.reasoning_tokens,
+        }
+    }
+}
+
 fn retried_failure(
     session: &Session,
     position: usize,
@@ -123,10 +154,7 @@ fn retried_failure(
 ) -> bool {
     response.outcome == Outcome::Failed
         && response.blocks == 0
-        && response
-            .failure
-            .as_ref()
-            .is_some_and(|failure| matches!(failure.evidence, Evidence::Response | Evidence::Unsent))
+        && response.failure.as_ref().is_some_and(|failure| failure.evidence == Evidence::Response)
         && [
             response.usage.input_tokens,
             response.usage.cache_read_tokens,
@@ -143,7 +171,10 @@ fn retried_failure(
         })
 }
 
-pub(super) fn tokens(sessions: &[Session]) -> Result<Vec<TokenRecord>, String> {
+pub(super) fn tokens(
+    sessions: &[Session],
+    priced: &mut Vec<crate::ResponseTokens>,
+) -> Result<Vec<TokenRecord>, String> {
     let mut result = Vec::new();
     let mut total: Option<crate::TokenCounts> = None;
     for (index, session) in sessions.iter().enumerate() {
@@ -173,7 +204,7 @@ pub(super) fn tokens(sessions: &[Session]) -> Result<Vec<TokenRecord>, String> {
             })
             .collect();
         for run in runs {
-            for record in run_tokens(session, index, run)? {
+            for record in run_tokens(session, index, run, priced)? {
                 if record.role == ScopeKind::Total {
                     total = Some(match total {
                         Some(previous) => previous.add(&record.usage)?,

@@ -576,7 +576,9 @@ fn collect_observation(
                     let rollouts = observing.collected.as_ref().expect("completed collection");
                     rollouts.resolve_model(&thread, &mut result.identity.model).map_err(|error| error.to_string())?;
                     rollouts.timing(&thread, &mut result.timing).map_err(|error| error.to_string())?;
-                    result.tokens = rollouts.token_records(&thread)?;
+                    let ledger = rollouts.token_ledger(&thread)?;
+                    result.tokens = ledger.records()?;
+                    result.spend.priced = crate::result::priced_spend(result, ledger.responses());
                     rollouts.counts(&thread, &mut result.counts).map_err(|error| error.to_string())?;
                 }
             }
@@ -585,6 +587,10 @@ fn collect_observation(
                 observing.observer.timing(&mut result.timing);
                 result.tokens = observing.tokens()?;
                 result.spend = observing.spend(&result.tokens)?;
+                result.spend.priced = crate::result::priced_spend(
+                    result,
+                    &observing.observer.response_tokens().map_err(|error| error.what)?,
+                );
                 result.counts = observing.counts();
                 result.delegation = observing.delegation();
             }
@@ -673,7 +679,6 @@ fn observe(
         None => Vec::new(),
     };
     collect_observation(guard, directory, result, process)?;
-    result.spend.priced = crate::result::priced_spend(result);
     result.cache = cache::observation(process, task);
     if result.identity.agent == crate::Agent::Codex && result.cache.is_some() {
         result.outcome.checks.push(crate::CheckVerdict {

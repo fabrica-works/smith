@@ -605,13 +605,16 @@ fn repository_threads() -> (String, Rollouts) {
     ];
     let mut rollouts = Rollouts { responses: vec![], children: vec![], files: vec![] };
     for (thread, bytes) in sources {
-        let (link, responses) = parse_rollout(bytes, thread).expect("archived native rollout");
+        // Supply the model context omitted by this usage-only projection.
+        let context = b"{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-6.1-sol\"}}\n";
+        let bytes = [context.as_slice(), bytes].concat();
+        let (link, responses) = parse_rollout(&bytes, thread).expect("archived native rollout");
         if thread == root {
             rollouts.responses = responses;
         } else {
             rollouts.children.push(ChildThread { thread: thread.into(), link, responses });
         }
-        rollouts.files.push(smith_bench::agent::codex::RolloutFile { thread: thread.into(), bytes: bytes.into() });
+        rollouts.files.push(smith_bench::agent::codex::RolloutFile { thread: thread.into(), bytes });
     }
     (root.into(), rollouts)
 }
@@ -782,4 +785,25 @@ fn codex_trusts_the_attempt_root() {
         Some("trusted")
     );
     fixture.finish(prepared);
+}
+
+#[test]
+fn codex_responses_are_priced_from_their_usage_records() {
+    let (root, rollouts) = repository_threads();
+    let ledger = rollouts.token_ledger(&root).expect("response usage");
+    assert_eq!(ledger.responses().len(), 112);
+    let value: f64 = ledger
+        .responses()
+        .iter()
+        .map(|response| {
+            let prices = smith_local_shell::presets::list_prices("codex", &response.model, response.prompt_tokens())
+                .expect("model price");
+            let cost = u128::from(response.fresh - response.cache_write) * u128::from(prices.input)
+                + u128::from(response.cache_read) * u128::from(prices.cached)
+                + u128::from(response.cache_write) * u128::from(prices.cache_write.expect("write price"))
+                + u128::from(response.output) * u128::from(prices.output);
+            cost.to_string().parse::<f64>().expect("cost") / (f64::from(prices.unit) * 1_000_000.0)
+        })
+        .sum();
+    assert!((value - 1.75468).abs() < 1e-12);
 }

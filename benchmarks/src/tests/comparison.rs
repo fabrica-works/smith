@@ -2,6 +2,29 @@
 
 use super::recorded_result;
 
+fn response(result: &crate::AttemptResult) -> crate::ResponseTokens {
+    let usage = &result.tokens.iter().find(|record| record.role == crate::ScopeKind::Total).expect("total").usage;
+    crate::ResponseTokens {
+        scope: "response-1".into(),
+        model: match &result.identity.model.resolved_model {
+            crate::Measure::Observed { value } => value.clone(),
+            crate::Measure::LowerBound { .. } | crate::Measure::Unavailable { .. } => String::new(),
+        },
+        fresh: crate::tokens::reported(&usage.fresh).unwrap_or(0),
+        cache_read: crate::tokens::reported(&usage.cache_read).unwrap_or(0),
+        cache_write: crate::tokens::reported(&usage.cache_write).unwrap_or(0),
+        output: crate::tokens::reported(&usage.output).unwrap_or(0),
+    }
+}
+
+fn pricing_result() -> crate::AttemptResult {
+    let mut result = recorded_result();
+    for record in &mut result.tokens {
+        record.usage.cache_write = crate::Measure::Observed { value: 0 };
+    }
+    result
+}
+
 fn cross_agent_results() -> Vec<crate::AttemptResult> {
     let mut results = Vec::new();
     for (arm, agent, convention, fresh) in [
@@ -47,7 +70,7 @@ pub(super) fn cross_agent_spend_is_priced_from_one_table() {
             record.usage.cache_write = crate::Measure::Observed { value: 0 };
             record.usage.output = crate::Measure::Observed { value: 10 };
         }
-        result.spend.priced = super::super::result::priced_spend(result);
+        result.spend.priced = super::super::result::priced_spend(result, &[response(result)]);
     }
     let summary =
         crate::summarise(&results, "compare", "working", crate::Design::Single, 17, None, None).expect("summary");
@@ -63,7 +86,12 @@ pub(super) fn a_model_missing_from_the_price_table_leaves_priced_spend_unavailab
     for result in &mut results {
         result.identity.model.resolved_window = crate::Measure::Observed { value: 272_000 };
         result.identity.model.resolved_model = crate::Measure::Observed { value: "unlisted-model".into() };
-        result.spend.priced = super::super::result::priced_spend(result);
+        for record in &mut result.tokens {
+            record.usage.cache_read = crate::Measure::Observed { value: 20 };
+            record.usage.cache_write = crate::Measure::Observed { value: 0 };
+            record.usage.output = crate::Measure::Observed { value: 10 };
+        }
+        result.spend.priced = super::super::result::priced_spend(result, &[response(result)]);
     }
     let summary =
         crate::summarise(&results, "compare", "working", crate::Design::Single, 17, None, None).expect("summary");
@@ -108,7 +136,12 @@ fn preset_priced_result() -> crate::AttemptResult {
         record.usage.cache_write = crate::Measure::Observed { value: 100_000 };
         record.usage.output = crate::Measure::Observed { value: 1_000_000 };
     }
-    result.spend.priced = super::super::result::priced_spend(&result);
+    let mut record = response(&result);
+    record.fresh = 100_000;
+    record.cache_read = 100_000;
+    record.cache_write = 10_000;
+    record.output = 100_000;
+    result.spend.priced = super::super::result::priced_spend(&result, &vec![record; 10]);
     result
 }
 
@@ -127,7 +160,7 @@ fn the_priced_basis_names_its_catalog_commit() {
     let summary =
         crate::summarise(&[result], "sample", "working", crate::Design::Single, 17, None, None).expect("summary");
     assert_eq!(summary.priced_at, commit);
-    assert_eq!(summary.version, 3);
+    assert_eq!(summary.version, 4);
 }
 
 #[test]
@@ -141,13 +174,91 @@ fn an_agents_own_figure_is_kept_beside_the_priced_one() {
 }
 
 #[test]
-fn an_unavailable_window_leaves_the_priced_spend_unavailable() {
+fn a_response_without_usage_leaves_the_spend_unavailable() {
     let mut result = preset_priced_result();
-    result.identity.model.resolved_window = crate::Measure::unavailable("stream omits context window");
+    let total = result.tokens.iter_mut().find(|record| record.role == crate::ScopeKind::Total).expect("total");
+    total.usage.output = crate::Measure::unavailable("response-2: output_tokens is null");
     assert_eq!(
-        super::super::result::priced_spend(&result),
-        crate::Measure::unavailable("declared model window not observed for pricing")
+        super::super::result::priced_spend(&result, &[response(&result)]),
+        crate::Measure::unavailable("total output tokens: response-2: output_tokens is null")
     );
+}
+
+#[test]
+fn each_response_is_priced_at_its_own_prompts_tier() {
+    let result = pricing_result();
+    let responses = [100_000, 300_000].map(|fresh| crate::ResponseTokens {
+        scope: format!("response-{fresh}"),
+        model: "gpt-6.1-sol".into(),
+        fresh,
+        cache_read: 0,
+        cache_write: 0,
+        output: 1000,
+    });
+    assert_eq!(super::super::result::priced_spend(&result, &responses), crate::Measure::Observed { value: 1.425 });
+}
+
+#[test]
+fn a_declared_window_past_the_tier_prices_short_prompts_at_base_rates() {
+    let mut result = pricing_result();
+    result.identity.model.resolved_window = crate::Measure::Observed { value: 475_000 };
+    let response = crate::ResponseTokens {
+        scope: "response-1".into(),
+        model: "gpt-6.1-sol".into(),
+        fresh: 100_000,
+        cache_read: 0,
+        cache_write: 0,
+        output: 1000,
+    };
+    assert_eq!(super::super::result::priced_spend(&result, &[response]), crate::Measure::Observed { value: 0.21 });
+}
+
+#[test]
+fn a_child_on_another_model_is_priced_at_its_own() {
+    let result = pricing_result();
+    let responses = ["gpt-6.1-sol", "gpt-6-luna"].map(|model| crate::ResponseTokens {
+        scope: model.into(),
+        model: model.into(),
+        fresh: 100_000,
+        cache_read: 0,
+        cache_write: 0,
+        output: 1000,
+    });
+    assert_eq!(super::super::result::priced_spend(&result, &responses), crate::Measure::Observed { value: 0.2205 });
+}
+
+fn unsent_result(retried: bool) -> crate::AttemptResult {
+    let mut result = pricing_result();
+    let limits = smith_events::Limits { string: 524_288, content: 4096, items: 512 };
+    let mut observer = crate::agent::smith::events::Observer::with_ceiling(&limits, 16_384).expect("response bounds");
+    let records = include_str!("../../tests/recorded/retried-failure-17d63afd-02.jsonl")
+        .replace("\"evidence\":\"response\"", "\"evidence\":\"unsent\"");
+    let mut records: Vec<serde_json::Value> =
+        records.lines().map(|line| serde_json::from_str(line).expect("event")).collect();
+    if !retried {
+        for record in &mut records {
+            if record["type"] == "response.started" && record["attempt"].as_u64().is_some_and(|attempt| attempt > 0) {
+                record["turn"] = serde_json::json!(999);
+            }
+        }
+    }
+    for record in records {
+        observer.feed(format!("{record}\n").as_bytes()).expect("recorded event");
+    }
+    observer.finish().expect("whole lines");
+    result.tokens = observer.tokens().expect("tokens");
+    result.spend.priced = super::super::result::priced_spend(&result, &observer.response_tokens().expect("responses"));
+    result
+}
+
+#[test]
+fn a_request_refused_unsent_is_priced_at_nothing() {
+    assert_eq!(unsent_result(false).spend.priced, crate::Measure::Observed { value: 0.036_580_4 });
+}
+
+#[test]
+fn a_retried_unsent_failure_leaves_no_gap() {
+    assert_eq!(unsent_result(true).spend.priced, crate::Measure::Observed { value: 0.036_580_4 });
 }
 
 #[test]

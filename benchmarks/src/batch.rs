@@ -586,10 +586,21 @@ mod tests {
         assert_eq!(known_tokens(&result), None);
     }
 
+    fn priced_response() -> crate::ResponseTokens {
+        crate::ResponseTokens {
+            scope: "response-4".into(),
+            model: "gpt-6.1-sol".into(),
+            fresh: 10,
+            cache_read: 20,
+            cache_write: 0,
+            output: 30,
+        }
+    }
+
     #[test]
     fn pricing_reported_tokens_keeps_the_retried_failure_lower_bound() {
         assert_eq!(
-            crate::result::priced_spend(&retried_total()),
+            crate::result::priced_spend(&retried_total(), &[priced_response()]),
             Measure::LowerBound { value: 0.000_322, missing: vec!["root: response-3: retried failure".into()] }
         );
     }
@@ -600,7 +611,7 @@ mod tests {
         let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
         total.usage.output = Measure::LowerBound { value: 30, missing: vec!["root: missing response".into()] };
         assert_eq!(
-            crate::result::priced_spend(&result),
+            crate::result::priced_spend(&result, &[priced_response()]),
             Measure::unavailable("total output tokens are a lower bound: root: missing response")
         );
     }

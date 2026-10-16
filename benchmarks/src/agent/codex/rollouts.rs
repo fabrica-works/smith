@@ -24,6 +24,7 @@ const MAX_BYTES: usize = 64 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResponseUsage {
     pub response: String,
+    pub model: String,
     pub usage: Usage,
 }
 
@@ -144,6 +145,7 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
     let mut ancestors = BTreeSet::new();
     let mut responses = BTreeMap::new();
     let mut order = Vec::new();
+    let mut model = String::new();
     for (offset, line) in text.lines().enumerate() {
         let value: serde_json::Value = serde_json::from_str(line)
             .map_err(|error| bad("rollout", &format!("line {}", offset + 1), error.to_string()))?;
@@ -152,6 +154,10 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
             "session_meta" => {
                 let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing metadata"))?;
                 metadata(payload, thread, &mut parents, &mut ancestors)?;
+            }
+            "turn_context" => {
+                let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing context"))?;
+                model = required_string(payload, "model")?.into();
             }
             "token_usage_record" => {
                 let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing usage"))?;
@@ -167,8 +173,8 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
                 if !responses.contains_key(&response) {
                     order.push(response.clone());
                 }
-                if let Some(previous) = responses.insert(response.clone(), usage.clone())
-                    && previous != usage
+                if let Some(previous) = responses.insert(response.clone(), (model.clone(), usage.clone()))
+                    && previous != (model.clone(), usage)
                 {
                     return Err(bad(kind, "payload.response_id", "conflicting repeated usage"));
                 }
@@ -188,8 +194,8 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
         order
             .into_iter()
             .map(|response| {
-                let usage = responses.remove(&response).expect("observed response");
-                ResponseUsage { response, usage }
+                let (model, usage) = responses.remove(&response).expect("observed response");
+                ResponseUsage { response, model, usage }
             })
             .collect(),
     ))
@@ -298,10 +304,15 @@ pub(super) fn collect_named(
 impl Rollouts {
     /// Replace root turn aggregates with immutable per-response scope evidence.
     pub fn token_records(&self, root: &str) -> Result<Vec<TokenRecord>, String> {
+        self.token_ledger(root)?.records()
+    }
+
+    /// Retain response records with each rollout's resolved model.
+    pub fn token_ledger(&self, root: &str) -> Result<TokenLedger, String> {
         let mut ledger = TokenLedger::default();
         ledger.declare(root, ScopeKind::Root, Convention::Codex, "named root has no per-response usage")?;
         for response in &self.responses {
-            ledger.record(root, &response.response, response.usage.clone())?;
+            ledger.record_model(root, &response.response, &response.model, response.usage.clone())?;
         }
         for child in &self.children {
             match &child.link {
@@ -313,7 +324,12 @@ impl Rollouts {
                         "named child has no per-response usage",
                     )?;
                     for response in &child.responses {
-                        ledger.record(&child.thread, &response.response, response.usage.clone())?;
+                        ledger.record_model(
+                            &child.thread,
+                            &response.response,
+                            &response.model,
+                            response.usage.clone(),
+                        )?;
                     }
                 }
                 Link::Unlinked => {
@@ -322,7 +338,7 @@ impl Rollouts {
                 }
             }
         }
-        ledger.records()
+        Ok(ledger)
     }
 }
 

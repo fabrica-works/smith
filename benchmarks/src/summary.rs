@@ -7,7 +7,7 @@
 mod compare;
 
 /// The one committed summary format understood by this harness.
-pub const SUMMARY_VERSION: u32 = 3;
+pub const SUMMARY_VERSION: u32 = 4;
 
 /// The one baseline format understood by this harness.
 pub const BASELINE_VERSION: u32 = 1;

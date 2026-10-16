@@ -358,19 +358,19 @@ fn invalid_recorded_manifests() {
 #[test]
 fn committed_summaries_and_baselines_parse_at_result_version_two() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    assert_eq!(smith_bench::RESULT_VERSION, 3);
+    assert_eq!(smith_bench::RESULT_VERSION, 4);
     // The catalogue test checks the full inventory; sample each versioned reader here.
     for entry in std::fs::read_dir(root.join("summaries")).expect("summaries") {
         let path = entry.expect("summary entry").path();
         if path.extension().is_some_and(|extension| extension == "json") {
-            assert_eq!(smith_bench::read_summary(&path).expect("committed summary").result_version, 3);
+            assert_eq!(smith_bench::read_summary(&path).expect("committed summary").result_version, 4);
             break;
         }
     }
     for entry in std::fs::read_dir(root.join("baselines")).expect("baselines") {
         let path = entry.expect("baseline entry").path();
         if path.extension().is_some_and(|extension| extension == "json") {
-            assert_eq!(smith_bench::read_baseline(&path).expect("committed baseline").result_version, 3);
+            assert_eq!(smith_bench::read_baseline(&path).expect("committed baseline").result_version, 4);
             break;
         }
     }

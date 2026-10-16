@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Agent, Provider, Refusal, TokenRecord};
 
 /// The one result format understood by this harness.
-pub const RESULT_VERSION: u32 = 3;
+pub const RESULT_VERSION: u32 = 4;
 
 /// A measurement supplied by an observer, preserving its knowledge boundary.
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -312,25 +312,14 @@ pub struct Spend {
     pub usd: Measure<f64>,
 }
 
-pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
-    let Measure::Observed { value: model } = &result.identity.model.resolved_model else {
-        return Measure::unavailable("resolved model not observed for pricing");
-    };
-    let Measure::Observed { value: window } = &result.identity.model.resolved_window else {
-        return Measure::unavailable("declared model window not observed for pricing");
-    };
+pub(crate) fn priced_spend(result: &AttemptResult, responses: &[crate::ResponseTokens]) -> Measure<f64> {
     let endpoint = match result.identity.provider {
         Provider::Codex => "codex",
         Provider::Anthropic => "anthropic",
     };
-    let model = model.strip_prefix(&format!("{endpoint}/")).unwrap_or(model);
-    let Some(prices) = smith_local_shell::presets::list_prices(endpoint, model, *window) else {
-        return Measure::unavailable(format!("model {endpoint}/{model} missing from product presets"));
-    };
     let Some(total) = result.tokens.iter().find(|record| record.role == crate::ScopeKind::Total) else {
         return Measure::unavailable("total tokens not reported for pricing");
     };
-    let mut counts = Vec::new();
     let mut gaps = Vec::new();
     for (name, tokens) in [
         ("fresh", &total.usage.fresh),
@@ -339,9 +328,8 @@ pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
         ("output", &total.usage.output),
     ] {
         match tokens {
-            Measure::Observed { value } => counts.push(*value),
+            Measure::Observed { .. } => {}
             Measure::LowerBound { missing, .. } if crate::tokens::reported(tokens).is_some() => {
-                counts.push(crate::tokens::reported(tokens).expect("reported lower bound"));
                 gaps.extend(missing.iter().cloned());
             }
             Measure::LowerBound { missing, .. } => {
@@ -350,33 +338,41 @@ pub(crate) fn priced_spend(result: &AttemptResult) -> Measure<f64> {
             Measure::Unavailable { reason } => return Measure::unavailable(format!("total {name} tokens: {reason}")),
         }
     }
-    let Some(fresh) = counts[0].checked_sub(counts[2]) else {
-        return Measure::unavailable("cache writes exceed fresh tokens");
-    };
-    let mut cost = 0_u128;
-    for (tokens, rate) in [
-        (fresh, prices.input),
-        (counts[1], prices.cached),
-        (counts[2], prices.cache_write.unwrap_or(prices.input)),
-        (counts[3], prices.output),
-    ] {
-        let Some(sum) = cost.checked_add(u128::from(tokens) * u128::from(rate)) else {
-            return Measure::unavailable("token price sum overflow");
-        };
-        cost = sum;
+    if responses.is_empty() {
+        return Measure::unavailable("per-response usage not reported for pricing");
     }
-    match cost.to_string().parse::<f64>() {
-        Ok(cost) => {
-            let value = cost / (f64::from(prices.unit) * 1_000_000.0);
-            if gaps.is_empty() {
-                Measure::Observed { value }
-            } else {
-                gaps.sort();
-                gaps.dedup();
-                Measure::LowerBound { value, missing: gaps }
-            }
+    let mut value = 0.0;
+    for response in responses {
+        // An unsent request reached no provider, even when its model has no price.
+        if response.prompt_tokens() == 0 && response.output == 0 {
+            continue;
         }
-        Err(error) => Measure::unavailable(error.to_string()),
+        let (endpoint, model) = response.model.split_once('/').unwrap_or((endpoint, &response.model));
+        let Some(prices) = smith_local_shell::presets::list_prices(endpoint, model, response.prompt_tokens()) else {
+            return Measure::unavailable(format!(
+                "response {}: model {endpoint}/{model} missing from product presets",
+                response.scope
+            ));
+        };
+        let Some(fresh) = response.fresh.checked_sub(response.cache_write) else {
+            return Measure::unavailable(format!("response {}: cache writes exceed fresh tokens", response.scope));
+        };
+        let cost = u128::from(fresh) * u128::from(prices.input)
+            + u128::from(response.cache_read) * u128::from(prices.cached)
+            + u128::from(response.cache_write) * u128::from(prices.cache_write.unwrap_or(prices.input))
+            + u128::from(response.output) * u128::from(prices.output);
+        let cost = match cost.to_string().parse::<f64>() {
+            Ok(cost) => cost,
+            Err(error) => return Measure::unavailable(error.to_string()),
+        };
+        value += cost / (f64::from(prices.unit) * 1_000_000.0);
+    }
+    if gaps.is_empty() {
+        Measure::Observed { value }
+    } else {
+        gaps.sort();
+        gaps.dedup();
+        Measure::LowerBound { value, missing: gaps }
     }
 }
 

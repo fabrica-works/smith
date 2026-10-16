@@ -270,7 +270,14 @@ impl Observer {
 
     /// Count per-response usage once within each session and run's actual scope.
     pub fn tokens(&self) -> Result<Vec<TokenRecord>, HarnessFault> {
-        usage::tokens(&self.sessions).map_err(fault)
+        usage::tokens(&self.sessions, &mut Vec::new()).map_err(fault)
+    }
+
+    /// Retain each complete response's usage and conversation model for pricing.
+    pub fn response_tokens(&self) -> Result<Vec<crate::ResponseTokens>, HarnessFault> {
+        let mut responses = Vec::new();
+        usage::tokens(&self.sessions, &mut responses).map_err(fault)?;
+        Ok(responses)
     }
 
     /// Retain reported child shares, stops, turns and the union of main call spans.

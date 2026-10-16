@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "identity": {
     "run": "recorded-run",
     "attempt": "recorded-attempt",
