@@ -173,11 +173,14 @@ the run ends.
    a command names (`HEAD`, `--parent`) is built first: `heavy cargo run
    -p smith-bench -- build <commit>`. A command stopped by the provider,
    that is, one that ends before its last attempt because an attempt met
-   the provider's capacity or a server error, runs once more, from the
-   start, as a new run, after 60 seconds; stopped again, the step stops
-   on a question. An attempt the provider failed within a command that
-   ran to its end stays in its summary, counted as benchmarks.md 8.3 and
-   16.3 say. No attempt is rerun, and no run of the same commits is
+   the provider's capacity or a server error, or a request the provider
+   never answered (a failure whose `evidence` is `maybe_sent`,
+   benchmarks.md 8.2, such as a timeout waiting for the response head;
+   ruling 113), runs once more, from the start, as a new run, after
+   60 seconds; stopped again, the step stops on a question, which the
+   supervisor sends to the designer. An attempt the provider failed
+   within a command that ran to its end stays in its summary, counted as
+   benchmarks.md 8.3 and 16.3 say. No attempt is rerun, and no run of the same commits is
    repeated to change a verdict or a stop (benchmarks.md 16.5, 16.6). A
    run with `--attempts` (01.3, 06.1) checks a pipeline, and is never a
    verdict or a stop.
