@@ -517,25 +517,29 @@ fn request_head_and_uncut_rendering_keep_the_actual_byte_sides() {
 
 #[test]
 fn window_first_holds_owned_and_delegated_batches_at_the_exact_byte_edge() {
+    const COMPLETION_BYTES: u64 = 4096;
+    const RESULT_BYTES: u64 = 100_000;
+    // (65536 window - 512 output - (390 summary + 2 * 37 markers)) * 8.
+    const LINE_BYTES: u64 = 516_480;
     let profile = profile();
     let configuration = declarations();
     let path = super::path::path(&profile, &configuration).expect("native declarations");
-    let mut limits =
-        super::derive_domain(&profile, &configuration, &path, 4096, 4096).expect("numeric domain limits").session;
-    limits.tools.list_bytes = 100_000;
+    let mut limits = super::derive_domain(&profile, &configuration, &path, COMPLETION_BYTES, COMPLETION_BYTES)
+        .expect("numeric domain limits")
+        .session;
+    limits.tools.list_bytes = RESULT_BYTES;
     limits.delegated_result_bytes = 1;
-    let threshold = u64::from(configuration.endpoints[0].models[0].window) * 4 / 5 * 8;
     let reserve = smith_domain::session::completion_reserve(&limits).expect("completion reserve");
     let batch =
         smith_domain::tools::batch_result_worst_case(&limits.tools, limits.parallel_tools).expect("owned batch");
     assert_eq!(batch, 200_000, "two largest read results coexist");
-    limits.history_bytes = threshold + reserve - limits.answer_bytes + batch;
+    limits.history_bytes = LINE_BYTES + reserve + batch;
     validate::window_first(&profile, &configuration, &limits).expect("exact receiving edge");
     limits.history_bytes -= 1;
     let refusal = validate::window_first(&profile, &configuration, &limits).expect_err("one byte beyond history");
     assert_eq!(refusal.check(), Some(Check::WindowFirst));
     limits.history_bytes += 1;
-    limits.delegated_result_bytes = 100_001;
+    limits.delegated_result_bytes = RESULT_BYTES + 1;
     let refusal = validate::window_first(&profile, &configuration, &limits).expect_err("delegated batch is larger");
     assert_eq!(refusal.check(), Some(Check::WindowFirst));
     limits.delegated_result_bytes = u64::MAX;
@@ -549,6 +553,20 @@ fn window_first_holds_owned_and_delegated_batches_at_the_exact_byte_edge() {
         validate::window_first(&profile, &configuration, &limits),
         Err(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "batch_results") })
     );
+}
+
+#[test]
+fn window_first_refuses_a_history_one_byte_short_of_the_line() {
+    const COMPLETION_BYTES: u64 = 4096;
+    let profile = profile();
+    let configuration = declarations();
+    let path = super::path::path(&profile, &configuration).unwrap();
+    let mut limits =
+        super::derive_domain(&profile, &configuration, &path, COMPLETION_BYTES, COMPLETION_BYTES).unwrap().session;
+    limits.history_bytes -= 1;
+    let refusal = validate::window_first(&profile, &configuration, &limits).unwrap_err();
+    assert_eq!(refusal.check(), Some(Check::WindowFirst));
+    assert!(words(&refusal).starts_with(b"window-first: session.line[endpoint=7,model=0]="));
 }
 
 #[test]

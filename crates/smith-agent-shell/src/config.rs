@@ -1189,7 +1189,7 @@ mod tests {
         let mut document = shaped_document();
         document["profile"]["declared"].as_object_mut().expect("declarations").remove("memory");
         let configuration = parse_value(&document).expect("default memory fits");
-        assert_eq!(configuration.memory, 2_147_483_648);
+        assert_eq!(configuration.memory, 2_214_592_512);
     }
 
     #[test]

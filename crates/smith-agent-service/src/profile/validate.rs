@@ -426,40 +426,39 @@ pub fn window_first(
     // The completion owns its result skeletons, but their dynamic payloads
     // reserve separate credit immediately before the first batch's effects.
     let reserve = reserve
-        .checked_sub(limits.answer_bytes)
-        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "window_receiving") })?
         .checked_add(owned.max(delegated))
         .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "window_receiving") })?;
+    let material =
+        super::room::compaction_material(profile.declared.calls_per_response, smith_domain::run::summary_bytes())
+            .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Run, "compaction_material") })?;
     for endpoint in &configuration.endpoints {
         for (index, model) in endpoint.models.iter().enumerate() {
             let per = Per::Model { endpoint: endpoint.number, model: u32::try_from(index).expect("bounded models") };
-            let threshold = u64::from(model.window)
-                .checked_mul(u64::from(profile.policy.compaction_threshold.numerator))
-                .ok_or(Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "window_threshold", per } })?
-                .checked_div(u64::from(profile.policy.compaction_threshold.denominator))
-                .ok_or(Refusal::Derived {
-                    limit: LimitName { layer: Layer::Session, field: "window_threshold", per },
-                })?;
-            let threshold_bytes = threshold.checked_mul(u64::from(skein_llm::TOKEN_BYTES)).ok_or(Refusal::Derived {
-                limit: LimitName { layer: Layer::Session, field: "window_threshold", per },
-            })?;
-            let bytes = threshold_bytes
+            let refusal = Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "line", per } };
+            let line_bytes = u64::from(model.window)
+                .checked_sub(u64::from(model.output))
+                .ok_or(refusal)?
+                .checked_sub(material)
+                .ok_or(refusal)?
+                .checked_mul(u64::from(skein_llm::TOKEN_BYTES))
+                .ok_or(refusal)?;
+            let bytes = line_bytes
                 .checked_add(reserve)
                 .ok_or(Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "history_bytes", per } })?;
             at_most(
                 Check::WindowFirst,
-                LimitName { layer: Layer::Session, field: "window_receiving", per }.value(Value::Bytes(bytes)),
+                LimitName { layer: Layer::Session, field: "line", per }.value(Value::Bytes(bytes)),
                 LimitName { layer: Layer::Session, field: "history_bytes", per }
                     .value(Value::Bytes(limits.history_bytes)),
             )?;
-            let messages = threshold_bytes
+            let messages = line_bytes
                 .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Block>()).expect("cell fits"))
                 .expect("nonzero cell")
                 .checked_add(2)
                 .ok_or(Refusal::Derived {
                     limit: LimitName { layer: Layer::Session, field: "history_messages", per },
                 })?;
-            let blocks = threshold_bytes
+            let blocks = line_bytes
                 .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Block>()).expect("cell fits"))
                 .expect("nonzero cell")
                 .checked_add(u64::from(limits.completion_blocks).checked_mul(2).expect("u32 twice fits u64"))

@@ -2769,7 +2769,36 @@ fn a_childs_final_note_follows_settled_results_and_is_not_repeated_on_retry() {
 
 #[test]
 fn derived_history_secures_threshold_and_full_receiving_before_effects() {
-    let inputs = crate::Derivation {
+    let inputs = history_derivation();
+    let limits = crate::derive(&inputs).expect("derived window");
+    // LINE_BYTES + 600 completion + 256 answer + 6 * 128 wrappers + 512 batch.
+    assert_eq!(limits.history_bytes, 2_936);
+    // 2936 / 128-byte Block cell + 2.
+    assert_eq!(limits.history_messages, 24);
+    assert_eq!(limits.history_blocks, 24);
+    assert_eq!(limits.completion_blocks, 6);
+    assert_eq!(limits.failure_bytes, 128);
+    assert_eq!(limits.protocol_allowance, 100);
+    assert_eq!(crate::derive(&crate::Derivation { line_bytes: u64::MAX, ..inputs }), Err(crate::Field::HistoryBytes));
+    let beyond_cells = (u64::from(u32::MAX) + 1) * u64::try_from(size_of::<Block>()).expect("Block cell fits");
+    assert_eq!(
+        crate::derive(&crate::Derivation { line_bytes: beyond_cells, ..inputs }),
+        Err(crate::Field::HistoryItems)
+    );
+    assert_eq!(
+        crate::derive(&crate::Derivation { completion_bytes: u64::MAX, ..inputs }),
+        Err(crate::Field::HistoryBytes)
+    );
+}
+
+fn history_derivation() -> crate::Derivation {
+    const LINE_BYTES: u64 = 800;
+    const COMPLETION_BYTES: u64 = 600;
+    const ANSWER_BYTES: u64 = 256;
+    const BATCH_BYTES: u64 = 512;
+    const DETAIL_BYTES: u32 = 128;
+    const ALLOWANCE_BYTES: u64 = 100;
+    crate::Derivation {
         conversations: 1,
         calls_per_response: 2,
         parallel_tools: 4,
@@ -2777,40 +2806,28 @@ fn derived_history_secures_threshold_and_full_receiving_before_effects() {
         max_spend: 100,
         max_time: Duration::from_secs(60),
         tools: LIMITS.tools,
-        threshold_bytes: 800,
-        completion_bytes: 600,
-        answer_bytes: 256,
-        batch_result_bytes: 512,
-        delegated_result_bytes: 256,
+        line_bytes: LINE_BYTES,
+        completion_bytes: COMPLETION_BYTES,
+        answer_bytes: ANSWER_BYTES,
+        batch_result_bytes: BATCH_BYTES,
+        delegated_result_bytes: ANSWER_BYTES,
         output_items: 6,
-        detail: 128,
-        protocol_allowance: 100,
+        detail: DETAIL_BYTES,
+        protocol_allowance: ALLOWANCE_BYTES,
         threshold: [4, 5],
-    };
-    let limits = crate::derive(&inputs).expect("derived window");
-    let reserve = crate::completion_reserve(&limits).unwrap();
-    assert_eq!(limits.history_bytes, 800 + reserve - 256 + 512);
-    assert_eq!(
-        limits.history_messages,
-        u32::try_from(limits.history_bytes / u64::try_from(size_of::<Block>()).expect("Block cell fits")).unwrap() + 2
-    );
-    assert_eq!(limits.history_blocks, limits.history_messages);
-    assert_eq!(limits.completion_blocks, 6);
-    assert_eq!(limits.failure_bytes, 128);
-    assert_eq!(limits.protocol_allowance, 100);
-    assert_eq!(
-        crate::derive(&crate::Derivation { threshold_bytes: u64::MAX, ..inputs }),
-        Err(crate::Field::HistoryBytes)
-    );
-    let beyond_cells = (u64::from(u32::MAX) + 1) * u64::try_from(size_of::<Block>()).expect("Block cell fits");
-    assert_eq!(
-        crate::derive(&crate::Derivation { threshold_bytes: beyond_cells, ..inputs }),
-        Err(crate::Field::HistoryItems)
-    );
-    assert_eq!(
-        crate::derive(&crate::Derivation { completion_bytes: u64::MAX, ..inputs }),
-        Err(crate::Field::HistoryBytes)
-    );
+    }
+}
+
+#[test]
+fn the_history_holds_the_line_and_one_whole_completion() {
+    // (1000 window - 100 output - 50 material) * 8 bytes per token.
+    const LINE_BYTES: u64 = 6_800;
+    let limits = crate::derive(&crate::Derivation { line_bytes: LINE_BYTES, ..history_derivation() }).unwrap();
+    // LINE_BYTES + 600 completion + 256 answer + 6 * 128 wrappers + 512 batch.
+    assert_eq!(limits.history_bytes, 8_936);
+    // 8936 / 128-byte Block cell + 2.
+    assert_eq!(limits.history_messages, 71);
+    assert_eq!(limits.history_blocks, 71);
 }
 
 #[test]

@@ -111,9 +111,12 @@ fn the_interactive_default_fits_its_memory() {
         .unwrap_or_else(|why| panic!("{}", why.line()));
         let (local, _) = check::interactive_limits(&mut resolved).expect("all interactive checks pass");
         let worst = smith_local_service::worst_case(&local).expect("complete service footprint");
-        assert_eq!(memory, 2_147_483_648);
+        assert_eq!(memory, 2_214_592_512);
         assert!(worst <= memory - 67_108_864, "{account}: worst_case={worst}; margin={}", memory - worst);
-        println!("{account}: interactive worst_case={worst} bytes; margin={} bytes under 2 GiB", memory - worst);
+        println!(
+            "{account}: interactive worst_case={worst} bytes; margin={} bytes under the shipped cap",
+            memory - worst
+        );
         assert!(!scratch.path().join("state").exists(), "check starts no store or sign-in");
     }
 }

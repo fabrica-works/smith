@@ -38,7 +38,7 @@ fn the_frozen_control_is_refused_at_startup_or_services_finish_after_four_turns(
     let limits = match profile::derive(&profile, &configuration) {
         Ok(limits) => limits,
         Err(Refusal::Broken { check: Check::WindowFirst, left, right }) => {
-            assert_eq!(left.name.field, "window_receiving");
+            assert_eq!(left.name.field, "line");
             assert_eq!(right.name.field, "history_bytes");
             let (Value::Bytes(required), Value::Bytes(available)) = (left.value, right.value) else {
                 panic!("both window-first sides must retain byte units");
@@ -46,7 +46,7 @@ fn the_frozen_control_is_refused_at_startup_or_services_finish_after_four_turns(
             assert!(required > available);
             assert!(
                 profile::words(&Refusal::Broken { check: Check::WindowFirst, left, right })
-                    .starts_with(b"window-first: session.window_receiving[endpoint=1,model=0]=")
+                    .starts_with(b"window-first: session.line[endpoint=1,model=0]=")
             );
             return;
         }

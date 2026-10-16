@@ -209,7 +209,7 @@ impl Backend {
                 "head":60,"idle":30,"input_price":1.25,"cached_price":0.125,"output_price":10,"price_unit":1_000_000}},
             "accounts":{&self.name:account},
             "budget":{"turns":512,"spend":25,"seconds":3600}, "waiting_seconds":30,
-            "deployment":{"group_stop":1,"memory":2_147_483_648_u64},
+            "deployment":{"group_stop":1,"memory":2_214_592_512_u64},
             "workspace":{"directories":[{"name":"repo","path":directory.join("repo"),"writable":true,"git":change}],
                 "conventions":{"guide":".smith-test/guide","checks":".smith-test/check"},
                 "contract":if change {serde_json::json!({"form":"change","checks_must_pass":true,

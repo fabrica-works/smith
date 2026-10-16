@@ -176,7 +176,7 @@ pub const fn standard() -> Profile {
             list_entries: 512,
             guide: 16_384,
             llm_pool: 134_217_728,
-            memory: 2_147_483_648,
+            memory: 2_214_592_512,
         },
         policy: Policy {
             max_turns: 4096,

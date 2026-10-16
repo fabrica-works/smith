@@ -26,6 +26,8 @@ struct Fixture {
 }
 
 fn fixture(provider: skein_llm::Provider) -> Fixture {
+    // (512 window - 16 output - 50 material) * 8 bytes per token.
+    const LINE_BYTES: u64 = 3_568;
     let declared = skein_llm::Declared {
         tools: 16,
         history_items: 256,
@@ -51,7 +53,7 @@ fn fixture(provider: skein_llm::Provider) -> Fixture {
         max_spend: u64::MAX,
         max_time: Duration::from_secs(60),
         tools,
-        threshold_bytes: u64::from(declared.window) * 8 * 4 / 5,
+        line_bytes: LINE_BYTES,
         completion_bytes: 4096,
         answer_bytes: u64::from(client.answer),
         batch_result_bytes: 4096,

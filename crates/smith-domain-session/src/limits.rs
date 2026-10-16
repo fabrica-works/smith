@@ -207,8 +207,8 @@ pub struct Derivation {
     pub max_spend: u64,
     pub max_time: Duration,
     pub tools: tools::Limits,
-    /// Window threshold in decoded bytes, `TOKEN_BYTES` applied by the service.
-    pub threshold_bytes: u64,
+    /// Prompt line in decoded bytes, `TOKEN_BYTES` applied by the service.
+    pub line_bytes: u64,
     pub completion_bytes: u64,
     pub answer_bytes: u64,
     pub batch_result_bytes: u64,
@@ -294,11 +294,11 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         tools: inputs.tools,
     };
     // Rules 1 and 4: the window side bounds decoded history. Receiving beyond
-    // one answer and one complete batch coexist before the next window check.
+    // one whole completion and one batch coexist before the next window check.
     let reserve = completion_reserve(&limits).ok_or(Field::HistoryBytes)?;
     limits.history_bytes = inputs
-        .threshold_bytes
-        .checked_add(reserve.checked_sub(inputs.answer_bytes).ok_or(Field::HistoryBytes)?)
+        .line_bytes
+        .checked_add(reserve)
         .ok_or(Field::HistoryBytes)?
         .checked_add(inputs.batch_result_bytes)
         .ok_or(Field::HistoryBytes)?;

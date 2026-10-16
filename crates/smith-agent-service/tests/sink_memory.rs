@@ -33,7 +33,7 @@ mod tests {
         profile.declared.search_bytes = 16384;
         profile.declared.list_entries = 512;
         profile.declared.llm_pool = 134_217_728;
-        profile.declared.memory = 2_147_483_648;
+        profile.declared.memory = 2_214_592_512;
         let declarations = Configuration {
             role_bound: None,
             environment_bytes: 835,
@@ -66,7 +66,7 @@ mod tests {
     fn an_actual_full_escaped_prompt_fits_sink_output_and_allocation_at_every_chunk() {
         use skein_lib::List;
         let limits = product_limits();
-        assert_eq!(limits.line_ceiling(Capture::Everything), Some(19_427_968), "same concrete V6 writer ceiling");
+        assert_eq!(limits.line_ceiling(Capture::Everything), Some(19_855_232), "same concrete V6 writer ceiling");
         let mut messages = List::with_capacity(8);
         for _ in 0_u32..8 {
             let mut blocks = List::with_capacity(1);

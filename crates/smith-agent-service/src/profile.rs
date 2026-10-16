@@ -435,15 +435,15 @@ fn io_limits(
     })
 }
 
-fn threshold_bytes(policy: &Policy, configuration: &Configuration) -> Result<u64, Refusal> {
-    let refusal = derived(Layer::Session, "window_threshold");
+fn line_bytes(configuration: &Configuration, material: u64) -> Result<u64, Refusal> {
+    let refusal = derived(Layer::Session, "line");
     let mut largest = 0;
     for endpoint in &configuration.endpoints {
         for model in &endpoint.models {
             let bytes = u64::from(model.window)
-                .checked_mul(u64::from(policy.compaction_threshold.numerator))
+                .checked_sub(u64::from(model.output))
                 .ok_or(refusal)?
-                .checked_div(u64::from(policy.compaction_threshold.denominator))
+                .checked_sub(material)
                 .ok_or(refusal)?
                 .checked_mul(u64::from(shared::TOKEN_BYTES))
                 .ok_or(refusal)?;
@@ -531,7 +531,7 @@ fn derive_domain(
     let parallel = policy.parallel_tools.min(declared.calls_per_response);
     let owned = tools::batch_result_worst_case(&tools, parallel).ok_or(derived(Layer::Session, "batch_results"))?;
     let batch = owned.max(delegated.checked_mul(u64::from(parallel)).ok_or(derived(Layer::Session, "batch_results"))?);
-    let threshold_bytes = threshold_bytes(&policy, configuration)?;
+    let line_bytes = line_bytes(configuration, run.compaction_material)?;
     let session = match session::derive(&session::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
@@ -539,7 +539,7 @@ fn derive_domain(
         max_turns: policy.max_turns,
         max_spend: policy.max_spend,
         max_time: policy.max_time,
-        threshold_bytes,
+        line_bytes,
         completion_bytes: completion,
         answer_bytes: u64::from(path.client.answer),
         batch_result_bytes: batch,
