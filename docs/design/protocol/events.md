@@ -1,6 +1,6 @@
 # Events
 
-Provisional, 2026-10-09, revised 2026-10-14. The event vocabulary: one
+Provisional, 2026-10-09, revised 2026-10-16. The event vocabulary: one
 versioned stream of JSON lines that says what a process running smith
 did, from its start to its end. `smith exec --json` writes it to
 standard output, and a trace file is the same stream. Its records,
@@ -84,12 +84,12 @@ their writer and their reader are `smith-events` (README.md, section
 ### 3.1 Every record
 
 ```json
-{"v":1,"type":"tool.completed","t_ms":48213,"run":3,"conversation":1,"call":"call_4f2","tool":"read","verdict":"read","bytes":2048,"omitted_bytes":0,"clamped":false,"duration_ms":12}
+{"v":3,"type":"tool.completed","t_ms":48213,"run":3,"conversation":1,"call":"call_4f2","tool":"read","verdict":"read","bytes":2048,"omitted_bytes":0,"clamped":false,"duration_ms":12}
 ```
 
 | Field | Type | What it is |
 |---|---|---|
-| `v` | integer | the vocabulary's version: 1 |
+| `v` | integer | the vocabulary's version: 3 |
 | `type` | string | the record's type, `noun.verb` or a single word |
 | `t_ms` | integer | milliseconds since the process started, when the event happened |
 
@@ -548,11 +548,15 @@ projection.
 
 The vocabulary is pre-release, like every format (README.md, section 8).
 
-- **One version.** This is version 1. Any change a reader would notice is
+- **One version.** This is version 3. Any change a reader would notice is
   a new version: a record type or a field added, renamed or removed, a
   field's type, unit or meaning changed, a value added to a field whose
-  values are listed. Nothing is translated, and no older version is
-  read.
+  values are listed, an effective limit's name or unit (limits.md,
+  section 9). Nothing is translated, and no older version is read.
+  Version 2 added jobs: the `running` and `stopped` verdicts, a call's
+  `job`, and `job.ended` (3.6). Version 3 adds `run.compaction_material`
+  among the effective limits `session.started` carries (3.2), from which
+  a reader finds each conversation's line (limits.md, 3.9).
 - **`v` is on every record,** so a line read alone says its version. A
   stream holds one version, which `session.started` gives.
 - **A reader refuses another version.** `smith-events`' reader reads its

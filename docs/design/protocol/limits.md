@@ -291,9 +291,9 @@ declarations:
   section 3.9;
 - **the prompt's allowance:** what the protocol layer and the provider add
   to a prompt beyond the bytes the session counts, from the LLM
-  component's framing, for the window's check, the guard's measure of
-  each block (3.9) and the budget's reservation (domain/run.md, section
-  9);
+  component's framing, for the window's check and the budget's
+  reservation (domain/run.md, section 9). The guard needs no share of it:
+  it measures a request's new part with its framing, as encoded (3.9);
 - **a completion's bytes,** by rules 1 and 2:
   - its answer once, for its text and its calls' encoded arguments;
   - once more for the decoded arguments and the identifiers copied from
@@ -436,7 +436,7 @@ section 5).
 A window is counted in tokens and most of what fills it in bytes. A
 token is at least one byte, so a byte count bounds a token count: these
 bounds count each byte as one token, and so does the guard, which
-measures a request as rendered. The session's check estimates instead:
+measures a request as encoded. The session's check estimates instead:
 it counts the bytes appended since its last prompt at that window's
 measured ratio (domain/session.md, 8.1). Where the material, a byte a
 token, would not fit, the derivation bounds what a window holds, never
@@ -453,12 +453,22 @@ For each model the configuration declares:
 - **The line** is its `window` less one `output`, the summary
   instruction and a cut result's marker for each of `calls_per_response`
   calls. No ordinary prompt is sent past it: the guard measures what a
-  request adds since its window's last prompt as rendered, a byte a
-  token, each block's framing at the prompt allowance's share (3.2), and
-  refuses, unsent, a request whose last prompt and that measure pass the
-  line (domain/session.md, 8.1; llm.md, section 6). The compaction after
-  a prompt within the line, carrying that prompt's answer of at most
+  request adds since its window's last prompt as encoded, its framing
+  included, a byte a token: the request's encoded body less that of the
+  same request cut where the new part starts. It refuses, unsent, a
+  request whose last prompt and that measure pass the line
+  (domain/session.md, 8.1; llm.md, section 6). The compaction after a
+  prompt within the line, carrying that prompt's answer of at most
   `output`, fits the window.
+  - **The material above the line,** the summary instruction's bytes
+    plus `calls_per_response` cut markers' bytes, a byte a token, is one
+    derived limit of the run's, `run.compaction_material`. The run gives
+    each conversation its line when it opens it: the charter's effective
+    `window` for its model, less its `output` and that material. So a
+    reader of the event stream finds each conversation's line from its
+    model's `window_tokens` and `output_tokens` in `conversation.opened`
+    and the material among the effective limits (section 9; events.md,
+    3.4 and 3.10).
 - **The spare** is what lies between the threshold and the line: the
   window above `compaction_threshold` less one `output`, the summary
   instruction and the markers, what `compaction-headroom` leaves (section
@@ -583,8 +593,10 @@ What a run asks for is checked at its entrance, not at startup
 (domain/run.md, section 4): a model the configuration does not declare;
 each model entry's `window` and `output` against the model's
 declaration, its room against the one the limits were derived for, and
-its window above the threshold against one `output`, the summary
-instruction and the markers, so that its spare is not negative (3.9); the charter's text, with its directories' guides at their bound,
+its window above the threshold against one `output` and
+`run.compaction_material`, so that its spare is not negative (3.9),
+refused as a window or an output above its declaration is (charter.md,
+section 6); the charter's text, with its directories' guides at their bound,
 against the host's part; the budget against the ceilings; and the
 reserve against the budget.
 
@@ -604,9 +616,12 @@ reserve against the budget.
   - capacity reserved up front, slabs' and queues' (programming-model.md,
     section 6.1), is the exception: sized by the limits, counted in the
     worst case, held for the process's life.
-- **Room is made by raising the cap.** A change whose worst case passes
-  `memory` raises the profile's `memory`, and its commit names the part
-  that grew and by how many bytes. It never shaves another part's
+- **Room is made by raising the cap.** A change that grows the worst
+  case names, in its commit, each part that grew, by how many bytes, and
+  what the worst case leaves under `memory`. One whose worst case passes
+  `memory` raises the profile's `memory` to hold it; one whose worst
+  case still fits leaves `memory` as it is, with no margin of its own
+  kept above the worst case. A change never shaves another part's
   accounting to fit. The startup check of the worst case stays.
 - **Use is measured, beside the cap.** The worlds' counting allocator
   holds the live heap within the worst case at every iteration, and

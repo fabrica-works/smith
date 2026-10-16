@@ -217,13 +217,21 @@ child domain `smith-domain-session`, whose own child is the tools domain
   answered as not run, naming that call; its later reads still run. So
   a change made in several calls of one completion is never checked
   half made.
-  - **A write fails** when it is answered `invalid`, whatever its tool,
-    or when a `write` or an `edit` is answered `conflict`, `missing`,
-    `too_large` or `failed`: it changed nothing it was asked to change
-    (tools.md, section 4; protocol/events.md, 3.6's verdicts).
-  - **Nothing else stops them:** a command's end, whatever its exit,
-    `timed_out` included; a host tool's `error`; a sub-agent's answer;
-    a call not run or withdrawn.
+  - **A write fails** when its change is not known to be made whole:
+    - **a call answered `invalid`,** whatever its tool and its effect:
+      its arguments did not decode, or the tools refused them, so what it
+      would have done is not known;
+    - **a `write` or an `edit` answered anything but `written` or
+      `edited`,** by protocol/events.md, 3.6's verdicts: a path refused,
+      a version not read or stale, an `old` that matched nothing or more
+      than once, an `old` equal to its `new` (`unchanged`: like every
+      failed edit, it applies none of the call's edits, tools.md, section
+      3), a size refused, `failed`, which may have stored part of its
+      change, and every other.
+  - **Nothing else stops them:** a `shell` or a `job` call's answer,
+    whatever it is but `invalid`, an exit that is not zero and
+    `timed_out` included; a host tool's `error`; a sub-agent's answer; a
+    call not run or withdrawn.
 - **Jobs run beside the turns.** A `shell` call stays a write until it
   answers, `running` or ended. A job that is running holds no place in
   any later batch: the session's later reads, writes and commands run by
@@ -384,17 +392,20 @@ window, history only grows (section 3).
   ordinary completion is sent whose prompt may pass the line:
   - **the guard.** With each ordinary completion that has an earlier
     prompt in its window, the session gives the protocol layer the line,
-    the last prompt's reported size, and where that completion's answer
-    starts in the history. Before it sends the request, the protocol
-    layer measures that answer and everything after it as the request
-    renders them, a byte a token, with each block's framing at the
-    prompt allowance's share (protocol/llm.md, section 6). When the last
+    which its opener gave it at open from the charter's model entry
+    (protocol/limits.md, 3.9), the last prompt's reported size, and
+    where that completion's answer starts in the history. Before it
+    sends the request, the protocol layer measures that answer and
+    everything after it as the request encodes them, their framing
+    included, a byte a token (protocol/llm.md, section 6). When the last
     prompt's size plus that measure passes the line, the request is not
     sent, and the completion fails as *context too long*, unsent
     (section 4): the window's one compaction (8.2);
   - **why it holds.** A token stands for at least one byte of the text
-    it is read from, so the rendered measure bounds what the new part
-    adds in tokens, whatever its ratio. A prompt the guard lets through
+    it is read from, and encoding only adds bytes to that text, so the
+    encoded measure bounds what the new part adds in tokens, whatever
+    its ratio; its framing counts as encoded, as the prompt's allowance
+    counts a whole prompt's (protocol/limits.md, 3.2). A prompt the guard lets through
     is within the line. Its output is at most the model's most output,
     so the compaction after it, carrying both, finds above them the
     summary instruction and a marker for each owed result.
@@ -558,8 +569,10 @@ budgets.
     `parallel_tools`, the rest run in the next batch;
   - edits of several files and a command in one completion, run in call
     order; an edit among them that does not match, the writes and the
-    command after it answered as not run, naming it, and a read after
-    it run;
+    command after it answered as not run, naming it by its position and
+    its tool, and a read after it run; the same after an edit answered
+    `unchanged` and after a read answered `invalid`; a command that exits
+    non-zero, the writes after it run;
   - a command answered `running` while the session reads, edits and
     completes, then read to its end with `job`; a `job` call with the
     default wait beside reads, answered `running` once they have

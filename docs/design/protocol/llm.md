@@ -176,8 +176,9 @@ A completion's prompt is built from what the domain gives:
   side by side, and that writes, edits and commands may be called
   together too, and run one at a time in call order (domain/session.md,
   section 5): a change's edits across its files, then the command that
-  checks them. They say that a write that fails leaves the writes and
-  commands after it in its response not run. They also say that a `job` call without `stop` is a read,
+  checks them. They say that a write that fails, or any call answered
+  as invalid, leaves the writes and commands after it in its response
+  not run. They also say that a `job` call without `stop` is a read,
   and runs beside them, that one with `stop` is a write, and that a job
   running between calls holds no place in a later batch. No description says that a tool runs alone unless the
   session runs it alone, and none asks the LLM to call a tool by itself.
@@ -322,8 +323,12 @@ A completion's prompt is built from what the domain gives:
   large names the size and the bound, and what to do instead.
 - **Not run and withdrawn** are short fixed texts saying which. A call
   outside the tool choice is not run, and its text says which calls may
-  be made now. A write or a command not run after a failed write names
-  that call, and says that its changes were not made.
+  be made now. A write or a command not run after a failed write
+  (domain/session.md, section 5) names that call by its position among
+  the response's calls, counted from 1 over every call the response
+  holds, invalid, oversized and cut ones included, and by its tool:
+  `not run: call <n> (<tool>) failed before it; this call's changes
+  were not made`.
 - **Text the domain wrote,** a served tool's or a host tool's, goes as
   written, its error flag mapped to the dialect's.
 
@@ -341,14 +346,17 @@ A completion's prompt is built from what the domain gives:
 - **The guard, before an ordinary request is sent.** When the session
   gives a request the line, its last prompt's reported size and where
   the new part starts (domain/session.md, 8.1), this layer measures the
-  new part, the last answer and every block after it, as it renders
-  them: each block's text bytes, a byte a token, and its framing at the
-  prompt allowance's share for a block (limits.md, 3.2). When the last
-  prompt's size plus that measure passes the line, the request is not
-  sent: the call fails as *context too long*, with evidence `unsent`,
-  and its detail names the line and the measure. The same rendering
-  serves the measure and the request, so the measure is the request's,
-  not an estimate of it.
+  new part, the last answer and every block after it, as the request
+  encodes them: the request's encoded body less the encoded body of the
+  same request cut where the new part starts, each as skein's client
+  measures a request before it is sent, a byte a token. So each block's
+  text counts with its escapes, and its framing as encoded, as the
+  prompt's allowance counts a whole prompt's (limits.md, 3.2). When the
+  last prompt's size plus that measure passes the line, the request is
+  not sent: the call fails as *context too long*, with evidence
+  `unsent`, and its detail names the line and the measure. The same
+  encoding serves the measure and the request, so the measure is the
+  request's, not an estimate of it.
 - **Measured for the event stream:** the request's bytes as encoded,
   measured before it is sent; the time to the response's first byte; and
   the largest gap between its events. They go to the event sink beside
@@ -464,11 +472,11 @@ component and skein's client against scripted byte peers, in each dialect.
     accepts as replayable;
   - a compaction whose owed results pass its room, cut with their
     markers, its history unchanged before them;
-  - the guard: a request whose new part, as rendered, keeps the last
+  - the guard: a request whose new part, as encoded, keeps the last
     prompt within the line, sent; one a byte past it, failed as *context
     too long*, unsent, naming the line; blocks of short lines and of
-    escaped bytes measured as they render, not as the session counts
-    them;
+    escaped bytes measured as they encode, framing included, not as the
+    session counts them;
   - a compaction asked with `None` in a conversation asked with `Auto`
     and in one narrowed to `Only`, and the new window's first request
     asked with the conversation's choice, in each dialect;

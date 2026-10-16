@@ -186,7 +186,11 @@ domain's `Limits` check the charter as a whole at the entrance:
 - each LLM's `window` and `output`, at most what the configuration
   declares for its model, leaving at least the room the agent's limits
   were derived for, and a spare that is not negative (limits.md, 3.9
-  and 4);
+  and 4). A negative spare is a model entry whose `window` cannot hold
+  its `output` above the threshold, so it is refused as a window or an
+  output above its declaration is: an invalid start naming the model
+  (the channel's `llm`, which carries no bound), with no refusal of its
+  own;
 - its instructions, brief and host tools, with a guide at its bound for
   each of the start's directories, within a window's host part
   (limits.md, 3.9).
@@ -213,7 +217,8 @@ and a refusal names what was too large.
   - an endpoint name the configuration lacks;
   - a model the configuration does not declare, and a window or an output
     above its declaration, or leaving less room than the limits assume,
-    or a negative spare;
+    or a negative spare, refused as `llm`, and one whose spare is zero,
+    admitted;
   - text past a window's host part;
   - a reserve its budget cannot hold;
   - a charter in a version the agent does not read.

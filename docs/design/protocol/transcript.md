@@ -95,8 +95,10 @@ A versioned record. Every turn starts with its version.
     - not run, with why: outside the tool choice, naming the calls that
       were allowed (protocol/llm.md, section 5); a completion's calls
       after its session ended; a compaction's; or a write or a command
-      after a write of its completion that failed, naming that call
-      (domain/session.md, section 5). A resumed history
+      after a write of its completion that failed, naming that call by
+      its position among the completion's calls, from 1, whose tool is
+      that call's in the same message (domain/session.md, section 5;
+      protocol/llm.md, section 5). A resumed history
       renders it as it rendered when told, so the prefix stays stable;
     - withdrawn;
   - **an opaque block:** the provider's bytes, tagged with its dialect.
@@ -203,7 +205,8 @@ jobs of every earlier window and activation.
 - **Version 4** adds jobs: a command answered `running`, a job's read,
   and the highest job number a turn records (sections 2 and 4).
 - **Version 5 is current.** It adds a not-run call's why after a failed
-  write of its completion, naming that call (section 2).
+  write of its completion, naming that call by its position (section
+  2).
 - **A reader reads one version,** the current, like every format
   (README.md, section 8). Any other is the transcript refusal *another
   version*, and nothing is translated: a version-2 transcript is
