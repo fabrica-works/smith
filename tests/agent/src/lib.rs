@@ -23,6 +23,8 @@ pub mod host_referee;
 
 mod limits;
 
+pub mod memory;
+
 pub mod messages_referee;
 
 pub mod referee;
