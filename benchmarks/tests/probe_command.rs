@@ -358,7 +358,7 @@ fn an_early_finish_before_the_threshold_is_a_model_deviation() {
     for check in ["conversation-opened", "compaction-choice"] {
         result.outcome.checks.push(smith_bench::CheckVerdict {
             check: check.into(),
-            passed: Measure::unavailable("not exercised: no request reached the compaction threshold"),
+            passed: Measure::unavailable("not exercised: no request passed the compaction line"),
             evidence: vec![],
         });
     }

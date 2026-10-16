@@ -64,6 +64,7 @@ fn history_observer(records: &mut [smith_events::Record]) -> smith_bench::agent:
 
 #[test]
 fn small_window_requires_a_compaction_and_no_prompt_past_its_window() {
+    const COMPACTION_MATERIAL: u64 = 5_894; // 10_000 - 4_096 - 10: the fixture's prompt is above a line of 10.
     let base = history();
     let task = base.with_variant("small-window").expect("small window");
     assert_eq!(task.smith.len(), base.smith.len());
@@ -86,10 +87,10 @@ fn small_window_requires_a_compaction_and_no_prompt_past_its_window() {
         value
             .limits
             .push(smith_events::EffectiveLimit {
-                name: b"policy.compaction_threshold".as_slice().into(),
-                value: smith_events::LimitValue::Fraction { numerator: 1, denominator: 1000 },
+                name: b"run.compaction_material".as_slice().into(),
+                value: smith_events::LimitValue::Integer(COMPACTION_MATERIAL),
             })
-            .expect("threshold fits fixture");
+            .expect("material fits fixture");
     }
     assert_eq!(history_observer(&mut records).check(&compacted, "task").passed, Measure::Observed { value: false });
     let mut summary = records[2..6].to_vec();

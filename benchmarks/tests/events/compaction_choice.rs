@@ -45,13 +45,13 @@ fn compaction_choice_passes_when_every_compaction_asks_none() {
 fn compaction_choice_is_unavailable_without_a_compaction() {
     assert_eq!(
         super::observe(&super::balanced()).check(&EventCheck::CompactionChoice, "task").passed,
-        Measure::unavailable("no compaction request was observed")
+        Measure::unavailable("not exercised: session.started lacks run.compaction_material")
     );
 }
 
 // Six responses from history/small-window attempt 03 at 8a5bb9ec. The
-// excerpt keeps usage, model windows and the threshold, omitting captures
-// and startup limits these checks do not read.
+// excerpt keeps usage, model windows and the effective compaction material,
+// omitting captures and startup limits these checks do not read.
 fn threshold_records() -> Vec<Record> {
     include_str!("../recorded/compaction-threshold-8a5bb9ec-03.jsonl").lines().map(super::record).collect()
 }
@@ -66,32 +66,75 @@ fn compaction_checks_are_not_exercised_below_the_threshold() {
     for check in [compaction_opened(), EventCheck::CompactionChoice] {
         assert_eq!(
             observer.check(&check, "task").passed,
-            Measure::unavailable("not exercised: no request reached the compaction threshold")
+            Measure::unavailable("not exercised: no request passed the compaction line")
         );
     }
 }
 
 #[test]
-fn conversation_opened_fails_a_request_past_the_threshold() {
-    let mut records = threshold_records();
-    for record in &mut records {
-        if let Event::ResponseCompleted(value) = &mut record.event
-            && value.response == 6
-        {
-            value.usage.cache_read_tokens = Some(51_852);
+fn a_prompt_past_the_line_without_a_compaction_fails() {
+    // 65_536 - 8_192 - 982 = 56_362; fresh input is 416.
+    const READS: u64 = 55_946;
+    const WRITES: u64 = 1;
+    let records = edited_threshold_records(|record| {
+        if record["type"] != "response.completed" || record["response"] != 6 {
+            return false;
         }
-    }
+        record["usage"]["cache_read_tokens"] = READS.into();
+        record["usage"]["cache_write_tokens"] = WRITES.into();
+        true
+    });
     assert_eq!(super::observe(&records).check(&compaction_opened(), "task").passed, Measure::Observed { value: false });
 }
 
 #[test]
-fn conversation_opened_is_unavailable_without_the_threshold() {
-    let mut records = threshold_records();
-    if let Event::SessionStarted(value) = &mut records[0].event {
-        value.limits.clear();
+fn a_prompt_between_the_threshold_and_the_line_is_no_failure() {
+    const ABOVE_THRESHOLD_READS: u64 = 52_013; // 416 + 52_013 > 65_536 * 4 / 5.
+    const AT_LINE_READS: u64 = 55_946; // 416 + 55_946 = 65_536 - 8_192 - 982.
+    for reads in [ABOVE_THRESHOLD_READS, AT_LINE_READS] {
+        let records = edited_threshold_records(|record| {
+            if record["type"] != "response.completed" || record["response"] != 6 {
+                return false;
+            }
+            record["usage"]["cache_read_tokens"] = reads.into();
+            true
+        });
+        let observer = super::observe(&records);
+        for check in [compaction_opened(), EventCheck::CompactionChoice] {
+            assert_eq!(
+                observer.check(&check, "task").passed,
+                Measure::unavailable("not exercised: no request passed the compaction line"),
+                "reads={reads}"
+            );
+        }
     }
-    assert_eq!(
-        super::observe(&records).check(&compaction_opened(), "task").passed,
-        Measure::unavailable("session.started lacks policy.compaction_threshold")
-    );
+}
+
+#[test]
+fn a_stream_without_the_material_leaves_the_condition_unexercised() {
+    let records = edited_threshold_records(|record| {
+        record["type"] == "session.started"
+            && record["limits"].as_object_mut().expect("effective limits").remove("run.compaction_material").is_some()
+    });
+    let observer = super::observe(&records);
+    for check in [compaction_opened(), EventCheck::CompactionChoice] {
+        assert_eq!(
+            observer.check(&check, "task").passed,
+            Measure::unavailable("not exercised: session.started lacks run.compaction_material")
+        );
+    }
+}
+
+fn edited_threshold_records(mut edit: impl FnMut(&mut serde_json::Value) -> bool) -> Vec<Record> {
+    let mut edited = 0;
+    let records = include_str!("../recorded/compaction-threshold-8a5bb9ec-03.jsonl")
+        .lines()
+        .map(|line| {
+            let mut record = serde_json::from_str(line).expect("recorded event");
+            edited += usize::from(edit(&mut record));
+            super::record(&serde_json::to_string(&record).expect("edited record"))
+        })
+        .collect();
+    assert_eq!(edited, 1);
+    records
 }

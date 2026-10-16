@@ -1,29 +1,24 @@
-//! Compaction is owed only once a request reaches the window's policy share.
-//! Retained requests join disjoint usage to their output reservation; missing
-//! counts stay unknown (benchmarks.md, sections 3.2 and 11.1).
+//! Compaction is owed only once a request's prompt passes its conversation's
+//! line. Missing usage or compaction material stays unknown (benchmarks.md,
+//! sections 3.2 and 11.1).
 
 use std::collections::BTreeMap;
 
-use smith_events::{ConversationKind, Event, LimitValue, Outcome};
+use smith_events::{Event, LimitValue, Outcome};
 
 use crate::Measure;
 
 use super::Observer;
 
-pub(super) fn reached(observer: &Observer) -> Measure<bool> {
-    if observer.sessions.iter().flat_map(|session| &session.records).any(|record| {
-        matches!(&record.event, Event::ConversationOpened(value) if value.kind == ConversationKind::Compaction)
-    }) {
-        return Measure::Observed { value: true };
-    }
+pub(super) fn passed_line(observer: &Observer) -> Measure<bool> {
     for session in &observer.sessions {
-        let Some(threshold) =
-            session.started.limits.iter().find(|limit| limit.name.as_ref() == b"policy.compaction_threshold")
+        let Some(material) =
+            session.started.limits.iter().find(|limit| limit.name.as_ref() == b"run.compaction_material")
         else {
-            return Measure::unavailable("session.started lacks policy.compaction_threshold");
+            return Measure::unavailable("not exercised: session.started lacks run.compaction_material");
         };
-        let LimitValue::Fraction { numerator, denominator } = threshold.value else {
-            return Measure::unavailable("policy.compaction_threshold is not a fraction");
+        let LimitValue::Integer(material) = material.value else {
+            return Measure::unavailable("run.compaction_material is not an integer");
         };
         let mut models = BTreeMap::new();
         let mut requests = BTreeMap::new();
@@ -57,14 +52,16 @@ pub(super) fn reached(observer: &Observer) -> Measure<bool> {
                 let Some(write) = value.usage.cache_write_tokens else {
                     return Measure::unavailable("provider did not report written prompt input");
                 };
-                let reserved =
-                    u128::from(input) + u128::from(read) + u128::from(write) + u128::from(request.output_tokens);
-                let Some(scaled) = reserved.checked_mul(u128::from(denominator)) else {
-                    return Measure::unavailable(
-                        "prompt and output reservation exceed the exact threshold counter range",
-                    );
+                let Some(line) = request
+                    .model
+                    .window_tokens
+                    .checked_sub(request.model.output_tokens)
+                    .and_then(|room| room.checked_sub(material))
+                else {
+                    return Measure::unavailable("conversation's window cannot hold output and compaction material");
                 };
-                if scaled > u128::from(request.model.window_tokens) * u128::from(numerator) {
+                let prompt = u128::from(input) + u128::from(read) + u128::from(write);
+                if prompt > u128::from(line) {
                     return Measure::Observed { value: true };
                 }
             }

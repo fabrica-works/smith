@@ -319,8 +319,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
             let openings = u64::try_from(records.iter().filter(|record|
                 matches!(&record.event, Event::ConversationOpened(value) if names::kind(&value.kind) == kind.as_bytes())).count()).expect("scopes fit");
             if kind == "compaction" && openings == 0 {
-                match super::threshold::reached(observer) {
-                    Measure::Observed { value: false } => return unavailable("not exercised: no request reached the compaction threshold"),
+                match super::threshold::passed_line(observer) {
+                    Measure::Observed { value: false } => return unavailable("not exercised: no request passed the compaction line"),
                     Measure::Unavailable { reason } => return unavailable(&reason),
                     Measure::LowerBound { .. } | Measure::Observed { value: true } => {}
                 }
