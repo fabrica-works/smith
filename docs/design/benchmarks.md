@@ -1099,6 +1099,15 @@ every criterion before it lands, whatever criterion it claims to move.
   unavailable or an arm with no pass on a task, stops the step the same
   way. The step lands only on the designer's answer: kept, with the
   cause the answer names for the move; reworked; or dropped.
+
+  The cause may be noise rather than the change. The answer then shows,
+  from the run's attempts, that the move lies in work the change does
+  not alter, such as the reads after a compaction that more of one
+  arm's attempts reached. Where an earlier `parity-change` run measured
+  the parent's code, the answer gives that run's figures beside. An
+  interval that holds 1 is no such showing: at five attempts, a
+  comparison cannot show that a change does no harm. The projection
+  keeps the ratio as measured.
 - **Why the baseline's interval, and the product.** A comparison that
   detects nothing at five attempts per arm can hide a move larger than
   the baseline's own uncertainty, and several such moves, each passing

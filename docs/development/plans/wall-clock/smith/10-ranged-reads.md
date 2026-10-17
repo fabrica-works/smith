@@ -77,7 +77,10 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   `Change-Summary:`; the commit body gives its criteria, projection and
   stop lines, README rule 13's counts beside, with the report's fresh tokens per arm, and names the fresh
   tokens' cause and the criteria it addresses, RC and RT, with the
-  baseline's figures above.
+  baseline's figures above. Its projection starts from 09.1's ratios
+  as measured (RC 1.853, RT 1.326; the designer's answer of
+  2026-10-17T09:35Z): it stops on an RC ratio above 0.936 or an RT
+  ratio above 1.234 (rule 12).
 Don't: change `read`'s schema or `read_window`.
 Size: 10 lines.
 Removes: nothing.

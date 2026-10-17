@@ -183,6 +183,19 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   `Change-Summary:`; the commit body gives its criteria, projection and
   stop lines, README rule 13's counts beside, with the report's tools seconds per arm, and names cause 4
   and the criterion it addresses, RT, with the baseline's figures above.
+Stopped and kept: `parity-change-2318318b-20261017T065453Z` stopped on
+  RC (projection 1.853, above the baseline's 1.734); the designer's
+  answer of 2026-10-17T09:35Z keeps 09.1 (README rule 12). The run
+  stands: `c94fcaaa` is rebased onto commits that change no prompt file
+  (rule 11), and the body names `2318318b` and `c36fa508`. The body
+  gives this cause for the move, as written: "RC's move is noise, not
+  this change. Before its first compaction the change's arm read as its
+  parent did, 59.8 reads an attempt against 58.0; after it, 21.8
+  against 11.8, and it compacted in 5 attempts of 5, its parent in 3.
+  While a job ran, it made 1.88 responses a job against 1.97. Its 46
+  polls beside another call waited 43 ms in all; its parent's 31
+  waited 48.0 s (cause 4). Its parent's code, measured as 08.1's arm, made 63.2
+  responses an attempt at a median $1.510; here, 52.4 at $1.291."
 Don't: shorten `job_wait`; tell a job's end between completions
   (decisions.md 7, deferred).
 Size: 240 lines.
