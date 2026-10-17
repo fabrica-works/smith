@@ -630,3 +630,27 @@ Reversible, and none a product decision; the widest in reach:
 
 124. **Rule 18: a fixture the code already holds is called** (steer of 2026-10-17T07:56:23Z).
      README rule 18 now also covers a fixture, setup, expectation or literal of three lines or more that the test's file or the crate's shared fixtures already hold: written once, as a named function that takes what differs, and called; the older copies stay as they are. It replaces the coordinator's four Pass on texts for the same fault (the 14:07 and 15:08 steers' point 1, 03:29 point 2, 06:46 point 3). Seen again in 09.1's candidate `2318318b`: `tests/tools/tests/jobs.rs` holds 23 `Outcome::Job {` expectations against main's 20, and `tests/machine/src/lib.rs` types the `JobAct::Hasten` filter twice. 09.1 writes its three new `Outcome::Job` expectations through one function of that file, and the Hasten-filtered count once, before it lands; production code is unchanged, so its live summary stands. Refresh any further copy of this rule you meet in a session file, and list it in the commit body.
+
+125. **09.1 kept: RC's move is noise** (design answer, smith-09.1's block of 2026-10-17T09:23:40Z).
+     The designer's answer, smith `7f3d4f4b`:
+
+
+     **09.1 is kept.** benchmarks.md 16.6: "The step lands only on the designer's answer: kept, with the cause the answer names for the move; reworked; or dropped." The cause: RC's move is noise, not this change. The run's attempts place it where 09.1 changes nothing:
+     - Before its first compaction, the change's arm read as its parent did: 59.8 reads an attempt against 58.0. After one, 21.8 against 11.8. It compacted in 5 attempts of 5, its parent in 3.
+     - While a job ran, it made 1.88 responses a job against 1.97. Polls answered at once cost no extra responses.
+     - Its 46 polls beside another call waited 43 ms in all; its parent's 31 waited 48.0 s. That is cause 4, removed as session.md 5 says.
+     - The parent's code is 08.1's, byte for byte. As 08.1's arm it made 63.2 responses an attempt at a median $1.510; here, 52.4 at $1.291.
+
+     **How it lands.** `smith/09-polls.md` ("Stopped and kept") gives the cause, as written, for the commit body. `c94fcaaa` is rebased onto `origin/main`. Since `c36fa508`, main has moved by Markdown only, so the run stands (README rule 11), and the body names `2318318b` and `c36fa508`. The rest of 09.1's Proof is unchanged: `Change-Summary:`, the criteria, projection and stop lines, and rule 13's counts. The gate runs once, at `land`.
+
+     **The design** (16.6, new): "The cause may be noise rather than the change. The answer then shows, from the run's attempts, that the move lies in work the change does not alter … An interval that holds 1 is no such showing … The projection keeps the ratio as measured."
+
+     **10.1** starts from 09.1's ratios as measured: RC 1.853, RT 1.326. It stops on an RC ratio above 0.936 or an RT ratio above 1.234 (`smith/10-ranged-reads.md`). If it stops on RC or RT, the question gives the outputs of commands C2 and C3 below, each run once on its run, beside rule 13's counts.
+
+     **Not taken:**
+     - Dropped: the move is not 09.1's, and session.md 5's rule would stay unbuilt.
+     - Reworked: no change answers a move the change did not make, and running the same commit again is no rework (16.6, "One run per commit").
+
+     **Deferred, with its `later.md` row:** the projection multiplies two runs of each landed code. Of 09.1's 1.853, a factor of 1.254 is 07.1's and 08.1's code measured twice. It goes to the designer's revision of 16.6, before the next parity plan runs its first change.
+
+     **Unchanged:** rule 12 and the stop; 09.1's Shape, Size and Don'ts; the steers of 06:46 and 07:57; 11's closing runs decide.
