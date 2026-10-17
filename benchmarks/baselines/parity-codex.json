@@ -1,0 +1,3564 @@
+{
+  "version": 1,
+  "result_version": 4,
+  "suite": "parity",
+  "tier": "working",
+  "date": "2026-10-17T12:38:58.751164821Z",
+  "run": "parity-a87ba689-20261017T123849Z",
+  "groups": [
+    {
+      "task": "fixtures/01-backoff",
+      "task_version": 2,
+      "seed_sha256": "8660052d52ad7e314ec23dc55fd712bdbc1d33c91cd216cb2bf0586101cd563f",
+      "prompt_sha256": "e2601e6f4b3a2ebc97379760a206940e1322e8844a27b8dae1424895fc8777f6",
+      "arm": "codex-standard-12eb3e81",
+      "agent": "codex",
+      "agent_version": "0.160.0",
+      "binary_sha256": "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+      "smith_face": null,
+      "configuration_sha256": "ecced90914ddd0e0ddf5331bf6e2190fc8ee6543aa73c9da25b28b5ed07d8afa",
+      "provider": "codex",
+      "model": {
+        "requested_model": "gpt-6.1-sol",
+        "requested_effort": "high",
+        "resolved_model": {
+          "state": "observed",
+          "value": "gpt-6.1-sol"
+        },
+        "resolved_window": {
+          "state": "observed",
+          "value": 475000
+        },
+        "resolved_effort": {
+          "state": "unavailable",
+          "reason": "not run"
+        }
+      },
+      "attempts": [
+        "09",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "counts_by_end": {
+        "completed": 8
+      },
+      "passes": {
+        "passed": 8,
+        "failed": 0,
+        "unavailable": 0,
+        "budget": 0,
+        "setup": 0,
+        "interval_95": {
+          "state": "observed",
+          "value": {
+            "lower": 0.6305833524471807,
+            "upper": 1.0
+          }
+        }
+      },
+      "metrics": {
+        "cpu_ms/pidfd-walk": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 5824.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5538.0,
+              "upper": 6903.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.07468221151248285
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.10455509611747597
+          }
+        },
+        "delegation/children": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: Codex does not report child shares or parent blocking",
+            "10: Codex does not report child shares or parent blocking",
+            "11: Codex does not report child shares or parent blocking",
+            "12: Codex does not report child shares or parent blocking",
+            "13: Codex does not report child shares or parent blocking",
+            "14: Codex does not report child shares or parent blocking",
+            "15: Codex does not report child shares or parent blocking",
+            "16: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/children_budget": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: Codex does not report child shares or parent blocking",
+            "10: Codex does not report child shares or parent blocking",
+            "11: Codex does not report child shares or parent blocking",
+            "12: Codex does not report child shares or parent blocking",
+            "13: Codex does not report child shares or parent blocking",
+            "14: Codex does not report child shares or parent blocking",
+            "15: Codex does not report child shares or parent blocking",
+            "16: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/parent_blocked_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: Codex does not report child shares or parent blocking",
+            "10: Codex does not report child shares or parent blocking",
+            "11: Codex does not report child shares or parent blocking",
+            "12: Codex does not report child shares or parent blocking",
+            "13: Codex does not report child shares or parent blocking",
+            "14: Codex does not report child shares or parent blocking",
+            "15: Codex does not report child shares or parent blocking",
+            "16: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/turns": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: Codex does not report child shares or parent blocking",
+            "10: Codex does not report child shares or parent blocking",
+            "11: Codex does not report child shares or parent blocking",
+            "12: Codex does not report child shares or parent blocking",
+            "13: Codex does not report child shares or parent blocking",
+            "14: Codex does not report child shares or parent blocking",
+            "15: Codex does not report child shares or parent blocking",
+            "16: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: not exposed by the selected stream",
+            "10: not exposed by the selected stream",
+            "11: not exposed by the selected stream",
+            "12: not exposed by the selected stream",
+            "13: not exposed by the selected stream",
+            "14: not exposed by the selected stream",
+            "15: not exposed by the selected stream",
+            "16: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "grading_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 839.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 783.0,
+              "upper": 890.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.04433393613355005
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.06206751058697007
+          }
+        },
+        "largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: not exposed by the selected stream",
+            "10: not exposed by the selected stream",
+            "11: not exposed by the selected stream",
+            "12: not exposed by the selected stream",
+            "13: not exposed by the selected stream",
+            "14: not exposed by the selected stream",
+            "15: not exposed by the selected stream",
+            "16: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "longest_completion_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 25678.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 24899.0,
+              "upper": 28649.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.05399073247050798
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.07558702545871117
+          }
+        },
+        "peak_rss_bytes/largest-process": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "10: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "11: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "12: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "13: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "14: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "15: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "16: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/tree": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "10: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "11: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "12: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "13: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "14: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "15: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "16: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "process_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 45061.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 40941.0,
+              "upper": 49845.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.07525527042475594
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.10535737859465831
+          }
+        },
+        "responses": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 5.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5.0,
+              "upper": 6.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.08817334283548103
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.12344267996967344
+          }
+        },
+        "spend_usd/priced": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.052739600000000005
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0421812,
+              "upper": 0.0704384
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1479620810902869
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.20714691352640166
+          }
+        },
+        "task_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 44496.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 40354.0,
+              "upper": 49275.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.07692279728313338
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.10769191619638672
+          }
+        },
+        "teardown_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 577.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 468.0,
+              "upper": 633.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.09061860014276195
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.12686604019986672
+          }
+        },
+        "time/children_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/commands_outside_calls_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/compaction_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: first-byte durations not reported",
+            "10: first-byte durations not reported",
+            "11: first-byte durations not reported",
+            "12: first-byte durations not reported",
+            "13: first-byte durations not reported",
+            "14: first-byte durations not reported",
+            "15: first-byte durations not reported",
+            "16: first-byte durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: largest-gap durations not reported",
+            "10: largest-gap durations not reported",
+            "11: largest-gap durations not reported",
+            "12: largest-gap durations not reported",
+            "13: largest-gap durations not reported",
+            "14: largest-gap durations not reported",
+            "15: largest-gap durations not reported",
+            "16: largest-gap durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/requests_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 39252.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 35522.0,
+              "upper": 44924.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.08568131747347409
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.11995384446286371
+          }
+        },
+        "time/rest_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 11.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 9.0,
+              "upper": 15.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.15886554192132593
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.2224117586898563
+          }
+        },
+        "time/tools/exec_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 4155.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 2737.0,
+              "upper": 5278.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.18533876291110293
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.2594742680755441
+          }
+        },
+        "tokens/codex/cache_read": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 74688.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 71680.0,
+              "upper": 94464.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0966717070775492
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.13534038990856886
+          }
+        },
+        "tokens/codex/cache_write": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "tokens/codex/fresh": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 12464.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 7528.0,
+              "upper": 20958.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.2939919433306344
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.4115887206628881
+          }
+        },
+        "tokens/codex/output": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 1996.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 1827.0,
+              "upper": 2122.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.052384419492293964
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.07333818728921154
+          }
+        },
+        "tokens/codex/reasoning": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 516.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 400.0,
+              "upper": 528.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.086849993343515
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.12158999068092098
+          }
+        },
+        "tool_calls/command_execution": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: lower bound (non-root tool calls absent from JSON lines)",
+            "10: lower bound (non-root tool calls absent from JSON lines)",
+            "11: lower bound (non-root tool calls absent from JSON lines)",
+            "12: lower bound (non-root tool calls absent from JSON lines)",
+            "13: lower bound (non-root tool calls absent from JSON lines)",
+            "14: lower bound (non-root tool calls absent from JSON lines)",
+            "15: lower bound (non-root tool calls absent from JSON lines)",
+            "16: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "tool_calls/file_change": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "09: lower bound (non-root tool calls absent from JSON lines)",
+            "10: lower bound (non-root tool calls absent from JSON lines)",
+            "11: lower bound (non-root tool calls absent from JSON lines)",
+            "12: lower bound (non-root tool calls absent from JSON lines)",
+            "13: lower bound (non-root tool calls absent from JSON lines)",
+            "14: lower bound (non-root tool calls absent from JSON lines)",
+            "15: lower bound (non-root tool calls absent from JSON lines)",
+            "16: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        }
+      }
+    },
+    {
+      "task": "fixtures/02-line-decoder",
+      "task_version": 2,
+      "seed_sha256": "77ef574da76f5ba5b2fdf3f635bf5e13a4fd17c21fb654caa12b5c8e34e75e2e",
+      "prompt_sha256": "c7a872a53180ddf2471b2e71009d4ffe6470e2e90e844f19b58ee720cbdbcefa",
+      "arm": "codex-standard-12eb3e81",
+      "agent": "codex",
+      "agent_version": "0.160.0",
+      "binary_sha256": "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+      "smith_face": null,
+      "configuration_sha256": "ecced90914ddd0e0ddf5331bf6e2190fc8ee6543aa73c9da25b28b5ed07d8afa",
+      "provider": "codex",
+      "model": {
+        "requested_model": "gpt-6.1-sol",
+        "requested_effort": "high",
+        "resolved_model": {
+          "state": "observed",
+          "value": "gpt-6.1-sol"
+        },
+        "resolved_window": {
+          "state": "observed",
+          "value": 475000
+        },
+        "resolved_effort": {
+          "state": "unavailable",
+          "reason": "not run"
+        }
+      },
+      "attempts": [
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32"
+      ],
+      "counts_by_end": {
+        "completed": 8
+      },
+      "passes": {
+        "passed": 8,
+        "failed": 0,
+        "unavailable": 0,
+        "budget": 0,
+        "setup": 0,
+        "interval_95": {
+          "state": "observed",
+          "value": {
+            "lower": 0.6305833524471807,
+            "upper": 1.0
+          }
+        }
+      },
+      "metrics": {
+        "cpu_ms/pidfd-walk": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 5820.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5346.0,
+              "upper": 8078.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.14383481371428472
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.2013687391999986
+          }
+        },
+        "delegation/children": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: Codex does not report child shares or parent blocking",
+            "26: Codex does not report child shares or parent blocking",
+            "27: Codex does not report child shares or parent blocking",
+            "28: Codex does not report child shares or parent blocking",
+            "29: Codex does not report child shares or parent blocking",
+            "30: Codex does not report child shares or parent blocking",
+            "31: Codex does not report child shares or parent blocking",
+            "32: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/children_budget": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: Codex does not report child shares or parent blocking",
+            "26: Codex does not report child shares or parent blocking",
+            "27: Codex does not report child shares or parent blocking",
+            "28: Codex does not report child shares or parent blocking",
+            "29: Codex does not report child shares or parent blocking",
+            "30: Codex does not report child shares or parent blocking",
+            "31: Codex does not report child shares or parent blocking",
+            "32: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/parent_blocked_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: Codex does not report child shares or parent blocking",
+            "26: Codex does not report child shares or parent blocking",
+            "27: Codex does not report child shares or parent blocking",
+            "28: Codex does not report child shares or parent blocking",
+            "29: Codex does not report child shares or parent blocking",
+            "30: Codex does not report child shares or parent blocking",
+            "31: Codex does not report child shares or parent blocking",
+            "32: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/turns": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: Codex does not report child shares or parent blocking",
+            "26: Codex does not report child shares or parent blocking",
+            "27: Codex does not report child shares or parent blocking",
+            "28: Codex does not report child shares or parent blocking",
+            "29: Codex does not report child shares or parent blocking",
+            "30: Codex does not report child shares or parent blocking",
+            "31: Codex does not report child shares or parent blocking",
+            "32: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: not exposed by the selected stream",
+            "26: not exposed by the selected stream",
+            "27: not exposed by the selected stream",
+            "28: not exposed by the selected stream",
+            "29: not exposed by the selected stream",
+            "30: not exposed by the selected stream",
+            "31: not exposed by the selected stream",
+            "32: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "grading_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 1545.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 1410.0,
+              "upper": 1821.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0949006560022529
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.13286091840315406
+          }
+        },
+        "largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: not exposed by the selected stream",
+            "26: not exposed by the selected stream",
+            "27: not exposed by the selected stream",
+            "28: not exposed by the selected stream",
+            "29: not exposed by the selected stream",
+            "30: not exposed by the selected stream",
+            "31: not exposed by the selected stream",
+            "32: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "longest_completion_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 45423.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 31611.0,
+              "upper": 71425.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.2590901220051198
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.36272617080716774
+          }
+        },
+        "peak_rss_bytes/largest-process": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "26: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "27: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "28: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "29: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "30: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "31: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "32: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/tree": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "26: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "27: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "28: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "29: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "30: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "31: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "32: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "process_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 87128.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 81944.0,
+              "upper": 115632.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.12965584030905955
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.18151817643268336
+          }
+        },
+        "responses": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 7.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 6.0,
+              "upper": 9.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.14414999403128947
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.20180999164380525
+          }
+        },
+        "spend_usd/priced": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0923318
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0731164,
+              "upper": 0.11196040000000002
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.14658919637918685
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.20522487493086158
+          }
+        },
+        "task_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 86613.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 79639.0,
+              "upper": 115031.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.13318039982781307
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.1864525597589383
+          }
+        },
+        "teardown_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 514.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 452.0,
+              "upper": 2304.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.8656902491905231
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 1.2119663488667323
+          }
+        },
+        "time/children_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/commands_outside_calls_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 297.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 1655.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 1.2922556138119776
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 1.8091578593367685
+          }
+        },
+        "time/compaction_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: first-byte durations not reported",
+            "26: first-byte durations not reported",
+            "27: first-byte durations not reported",
+            "28: first-byte durations not reported",
+            "29: first-byte durations not reported",
+            "30: first-byte durations not reported",
+            "31: first-byte durations not reported",
+            "32: first-byte durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: largest-gap durations not reported",
+            "26: largest-gap durations not reported",
+            "27: largest-gap durations not reported",
+            "28: largest-gap durations not reported",
+            "29: largest-gap durations not reported",
+            "30: largest-gap durations not reported",
+            "31: largest-gap durations not reported",
+            "32: largest-gap durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/requests_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 83426.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 76968.0,
+              "upper": 110724.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1363519940304386
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.19089279164261402
+          }
+        },
+        "time/rest_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 11.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 10.0,
+              "upper": 14.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.13944064795430838
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.19521690713603174
+          }
+        },
+        "time/tools/exec_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 2872.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 2047.0,
+              "upper": 4125.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.25333442713768506
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.35466819799275906
+          }
+        },
+        "tokens/codex/cache_read": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 112640.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 92800.0,
+              "upper": 152704.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.16462748490098805
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.23047847886138326
+          }
+        },
+        "tokens/codex/cache_write": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "tokens/codex/fresh": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 16473.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 10766.0,
+              "upper": 23408.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.31929922944981015
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.4470189212297342
+          }
+        },
+        "tokens/codex/output": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 4410.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 4169.0,
+              "upper": 5141.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.08351220249224954
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.11691708348914935
+          }
+        },
+        "tokens/codex/reasoning": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 1061.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 878.0,
+              "upper": 1501.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.18668403450256063
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.2613576483035849
+          }
+        },
+        "tool_calls/command_execution": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: lower bound (non-root tool calls absent from JSON lines)",
+            "26: lower bound (non-root tool calls absent from JSON lines)",
+            "27: lower bound (non-root tool calls absent from JSON lines)",
+            "28: lower bound (non-root tool calls absent from JSON lines)",
+            "29: lower bound (non-root tool calls absent from JSON lines)",
+            "30: lower bound (non-root tool calls absent from JSON lines)",
+            "31: lower bound (non-root tool calls absent from JSON lines)",
+            "32: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "tool_calls/file_change": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "25: lower bound (non-root tool calls absent from JSON lines)",
+            "26: lower bound (non-root tool calls absent from JSON lines)",
+            "27: lower bound (non-root tool calls absent from JSON lines)",
+            "28: lower bound (non-root tool calls absent from JSON lines)",
+            "29: lower bound (non-root tool calls absent from JSON lines)",
+            "30: lower bound (non-root tool calls absent from JSON lines)",
+            "31: lower bound (non-root tool calls absent from JSON lines)",
+            "32: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        }
+      }
+    },
+    {
+      "task": "fixtures/03-planner",
+      "task_version": 2,
+      "seed_sha256": "09b820b4301df13f5d3d34765ab05ea1bc6706cd13e7a7487f6702b2f8ab5690",
+      "prompt_sha256": "cc5a04e32c9eaf072820ac6468a3993341fb46c1ef63a3281c306bbf3590eba5",
+      "arm": "codex-standard-12eb3e81",
+      "agent": "codex",
+      "agent_version": "0.160.0",
+      "binary_sha256": "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+      "smith_face": null,
+      "configuration_sha256": "ecced90914ddd0e0ddf5331bf6e2190fc8ee6543aa73c9da25b28b5ed07d8afa",
+      "provider": "codex",
+      "model": {
+        "requested_model": "gpt-6.1-sol",
+        "requested_effort": "high",
+        "resolved_model": {
+          "state": "observed",
+          "value": "gpt-6.1-sol"
+        },
+        "resolved_window": {
+          "state": "observed",
+          "value": 475000
+        },
+        "resolved_effort": {
+          "state": "unavailable",
+          "reason": "not run"
+        }
+      },
+      "attempts": [
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "counts_by_end": {
+        "completed": 8
+      },
+      "passes": {
+        "passed": 8,
+        "failed": 0,
+        "unavailable": 0,
+        "budget": 0,
+        "setup": 0,
+        "interval_95": {
+          "state": "observed",
+          "value": {
+            "lower": 0.6305833524471807,
+            "upper": 1.0
+          }
+        }
+      },
+      "metrics": {
+        "cpu_ms/pidfd-walk": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 6071.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5671.0,
+              "upper": 7288.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.08762211437116547
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.12267096011963166
+          }
+        },
+        "delegation/children": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: Codex does not report child shares or parent blocking",
+            "42: Codex does not report child shares or parent blocking",
+            "43: Codex does not report child shares or parent blocking",
+            "44: Codex does not report child shares or parent blocking",
+            "45: Codex does not report child shares or parent blocking",
+            "46: Codex does not report child shares or parent blocking",
+            "47: Codex does not report child shares or parent blocking",
+            "48: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/children_budget": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: Codex does not report child shares or parent blocking",
+            "42: Codex does not report child shares or parent blocking",
+            "43: Codex does not report child shares or parent blocking",
+            "44: Codex does not report child shares or parent blocking",
+            "45: Codex does not report child shares or parent blocking",
+            "46: Codex does not report child shares or parent blocking",
+            "47: Codex does not report child shares or parent blocking",
+            "48: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/parent_blocked_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: Codex does not report child shares or parent blocking",
+            "42: Codex does not report child shares or parent blocking",
+            "43: Codex does not report child shares or parent blocking",
+            "44: Codex does not report child shares or parent blocking",
+            "45: Codex does not report child shares or parent blocking",
+            "46: Codex does not report child shares or parent blocking",
+            "47: Codex does not report child shares or parent blocking",
+            "48: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/turns": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: Codex does not report child shares or parent blocking",
+            "42: Codex does not report child shares or parent blocking",
+            "43: Codex does not report child shares or parent blocking",
+            "44: Codex does not report child shares or parent blocking",
+            "45: Codex does not report child shares or parent blocking",
+            "46: Codex does not report child shares or parent blocking",
+            "47: Codex does not report child shares or parent blocking",
+            "48: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: not exposed by the selected stream",
+            "42: not exposed by the selected stream",
+            "43: not exposed by the selected stream",
+            "44: not exposed by the selected stream",
+            "45: not exposed by the selected stream",
+            "46: not exposed by the selected stream",
+            "47: not exposed by the selected stream",
+            "48: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "grading_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 1353.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 1258.0,
+              "upper": 1388.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0387204521608279
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.05420863302515906
+          }
+        },
+        "largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: not exposed by the selected stream",
+            "42: not exposed by the selected stream",
+            "43: not exposed by the selected stream",
+            "44: not exposed by the selected stream",
+            "45: not exposed by the selected stream",
+            "46: not exposed by the selected stream",
+            "47: not exposed by the selected stream",
+            "48: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "longest_completion_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 40649.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 26233.0,
+              "upper": 56786.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.24558269442748096
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.3438157721984733
+          }
+        },
+        "peak_rss_bytes/largest-process": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "42: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "43: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "44: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "45: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "46: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "47: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "48: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/tree": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "42: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "43: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "44: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "45: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "46: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "47: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "48: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "process_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 76828.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 64435.0,
+              "upper": 80836.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.06849519338108898
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.09589327073352456
+          }
+        },
+        "responses": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 6.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5.0,
+              "upper": 8.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1437059421667301
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.20118831903342213
+          }
+        },
+        "spend_usd/priced": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.08755479999999999
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.07024319999999999,
+              "upper": 0.110648
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.15339255895361548
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.21474958253506166
+          }
+        },
+        "task_wall_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 76293.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 63922.0,
+              "upper": 80314.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.06937461115323881
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.09712445561453434
+          }
+        },
+        "teardown_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 508.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 436.0,
+              "upper": 1208.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.4375523712880537
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.6125733198032751
+          }
+        },
+        "time/children_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/commands_outside_calls_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 890.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 1.388202799456373
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 1.9434839192389222
+          }
+        },
+        "time/compaction_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: first-byte durations not reported",
+            "42: first-byte durations not reported",
+            "43: first-byte durations not reported",
+            "44: first-byte durations not reported",
+            "45: first-byte durations not reported",
+            "46: first-byte durations not reported",
+            "47: first-byte durations not reported",
+            "48: first-byte durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: largest-gap durations not reported",
+            "42: largest-gap durations not reported",
+            "43: largest-gap durations not reported",
+            "44: largest-gap durations not reported",
+            "45: largest-gap durations not reported",
+            "46: largest-gap durations not reported",
+            "47: largest-gap durations not reported",
+            "48: largest-gap durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/requests_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 72384.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 60335.0,
+              "upper": 77474.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.07364087262827557
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.1030972216795858
+          }
+        },
+        "time/rest_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 12.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 10.0,
+              "upper": 13.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.08908708063747481
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.12472191289246472
+          }
+        },
+        "time/tools/exec_ms": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 3283.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 2402.0,
+              "upper": 5256.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.2707619384876559
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.37906671388271823
+          }
+        },
+        "tokens/codex/cache_read": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 110080.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 76672.0,
+              "upper": 138624.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.17308004954312833
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.24231206936037966
+          }
+        },
+        "tokens/codex/cache_write": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "tokens/codex/fresh": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 19505.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 12803.0,
+              "upper": 31514.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.3229930437433932
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.45219026124075046
+          }
+        },
+        "tokens/codex/output": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 3844.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 3662.0,
+              "upper": 4162.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.050201852245212376
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.07028259314329732
+          }
+        },
+        "tokens/codex/reasoning": {
+          "observed": 8,
+          "total_attempts": 8,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 513.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 438.0,
+              "upper": 629.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.12681853375623056
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.17754594725872277
+          }
+        },
+        "tool_calls/command_execution": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: lower bound (non-root tool calls absent from JSON lines)",
+            "42: lower bound (non-root tool calls absent from JSON lines)",
+            "43: lower bound (non-root tool calls absent from JSON lines)",
+            "44: lower bound (non-root tool calls absent from JSON lines)",
+            "45: lower bound (non-root tool calls absent from JSON lines)",
+            "46: lower bound (non-root tool calls absent from JSON lines)",
+            "47: lower bound (non-root tool calls absent from JSON lines)",
+            "48: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "tool_calls/file_change": {
+          "observed": 0,
+          "total_attempts": 8,
+          "missing": [
+            "41: lower bound (non-root tool calls absent from JSON lines)",
+            "42: lower bound (non-root tool calls absent from JSON lines)",
+            "43: lower bound (non-root tool calls absent from JSON lines)",
+            "44: lower bound (non-root tool calls absent from JSON lines)",
+            "45: lower bound (non-root tool calls absent from JSON lines)",
+            "46: lower bound (non-root tool calls absent from JSON lines)",
+            "47: lower bound (non-root tool calls absent from JSON lines)",
+            "48: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        }
+      }
+    },
+    {
+      "task": "repository/shell-cwd",
+      "task_version": 2,
+      "seed_sha256": "6083aea14a57168a014f1f1de1c8ef368c490c1a113e77264105ccb502dbc4f0",
+      "prompt_sha256": "6df0169f4796043c6849bbb39ede5450b60ca78291261abc97a2c72d0d6243c4",
+      "arm": "codex-standard-12eb3e81",
+      "agent": "codex",
+      "agent_version": "0.160.0",
+      "binary_sha256": "12eb3e81114588aca3b7998f4f19e8997b056aca08e57a7ca7c8a3ec8c652aad",
+      "smith_face": null,
+      "configuration_sha256": "ecced90914ddd0e0ddf5331bf6e2190fc8ee6543aa73c9da25b28b5ed07d8afa",
+      "provider": "codex",
+      "model": {
+        "requested_model": "gpt-6.1-sol",
+        "requested_effort": "high",
+        "resolved_model": {
+          "state": "observed",
+          "value": "gpt-6.1-sol"
+        },
+        "resolved_window": {
+          "state": "observed",
+          "value": 475000
+        },
+        "resolved_effort": {
+          "state": "unavailable",
+          "reason": "not run"
+        }
+      },
+      "attempts": [
+        "59",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "68"
+      ],
+      "counts_by_end": {
+        "completed": 10
+      },
+      "passes": {
+        "passed": 6,
+        "failed": 4,
+        "unavailable": 0,
+        "budget": 0,
+        "setup": 0,
+        "interval_95": {
+          "state": "observed",
+          "value": {
+            "lower": 0.2623780766069451,
+            "upper": 0.8784477418801728
+          }
+        }
+      },
+      "metrics": {
+        "cpu_ms/pidfd-walk": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 356117.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 261117.0,
+              "upper": 447547.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1746400469052654
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.21868392922539812
+          }
+        },
+        "delegation/children": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: Codex does not report child shares or parent blocking",
+            "60: Codex does not report child shares or parent blocking",
+            "61: Codex does not report child shares or parent blocking",
+            "62: Codex does not report child shares or parent blocking",
+            "63: Codex does not report child shares or parent blocking",
+            "64: Codex does not report child shares or parent blocking",
+            "65: Codex does not report child shares or parent blocking",
+            "66: Codex does not report child shares or parent blocking",
+            "67: Codex does not report child shares or parent blocking",
+            "68: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/children_budget": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: Codex does not report child shares or parent blocking",
+            "60: Codex does not report child shares or parent blocking",
+            "61: Codex does not report child shares or parent blocking",
+            "62: Codex does not report child shares or parent blocking",
+            "63: Codex does not report child shares or parent blocking",
+            "64: Codex does not report child shares or parent blocking",
+            "65: Codex does not report child shares or parent blocking",
+            "66: Codex does not report child shares or parent blocking",
+            "67: Codex does not report child shares or parent blocking",
+            "68: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/parent_blocked_ms": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: Codex does not report child shares or parent blocking",
+            "60: Codex does not report child shares or parent blocking",
+            "61: Codex does not report child shares or parent blocking",
+            "62: Codex does not report child shares or parent blocking",
+            "63: Codex does not report child shares or parent blocking",
+            "64: Codex does not report child shares or parent blocking",
+            "65: Codex does not report child shares or parent blocking",
+            "66: Codex does not report child shares or parent blocking",
+            "67: Codex does not report child shares or parent blocking",
+            "68: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/turns": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: Codex does not report child shares or parent blocking",
+            "60: Codex does not report child shares or parent blocking",
+            "61: Codex does not report child shares or parent blocking",
+            "62: Codex does not report child shares or parent blocking",
+            "63: Codex does not report child shares or parent blocking",
+            "64: Codex does not report child shares or parent blocking",
+            "65: Codex does not report child shares or parent blocking",
+            "66: Codex does not report child shares or parent blocking",
+            "67: Codex does not report child shares or parent blocking",
+            "68: Codex does not report child shares or parent blocking"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: not exposed by the selected stream",
+            "60: not exposed by the selected stream",
+            "61: not exposed by the selected stream",
+            "62: not exposed by the selected stream",
+            "63: not exposed by the selected stream",
+            "64: not exposed by the selected stream",
+            "65: not exposed by the selected stream",
+            "66: not exposed by the selected stream",
+            "67: not exposed by the selected stream",
+            "68: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "grading_wall_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 54078.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 48704.0,
+              "upper": 61405.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.07212944299296327
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.09032034911841857
+          }
+        },
+        "largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: not exposed by the selected stream",
+            "60: not exposed by the selected stream",
+            "61: not exposed by the selected stream",
+            "62: not exposed by the selected stream",
+            "63: not exposed by the selected stream",
+            "64: not exposed by the selected stream",
+            "65: not exposed by the selected stream",
+            "66: not exposed by the selected stream",
+            "67: not exposed by the selected stream",
+            "68: not exposed by the selected stream"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "longest_completion_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 42557.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 35949.0,
+              "upper": 89172.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.33535716958511264
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.41993359964317256
+          }
+        },
+        "peak_rss_bytes/largest-process": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: metric not reported",
+            "60: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "61: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "62: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "63: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "64: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "65: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "66: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "67: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "68: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/tree": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: prior setup children establish the walk's unreducible peak baseline",
+            "60: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "61: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "62: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "63: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "64: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "65: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "66: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "67: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "68: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/unavailable": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: prior setup children establish the walk's unreducible peak baseline",
+            "60: metric not reported",
+            "61: metric not reported",
+            "62: metric not reported",
+            "63: metric not reported",
+            "64: metric not reported",
+            "65: metric not reported",
+            "66: metric not reported",
+            "67: metric not reported",
+            "68: metric not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "process_wall_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 590863.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 451321.0,
+              "upper": 703836.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1390822078769505
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.1741584719132261
+          }
+        },
+        "responses": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 48.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 40.0,
+              "upper": 56.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.12308735776744523
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.15412975151775277
+          }
+        },
+        "spend_usd/priced": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 1.202595
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.9894344000000002,
+              "upper": 1.3794027999999998
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1319175903890171
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.16518695174117648
+          }
+        },
+        "task_wall_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 590395.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 450859.0,
+              "upper": 703327.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1391579596315794
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.17425332811397454
+          }
+        },
+        "teardown_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 462.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 286.0,
+              "upper": 802.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.3161858888721303
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.3959273589847954
+          }
+        },
+        "time/children_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/commands_outside_calls_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 102290.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 71580.0,
+              "upper": 129914.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.20153777693637967
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.25236521478780316
+          }
+        },
+        "time/compaction_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "time/first_byte_ms": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: first-byte durations not reported",
+            "60: first-byte durations not reported",
+            "61: first-byte durations not reported",
+            "62: first-byte durations not reported",
+            "63: first-byte durations not reported",
+            "64: first-byte durations not reported",
+            "65: first-byte durations not reported",
+            "66: first-byte durations not reported",
+            "67: first-byte durations not reported",
+            "68: first-byte durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/largest_gap_ms": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: largest-gap durations not reported",
+            "60: largest-gap durations not reported",
+            "61: largest-gap durations not reported",
+            "62: largest-gap durations not reported",
+            "63: largest-gap durations not reported",
+            "64: largest-gap durations not reported",
+            "65: largest-gap durations not reported",
+            "66: largest-gap durations not reported",
+            "67: largest-gap durations not reported",
+            "68: largest-gap durations not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "time/requests_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 548631.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 402844.0,
+              "upper": 657611.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.14828663085402893
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.18568423257665476
+          }
+        },
+        "time/rest_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 11.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 10.0,
+              "upper": 13.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.10296384129625155
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.12893112308323434
+          }
+        },
+        "time/tools/exec_ms": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 49752.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 39942.0,
+              "upper": 64537.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.14364296211513147
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.1798694395561621
+          }
+        },
+        "tokens/codex/cache_read": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 6121472.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 4394752.0,
+              "upper": 7438208.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.1889903090716436
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.23665329977681854
+          }
+        },
+        "tokens/codex/cache_write": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "tokens/codex/fresh": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 177034.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 153363.0,
+              "upper": 201003.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.08214230893829615
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.1028584405042985
+          }
+        },
+        "tokens/codex/output": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 23757.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 16875.0,
+              "upper": 25430.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.12931644133046244
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.1619297979170353
+          }
+        },
+        "tokens/codex/reasoning": {
+          "observed": 10,
+          "total_attempts": 10,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 7851.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5217.0,
+              "upper": 10255.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.19756312999327996
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.24738816956705686
+          }
+        },
+        "tool_calls/command_execution": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: lower bound (non-root tool calls absent from JSON lines)",
+            "60: lower bound (non-root tool calls absent from JSON lines)",
+            "61: lower bound (non-root tool calls absent from JSON lines)",
+            "62: lower bound (non-root tool calls absent from JSON lines)",
+            "63: lower bound (non-root tool calls absent from JSON lines)",
+            "64: lower bound (non-root tool calls absent from JSON lines)",
+            "65: lower bound (non-root tool calls absent from JSON lines)",
+            "66: lower bound (non-root tool calls absent from JSON lines)",
+            "67: lower bound (non-root tool calls absent from JSON lines)",
+            "68: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "tool_calls/file_change": {
+          "observed": 0,
+          "total_attempts": 10,
+          "missing": [
+            "59: lower bound (non-root tool calls absent from JSON lines)",
+            "60: metric not reported",
+            "61: metric not reported",
+            "62: metric not reported",
+            "63: lower bound (non-root tool calls absent from JSON lines)",
+            "64: metric not reported",
+            "65: lower bound (non-root tool calls absent from JSON lines)",
+            "66: metric not reported",
+            "67: lower bound (non-root tool calls absent from JSON lines)",
+            "68: lower bound (non-root tool calls absent from JSON lines)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        }
+      }
+    }
+  ]
+}
