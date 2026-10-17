@@ -89,6 +89,16 @@ This step addresses FT, RT and RC.
   files, then the command that checks them; they run one at a time in
   call order, and a write that fails, or any call answered invalid,
   leaves the writes and commands after it not run."
+- The host part holds these words because the startup check counts the
+  task role as written, not at its 4 KiB cap (protocol/limits.md 4,
+  `host-part-holds-the-role`; shell.md 6.6, designer's answer of
+  2026-10-17). On `main` the check had 9 bytes of slack, and every byte a
+  description gains costs about half a byte of host part. Counted as
+  written, the role needs 1,818 bytes with this step's words, not 4,096.
+  The change sends no new byte to the model: `role_bound` feeds only
+  `host_part_holds_the_role` (`settings/resolve.rs:85-90`), a startup
+  check that derives no limit. So a `parity-change` run made before it
+  stands, and the commit body says so.
 
 Topic 3, replacing the role's third paragraph:
 
@@ -169,7 +179,10 @@ Files: `crates/smith-domain-session/src/session.rs` (`Tools`, `:289-308`;
   (`:57`), `tests/codecs/tests/drift.rs` (`:22-33`),
   `tests/codecs/tests/transcript.rs` (`:5-9`, `:25-28`, `:48`, `:95`),
   `tests/end-to-end/end_to_end.rs` (`:553`, `"transcript":4` becomes 5),
-  `crates/smith-local-shell/src/role.rs`, `tests/session/tests/`,
+  `crates/smith-local-shell/src/role.rs` (`TASK_ROLE_BOUND`, `:22-23`),
+  `crates/smith-local-shell/src/settings/resolve.rs` (`:85-86`),
+  `crates/smith-local-shell/src/settings/tests.rs` (`:715`),
+  `tests/session/tests/`,
   `benchmarks/summaries/`.
 Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   call's position in the completion, in the session's vocabulary and
@@ -235,7 +248,12 @@ Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   representation that keeps the told turn free of tickets is the
   implementer's to choose, named in the commit body. The descriptions and `TASK_ROLE` take the
   words above; the goldens' expected texts change with them (README,
-  rule 3).
+  rule 3). `resolve.rs:86` gives `role_bound` the role's own length,
+  `TASK_ROLE.len()` as a `u32`, in place of `TASK_ROLE_BOUND`, which
+  goes. `the_task_role_is_within_four_kibibytes` stays as the text's
+  cap, and `settings/tests.rs:715` expects the role's length.
+  `settings::tests::composition_adds_every_model_of_accounts_with_a_source`
+  (`:310`) then passes with this step's descriptions.
 Test shape: `crates/smith-domain-session/src/tests.rs`, beside
   `adjacent_reads_run_together_and_a_write_runs_alone_and_results_go_back_in_order`
   (`:793`): `a_failed_edit_leaves_the_writes_after_it_not_run`,

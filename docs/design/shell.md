@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-16. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-17. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -845,7 +845,9 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
   by the `parity-change` suite (benchmarks.md, sections 4.2 and 16.6).
 - **It is a run's instructions,** so it counts where a charter's
   instructions count: in the window's host part (protocol/limits.md,
-  3.9).
+  3.9). The startup check counts it as written (protocol/limits.md,
+  section 4, `host-part-holds-the-role`): its 4 KiB is the text's own
+  cap, never a reservation in the host part.
 
 ## 7. Credentials
 

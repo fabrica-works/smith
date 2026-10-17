@@ -1,6 +1,6 @@
 # LLM calls
 
-Provisional, 2026-10-07, revised 2026-10-16. `smith-protocol-llm` is the
+Provisional, 2026-10-07, revised 2026-10-17. `smith-protocol-llm` is the
 agent's component for LLM calls. It translates `smith-domain`'s LLM
 vocabulary to skein's LLM client and back:
 
@@ -158,9 +158,10 @@ A completion's prompt is built from what the domain gives:
     from its start;
   - `job`: that it reads a job's output since its last answer, and its
     end once it has ended; `wait_seconds` in seconds, its default and
-    its ceiling `job_wait`; that called with reads, adjacent in one
-    response, it waits no longer than they run, so such a poll costs
-    nothing; `stop`, which
+    its ceiling `job_wait`; that beside any other call of its response
+    it waits no longer than they run, so such a poll costs nothing, and
+    that it waits as it asks only in a response of `job` calls alone;
+    `stop`, which
     stops the job and answers its end; and `jobs`, the most a session
     may hold, a job holding its place until an answer reports its end;
   - `search`: that it runs `rg`, and that its `pattern` is a regular

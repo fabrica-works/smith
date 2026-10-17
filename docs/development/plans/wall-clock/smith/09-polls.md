@@ -4,9 +4,11 @@
 an attempt: a `job` poll waits its own `job_wait` (30 s by default)
 whatever its batch holds, so a poll beside reads costs its wait, where
 Codex polls at one second inside its next read. The design has a job's
-wait give way to its batch: a `job` call beside other calls answers once
-every call of its batch that is not a `job` call has answered, `running`
-if its job runs on; alone, it waits as it asks. The role's topic 5 sends
+wait give way to the rest of its response: a `job` call beside other
+calls answers once every call of its batch that is not a `job` call has
+answered, or as soon as it starts in a batch of `job` calls only, as
+after a write or a command, `running` if its job runs on; in a response
+of `job` calls alone, it waits as it asks. The role's topic 5 sends
 polls beside other work (decisions.md, section 7). Nothing ends a wait
 early today: the machine waits until the job ends or the wait's time
 passes (findings A23). This step changes what a tool answers when a
@@ -20,7 +22,7 @@ address FT.
 ## Read first
 
 - smith `docs/design/domain/session.md`, section 5 ("A job's wait gives
-  way to its batch") and section 10's job stories.
+  way to the rest of its response") and section 10's job stories.
 - smith `docs/design/domain/tools.md`, sections 3 (`job`), 5 ("A wait
   ended early") and 7 (its world's stories).
 - smith `docs/design/protocol/llm.md`, section 3 (`job`'s description).
@@ -32,12 +34,16 @@ address FT.
 ## What the design asks
 
 - **The session ends a `job` call's wait** once every call beside it in
-  its batch that is not a `job` call has answered; the call then answers
-  at once, as its wait's end would: the output since its last answer,
-  then `running`, or the end if the job has ended. A batch of `job` calls
-  alone waits as each call asks (session.md 5; tools.md 5).
-- **The description:** that `job`, called with reads, adjacent in one
-  response, waits no longer than they run, so such a poll costs nothing
+  its batch that is not a `job` call has answered, and as soon as it
+  starts in a batch of `job` calls only whose response holds another
+  call; the call then answers at once, as its wait's end would: the
+  output since its last answer, then `running`, or the end if the job
+  has ended. A response of `job` calls alone waits as each call asks
+  (session.md 5: "A `job` call waits as it asks only in a response whose
+  calls are all `job` calls"; tools.md 5).
+- **The description:** that `job`, beside any other call of its
+  response, waits no longer than they run, so such a poll costs nothing,
+  and that it waits as it asks only in a response of `job` calls alone
   (llm.md 3).
 - **The role:** topic 3 batches a running job's poll beside the reads,
   lists, searches and commands that change nothing; topic 5 runs long
@@ -47,7 +53,9 @@ address FT.
 
 - The session tells the tools `Event::EndWait { kit: Token, call: Token }`
   for each `job` call still waiting once its batch's last other call has
-  answered; the tools find the read by `reply_to == ReplyTo::new(call)`,
+  answered, and, in a completion that holds a call other than `job`, for
+  each `job` call of a batch of `job` calls only as soon as the batch
+  starts; the tools find the read by `reply_to == ReplyTo::new(call)`,
   as `CancelJobs { kit }` names its kit. The tools end the call's read:
   an active one through a new machine act, `JobAct::Hasten`, a unit
   variant (`Request::Job { owner }` names the read), which sets its
@@ -68,13 +76,18 @@ address FT.
   > it ends.
 
 - `job`'s description gains, after "Without stop, read beside reads,
-  lists and searches;": " beside them it waits no longer than they run,
-  so such a poll costs nothing;". Its words, and topic 3's "commands
-  that change nothing", wait on the designer's answer to the questions
-  of 2026-10-17T03:53Z: the sentence fails the host part's check
-  (`smith-local-shell` `settings/tests.rs:310`, about 9 bytes of slack on
-  `main`), and a `shell` call, a write, joins no batch with a poll
-  (`call.rs:236`, `session.rs:1648`).
+  lists and searches;", these 132 bytes: " beside other calls it waits
+  no longer than they run, so such a poll costs nothing; only with job
+  calls alone does it wait as asked;".
+- The host part holds them because the check counts the task role as
+  written (protocol/limits.md 4, `host-part-holds-the-role`). 08.1 makes
+  that change (its Choices). If 08.1 was dropped, this step makes it, and
+  its Files add `crates/smith-local-shell/src/settings/resolve.rs`
+  (`:85-86`) and `settings/tests.rs` (`:715`).
+- The role's words stay as above: with the session's rule, a poll beside
+  a `shell` call that changes nothing, or beside a change, waits no
+  longer than that call runs. The session never asks what a command
+  changes (designer's answer of 2026-10-17).
 
 ## Rules that bind it
 
@@ -114,12 +127,16 @@ Files: `crates/smith-domain-session/src/session.rs` (`tool_ran`,
   tests` lists; `benchmarks/summaries/`.
 Shape: the session, when a batch that held a call other than `job` has
   no such call left running, gives the tools `Event::EndWait { kit, call }`
-  for each `job` call of the batch without `stop` still waiting. The
+  for each `job` call of the batch without `stop` still waiting. When it
+  starts a batch of `job` calls only, it gives each its `EndWait` at once
+  if the completion holds a call other than `job`, read from the
+  completion's call blocks whatever their answers (invalid, not run, a
+  delegated or a host tool's call included). The
   tools' `jobs` ends that call's read: active, it sends the machine
   `JobAct::Hasten`; queued, it marks the read to answer at once
   when it starts. The machine answers a hastened read at once with the
-  output since its last answer and `running`, or the end. A batch of
-  `job` calls alone sends nothing, and each waits as it asks; a `job`
+  output since its last answer and `running`, or the end. A completion
+  of `job` calls alone sends nothing, and each waits as it asks; a `job`
   with `stop` is a write and never in such a batch.
   A Hasten owes no terminal of its own, and each place that holds one
   act per owner or per job lets it pass: `operation.rs` returns before
@@ -142,7 +159,11 @@ Test shape: `tests/tools/tests/jobs.rs`, beside
   `tests/session/tests/jobs.rs`, beside
   `a_job_with_stop_runs_alone_in_its_batch` (`:176`):
   `a_job_call_beside_reads_answers_once_they_have_answered`,
-  `job_calls_alone_wait_as_each_asks`. In the machine's tests:
+  `a_job_call_in_a_batch_of_its_own_beside_other_calls_answers_at_once`
+  (one table test, its rows a `job` call before an `edit`, and one after
+  a `shell` call, in one completion),
+  `job_calls_alone_wait_as_each_asks` (a completion of two `job` calls).
+  In the machine's tests:
   `a_hastened_read_answers_at_once`. Unit tests under 20 ms; world tests
   under 0.5 s.
 Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
@@ -157,7 +178,7 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   and the criterion it addresses, RT, with the baseline's figures above.
 Don't: shorten `job_wait`; tell a job's end between completions
   (decisions.md 7, deferred).
-Size: 220 lines.
+Size: 240 lines.
 Removes: `tests/session/src/world.rs:1197`'s `unreachable!` (and its copy at `:2130`) when a test
   of this step reaches that arm, named in the commit body; otherwise it
   stays.

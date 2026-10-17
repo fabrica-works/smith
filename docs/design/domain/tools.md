@@ -1,6 +1,6 @@
 # Tools
 
-Provisional, 2026-10-05, revised 2026-10-16. What a smith session does to
+Provisional, 2026-10-05, revised 2026-10-17. What a smith session does to
 its workspace, as a domain layer: read, list, search, write, edit, shell
 and job. It is the child domain `smith-domain-tools`, under the session
 (session.md). A run with no workspace has none of these tools; its LLM
@@ -271,9 +271,10 @@ modify (`write`, `edit`), shell (`shell`, `job`).
     and ceiling are `job_wait`, before it answers `running`.
   - **A wait ended early.** The session ends a `job` call's wait once
     every call beside it in its batch that is not a `job` call has
-    answered (session.md, section 5). The call then answers at once, as
-    its wait's end would: the output since its last answer, then
-    `running`, or the end if the job has ended.
+    answered, and as soon as it starts in a batch of `job` calls only
+    whose response holds another call (session.md, section 5). The call
+    then answers at once, as its wait's end would: the output since its
+    last answer, then `running`, or the end if the job has ended.
   - **Stopping it.** `job` with `stop: true` stops the job's group in the
     steps a deadline uses (protocol/agent.md, section 2), then answers
     its end, `stopped`, with its output since its last answer. A job that

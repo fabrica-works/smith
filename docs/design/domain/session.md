@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-16. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-17. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -206,12 +206,16 @@ child domain `smith-domain-session`, whose own child is the tools domain
   effect follows from its tools; a host tool's is as its charter
   declares; `finish` and `deliver` are writes; `job` is a read, and a
   write with `stop` (tools.md, section 5).
-- **A job's wait gives way to its batch.** A `job` call waits for its
-  job's end no longer than the other calls of its batch run: once every
-  call of its batch that is not a `job` call has answered, it answers at
-  once, `running` if its job still runs (tools.md, section 5). A batch
-  of `job` calls alone waits as each call asks. A poll beside reads
-  costs the reads' time, never its own wait.
+- **A job's wait gives way to the rest of its response.** A `job` call
+  waits as it asks only in a response whose calls are all `job` calls.
+  Beside any other call, it waits for its job's end no longer than the
+  other calls of its batch run: once every call of its batch that is not
+  a `job` call has answered, it answers at once, `running` if its job
+  still runs; in a batch of `job` calls only, as after a write or a
+  command, it answers as soon as it starts (tools.md, section 5). A poll
+  beside other work costs at most that work's time, never its own wait,
+  whatever the work's effect, so the session never needs to know what a
+  command changes.
 - **A failed write stops the writes after it.** When a write of a
   completion fails, the completion's later writes and commands are
   answered as not run, naming that call; its later reads still run. So
@@ -576,7 +580,9 @@ budgets.
   - a command answered `running` while the session reads, edits and
     completes, then read to its end with `job`; a `job` call with the
     default wait beside reads, answered `running` once they have
-    answered; a `job` call alone, waiting for its job's end; a `job`
+    answered; a `job` call before an edit and one after a command, in one
+    response, each answered at once; a `job` call alone, and `job` calls
+    alone in their response, each waiting for its job's end; a `job`
     with `stop` alone in its batch; jobs cancelled by the opener before another
     writer, `cancelled` at their next read; a session closing with a job
     running, telling its `job.ended`;

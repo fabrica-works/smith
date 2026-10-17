@@ -1,6 +1,6 @@
 # Limits
 
-Provisional, 2026-10-09, revised 2026-10-16. How an agent's limits are
+Provisional, 2026-10-09, revised 2026-10-17. How an agent's limits are
 made:
 
 - the quantities a deployment declares;
@@ -562,7 +562,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 |---|---|
 | `derived` | every derived limit fits its type; the first that overflows is named |
 | `fresh-window` | for each declared model, a new window at its largest (smith's own part, the host's part, the task as its instruction and one offer, a summary of `output` tokens, and one offer of held-back messages) and one `output` fit within the window at the compaction threshold, counting a byte as a token (3.9). The parts are derived so that this holds whenever smith's own part fits the room, for every shipped preset among them (`docs/design/shell.md`, 6.1); the check refuses a model whose room smith's own part fills |
-| `host-part-holds-the-role` | for each declared model, the host's part (3.9) holds the task role at its bound (`docs/design/shell.md`, 6.6) beside a guide at `guide` for each of the start's directories, so that the product's own default never makes a start too large for the entrance |
+| `host-part-holds-the-role` | for each declared model, the host's part (3.9) holds the task role as written, its bytes as the shell's code holds them, not its 4 KiB cap (`docs/design/shell.md`, 6.6), beside a guide at `guide` for each of the start's directories, so that the product's own default never makes a start too large for the entrance |
 | `compaction-headroom` | for each declared model, the window above its threshold holds one `output` (that of the completion whose results a compaction carries), the summary instruction and a cut result's marker for each of `calls_per_response` results: the line is at or above the threshold, and the compaction the check or the guard calls for always fits, its results cut to what is left; what it leaves is the spare (3.9; domain/session.md, 8.1) |
 | `output-in-window` | each model's `output` is less than its `window` |
 | `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound: the line at `TOKEN_BYTES` bytes a token, plus one completion's whole reserve and one batch's results, within the history's bytes (rule 4 of section 3). It holds by construction for 3.2's derivation, and guards it |
