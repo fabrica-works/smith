@@ -45,10 +45,13 @@ address FT.
 
 ## Choices this plan makes
 
-- The session tells the tools `Event::EndWait { call }` for each `job`
-  call still waiting once its batch's last other call has answered. The
-  tools end the call's read: an active one through a new machine act,
-  `JobAct::Hasten`, which sets its deadline to now; one queued behind
+- The session tells the tools `Event::EndWait { kit: Token, call: Token }`
+  for each `job` call still waiting once its batch's last other call has
+  answered; the tools find the read by `reply_to == ReplyTo::new(call)`,
+  as `CancelJobs { kit }` names its kit. The tools end the call's read:
+  an active one through a new machine act, `JobAct::Hasten`, a unit
+  variant (`Request::Job { owner }` names the read), which sets its
+  deadline to now; one queued behind
   another read of the same job answers at once when it starts. The
   root's `Long` span for the read ends with it.
 - The role's new words: a sentence after paragraph 3's first sentence
@@ -66,7 +69,12 @@ address FT.
 
 - `job`'s description gains, after "Without stop, read beside reads,
   lists and searches;": " beside them it waits no longer than they run,
-  so such a poll costs nothing;".
+  so such a poll costs nothing;". Its words, and topic 3's "commands
+  that change nothing", wait on the designer's answer to the questions
+  of 2026-10-17T03:53Z: the sentence fails the host part's check
+  (`smith-local-shell` `settings/tests.rs:310`, about 9 bytes of slack on
+  `main`), and a `shell` call, a write, joins no batch with a poll
+  (`call.rs:236`, `session.rs:1648`).
 
 ## Rules that bind it
 
@@ -83,28 +91,49 @@ Scope: session.md 5; tools.md 3, 5 and 7's story "a wait ended early by
   A23; cause 4).
 Needs: smith 08's batched change [08.1] landed or dropped.
 Files: `crates/smith-domain-session/src/session.rs` (`tool_ran`,
-  `:1755-1777`; `advance`, `:1596`), `crates/smith-domain-tools/src/boundary.rs`
-  (`Event`, `:39-70`; `JobAct`, `:127`), `crates/smith-domain-tools/src/jobs.rs`
+  `:1757-1779`; `advance`, `:1491`), `crates/smith-domain-tools/src/boundary.rs`
+  (`Event`, `:39-70`; `JobAct`, `:127`), `crates/smith-domain-tools/src/domain.rs`
+  (`match event`, `:92`), `crates/smith-domain-tools/src/jobs.rs`
   (`:118`, `:173-190`), `crates/smith-domain-tools/src/kit.rs`
   (`:135-144`), `crates/smith-protocol-machine/src/process/jobs.rs`
-  (`:37-61`, `:112-125`), `crates/smith-domain/src/operation.rs`
-  (`:54-72`), `crates/smith-protocol-llm/src/descriptions.rs` (`:78-82`),
+  (`:37-61`, `:112-125`), `crates/smith-protocol-machine/src/component.rs`
+  (`:112`), `crates/smith-domain/src/operation.rs`
+  (`:54-72`), `crates/smith-inline-agent/src/workspace.rs` (`:164-172`),
+  `crates/smith-protocol-llm/src/descriptions.rs` (`:78-82`),
   `crates/smith-protocol-llm/src/tests.rs` (`:343-367`),
   `tests/protocol-llm/tests/production_tools.rs` (`:410-419`),
   `crates/smith-local-shell/src/role.rs`, the job fakes
-  `tests/tools/src/world/jobs.rs` (`:66-87`), `tests/agent/src/world/jobs.rs`,
-  `tests/protocol-llm/src/world/jobs.rs`, `tests/session/src/recorded.rs`
-  (`:341-345`), and every match on `JobAct` `rg -n 'JobAct::' crates tests`
-  lists; `benchmarks/summaries/`.
+  `tests/tools/src/world/jobs.rs` (`:66-87`, the `assert!` at `:68`),
+  `tests/agent/src/world/jobs.rs` (`:63`),
+  `tests/protocol-llm/src/world/jobs.rs` (`:61`), `tests/tools/src/world.rs`
+  (`:508`, and a script `Step` that sends `EndWait`),
+  `tests/agent/src/memory/random.rs` (`:221-226`),
+  `tests/session/src/recorded.rs` (`:341-345`), `tests/machine/src/lib.rs`
+  (the sequence driver, `:845-851`), `tests/machine/src/jobs.rs`
+  (`:36`, the terminals expected), and every further match on `JobAct` `rg -n 'JobAct::' crates
+  tests` lists; `benchmarks/summaries/`.
 Shape: the session, when a batch that held a call other than `job` has
-  no such call left running, gives the tools `Event::EndWait { call }`
+  no such call left running, gives the tools `Event::EndWait { kit, call }`
   for each `job` call of the batch without `stop` still waiting. The
   tools' `jobs` ends that call's read: active, it sends the machine
-  `JobAct::Hasten { job }`; queued, it marks the read to answer at once
+  `JobAct::Hasten`; queued, it marks the read to answer at once
   when it starts. The machine answers a hastened read at once with the
   output since its last answer and `running`, or the end. A batch of
   `job` calls alone sends nothing, and each waits as it asks; a `job`
   with `stop` is a write and never in such a batch.
+  A Hasten owes no terminal of its own, and each place that holds one
+  act per owner or per job lets it pass: `operation.rs` returns before
+  `commands.insert` (`:67`, "one active job act per owner");
+  `process/jobs.rs` takes it in `Read` and ignores it in `Held`
+  (`:39-41`'s `unreachable!`); `workspace.rs` gives it an early branch
+  before the callback right (`:164-172`, "root machine requests own one
+  callback right"); the job fakes take it beside their `assert!(…Held…)`;
+  `recorded.rs` keeps hastened acts apart from the one pending act per
+  owner; the machine's sequence driver sends the next act without
+  waiting for a Hasten's terminal, and counts none for it.
+  `advance` stood at 99 of `too_many_lines`' 100 on `9d1d7c86`; after
+  08.1's helper, aim for no new `#[expect]`; one left names this step in
+  its `reason` and in the commit body.
 Test shape: `tests/tools/tests/jobs.rs`, beside
   `different_jobs_can_be_read_in_the_same_batch` (`:460`):
   `a_wait_ended_early_answers_running_with_the_output_so_far`,
@@ -129,7 +158,7 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
 Don't: shorten `job_wait`; tell a job's end between completions
   (decisions.md 7, deferred).
 Size: 220 lines.
-Removes: `tests/session/src/world.rs:1209`'s `unreachable!` when a test
+Removes: `tests/session/src/world.rs:1197`'s `unreachable!` (and its copy at `:2130`) when a test
   of this step reaches that arm, named in the commit body; otherwise it
   stays.
 
