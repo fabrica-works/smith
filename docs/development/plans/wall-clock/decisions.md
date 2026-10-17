@@ -577,3 +577,31 @@ Reversible, and none a product decision; the widest in reach:
      - `advance` stood at 99 of `too_many_lines`' 100: after 08.1's helper, aim for no new `#[expect]`.
      - Waits on the designer (`question.md` of 2026-10-17T03:53Z): the `job` description's words, which fail `smith-local-shell`'s `settings/tests.rs:310` on the host part (about 9 bytes of slack on `main`), and topic 3's "commands that change nothing", which no batch of the session's joins with a poll (`call.rs:236`, `session.rs:1648`). 09.1 is not made ready before both answers.
      - Unchanged: 09.1's Proof and Test shape; jig and temper, which use none of these names.
+
+120. **08.1 and 09.1: the designer's answer, a poll beside any call and the role as written; 10.1's Shape without TASK_ROLE_BOUND** (design gap, smith 08.1's block of 2026-10-17T03:57:28Z).
+     The designer's answer to `question.md` (2026-10-17T03:53Z, both headings), landed as smith `2c213b1b` (session.md 5 and 10, tools.md 5, llm.md 3, limits.md 4, shell.md 6.6, STATUS.md; `smith/08-batched-change.md`, `smith/09-polls.md`; Markdown only):
+
+
+     **1. A poll beside a command: the design means the response.** shell.md 6.6's topic 3 stands as written: "commands that change nothing, with a running job's poll beside them". session.md 5 is widened to match it:
+
+     > **A job's wait gives way to the rest of its response.** A `job` call waits as it asks only in a response whose calls are all `job` calls. Beside any other call, it waits for its job's end no longer than the other calls of its batch run: once every call of its batch that is not a `job` call has answered, it answers at once, `running` if its job still runs; in a batch of `job` calls only, as after a write or a command, it answers as soon as it starts.
+
+     - **09.1's Shape** keeps its rule and adds one case. When the session starts a batch of `job` calls only, it gives each call its `EndWait` at once if the completion holds a call other than `job`. That is read from the completion's call blocks, whatever their answers. A completion of `job` calls alone sends nothing, and each call waits as it asks.
+     - **Test shape** gains `a_job_call_in_a_batch_of_its_own_beside_other_calls_answers_at_once`, a table whose rows are a `job` call before an `edit` and one after a `shell` call. `job_calls_alone_wait_as_each_asks` is a completion of two `job` calls. Size: 240 lines.
+     - **The role's words are unchanged** (09-polls.md's two quotes). Under this rule they hold for every call that topic 3 names.
+     - **`job`'s description** gains these 132 bytes after "Without stop, read beside reads, lists and searches;": " beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked;". llm.md 3 now asks: "that beside any other call of its response it waits no longer than they run, so such a poll costs nothing, and that it waits as it asks only in a response of `job` calls alone".
+
+     **2. What gives: the role's reservation, nothing else.** limits.md 4, `host-part-holds-the-role`: the host's part "holds the task role as written, its bytes as the shell's code holds them, not its 4 KiB cap". shell.md 6.6: "its 4 KiB is the text's own cap, never a reservation in the host part". The descriptions keep what llm.md 3 asks. `guide`, the halves and the presets' windows do not move.
+
+     - **08.1 makes the change** (its Choices, Files and Shape). `resolve.rs:86` gives `role_bound` the value `TASK_ROLE.len()` as a `u32`, and `TASK_ROLE_BOUND` goes. `settings/tests.rs:715` expects the role's length. `the_task_role_is_within_four_kibibytes` stays. If 08.1 is dropped, 09.1 makes it (its Choices).
+     - **It sends no byte to the model, so 08.1's `parity-change` run stands,** and its commit body says so. `role_bound` feeds only `host_part_holds_the_role`, a startup check that derives no limit. It touches `role.rs`, which only a change step may touch (README rule 11, Done when item 8). That is why it goes in 08.1 and not in a step of its own.
+     - **The room it leaves.** `role_and_guides` falls from 37,526 to 35,248 with 08.1's role (1,818 bytes), and to 35,345 with 09.1's (1,915 bytes). The descriptions cost about half a byte of host part per byte:
+       - 08.1's sentence, 216 bytes in three descriptions where 61 stand now: about 233 bytes;
+       - 09.1's 132 bytes: about 66.
+
+       That takes the host part from 37,535 on `main` to about 37,236: about 1,890 bytes of slack.
+
+     **Unchanged:** 09.1's Proof, its Don'ts and its heading; 08.1's sentence and topics; `job_wait`; ruling 119's corrections; `later.md` (nothing is deferred).
+
+
+     Ruling 120 adds: 10.1's Shape no longer names `TASK_ROLE_BOUND`, which 08.1 removes; the role stays within the 4,096 bytes `the_task_role_is_within_four_kibibytes` checks, and each byte 10.1 adds counts in the host part, measured by `settings::tests::composition_adds_every_model_of_accounts_with_a_source` in its gate. Refresh any further copy of `TASK_ROLE_BOUND` or of 4096 as the role's reservation, and list it in the commit body.

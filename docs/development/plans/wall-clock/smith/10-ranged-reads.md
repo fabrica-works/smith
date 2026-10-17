@@ -57,7 +57,12 @@ Needs: smith 09's polls [09.1] landed or dropped.
 Files: `crates/smith-local-shell/src/role.rs` (`TASK_ROLE`, `:6-20`),
   `benchmarks/summaries/`.
 Shape: `TASK_ROLE`'s second paragraph takes the words above; the role
-  stays within `TASK_ROLE_BOUND` (4,096 bytes; 1,728 at the base).
+  stays within 4,096 bytes, the cap `the_task_role_is_within_four_kibibytes`
+  checks (1,728 at the base, about 1,915 after 09.1). 08.1 removes
+  `TASK_ROLE_BOUND`: `role_bound` is the role's own length, so each byte
+  this step adds counts in the host part, and
+  `settings::tests::composition_adds_every_model_of_accounts_with_a_source`
+  (`settings/tests.rs:310`) measures it in the gate (ruling 120).
 Test shape: the existing `the_task_role_is_within_four_kibibytes`
   (`role.rs:30`) and `each_tool_the_task_role_names_is_one_of_smiths_own`
   (`:35`) hold; no new test.
