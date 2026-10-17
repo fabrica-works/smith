@@ -616,3 +616,14 @@ Reversible, and none a product decision; the widest in reach:
 
 122. **08.1's one-sided bounds and hand-written digits, deferred** (steer of the check of 2026-10-17T06:36Z).
      Two `later.md` rows from the check of 2026-10-17T06:36Z, for work no remaining step's Files open: 08.1's one-sided bounds (`after_failed_write`'s refused positions; `allowed_calls_names` and `call_name_name`, the `4` unnamed), and `after_failed_write`'s hand-written digits beside `Decimal::of`. The steer of that check asks sessions 09 to 11 for bounds from both sides in their own steps; 08.1's tests stay as landed.
+
+123. **smith 10's Shapes against main** (ready check of smith-10.1).
+     10.1's ready check against smith `c36fa508` found three names that 08.1 (`d3cd7d31`) moved, now corrected in `smith/10-ranged-reads.md`'s Shape and Test shape:
+
+     - `the_task_role_is_within_four_kibibytes` is at `role.rs:27` and `each_tool_the_task_role_names_is_one_of_smiths_own` at `:32` (were `:30` and `:35`); 09.1 and 10.1 each change a paragraph in place, so both lines hold after them.
+     - `composition_adds_every_model_of_accounts_with_a_source` starts at `settings/tests.rs:308` (was `:310`, its `.unwrap_or_else` line).
+     - The role is 1,818 bytes on main (was 1,728, before 08.1); with 09.1's words about 1,915; with this step's about 1,995, within the 4,096 cap. `TASK_ROLE_BOUND` is gone from main.
+
+     The check applied 10.1's role words in a scratch worktree: `cargo fmt --check` and `clippy -D warnings` passed; the two role tests and `composition_adds_every_model_of_accounts_with_a_source`, 3 of 3; the workspace 2349 of 2349 (default) and 43 of 43 (fuzzy); with 09.1's words and `job` description as well, `smith-local-shell` 108 of 108. No user outside Files: `TASK_ROLE` is read only by `resolve.rs:85-88`, `resolve/local.rs:147` and `settings/tests.rs:714-717`; jig and temper name neither the role nor `smith_local_shell`.
+
+     `docs/design/STATUS.md:44` still says the check "reserves its 4 KiB cap (`crates/smith-local-shell/src/role.rs`, `TASK_ROLE_BOUND`)": the designer's text, refreshed at its next landing; nothing for 10.1. Refresh any further copy of these line numbers you meet, and list it in the commit body.
