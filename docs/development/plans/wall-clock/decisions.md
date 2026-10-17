@@ -654,3 +654,6 @@ Reversible, and none a product decision; the widest in reach:
      **Deferred, with its `later.md` row:** the projection multiplies two runs of each landed code. Of 09.1's 1.853, a factor of 1.254 is 07.1's and 08.1's code measured twice. It goes to the designer's revision of 16.6, before the next parity plan runs its first change.
 
      **Unchanged:** rule 12 and the stop; 09.1's Shape, Size and Don'ts; the steers of 06:46 and 07:57; 11's closing runs decide.
+
+126. **later.md: 09.1's typed calls** (the check of 2026-10-17T09:57Z).
+     A `later.md` row for 09.1's `edit()` (`tests/session/tests/jobs.rs:313`) and `read()` (`:47`), which type calls that `smith_tools_world::calls` builds (`tests/tools/src/calls.rs:44`), where README rule 18 asks them called. No step left writes a test (10.1: "no new test"; 11: no code), so no steer; the next smith plan that opens the file takes it.
