@@ -910,13 +910,24 @@ For smith's `tech-debt.md`, for skein's kit, and for the designer.
 
 For the user, or the director.
 
+2026-10-17. The director, acting for the user (skein's development.md,
+2.7), adopted all eight proposals. The designer applied their text in
+skein b30cc95 (development.md, its two cards and testing-strategy.md),
+and proposal 1's design change in smith's `benchmarks.md`, `shell.md`
+and `STATUS.md`, with this section. The kit's parts (`heavy`, `plan
+pulse` and `numbers.sh`, with the sections of development.md that
+describe them) go to the kit batch, a light plan run on hetzner next.
+The runs in flight, hearth's render and temper's forge-setup and
+client-api, take proposals 2, 3, 4 and 6 by their supervisors' steers,
+and keep the rest (skein b30cc95's body).
+
 | Proposal | Decision | Where |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
-| 5 | open | |
-| 6 | open | |
-| 7 | open | |
-| 8 | open | |
+| 1 | adopted, taking in `later.md`'s row on the projection: a change's projection is the baseline's statistic times its own ratio, and what the landed changes add up to is the closing run's to measure. `summarise`'s product over named landed changes is left in the code, a gap in smith's `STATUS.md` | skein b30cc95: development.md, 5.1 and 5.5; smith: `benchmarks.md`, 1, 4.2, 14 and 16.6; `shell.md`, 6.6; `STATUS.md`, 2 and 3 |
+| 2 | adopted, the removal by `cargo clean`; it has no kit part: the coordinator reads `pueue status`, whose tasks carry the worktree they were queued from. implementer.md 8.1 already removes a `target/` only after a landing | skein b30cc95: development.md, 11.4 |
+| 3 | adopted, as one-time cron jobs, each check scheduling the next: a recurring job counts its first hour from its creation, and runs late by an offset of its own. It stands until the kit's alarm (parity's 11) lands | skein b30cc95: development.md, 6, 10.5 and 14.1; supervisor.md, 1, 6, 7 and 8 |
+| 4 | adopted, sharpening parity's 16 | skein b30cc95: development.md, 14.1, its quiet hour and step 2; supervisor.md, 6 |
+| 5 | adopted: testing-strategy.md's new section 10, which a plan's rules, development.md 5.6 and 14.3's checklist cite in place of their own lists | skein b30cc95: testing-strategy.md, 1 and 10; implementer.md, 8.1 and 8.2; development.md, 5.2, 5.6 and 14.3 |
+| 6 | adopted | skein b30cc95: implementer.md, 8.1 and 8.3 |
+| 7 | adopted; kit part in the kit batch | the kit batch: `heavy` and `plan pulse`, with development.md, 11.2 |
+| 8 | adopted; kit part in the kit batch, joining parity's 15 | the kit batch: `numbers.sh` (`plan metrics`), with development.md, 4.4 and 15.2 |

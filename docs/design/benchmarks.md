@@ -1,6 +1,6 @@
 # Benchmarks
 
-Provisional, 2026-10-09, revised 2026-10-16. How smith shows that a change has the effect it
+Provisional, 2026-10-09, revised 2026-10-17. How smith shows that a change has the effect it
 claims and keeps it, and how smith compares with other agents. Tests are
 testing.md's; the events smith is observed through are
 protocol/events.md's; its commands, settings and exit codes are
@@ -46,9 +46,12 @@ Codex, the comparison's verdict, is section 16.
   same smith (16.5).
 - **On the way to a verdict, a change shows the criteria.** After a
   plan's baseline, a change to what the model is sent runs against its
-  parent on the verdict's tasks, reports each criterion's ratio, and
-  stops on a question to the designer when one moves the wrong way past
-  the baseline's interval, whatever its own comparison concludes (16.6).
+  parent on the verdict's tasks when that run can tell its expected
+  effect from none, reports each criterion's ratio, and stops on a
+  question to the designer when one moves the wrong way past the
+  baseline's interval, whatever its own comparison concludes. Any other
+  lands on the counts it targets, and the closing run measures it with
+  the others (16.6).
 - **Spend is priced as billed.** Each response's tokens are priced at
   the list rates its own prompt reaches, never at the rates an agent's
   declared window could reach (8.1).
@@ -236,8 +239,9 @@ adapter's among that adapter's tests.
   with two arms, its parent and the change, interleaved (section 9),
   whose comparison goes in its commit body. It adds no probe. In a plan
   whose aim is a parity verdict, after its baseline, a change to what
-  the model is sent names the `parity-change` suite in its place, and
-  its report is 16.6's.
+  the model is sent names the `parity-change` suite in its place when
+  that run can tell the change's expected effect from none, with 16.6's
+  report; any other names the counts it targets (16.6).
 - **Every smith landing that changes code runs `smoke-tools` live,**
   once, on its branch rebased on `origin/main` just before `land`
   (`docs/development/workflow.md`, section 5). A red smoke stops the line
@@ -877,10 +881,9 @@ The offline tier runs in the focused suite, with no agent and no network:
   spend observed (8.1, 8.2).
 - **A change's report:** a recorded `parity-change` summary gives each
   criterion's ratio of the change to its parent, the parent chosen by
-  its commit, and its projection on a recorded baseline and the changes
-  recorded as landed before it; a projection just below and just above the
-  baseline's upper bound, and passes just within and past O's bound,
-  stop it or not (16.6).
+  its commit, and its projection on a recorded baseline; a projection
+  just below and just above the baseline's upper bound, and passes just
+  within and past O's bound, stop it or not (16.6).
 - **An attempt against a replaying agent:** a small program that prints a
   recorded stream, leaves a grandchild behind, or never ends, observed,
   ended at the deadline and classified.
@@ -1053,8 +1056,11 @@ holds for one pinned Codex at one working tier.
 
 A plan whose aim is a parity verdict runs a baseline first, the `parity`
 run that measures where it starts (skein's development.md, 5.1). After
-it, each step that changes what the model is sent shows its effect on
-every criterion before it lands, whatever criterion it claims to move.
+it, each step that changes what the model is sent shows its effect
+before it lands: on every criterion, whatever criterion it claims to
+move, by a run of its own when that run can tell its expected effect
+from none; otherwise on the counts it targets, and the plan's closing
+run measures it with the others.
 
 - **What counts.** A change to a prompt smith sends, or to when it sends
   one:
@@ -1068,6 +1074,24 @@ every criterion before it lands, whatever criterion it claims to move.
 
   A change that alters no prompt and no request's timing, such as the
   harness, the event stream or a refactor, is not one.
+- **Measured alone, or with the others.** A run of two arms of smith
+  resolves only an effect wider than its interval. The plan states each
+  change run's resolution from its planning commands (a simulation at
+  the run's attempts on the spread of the last committed baseline,
+  `benchmarks/baselines/`), and each change's expected effect from its
+  cause (16.5):
+  - **a change its run can tell from none** runs `parity-change`, as
+    below;
+  - **any other** proves itself on the counts it targets, such as its
+    task's responses (16.1), and lands. The closing run measures such
+    changes together, and a criterion it misses has 16.5's answer.
+
+  In the wall-clock plan, four change runs took 9.3 hours of the gate
+  lane, a third of the run: their RT intervals were 0.34 to 0.78 wide,
+  against effects of 4% to 22% of smith's time, and two stopped on
+  noise. Their ratios multiplied to 1.083, while the closing run moved
+  RT from 1.397 to 1.033, and the counts the steps targeted moved:
+  responses on `shell-cwd`, 70.1 to 54.2.
 - **Its proof is one run of `parity-change`** (11.5): the `parity`
   suite's tasks, five attempts per arm each, with two smith arms, the
   change and its parent, interleaved, with no rerun. It takes the place
@@ -1078,11 +1102,14 @@ every criterion before it lands, whatever criterion it claims to move.
     place and its parent in Codex's: the change's ratio to its parent,
     with its interval, and, for O, each arm's passes. The reference arm
     is the one built from the change's parent, chosen by its commit;
-  - **its projection:** the baseline's statistic times the product of
-    the ratios of every change landed since the baseline, this one
-    included, beside the baseline's interval. `summarise` takes the
-    baseline's committed summary and those changes' `parity-change`
-    summaries as named inputs;
+  - **its projection:** the baseline's statistic times the change's
+    ratio, beside the baseline's interval. `summarise` takes the
+    baseline's committed summary as a named input. A product over the
+    changes landed before it would count each of their codes twice, as a
+    change and as the next one's parent: in the wall-clock plan, of
+    step 10.1's RC projection of 1.821, a factor 1.485 was three codes
+    measured twice, each costing more in its own run than as the next
+    step's parent;
   - **beside them,** deciding nothing: each arm's responses an attempt,
     the time record's parts (requests, compaction, tools) and fresh
     tokens, per task.
@@ -1108,14 +1135,13 @@ every criterion before it lands, whatever criterion it claims to move.
   interval that holds 1 is no such showing: at five attempts, a
   comparison cannot show that a change does no harm. The projection
   keeps the ratio as measured.
-- **Why the baseline's interval, and the product.** A comparison that
-  detects nothing at five attempts per arm can hide a move larger than
-  the baseline's own uncertainty, and several such moves, each passing
-  its own test, add up to a closing run that fails. The product carries
-  each landed change's move into the next one's projection, so that
-  moves add up where the plan can see them. A plan's position within the
+- **Why the baseline's interval.** A comparison that detects nothing
+  at five attempts per arm can hide a move larger than the baseline's
+  own uncertainty; the projection sets the change's move on the
+  baseline, where the plan can see it. A plan's position within the
   baseline's interval is within what it already measures as noise, and
-  goes on.
+  goes on. What the landed changes add up to, the moves no change run
+  resolves included, is the closing run's to measure.
 - **The baseline** here is the plan's first `parity` run, its
   committed summary, never `baselines/`'s files, which are cut from a
   plan's last run (16.5).

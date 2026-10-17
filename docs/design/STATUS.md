@@ -46,7 +46,7 @@ what is missing, then what the code does instead.
 | `protocol/transcript.md` | partly | 2, 6: version 5, a not-run call's why after a failed write, with that call's position (the wall-clock plan) |
 | `shell.md` | partly | 5.2: the tiers read per response by the benchmarks (the wall-clock plan). 6.3: `memory`'s status as the work needs. 6.6: the task role's topics 2 to 5, batched edits and their check, polls beside other work, ranged reads (the wall-clock plan). 5.1: directories made at startup synced into their parents, not planned. 8: per-tree limits, not planned. 9: `isolate`, not planned |
 | `testing.md` | partly | 6: the event stream's check pairing each `running` verdict with one end: `tests/agent-process/src/events.rs` passes over `job.ended` unpaired, not planned; memory shown returning when its use ends (the wall-clock plan). 2.1: fault sweeps, not planned. 2.2: real-loop signals, not planned. 6: replay by digests, containment checks, not planned |
-| `benchmarks.md` | partly | 1, 4.2, 11.5, 14, 16.6: the `parity-change` suite, a change's report and its stop; 5.4, 8.1, 8.2, 16.1, 16.2: spend priced per response at its prompt's tier, a response failed unsent priced at nothing, ten `shell-cwd` attempts, peak memory and responses in summaries: the harness prices an attempt's total at the tier its declared window reaches (`benchmarks/src/result.rs`), and `parity` runs five (the wall-clock plan). 3.1, 5.2: each probe's and each variant's calibration in its task file: 8 blocks in 4 of the 15 probe directories, and six task files to recalibrate before `suite smoke` relies on them, not planned (the parity plan's `later.md`). 11.1: the `history` probe's condition at the line, from the conversation's model and `run.compaction_material`: `benchmarks/src/agent/smith/events/threshold.rs` judges a compaction due at the threshold with one output reserved (the wall-clock plan). 11.1: `mid-work`, `build-environment`, not planned. 11.3: the `delegation` experiment, not planned. 6: Claude Code (its own plan, drafting). 15: beyond serial runs, not planned |
+| `benchmarks.md` | partly | 1, 4.2, 11.5, 14, 16.6: the `parity-change` suite, a change's report and its stop; 5.4, 8.1, 8.2, 16.1, 16.2: spend priced per response at its prompt's tier, a response failed unsent priced at nothing, ten `shell-cwd` attempts, peak memory and responses in summaries: the harness prices an attempt's total at the tier its declared window reaches (`benchmarks/src/result.rs`), and `parity` runs five (the wall-clock plan). 3.1, 5.2: each probe's and each variant's calibration in its task file: 8 blocks in 4 of the 15 probe directories, and six task files to recalibrate before `suite smoke` relies on them, not planned (the parity plan's `later.md`). 11.1: the `history` probe's condition at the line, from the conversation's model and `run.compaction_material`: `benchmarks/src/agent/smith/events/threshold.rs` judges a compaction due at the threshold with one output reserved (the wall-clock plan). 11.1: `mid-work`, `build-environment`, not planned. 11.3: the `delegation` experiment, not planned. 6: Claude Code (its own plan, drafting). 15: beyond serial runs, not planned. 16.6: a change's projection on its own ratio: `summarise` multiplies in the ratios of the landed changes named to it (`benchmarks/src/parity/change.rs`), not planned |
 
 ## 3. Not planned
 
@@ -132,6 +132,11 @@ what is missing, then what the code does instead.
 - **Benchmarks beyond serial runs** (`benchmarks.md`, section 15):
   concurrent attempts, task kinds beyond code, a commit hook for smoke
   runs. Waits for the suites to outgrow serial runs.
+- **A change's projection on its own ratio** (`benchmarks.md`, section
+  16.6): `summarise` still multiplies in the ratios of the landed
+  changes named to it (`benchmarks/src/parity/change.rs`). Waits for the
+  next plan that measures a change against its parent; until then, a
+  plan names no landed change to it.
 
 ## 4. Drafts
 

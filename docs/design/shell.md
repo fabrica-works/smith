@@ -842,7 +842,9 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
   no such step that the work does not need: what can go together goes
   together, and a command is made a job only when it runs long. A change
   to them is proven by the `compare` suite, or, on the way to a verdict,
-  by the `parity-change` suite (benchmarks.md, sections 4.2 and 16.6).
+  by the `parity-change` suite when its run can tell the change's
+  expected effect from none, and otherwise by the counts it targets
+  (benchmarks.md, sections 4.2 and 16.6).
 - **It is a run's instructions,** so it counts where a charter's
   instructions count: in the window's host part (protocol/limits.md,
   3.9). The startup check counts it as written (protocol/limits.md,
