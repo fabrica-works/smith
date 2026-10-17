@@ -123,14 +123,26 @@ Needs: smith 07's check [07.1] landed or dropped.
 Files: `crates/smith-domain-session/src/session.rs` (`Tools`, `:289-308`;
   `advance`, `:1491-1605`; `reserve_batch`'s call, `:1504`; `joins`,
   `:1648-1657`; the answers at `:1542-1556`, `:1586`, `tool_ran`,
-  `:1757-1779`; `returned_cost`'s `NotRun` arms, `:2632-2635`),
+  `:1757-1779`; `returned_cost`'s `NotRun` arms, `:2632-2635`;
+  `narrowed`, `:675-725`; `choice_bytes`, `:753-760`;
+  `answer_unchosen`, `:2132-2142`),
   `crates/smith-domain-session/src/history.rs` (`reserve_batch`,
   `:139-205`; `:120`, `NotRun::Stopped`, read),
   `tests/session/src/world.rs` (the referee's unstarted delegated call,
-  `:1353-1358`),
-  `crates/smith-domain-session/src/llm.rs` (`NotRun`, `:154-159`),
+  `:1353-1358`; `Narrowed`'s line, `:2100`),
+  `crates/smith-domain-session/src/llm.rs` (`NotRun`, `:154-159`;
+  `ToolChoice`, `:162-170`, read),
+  `crates/smith-domain-session/src/boundary.rs` (`Narrowed`, `:132`),
+  `crates/smith-domain-session/src/domain.rs` (`:202`),
+  `crates/smith-domain-session/src/tests.rs` (the `Narrowed` steps,
+  `:2522-2660`; `OutsideChoice`, `:2557`, `:2694`),
+  `tests/session/tests/` (`wind_down.rs:16`, `:49`; `child_final.rs:51`;
+  `compaction.rs:76`; `memory.rs:1334`),
+  `tests/session/src/window_referee.rs` (`:150`),
+  `crates/smith-domain/src/route.rs` (`:741-742`),
   `crates/smith-domain/src/llm.rs` (`:78-86`), `crates/smith-domain/src/peer.rs`
-  (`:343-349`), `crates/smith-domain-tools/src/call.rs` (`effect`,
+  (`:343-349`; `final_choice`, `:74-78`; `retained_choice`, `:359-378`),
+  `crates/smith-domain-tools/src/call.rs` (`effect`,
   `:233-238`, read), `crates/smith-protocol-llm/src/prompt.rs`
   (the message loop, `:112-125`; `outside_choice`, `:181-208`;
   `translate_block`, `:412`; `result_text`, `:441`, its `NotRun` arm
@@ -207,7 +219,21 @@ Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   generator writes `src/generated/v5.rs` (the command in
   `findings/planning-commands.md`); `Turn::FORMAT_VERSION` = 5; v4's
   schema, generated code and goldens go. `turn.rs` and `transcript.rs`
-  keep the why both ways. The descriptions and `TASK_ROLE` take the
+  keep the why both ways.
+  The channel's codec encodes the session's `record::Turn`, so the
+  session's `NotRun::OutsideChoice` holds the allowed names, in
+  `smith-domain`'s shape (`choice: Option<Box<[Box<[u8]>]>>`, `None` no
+  call allowed), never tickets: "A historical call holds no ticket that
+  means something only inside the session that made it" (session.md 3).
+  The root resolves the names when it narrows the choice (`route.rs:741`,
+  from the peer's descriptors, as `retained_choice` does); the session
+  keeps them beside its ticketed `choice`, which `chosen` still reads,
+  counts their bytes in `choice_bytes`, and `answer_unchosen` copies them;
+  its own `None` (final turn, compaction) answers `None`. The peer's
+  `block` moves them unchanged; `retained_choice` goes when nothing else
+  calls it. Default: `Narrowed` gains the names beside `choice`; another
+  representation that keeps the told turn free of tickets is the
+  implementer's to choose, named in the commit body. The descriptions and `TASK_ROLE` take the
   words above; the goldens' expected texts change with them (README,
   rule 3).
 Test shape: `crates/smith-domain-session/src/tests.rs`, beside
@@ -245,7 +271,7 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   FT, RT and RC, with the baseline's figures above.
 Don't: stop reads; stop calls after a command's end; name a task's files
   or commands in the role or the descriptions.
-Size: 260 lines.
+Size: 300 lines.
 Removes: transcript version 4's schema, generated code and goldens.
 
 ## Questions to raise when reached
