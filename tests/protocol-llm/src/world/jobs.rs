@@ -58,8 +58,19 @@ impl World {
 
     pub(super) fn job_act(&mut self, owner: Token, act: JobAct) {
         let mut job = self.jobs.remove(&owner).expect("an act names a held owner");
+        if act == JobAct::Hasten {
+            if matches!(job.response, Response::Read { .. }) {
+                job.response = Response::Read { at: self.now };
+            }
+            if let Some(event) = job.event.take() {
+                self.schedule.withdraw(event);
+            }
+            self.keep_job(owner, job);
+            return;
+        }
         assert!(matches!(job.response, Response::Held), "one act at a time per job");
         let (head, tail, wait) = match act {
+            JobAct::Hasten => unreachable!("hastening retains the pending read"),
             JobAct::Read { head, tail, wait } => (head, tail, wait),
             JobAct::Stop { head, tail } => {
                 if job.end.is_none() {

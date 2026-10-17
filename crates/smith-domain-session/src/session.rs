@@ -1606,11 +1606,7 @@ fn advance(
                 batch = Some(*effect);
             }
             Block::ToolCall { id: call, name: _, input: _, call: Decoded::Invalid { problem, .. }, .. } => {
-                // Its answer was counted when the message was recorded.
-                let answer = Returned::Invalid { problem: problem.clone() };
-                batching::answered_next(&mut tools, block, &answer);
-                let result = Block::ToolResult { id: call.clone(), result: answer };
-                tools.slots.push(Slot::Done { result }).expect("a slot for every call");
+                batching::invalid_slot(&mut tools, block, call, problem);
             }
             Block::ToolCall { call: Decoded::Historical, .. }
             | Block::Opaque { .. }
@@ -1620,6 +1616,7 @@ fn advance(
         }
     }
     tools.next = next;
+    batching::end_waits(conversation, calls, &tools, env, out);
     if tools.running > 0 {
         return State::Tooling { tools };
     }
@@ -1798,6 +1795,9 @@ fn tool_ran(
     receive_result(conversation, credit, &result, &env.limits);
     let result = Block::ToolResult { id: call_id(conversation, block), result };
     *tools.slots.get_mut(slot).expect("a run fills its own slot") = Slot::Done { result };
+    if !batching::poll(current_block(conversation, block)) {
+        batching::end_waits(conversation, calls, &tools, env, out);
+    }
     if tools.running > 0 {
         return State::Tooling { tools };
     }

@@ -146,3 +146,21 @@ fn a_cancelled_held_job_answers_cancelled() {
         );
     }
 }
+
+#[test]
+fn a_hastened_read_answers_at_once() {
+    const OUTPUT_BYTES: u32 = 8;
+    const WAIT_SECONDS: u64 = 1;
+    const BEFORE_END_NANOS: u64 = 500_000_000;
+    let mut world = World::new(78, &[]);
+    let replies = world.jobs(vec![
+        spawn(world.root(), b"sleep 1", OUTPUT_BYTES, OUTPUT_BYTES, far()),
+        read(OUTPUT_BYTES, OUTPUT_BYTES, Duration::from_secs(WAIT_SECONDS)),
+        FromDomain::Job { owner: Token::new(10), act: tools::JobAct::Hasten },
+    ]);
+    assert_eq!(
+        done(&replies[1]),
+        tools::Done::Job { head: Box::default(), tail: Box::default(), dropped: 0, end: tools::JobEnd::Running }
+    );
+    assert!(world.now() < Time::from_nanos(BEFORE_END_NANOS), "the read ends before its wait and command");
+}

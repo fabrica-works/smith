@@ -274,6 +274,10 @@ impl Drop for World {
     }
 }
 
+fn job_terminals(requests: &[FromDomain]) -> usize {
+    requests.iter().filter(|request| !matches!(request, FromDomain::Job { act: tools::JobAct::Hasten, .. })).count()
+}
+
 enum Job {
     Sequence { requests: Vec<FromDomain>, delays: Vec<Duration> },
     Request(FromDomain, bool),
@@ -801,6 +805,12 @@ impl Application {
             let request = self.following.pop_front().expect("scheduled act");
             self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
         }
+        if matches!(self.following.front(), Some(FromDomain::Job { act: tools::JobAct::Hasten, .. }))
+            && self.following_at.is_none()
+        {
+            let request = self.following.pop_front().expect("a terminal-free act follows its read");
+            self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
+        }
         if self.terminals.len() == self.expected {
             self.component.close(&mut self.below);
         }
@@ -843,7 +853,7 @@ impl Host for Application {
         if let Some(job) = self.job.take() {
             match job {
                 Job::Sequence { requests, delays } => {
-                    self.expected = requests.len();
+                    self.expected = job_terminals(&requests);
                     self.following = requests.into();
                     self.delays = delays.into();
                     let first = self.following.pop_front().expect("sequence starts with one spawn");

@@ -108,6 +108,8 @@ pub struct World {
     pub held: std::collections::BTreeSet<Token>,
     /// Outstanding acts retain the original machine owner until their answer.
     pub job_acts: Vec<(Token, smith_domain_tools::JobAct)>,
+    /// Hastened waits keep their existing terminal obligation.
+    pub hastened: Vec<Token>,
     /// Settlement acknowledgements returned to the scripted opener.
     pub jobs_cancelled: u32,
     jobs: std::collections::BTreeSet<u32>,
@@ -177,6 +179,7 @@ impl World {
             cancelled_operations: vec![],
             held: std::collections::BTreeSet::new(),
             job_acts: vec![],
+            hastened: vec![],
             jobs_cancelled: 0,
             jobs: std::collections::BTreeSet::new(),
             snapshots: vec![],
@@ -338,6 +341,10 @@ impl World {
             session::Request::Io { owner, op, .. } => {
                 assert!(!self.operations.iter().any(|(pending, _)| pending == &owner));
                 self.operations.push((owner, op));
+            }
+            session::Request::Job { owner, act: smith_domain_tools::JobAct::Hasten } => {
+                assert!(self.held.contains(&owner));
+                self.hastened.push(owner);
             }
             session::Request::Job { owner, act } => {
                 assert!(self.held.contains(&owner));

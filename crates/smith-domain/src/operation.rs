@@ -59,6 +59,7 @@ pub(crate) fn job(
     out: &mut Queue<Request>,
 ) {
     let wait = match act {
+        tools::JobAct::Hasten => return,
         tools::JobAct::Read { wait, .. } => wait,
         tools::JobAct::Stop { .. } => env.limits.session.tools.tool_deadline,
     };

@@ -364,7 +364,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             4,
         ),
         (
-            "Output since last answer; running or end. Max 4 jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.",
+            "Output since last answer; running or end. Max 4 jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.",
             4,
         ),
     ];

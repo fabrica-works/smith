@@ -78,7 +78,7 @@ fn words(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) 
         Tool::Job => {
             output.put(b"Output since last answer; running or end. Max ");
             output.number(u64::from(stated.jobs));
-            output.put(b" jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.");
+            output.put(b" jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.");
         }
         Tool::Shell => {
             output.put(b"Run a command; files may change. Max ");

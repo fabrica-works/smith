@@ -19,7 +19,7 @@
 //! - Operations out, one terminal event in: each [`Request::Io`] is ended by
 //!   exactly one [`Event::Done`], after a [`Request::CancelIo`] too. Its
 //!   `owner` is the tools' token, echoed on the terminal. A spawn answered
-//!   `Held` retains that owner; each `Job` act returns one `Done::Job`, and
+//!   `Held` retains that owner; each read or stop returns one `Done::Job`, and
 //!   the binding ends when that answer reports the command's end.
 //!
 //! The tools arm no timers. A call comes with its deadline, which bounds every
@@ -65,6 +65,8 @@ pub enum Event {
     },
     /// Cancel this kit's held jobs; `JobsCancelled` follows their settlement.
     CancelJobs { kit: Token },
+    /// End this call's wait early; its existing answer right remains owed.
+    EndWait { kit: Token, call: Token },
     /// Terminal for `Io`.
     Done { owner: Token, done: Done },
 }
@@ -107,7 +109,7 @@ pub enum Request {
     /// Abandon the `Io` in flight for `owner`. Its terminal event still comes:
     /// `Cancelled`, or whichever outcome won the race.
     CancelIo { owner: Token },
-    /// Read or stop a held command; ends in one `Event::Done`.
+    /// Act on a held command; reads and stops end in one `Event::Done`.
     Job { owner: Token, act: JobAct },
 }
 
@@ -125,6 +127,8 @@ pub enum JobProblem {
 pub enum JobAct {
     /// Read unread output, answering at its end or once the wait passes.
     Read { head: u32, tail: u32, wait: Duration },
+    /// End an active read's wait now; owes no terminal of its own.
+    Hasten,
     /// Stop its group, then answer its end and unread output.
     Stop { head: u32, tail: u32 },
 }

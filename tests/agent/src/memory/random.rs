@@ -220,6 +220,7 @@ pub(super) fn completion_owned(completion: &Completion) -> (u64, u64) {
 /// Return unread capture at an ended read, or a stopped group.
 pub(super) fn job_done(act: smith_domain_tools::JobAct) -> Done {
     let (head, tail, end) = match act {
+        smith_domain_tools::JobAct::Hasten => unreachable!("this driver answers every read at once"),
         smith_domain_tools::JobAct::Read { head, tail, .. } => {
             (head, tail, smith_domain_tools::JobEnd::Ended(Exit::Code { code: 0 }))
         }

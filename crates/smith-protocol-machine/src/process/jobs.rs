@@ -34,6 +34,19 @@ impl Process {
     }
 
     pub(crate) fn job(&mut self, now: Time, grace: Duration, act: tools::JobAct, below: &mut Queue<Below>) {
+        match act {
+            tools::JobAct::Hasten => {
+                match &mut self.response {
+                    Response::Read { until, .. } => *until = now,
+                    Response::Held { .. } => {}
+                    Response::Final | Response::Yield { .. } | Response::Closing => {
+                        unreachable!("a hastened call has started its read")
+                    }
+                }
+                return;
+            }
+            tools::JobAct::Read { .. } | tools::JobAct::Stop { .. } => {}
+        }
         match self.response {
             Response::Held { .. } => {}
             Response::Final | Response::Yield { .. } | Response::Read { .. } | Response::Closing => {
@@ -41,6 +54,7 @@ impl Process {
             }
         }
         let (head, tail, until) = match act {
+            tools::JobAct::Hasten => unreachable!("handled before a new read"),
             tools::JobAct::Read { head, tail, wait } => (head, tail, now.saturating_add(wait)),
             tools::JobAct::Stop { head, tail } => {
                 self.stop(now, grace, Why::Stop, below);

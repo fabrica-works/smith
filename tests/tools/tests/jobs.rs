@@ -719,3 +719,71 @@ fn cancelling_an_already_exited_job_preserves_its_observed_exit() {
         })
     );
 }
+
+fn read_ended_early(
+    polls: Vec<Call>,
+    index: usize,
+    before: Duration,
+    elapsed: Duration,
+) -> Vec<Result<Outcome, JobProblem>> {
+    const COMMAND_MILLIS: u64 = 4_000;
+    const YIELD_SECONDS: u64 = 1;
+    const SETTLE_SECONDS: u64 = 5;
+    let mut fixture = Fixture::new();
+    fixture.checkout.program(b"cargo build", program(COMMAND_MILLIS, b"Compiling\nFinished\n", Exit::Code(0), &[]));
+    let script = vec![
+        Step::Calls(vec![shell_after(b"cargo build", YIELD_SECONDS)]),
+        Step::Sleep(before),
+        Step::Send(polls),
+        Step::Sleep(elapsed),
+        Step::EndWait(index),
+        Step::Sleep(Duration::from_secs(SETTLE_SECONDS)),
+    ];
+    run(settings(), fixture, &build(), script).0
+}
+
+fn job_answer(head: &[u8], end: JobEnd) -> Outcome {
+    Outcome::Job {
+        job: JobNumber(1),
+        head: head.into(),
+        tail: Box::default(),
+        dropped: 0,
+        output: BytesClamp::Within,
+        wait: TimeoutClamp::Within,
+        end,
+    }
+}
+
+#[test]
+fn a_wait_ended_early_answers_running_with_the_output_so_far() {
+    const WAIT_SECONDS: u64 = 5;
+    const ELAPSED_MILLIS: u64 = 1_100;
+    const CALL_INDEX: usize = 1;
+    let answers =
+        read_ended_early(vec![job(1, WAIT_SECONDS)], CALL_INDEX, Duration::ZERO, Duration::from_millis(ELAPSED_MILLIS));
+    assert_eq!(answers[CALL_INDEX], Ok(job_answer(b"Finished\n", JobEnd::Running)));
+}
+
+#[test]
+fn a_wait_ended_after_the_job_ended_answers_its_end() {
+    const WAIT_SECONDS: u64 = 5;
+    const BEFORE_SECONDS: u64 = 5;
+    const CALL_INDEX: usize = 1;
+    let answers =
+        read_ended_early(vec![job(1, WAIT_SECONDS)], CALL_INDEX, Duration::from_secs(BEFORE_SECONDS), Duration::ZERO);
+    assert_eq!(answers[CALL_INDEX], Ok(job_answer(b"Finished\n", JobEnd::Ended(tools::Exit::Code { code: 0 }))));
+}
+
+#[test]
+fn a_queued_read_ended_early_answers_when_it_starts() {
+    const FIRST_WAIT_SECONDS: u64 = 1;
+    const QUEUED_WAIT_SECONDS: u64 = 5;
+    const CALL_INDEX: usize = 2;
+    let answers = read_ended_early(
+        vec![job(1, FIRST_WAIT_SECONDS), job(1, QUEUED_WAIT_SECONDS)],
+        CALL_INDEX,
+        Duration::ZERO,
+        Duration::ZERO,
+    );
+    assert_eq!(answers[CALL_INDEX], Ok(job_answer(b"", JobEnd::Running)));
+}

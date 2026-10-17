@@ -108,29 +108,7 @@ fn outcomes(world: &World) -> Vec<tools::Outcome> {
 }
 
 fn read_and_edit(world: &mut World) {
-    complete(
-        world,
-        vec![
-            read(b"read"),
-            called(
-                b"edit",
-                Call::Edit {
-                    path: tools::Path {
-                        absolute: false,
-                        parts: Box::new([tools::Part::Name {
-                            name: tools::Name::new(b"README.md".as_slice().into()).expect("name"),
-                        }]),
-                    },
-                    edits: Box::new([tools::Replacement {
-                        old: b"old".as_slice().into(),
-                        new: b"new".as_slice().into(),
-                        occurrences: tools::Occurrences::Once,
-                    }]),
-                },
-            ),
-            job(false),
-        ],
-    );
+    complete(world, vec![read(b"read"), edit(), job(false)]);
     let read_owner = world.operations[0].0;
     world.step(session::Event::Done {
         owner: read_owner,
@@ -309,4 +287,78 @@ fn a_resumed_session_numbers_its_next_job_after_its_last_turns() {
     world.step(session::Event::CancelJobs { session: world.session.expect("opened") });
     end_job(&mut world, owner, JobEnd::Cancelled);
     world.close();
+}
+
+fn polling(blocks: Vec<llm::Block>) -> (World, Token) {
+    let mut world = world();
+    let owner = start_job(&mut world);
+    complete(&mut world, blocks);
+    (world, owner)
+}
+
+#[test]
+fn a_job_call_beside_reads_answers_once_they_have_answered() {
+    let (mut world, owner) = polling(vec![job(false), read(b"first"), read(b"last")]);
+    assert_eq!(world.hastened, vec![]);
+    let first = world.operations[0].0;
+    world.step(session::Event::Done { owner: first, done: Done::Missing });
+    assert_eq!(world.hastened, vec![]);
+    let last = world.operations[0].0;
+    world.step(session::Event::Done { owner: last, done: Done::Missing });
+    assert_eq!(world.hastened, vec![owner]);
+    end_job(&mut world, owner, JobEnd::Ended(tools::Exit::Code { code: 0 }));
+    finish(&mut world);
+}
+
+fn edit() -> llm::Block {
+    called(
+        b"edit",
+        Call::Edit {
+            path: tools::Path {
+                absolute: false,
+                parts: Box::new([tools::Part::Name {
+                    name: tools::Name::new(b"README.md".as_slice().into()).expect("fixture name"),
+                }]),
+            },
+            edits: Box::new([tools::Replacement {
+                old: b"old".as_slice().into(),
+                new: b"new".as_slice().into(),
+                occurrences: tools::Occurrences::Once,
+            }]),
+        },
+    )
+}
+
+fn answer_operation(world: &mut World, done: Option<Done>) {
+    if let Some(done) = done {
+        let owner = world.operations[0].0;
+        world.step(session::Event::Done { owner, done });
+    }
+}
+
+#[test]
+fn a_job_call_in_a_batch_of_its_own_beside_other_calls_answers_at_once() {
+    let exited =
+        Done::Exited { head: Box::default(), tail: Box::default(), dropped: 0, exit: tools::Exit::Code { code: 0 } };
+    for (case, blocks, before, after) in [
+        ("before edit", vec![job(false), edit()], None, Some(Done::Missing)),
+        ("after shell", vec![shell(), job(false)], Some(exited), None),
+    ] {
+        let (mut world, owner) = polling(blocks);
+        answer_operation(&mut world, before);
+        assert_eq!(world.hastened, vec![owner], "{case}");
+        end_job(&mut world, owner, JobEnd::Ended(tools::Exit::Code { code: 0 }));
+        answer_operation(&mut world, after);
+        finish(&mut world);
+    }
+}
+
+#[test]
+fn job_calls_alone_wait_as_each_asks() {
+    let (mut world, owner) = polling(vec![job(false), job(false)]);
+    assert_eq!(world.hastened, vec![]);
+    end_job(&mut world, owner, JobEnd::Running);
+    assert_eq!(world.hastened, vec![]);
+    end_job(&mut world, owner, JobEnd::Ended(tools::Exit::Code { code: 0 }));
+    finish(&mut world);
 }

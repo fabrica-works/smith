@@ -1,4 +1,4 @@
-//! Failed-write boundaries within a completion (domain/session.md, section 5).
+//! Failed writes and job waits within a completion (domain/session.md, section 5).
 //! No state beyond the batch's first failed call is retained here.
 use super::{Block, Conversation, Decoded, Effect, Outcome, Returned, Slot, Tools, call_id, chosen};
 use crate::llm::NotRun;
@@ -107,4 +107,76 @@ fn file_change(block: &Block) -> bool {
         | Block::Opaque { .. }
         | Block::ToolResult { .. } => false,
     }
+}
+
+/// Store an invalid call's already reserved answer without starting a run.
+pub(super) fn invalid_slot(tools: &mut Tools, block: &Block, call: &[u8], problem: &crate::llm::Problem) {
+    let answer = Returned::Invalid { problem: problem.clone() };
+    answered_next(tools, block, &answer);
+    let result = Block::ToolResult { id: call.into(), result: answer };
+    tools.slots.push(Slot::Done { result }).expect("a slot for every call");
+}
+
+/// End remaining polls only after the batch's other work has answered.
+pub(super) fn end_waits(
+    conversation: &Conversation,
+    calls: &mut super::Calls,
+    tools: &Tools,
+    env: &skein_lib::Env<super::Limits>,
+    out: &mut skein_lib::Queue<super::Request>,
+) {
+    if !other_call(conversation) {
+        return;
+    }
+    for slot in &tools.slots {
+        match slot {
+            Slot::Running { run } => {
+                let run = calls.runs.get(*run).expect("an active slot owns its run");
+                if !poll(super::current_block(conversation, run.block)) {
+                    return;
+                }
+            }
+            Slot::Done { .. } | Slot::Withheld => {}
+        }
+    }
+    for slot in &tools.slots {
+        match slot {
+            Slot::Running { run } => {
+                let event = tools::Event::EndWait { kit: conversation.kit, call: run.token() };
+                let heard = super::tools_step(calls, env, event, out);
+                assert!(heard.kit.is_none() && heard.answer.is_none(), "ending a wait owns no answer right");
+            }
+            Slot::Done { .. } | Slot::Withheld => {}
+        }
+    }
+}
+
+pub(super) fn poll(block: &Block) -> bool {
+    match block {
+        Block::ToolCall { call: Decoded::Owned { call: Call::Job { stop: false, .. } }, .. } => true,
+        Block::ToolCall { .. }
+        | Block::Text { .. }
+        | Block::Refusal { .. }
+        | Block::Opaque { .. }
+        | Block::ToolResult { .. } => false,
+    }
+}
+
+fn other_call(conversation: &Conversation) -> bool {
+    for block in &conversation.transcript.last().expect("the completion precedes its results").content {
+        match block {
+            Block::ToolCall { call: Decoded::Owned { call: Call::Job { .. } }, .. }
+            | Block::Text { .. }
+            | Block::Refusal { .. }
+            | Block::Opaque { .. }
+            | Block::ToolResult { .. } => {}
+            Block::ToolCall { name, call: Decoded::Invalid { .. } | Decoded::Historical, .. } => {
+                if name.as_ref() != b"job" {
+                    return true;
+                }
+            }
+            Block::ToolCall { .. } => return true,
+        }
+    }
+    false
 }

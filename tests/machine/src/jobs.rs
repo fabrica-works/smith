@@ -1,7 +1,7 @@
 //! Successive machine requests in one real activation (protocol/agent.md, 2).
 //! It keeps only the fixture's outcome after every child and root has settled.
 
-use super::{Application, Job, Terminal, World, copy_terminal};
+use super::{Application, Job, Terminal, World, copy_terminal, job_terminals};
 use skein_lib::{Duration, Time};
 use skein_world::Expectations;
 use smith_protocol_machine::{FromDomain, ToDomain};
@@ -33,7 +33,11 @@ impl World {
         }
         let referee = Expectations::new(
             self.seed,
-            vec![Terminal { owner, expected: requests.len(), deadline: base.saturating_add(Duration::from_secs(2)) }],
+            vec![Terminal {
+                owner,
+                expected: job_terminals(&requests),
+                deadline: base.saturating_add(Duration::from_secs(2)),
+            }],
         );
         let mut world = skein_world::real::World::new(referee);
         world.spawn_with_fds(vec![root], || {

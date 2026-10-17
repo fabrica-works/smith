@@ -123,6 +123,8 @@ pub enum Step {
     Latency(Span),
     /// Cancel held jobs, continuing only after all their groups settle.
     CancelJobs,
+    /// End the wait of the call at this zero-based position in the session.
+    EndWait(usize),
 }
 
 /// What the world counted.
@@ -508,7 +510,10 @@ impl World {
             let whose = match &event {
                 tools::Event::Call { kit, .. } => Some(*self.kits.get(kit).expect("a kit that opened")),
                 tools::Event::Done { owner, .. } => Some(*self.owners.get(owner).expect("an operation io ran")),
-                tools::Event::Open { .. } | tools::Event::Close { .. } | tools::Event::CancelJobs { .. } => None,
+                tools::Event::Open { .. }
+                | tools::Event::Close { .. }
+                | tools::Event::CancelJobs { .. }
+                | tools::Event::EndWait { .. } => None,
             };
             let editing = matches!(&event, tools::Event::Call { call: Call::Edit { .. }, .. });
             let before = self.stage.out.len();
@@ -864,6 +869,11 @@ impl World {
             return;
         };
         match step {
+            Step::EndWait(index) => {
+                let call = Token::new(self.session_mut(session).calls[index]);
+                self.stage.push(tools::Event::EndWait { kit, call });
+                self.next(session);
+            }
             Step::CancelJobs => {
                 self.session_mut(session).state = State::Cancelling { kit };
                 self.stage.push(tools::Event::CancelJobs { kit });

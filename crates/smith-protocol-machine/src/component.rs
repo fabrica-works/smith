@@ -110,6 +110,7 @@ impl Component {
             FromDomain::Job { owner, act } => {
                 let (head, tail) = match act {
                     tools::JobAct::Read { head, tail, .. } | tools::JobAct::Stop { head, tail } => (head, tail),
+                    tools::JobAct::Hasten => (0, 0),
                 };
                 if head > env.limits.output_bytes || tail > env.limits.output_bytes {
                     to_domain.push(ToDomain::Done { owner, done: other() });

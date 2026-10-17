@@ -167,6 +167,13 @@ pub(crate) fn io(
 }
 
 pub(crate) fn job(slot: &mut Slot, agent: Token, owner: Token, act: smith::tools::JobAct, out: &mut Queue<Output>) {
+    match act {
+        smith::tools::JobAct::Hasten => {
+            out.push(Output::Lower { agent, request: Lower::Job { owner, act } });
+            return;
+        }
+        smith::tools::JobAct::Read { .. } | smith::tools::JobAct::Stop { .. } => {}
+    }
     assert!(
         slot.io.insert(owner, false).expect("bounded root tool rights").is_none(),
         "root machine requests own one callback right"

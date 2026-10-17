@@ -96,6 +96,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         }
         Event::Close { kit } => kit::close(domain, kit, &env.limits, out),
         Event::CancelJobs { kit } => crate::jobs::cancel(domain, kit, &env.limits, out),
+        Event::EndWait { kit, call } => crate::jobs::end_wait(domain, kit, call, out),
         Event::Done { owner, done } => flight::done(domain, env, owner, done, out),
     }
 }

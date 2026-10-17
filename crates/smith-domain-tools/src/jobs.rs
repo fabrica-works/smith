@@ -47,6 +47,7 @@ pub(crate) struct Read {
     kept: Kept,
     deadline: Time,
     stop: bool,
+    hastened: bool,
 }
 
 impl Jobs {
@@ -166,7 +167,27 @@ pub(crate) fn read(
     deadline: Time,
     stop: bool,
 ) -> Read {
-    Read { job, reply_to, observation, timed, kept, deadline, stop }
+    Read { job, reply_to, observation, timed, kept, deadline, stop, hastened: false }
+}
+
+/// The session names a pending reply; a queued read keeps its shortened wait.
+pub(crate) fn end_wait(domain: &mut Domain, kit: Token, call: Token, out: &mut Queue<Request>) {
+    let kit = domain.kits.get_mut(Id::from_token(kit)).expect("a session owns its kit");
+    let mut found = None;
+    for (key, read) in &kit.jobs.reads {
+        if read.reply_to == ReplyTo::new(call) && !read.stop && !read.hastened {
+            found = Some(*key);
+            break;
+        }
+    }
+    if let Some(key) = found {
+        let read = kit.jobs.reads.get_mut(&key).expect("a pending read owns this reply");
+        read.hastened = true;
+        let job = kit.jobs.held.get(&read.job.0).expect("a read names a held job");
+        if job.reader == Some(key) {
+            out.push(Request::Job { owner: job.owner.token(), act: JobAct::Hasten });
+        }
+    }
 }
 
 fn advance(jobs: &mut Jobs, number: JobNumber, now: Time, limits: &Limits, out: &mut Queue<Request>) {
@@ -177,7 +198,11 @@ fn advance(jobs: &mut Jobs, number: JobNumber, now: Time, limits: &Limits, out: 
     for (key, read) in &jobs.reads {
         if read.job == number {
             job.reader = Some(*key);
-            let wait = read.timed.timeout.min(read.deadline.saturating_since(now));
+            let wait = if read.hastened {
+                skein_lib::Duration::ZERO
+            } else {
+                read.timed.timeout.min(read.deadline.saturating_since(now))
+            };
             out.push(Request::Job {
                 owner: job.owner.token(),
                 act: if read.stop {
