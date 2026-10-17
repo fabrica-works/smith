@@ -81,9 +81,9 @@ address FT.
   calls alone does it wait as asked;".
 - The host part holds them because the check counts the task role as
   written (protocol/limits.md 4, `host-part-holds-the-role`). 08.1 makes
-  that change (its Choices). If 08.1 was dropped, this step makes it, and
-  its Files add `crates/smith-local-shell/src/settings/resolve.rs`
-  (`:85-86`) and `settings/tests.rs` (`:715`).
+  that change (its Choices), landed in `d3cd7d31`: with this step's
+  words the role is 1,915 bytes, `role_and_guides` 35,345, and the slack
+  about 1,887 bytes (the ready check's re-check, 2026-10-17).
 - The role's words stay as above: with the session's rule, a poll beside
   a `shell` call that changes nothing, or beside a change, waits no
   longer than that call runs. The session never asks what a command
@@ -104,7 +104,7 @@ Scope: session.md 5; tools.md 3, 5 and 7's story "a wait ended early by
   A23; cause 4).
 Needs: smith 08's batched change [08.1] landed or dropped.
 Files: `crates/smith-domain-session/src/session.rs` (`tool_ran`,
-  `:1757-1779`; `advance`, `:1491`), `crates/smith-domain-tools/src/boundary.rs`
+  `:1782-1805`; `advance`, `:1514`), `crates/smith-domain-tools/src/boundary.rs`
   (`Event`, `:39-70`; `JobAct`, `:127`), `crates/smith-domain-tools/src/domain.rs`
   (`match event`, `:92`), `crates/smith-domain-tools/src/jobs.rs`
   (`:118`, `:173-190`), `crates/smith-domain-tools/src/kit.rs`
@@ -123,7 +123,11 @@ Files: `crates/smith-domain-session/src/session.rs` (`tool_ran`,
   `tests/agent/src/memory/random.rs` (`:221-226`),
   `tests/session/src/recorded.rs` (`:341-345`), `tests/machine/src/lib.rs`
   (the sequence driver, `:845-851`), `tests/machine/src/jobs.rs`
-  (`:36`, the terminals expected), and every further match on `JobAct` `rg -n 'JobAct::' crates
+  (`:36`, the terminals expected), `tests/session/tests/jobs.rs`
+  (`read_and_edit`, `:110`, completes `[read, edit, job]`, the new case,
+  so its poll is hastened; `a_command_answered_running_while_the_session_reads_edits_and_completes`,
+  `:148`, still passes because `recorded.rs` keeps hastened acts apart:
+  name it in the commit body), and every further match on `JobAct` `rg -n 'JobAct::' crates
   tests` lists; `benchmarks/summaries/`.
 Shape: the session, when a batch that held a call other than `job` has
   no such call left running, gives the tools `Event::EndWait { kit, call }`
@@ -148,9 +152,12 @@ Shape: the session, when a batch that held a call other than `job` has
   `recorded.rs` keeps hastened acts apart from the one pending act per
   owner; the machine's sequence driver sends the next act without
   waiting for a Hasten's terminal, and counts none for it.
-  `advance` stood at 99 of `too_many_lines`' 100 on `9d1d7c86`; after
-  08.1's helper, aim for no new `#[expect]`; one left names this step in
-  its `reason` and in the commit body.
+  `advance` stands at 100 of `too_many_lines`' 100 on `d3cd7d31`: each
+  line this step adds to it needs an extracted helper (the check moved
+  the `Invalid` arm's four lines into `batching::invalid_slot`, which
+  cleared it); aim for no new `#[expect]`; one left names this step in
+  its `reason` and in the commit body. `crates/clippy.toml` disallows
+  `matches!` (`:84`) and `Iterator::any` (`:145`): a `match` or a `for` loop.
 Test shape: `tests/tools/tests/jobs.rs`, beside
   `different_jobs_can_be_read_in_the_same_batch` (`:460`):
   `a_wait_ended_early_answers_running_with_the_output_so_far`,
@@ -179,7 +186,7 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
 Don't: shorten `job_wait`; tell a job's end between completions
   (decisions.md 7, deferred).
 Size: 240 lines.
-Removes: `tests/session/src/world.rs:1197`'s `unreachable!` (and its copy at `:2130`) when a test
+Removes: `tests/session/src/world.rs:1197`'s `unreachable!` (and its copies at `:2128` and `tests/channel/tests/composed/long.rs:95`) when a test
   of this step reaches that arm, named in the commit body; otherwise it
   stays.
 

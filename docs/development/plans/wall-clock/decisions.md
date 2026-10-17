@@ -605,3 +605,11 @@ Reversible, and none a product decision; the widest in reach:
 
 
      Ruling 120 adds: 10.1's Shape no longer names `TASK_ROLE_BOUND`, which 08.1 removes; the role stays within the 4,096 bytes `the_task_role_is_within_four_kibibytes` checks, and each byte 10.1 adds counts in the host part, measured by `settings::tests::composition_adds_every_model_of_accounts_with_a_source` in its gate. Refresh any further copy of `TASK_ROLE_BOUND` or of 4096 as the role's reservation, and list it in the commit body.
+
+121. **09.1's Shapes against main after 08.1** (ready check of smith-09.1, re-check after 08.1's landing).
+     09.1's re-check after 08.1 (`d3cd7d31`) and the designer's `2c213b1b`, by a fresh read-only sub-agent against smith `d3cd7d31`, jig `b58a49c3`, temper `30f74c67e`. `smith/09-polls.md` takes:
+     - Files: `session.rs` `tool_ran` `:1782-1805` (was `:1757-1779`), `advance` `:1514` (was `:1491`); `tests/session/tests/jobs.rs` added: `read_and_edit` (`:110`) completes `[read, edit, job]`, the designer's new case, so its poll is hastened; `a_command_answered_running_while_the_session_reads_edits_and_completes` (`:148`) still passes, named in the commit body.
+     - Shape: `advance` stands at 100 of `too_many_lines`' 100 on `d3cd7d31`: each line added to it needs an extracted helper (the check's sketch moved the `Invalid` arm into `batching::invalid_slot`); `crates/clippy.toml` disallows `matches!` (`:84`) and `Iterator::any` (`:145`).
+     - Removes: the `unreachable!` copies are `tests/session/src/world.rs:1197`, `:2128` (was `:2130`) and `tests/channel/tests/composed/long.rs:95`.
+     - What the design asks: 08.1 made the role-bound change; with 09.1's words the role is 1,915 bytes, `role_and_guides` 35,345, the slack about 1,887 bytes (`composition_adds_every_model_of_accounts_with_a_source` passes).
+     The check's sketch (`EndWait { kit, call }`, a unit `JobAct::Hasten`, the session's `batching::end_waits` at the end of `advance` and in `tool_ran`) passed fmt, workspace clippy, the default profile (2356 of 2356) and fuzzy (43 of 43), with 3 session, 3 tools-world and the machine's `a_hastened_read_answers_at_once` tests added. jig and temper use none of the names 09.1 changes. Refresh any further copy of a moved line, and list it in the commit body.
