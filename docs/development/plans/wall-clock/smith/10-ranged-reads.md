@@ -81,6 +81,23 @@ Proof: live, through the stop: `heavy cargo run -p smith-bench -- build
   as measured (RC 1.853, RT 1.326; the designer's answer of
   2026-10-17T09:35Z): it stops on an RC ratio above 0.936 or an RT
   ratio above 1.234 (rule 12).
+Stopped and kept: `parity-change-d6b81c63-20261017T094817Z` stopped on
+  RC (projection 1.821, above the baseline's 1.734); the designer's
+  answer of 2026-10-17T12:28Z keeps 10.1 (README rule 12). The run
+  stands: `817e42df` is rebased onto commits that change no prompt file
+  (rule 11), and the body names `d6b81c63` and `e2624ff4`. The body
+  gives this cause for the move, as written: "RC's projection lies past
+  the bound by 09.1's ratio, 1.393, kept as measured (the designer's
+  answer of 2026-10-17T09:35Z); this step's own RC ratio is 0.983. Its
+  arm differs from both runs of its parent's code where its words act:
+  it read 461 KB an attempt in the first window, against 536 KB as its
+  parent here and 536 KB as 09.1's arm; it made 22.2 searches against
+  14.2 and 17.4, beside other calls (responses of reads, searches and
+  lists alone: 10.4 against 8.8 and 12.2). Elsewhere it lies within
+  them: responses 65.2 against 54.2 and 64.2, edits 27.8 against 22.8
+  and 27.2, `shell` 21.2 against 17.2 and 21.4, median spend $1.491
+  against $1.518 and $1.798, median task wall 578 s against 506 s and
+  590 s."
 Don't: change `read`'s schema or `read_window`.
 Size: 10 lines.
 Removes: nothing.

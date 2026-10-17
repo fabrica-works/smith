@@ -37,7 +37,10 @@ from it; none changes code.
   `smith-11.s1`, a change that names the failed criteria's cause from
   11.1's attempts (16.5). A change to what the model is sent there runs
   its full `parity-change` first, and carries `Change-Summary:`
-  (README, rules 11 to 13). If `smith-11.s1` is dropped, 11.2 is
+  (README, rules 11 to 13). Its projection starts from 10.1's as
+  measured (RC 1.821, RT 1.513; the designer's answer of
+  2026-10-17T12:28Z): it stops on an RC ratio above 0.952 or an RT
+  ratio above 1.081 (rule 12). If `smith-11.s1` is dropped, 11.2 is
   dropped with it, and 11.1's run is the plan's last.
 - The baselines' commands, each arm's configuration digest from the
   summary:
