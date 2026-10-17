@@ -120,26 +120,44 @@ Scope: session.md 5's failed write; llm.md 3's batching sentences and 5's
   not-run text; transcript.md 2 and 6, version 5; shell.md 6.6, topics 3
   and 4 (findings A14 to A16, A25 to A27; causes 1 and 3).
 Needs: smith 07's check [07.1] landed or dropped.
-Files: `crates/smith-domain-session/src/session.rs` (`Tools`, `:287-306`;
-  `advance`, `:1489-1603`; `joins`, `:1646-1655`; the answers at
-  `:1540-1554`, `:1584`, `tool_ran`, `:1755-1777`),
+Files: `crates/smith-domain-session/src/session.rs` (`Tools`, `:289-308`;
+  `advance`, `:1491-1605`; `reserve_batch`'s call, `:1504`; `joins`,
+  `:1648-1657`; the answers at `:1542-1556`, `:1586`, `tool_ran`,
+  `:1757-1779`; `returned_cost`'s `NotRun` arms, `:2636-2639`),
+  `crates/smith-domain-session/src/history.rs` (`reserve_batch`,
+  `:139-205`; `:120`, `NotRun::Stopped`, read),
+  `tests/session/src/world.rs` (the referee's unstarted delegated call,
+  `:1352-1357`),
   `crates/smith-domain-session/src/llm.rs` (`NotRun`, `:154-159`),
   `crates/smith-domain/src/llm.rs` (`:78-86`), `crates/smith-domain/src/peer.rs`
   (`:343-349`), `crates/smith-domain-tools/src/call.rs` (`effect`,
   `:233-238`, read), `crates/smith-protocol-llm/src/prompt.rs`
-  (`:181-208`, `:452-456`), `crates/smith-protocol-llm/src/descriptions.rs`
+  (the message loop, `:112-125`; `outside_choice`, `:181-208`;
+  `translate_block`, `:412`; `result_text`, `:441`, its `NotRun` arm
+  `:452-456`), `crates/smith-protocol-llm/src/descriptions.rs`
   (`:103-108`), `crates/smith-protocol-llm/src/tests.rs` (`:323`,
-  `:343-367`), `tests/protocol-llm/tests/production_tools.rs` (`:389`,
-  `:410-419`), `tests/protocol-llm/tests/production_render.rs` (`:401`),
-  `crates/smith-transcript/` (`lib.rs:11-13`, `:31`; a new
+  `:343-367`), `tests/protocol-llm/tests/production_tools.rs` (`:389`),
+  `tests/protocol-llm/tests/production_render.rs` (`:401`),
+  `crates/smith-transcript/` (`lib.rs:11-13`, `:15-26`, `:31`; a new
   `schema/transcript-v5.schema`; `src/generated/v5.rs`; `golden/v5/`),
   `crates/smith-protocol-channel/src/turn.rs` (`:160`),
   `crates/smith-protocol-channel/src/transcript.rs` (`:268`),
   `crates/smith-local-domain/src/person.rs` (`:276`),
   `tests/session/src/translate.rs` (`:293-296`),
-  `crates/smith-domain-session/src/history.rs` (`:120`),
-  `tests/codecs/tests/drift.rs` (`:22-33`), `tests/codecs/tests/transcript.rs`
-  (`:5-9`), `crates/smith-local-shell/src/role.rs`, `tests/session/tests/`,
+  each user of `smith_transcript::v4`, which becomes `v5`:
+  `crates/smith-agent-service/src/profile.rs` (`:166`, `:355`),
+  `crates/smith-agent-service/src/profile/effective/channel.rs` (`:7-8`),
+  `crates/smith-agent-service/src/profile/tests.rs` (`:68`),
+  `crates/smith-host-protocol/src/` (`component.rs:94`, `limits.rs:13`,
+  `translate.rs:33`), `crates/smith-local-protocol/src/store.rs` (`:121`,
+  `:161`), `crates/smith-local-service/src/profile/effective/channel.rs`
+  (`:9-10`), `crates/smith-protocol-channel/src/` (`component.rs:96`,
+  `limits.rs:17`, `:57`, `:80-81`, `:239-240`, `tests.rs:519`),
+  `tests/codecs/tests/memory.rs` (`:8`), `tests/codecs/tests/fuzzy_decode.rs`
+  (`:57`), `tests/codecs/tests/drift.rs` (`:22-33`),
+  `tests/codecs/tests/transcript.rs` (`:5-9`, `:25-28`, `:48`, `:95`),
+  `tests/end-to-end/end_to_end.rs` (`:553`, `"transcript":4` becomes 5),
+  `crates/smith-local-shell/src/role.rs`, `tests/session/tests/`,
   `benchmarks/summaries/`.
 Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   call's position in the completion, in the session's vocabulary and
@@ -150,10 +168,42 @@ Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   owned call whose `tools::effect` is a write, a delegated call whose
   effect is) and each `shell` call as
   `NotRun { why: AfterFailedWrite { call } }` without starting it, and
-  runs reads as today. The prompt renders it with the text above. The
+  runs reads as today. `history::reserve_batch` copies `advance`'s
+  batching to reserve result credit for the calls it expects to start:
+  it takes the `failed` state too, skips the writes and commands
+  `advance` answers not run, and counts an invalid call as setting it,
+  so that it reserves for exactly the calls `advance` starts (without
+  that, fuzzy panics at `session.rs:2610`, "actual call owned result
+  credit"). `returned_cost` answers `Stopped | AfterFailedWrite { .. }
+  => Some(0)` in one arm (clippy's `match_same_arms`). `advance` stays
+  within clippy's `too_many_lines` (100): move the stop's answers into a
+  helper of their own; aim for no new `#[expect]`, and when one is left,
+  its `reason` names this step and the commit body lists it. The
+  session world's referee (`world.rs:1352-1357`) accepts an unstarted
+  delegated call answered `AfterFailedWrite { call }` with `call` at or
+  before its position, beside `Stopped`.
+  The prompt renders it with the text above; `<tool>` is the name of the
+  call at position `<n>` of the assistant message just before the
+  result's message, as transcript.md 2 says: "naming that call by its
+  position among the completion's calls, from 1, whose tool is that
+  call's in the same message". `NotRun` carries only the position: the
+  message loop (`prompt.rs:112-125`) hands `translate_block` and
+  `result_text` the previous assistant message's call names, and the
+  text is built with `skein_lib::Writer` as `outside_choice` builds its
+  own, its digits written by hand (`crates/clippy.toml` bans `Vec`,
+  `to_string`, `concat` and `try_fold`; `indexing_slicing` is denied). The
   transcript's version 5 schema copies version 4's with `not_run`
-  carrying a `NotRunWhy` enum, `stopped`, `outside_choice` with the
-  allowed calls' names, and `after_failed_write` with the position; the
+  carrying its why. skein's codegen refuses a variant that holds anything
+  but a record ("variant … must hold one record",
+  `skein-codegen/src/check.rs:181`), so the why is wrapped:
+  `record NotRun { why: NotRunWhy }`, `enum NotRunWhy { stopped,
+  outside_choice: OutsideChoice, after_failed_write: AfterFailedWrite }`,
+  `record OutsideChoice { only: option AllowedCalls }`, `record
+  AllowedCalls { names: list <n> CallName }`, a name bounded as `Call`'s
+  (`text 64`), the list above what the default tests reach, and `record
+  AfterFailedWrite { call: u16 }`, the position. An absent `only` is
+  `smith-domain`'s `choice: None`, no call allowed, which renders
+  "none"; a present one, the names (`prompt.rs:184-205`). The
   generator writes `src/generated/v5.rs` (the command in
   `findings/planning-commands.md`); `Turn::FORMAT_VERSION` = 5; v4's
   schema, generated code and goldens go. `turn.rs` and `transcript.rs`
