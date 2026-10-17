@@ -69,7 +69,9 @@ Shape: no code. 06.1's commands 1 to 3 on `origin/main`. On an exit of
 Test shape: none: no code; the run is the proof.
 Proof: live, once: 68 attempts, about $17 and 6 hours; the same lines in
   the commit body as 06.1's for its `parity` run, and the README's "Done
-  when" item 2's command, run once, with its exit.
+  when" item 2's command, run once in the step's worktree after the
+  summary's commit (its `cd ~/src/rust/smith` replaced by the worktree),
+  with its exit.
 Don't: run again on the same commit, whatever the verdict.
 Size: none.
 Removes: nothing.
@@ -79,8 +81,11 @@ Scope: as 11.1, on `main` after `smith-11.s1`.
 Needs: 11.1's summary with a verdict of 1, and `smith-11.s1` landed.
 Files: `benchmarks/summaries/parity-*.json`, `benchmarks/baselines/`.
 Shape: no code. 06.1's commands 1 to 3 on `origin/main`; on an exit of
-  0 or 1, commit the summary, cut both baselines again with the
-  commands above, and land them together. It is the plan's last
+  0 or 1, commit the summary, `git rm
+  benchmarks/baselines/parity-smith.json
+  benchmarks/baselines/parity-codex.json` (the cut refuses an existing
+  file), cut both again with the commands above, and land them
+  together. It is the plan's last
   `parity` run: on 1, the plan ends with its aim unmet, and the README's
   "Done when" item 2 fails, naming the criteria (benchmarks.md 16.5).
   On 2, nothing is committed, and the step stops on a question.

@@ -657,3 +657,11 @@ Reversible, and none a product decision; the widest in reach:
 
 126. **later.md: 09.1's typed calls** (the check of 2026-10-17T09:57Z).
      A `later.md` row for 09.1's `edit()` (`tests/session/tests/jobs.rs:313`) and `read()` (`:47`), which type calls that `smith_tools_world::calls` builds (`tests/tools/src/calls.rs:44`), where README rule 18 asks them called. No step left writes a test (10.1: "no new test"; 11: no code), so no steer; the next smith plan that opens the file takes it.
+
+127. **smith 11's Shapes against main** (ready check of smith-11.1).
+     11.1's ready check against smith `e2624ff4` corrected `smith/11-closing.md` in two places, Markdown only:
+
+     - 11.2's Shape: the baselines' cut refuses an existing file (`benchmarks/src/summary.rs:729`, `OpenOptions::new().write(true).create_new(true)`; the scratch worktree's second cut gave `File exists (os error 17)`), so 11.2 first runs `git rm benchmarks/baselines/parity-smith.json benchmarks/baselines/parity-codex.json`, then cuts both again with the commands above. "Removes" stays.
+     - 11.1's Proof (and 11.2's, "as 11.1's"): the README's "Done when" item 2 command runs once in the step's worktree after the summary's commit, its `cd ~/src/rust/smith` replaced by the worktree; in the primary checkout it picks 06.1's `parity-c10edbe5` and its `test -z` fails.
+
+     The rest matched: 06.1's commands 1 to 3 parse, `suite parity` is 68 attempts, the baselines loop exits 0 on the committed summary, the digests and the jq, count and `rg` commands run. Not run, the build lane being exclusive under 10.1's suite: smith-bench's suites, `fmt`, `clippy`; no Rust sketch in 11. If FT is short at 11.1, `smith-11.s1`'s diagnosis starts from `later.md`'s FT-output row (ruling 119). Refresh any further copy of these commands you meet, and list it in the commit body.
