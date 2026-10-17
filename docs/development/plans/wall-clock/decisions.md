@@ -665,3 +665,32 @@ Reversible, and none a product decision; the widest in reach:
      - 11.1's Proof (and 11.2's, "as 11.1's"): the README's "Done when" item 2 command runs once in the step's worktree after the summary's commit, its `cd ~/src/rust/smith` replaced by the worktree; in the primary checkout it picks 06.1's `parity-c10edbe5` and its `test -z` fails.
 
      The rest matched: 06.1's commands 1 to 3 parse, `suite parity` is 68 attempts, the baselines loop exits 0 on the committed summary, the digests and the jq, count and `rg` commands run. Not run, the build lane being exclusive under 10.1's suite: smith-bench's suites, `fmt`, `clippy`; no Rust sketch in 11. If FT is short at 11.1, `smith-11.s1`'s diagnosis starts from `later.md`'s FT-output row (ruling 119). Refresh any further copy of these commands you meet, and list it in the commit body.
+
+128. **smith 10.1 kept: RC's projection carries 09.1's ratio (the designer's db860283)** (design gap, smith 10.1's block of 2026-10-17T12:18:00Z).
+     The designer's answer, smith `db860283` (Markdown only): 10.1 is kept.
+
+
+     **10.1 is kept.** benchmarks.md 16.6: "The step lands only on the designer's answer: kept, with the cause the answer names for the move; reworked; or dropped." The cause: RC's projection lies past the bound by 09.1's ratio, 1.393, which the 09:35 answer named noise and which "The projection keeps ... as measured" (16.6). 10.1's own RC ratio is 0.983. Beside its parent, it gives the figures of "an earlier `parity-change` run [that] measured the parent's code" (16.6): 09.1's run, where that code was the change's arm. The step's arm differs from both runs of its parent's code where its words act:
+     - it read 461 KB an attempt in the first window, against 536 KB as its parent here and 536 KB as 09.1's arm;
+     - it made 22.2 searches against 14.2 and 17.4: the words' "a window from where a search found them". They sit beside other calls: responses of reads, searches and lists alone were 10.4 against 8.8 and 12.2.
+
+     Elsewhere it lies within those two runs:
+     - responses 65.2 against 54.2 and 64.2;
+     - edits 27.8 against 22.8 and 27.2;
+     - `shell` 21.2 against 17.2 and 21.4;
+     - median spend $1.491 against $1.518 and $1.798;
+     - median task wall 578 s against 506 s and 590 s.
+
+     **How it lands.** `smith/10-ranged-reads.md` ("Stopped and kept") gives the cause, as written, for the commit body. `817e42df` is rebased onto `origin/main`. Since `e2624ff4`, main has moved by Markdown only, so the run stands (README rule 11), and the body names `d6b81c63` and `e2624ff4`. The rest of 10.1's Proof is unchanged: `Change-Summary:`, the criteria, projection and stop lines, rule 13's counts and the fresh tokens per arm. The gate runs once, at `land`.
+
+     **11.1 starts as planned** once 10.1 lands (11-closing.md, Needs). RT's projection, 1.513, lies within the baseline's interval [1.149, 1.636]. 16.6 says: "A plan's position within the baseline's interval is within what it already measures as noise, and goes on." A `parity-change` run is "a step's evidence for landing, never a verdict: the plan's `parity` runs judge it". A miss at 11.1 is answered by `smith-11.s1` from 11.1's own attempts (16.5; 11-closing.md).
+
+     **`smith-11.s1`,** if it changes what the model is sent, starts from 10.1's projections as measured. It stops on an RC ratio above 0.952 or an RT ratio above 1.081 (`smith/11-closing.md`).
+
+     **Not taken:**
+     - **Dropped.** The implementer read the stop as the step's failure. 16.6 asks for the move's cause, and the move past the bound is 09.1's ratio, carried. A drop would leave shell.md 6.6's topic 2 unbuilt.
+     - **Reworked.** The words did what topic 2 asks, and no wording answers a projection the step did not move. A new commit's run would start at the same 0.936.
+
+     **Deferred, with its `later.md` row** (the projection's row, amended). 09.1's code is the third code measured twice: $1.798 in its own run, $1.518 as 10.1's parent. Of 10.1's RC projection, 1.821, a factor 1.485 is the three codes measured twice; of RT's 1.513, a factor 1.199. The revision of 16.6 stays where the row puts it.
+
+     **Unchanged:** rule 12 and the stop; 10.1's Shape, Size and Don'ts; 11.1 and 11.2; `later.md`'s RT and FT rows.
