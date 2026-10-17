@@ -1250,13 +1250,16 @@ dependencies = [
  "skein-world",
  "smith-agent-service",
  "smith-domain",
+ "smith-domain-session",
  "smith-domain-tools",
  "smith-events",
  "smith-host-domain",
  "smith-host-world",
+ "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-session-world",
  "smith-tools-world",
+ "smith-transcript",
 ]
 
 [[package]]

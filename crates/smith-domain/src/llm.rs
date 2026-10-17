@@ -76,6 +76,8 @@ pub enum ToolChoice {
 /// Why a session's concrete call ran nothing, with its choice resolved by the root.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum NotRun {
+    /// A previous failed call stopped this completion's remaining changes.
+    AfterFailedWrite { call: u16 },
     /// The provider stopped without asking for execution.
     Stopped,
     /// The call was outside the choice retained when the session answered it.

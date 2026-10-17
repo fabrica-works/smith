@@ -707,3 +707,67 @@ fn a_guarded_request_past_the_line_is_refused_by_the_world() {
     assert_eq!(measures[1].new_part, 481);
     assert_eq!(measures[1].guard.expect("guarded request").last_prompt, 40);
 }
+
+fn batched_change(old: &str) -> (World, u64) {
+    use skein_fake_llm_domain::api::{Finish, Line, Script, Turn};
+    const SCRIPT_CALLS: u32 = 6;
+    const TURN_TOKENS: u64 = 48;
+    let scripted_call = |name: &[u8], arguments: &[u8]| Line::Call { name: name.into(), arguments: arguments.into() };
+    let second = format!(r#"{{"path":"README.md","edits":[{{"old":"{old}","new":"hi"}}]}}"#);
+    let lines = vec![
+        scripted_call(b"edit", br#"{"path":"src/lib.rs","edits":[{"old":"42","new":"43"}]}"#),
+        scripted_call(b"edit", second.as_bytes()),
+        scripted_call(b"write", br#"{"path":"notes.md","content":"notes.md: written"}"#),
+        scripted_call(b"shell", br#"{"command":"cargo test"}"#),
+        scripted_call(b"read", br#"{"path":"README.md"}"#),
+    ];
+    let calm = Settings::calm(819);
+    let settings = Settings { provider: Config { calls_per_answer: SCRIPT_CALLS, ..calm.provider }, ..calm };
+    let script = Script {
+        cue: b"You are a coding agent.".as_slice().into(),
+        turns: vec![Turn { lines: lines.into(), finish: Finish::ToolCalls, tokens: TURN_TOKENS }].into(),
+    };
+    let mut world = World::with_scripts(settings, Box::new([script]));
+    let mut selected = spec(b"fix the build");
+    selected.authority.grants.shell = true;
+    let opener = world.submit(Time::ZERO, selected);
+    world.run(ITERATIONS);
+    (world, opener)
+}
+
+fn change_verdicts(world: &World, opener: u64) -> Vec<&'static str> {
+    use smith_domain_session::llm::{Block, NotRun, Returned};
+    world.session(opener).records[0]
+        .messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(|block| {
+            let Block::ToolResult { result, .. } = block else { return None };
+            Some(match result {
+                Returned::Owned { outcome: tools::Outcome::Edited { .. } } => "edited",
+                Returned::Owned { outcome: tools::Outcome::EditFailed { .. } } => "edit_failed",
+                Returned::Owned { outcome: tools::Outcome::Written { .. } } => "written",
+                Returned::Owned { outcome: tools::Outcome::Exited { .. } } => "exited",
+                Returned::Owned { outcome: tools::Outcome::Read { .. } } => "read",
+                Returned::NotRun { why: NotRun::AfterFailedWrite { call: 2 } } => "after call 2",
+                other @ (Returned::Owned { .. }
+                | Returned::NotRun { .. }
+                | Returned::Text { .. }
+                | Returned::Invalid { .. }
+                | Returned::Withdrawn) => panic!("unexpected result: {other:?}"),
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn edits_of_several_files_and_a_command_run_in_call_order() {
+    let (world, opener) = batched_change("hello");
+    assert_eq!(change_verdicts(&world, opener), ["edited", "edited", "written", "exited", "read"]);
+}
+
+#[test]
+fn an_edit_that_does_not_match_leaves_the_rest_of_the_change_not_run() {
+    let (world, opener) = batched_change("absent");
+    assert_eq!(change_verdicts(&world, opener), ["edited", "edit_failed", "after call 2", "after call 2", "read"]);
+}

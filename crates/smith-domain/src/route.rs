@@ -739,7 +739,8 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
         run::CompletionPermit::Final { note: Some(note) } => {
             drop(pending);
             let choice = domain.peers.get(id).expect("session retains peer").final_choice();
-            return session_step(domain, env, session::Event::Narrowed { owner, note, choice });
+            let names = domain.peers.get(id).expect("session retains peer").retained_choice(choice.clone());
+            return session_step(domain, env, session::Event::Narrowed { owner, note, choice, names });
         }
         run::CompletionPermit::Held => {
             let run = run::owner(&domain.run, conversation).expect("main remains live while held");

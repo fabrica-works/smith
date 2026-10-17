@@ -8,7 +8,7 @@ use crate::{
 use alloc::boxed::Box;
 
 /// Concrete session transcript version emitted and accepted at the domain boundary.
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 
 /// Session-issued position of an opener call in its concrete logical transcript.
 /// This fixed name survives ticket translation; provider ids and callback tokens

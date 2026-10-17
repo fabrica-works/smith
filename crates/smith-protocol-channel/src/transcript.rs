@@ -19,7 +19,7 @@ pub fn decode_transcript(
     piece: &[u8],
     resume_turns: u32,
     search_hits: u32,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     endpoints: &Endpoints,
 ) -> Result<Option<record::Transcript>, record::Refusal> {
     if piece.is_empty() {
@@ -46,7 +46,7 @@ pub fn decode_transcript(
     for _ in 0..count {
         let length = reader.u32().ok_or(record::Refusal::Malformed)?;
         let body = reader.bytes(length).ok_or(record::Refusal::Malformed)?;
-        if body.get(..2) != Some(&[0, 4][..]) {
+        if body.get(..2) != Some(&[0, 5][..]) {
             return Err(record::Refusal::Version);
         }
         let place = match previous {
@@ -109,7 +109,7 @@ pub fn transcript_piece(bodies: &[Box<[u8]>]) -> Option<Box<[u8]>> {
 pub fn decode_turn(
     bytes: &[u8],
     number: u32,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     endpoints: &Endpoints,
 ) -> Result<record::Turn, record::Refusal> {
     if number == 0 {
@@ -121,11 +121,11 @@ pub fn decode_turn(
 fn saved_turn(
     bytes: &[u8],
     number: Option<u32>,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     endpoints: &Endpoints,
     search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
-    if bytes.get(..2) != Some(&[0, 4][..]) {
+    if bytes.get(..2) != Some(&[0, 5][..]) {
         return Err(record::Refusal::Version);
     }
     let Ok(source) = wire::Turn::decode(limits, &mut Reader::new(bytes)) else {
@@ -150,7 +150,7 @@ fn translate_turn(
     source: wire::Turn,
     endpoint: u32,
     dialect: u32,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
     let affinity = match source.affinity() {
@@ -209,7 +209,7 @@ fn translate_turn(
 fn decode_block(
     source: &wire::Block,
     dialect: u32,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     search_hits: u32,
 ) -> Result<llm::Block, record::Refusal> {
     let value = match source {
@@ -254,7 +254,7 @@ fn replay(source: Option<&wire::Replay>, dialect: u32) -> Result<Option<llm::Rep
 
 fn returned(
     source: &wire::Returned,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     search_hits: u32,
 ) -> Result<llm::Returned, record::Refusal> {
     let value = match source {
@@ -265,10 +265,30 @@ fn returned(
             llm::Returned::Text { text: Box::from(value.text()), error: value.error(), replay: None }
         }
         wire::Returned::Invalid(value) => llm::Returned::Invalid { problem: problem(value.problem()) },
-        wire::Returned::NotRun => llm::Returned::NotRun { why: llm::NotRun::Stopped },
+        wire::Returned::NotRun(value) => llm::Returned::NotRun { why: not_run(value.why()) },
         wire::Returned::Withdrawn => llm::Returned::Withdrawn,
     };
     Ok(value)
+}
+
+fn not_run(source: &wire::NotRunWhy) -> llm::NotRun {
+    match source {
+        wire::NotRunWhy::Stopped => llm::NotRun::Stopped,
+        wire::NotRunWhy::AfterFailedWrite(value) => llm::NotRun::AfterFailedWrite { call: value.call() },
+        wire::NotRunWhy::OutsideChoice(value) => {
+            let choice = match value.only() {
+                Some(allowed) => {
+                    let mut names = List::with_capacity(allowed.names().len());
+                    for name in allowed.names() {
+                        names.push(Box::from(name.name())).expect("bounded allowed calls");
+                    }
+                    Some(names.into_boxed())
+                }
+                None => None,
+            };
+            llm::NotRun::OutsideChoice { choice }
+        }
+    }
 }
 
 fn problem(source: &wire::CallProblem) -> llm::Problem {
@@ -291,7 +311,7 @@ fn problem(source: &wire::CallProblem) -> llm::Problem {
 
 fn outcome(
     source: &wire::Outcome,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     search_hits: u32,
 ) -> Result<tools::Outcome, record::Refusal> {
     let value = match source {
@@ -496,7 +516,7 @@ fn hit_length(bytes: &[u8]) -> Result<u32, record::Refusal> {
 
 fn found_piece(
     piece: &[u8],
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     search_hits: u32,
 ) -> Result<Box<[tools::Hit]>, record::Refusal> {
     let mut reader = Reader::new(piece);

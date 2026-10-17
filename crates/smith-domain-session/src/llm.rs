@@ -152,10 +152,12 @@ pub enum Returned {
 /// Why a concrete tool call ran nothing (domain/session.md, section 5).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum NotRun {
+    /// A previous failed call stopped this completion's remaining changes.
+    AfterFailedWrite { call: u16 },
     /// The provider stopped without asking for execution.
     Stopped,
     /// The call was outside the completion's retained choice.
-    OutsideChoice { choice: ToolChoice },
+    OutsideChoice { choice: Option<Box<[Box<[u8]>]>> },
 }
 
 /// The offered descriptors this completion may call; definitions stay unchanged.

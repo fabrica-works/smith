@@ -82,8 +82,11 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
     };
     let mut agent = smith_agent_shell::config::from_value(generated)
         .map_err(|why| relationships::native(&settings, &models, why))?;
-    agent.declarations.role_bound =
-        if settings.values.contains_key("instructions") { None } else { Some(crate::role::TASK_ROLE_BOUND) };
+    agent.declarations.role_bound = if settings.values.contains_key("instructions") {
+        None
+    } else {
+        Some(u32::try_from(crate::role::TASK_ROLE.len()).expect("the task role fits four kibibytes"))
+    };
     smith_agent_service::profile::validate::host_part_holds_the_role(
         &agent.profile,
         &agent.declarations,

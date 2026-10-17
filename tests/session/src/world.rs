@@ -1351,11 +1351,7 @@ impl World {
                                     "exact delegated text/error or withdrawal is retained once"
                                 );
                             } else {
-                                assert_eq!(
-                                    *result,
-                                    Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped },
-                                    "an unstarted delegated call has no terminal right"
-                                );
+                                unstarted_delegate(result, position);
                             }
                         }
                         Decoded::Owned { call } => match result {
@@ -2097,7 +2093,9 @@ fn describe_agent_event(event: &agent::Event) -> String {
             format!("completed {} {:?} with {} blocks", owner.raw(), completion.stop, completion.content.len())
         }
         agent::Event::Overflowed { owner, end } => format!("overflowed {} {end:?}", owner.raw()),
-        agent::Event::Narrowed { owner, note, choice } => format!("narrowed {} {note:?} {choice:?}", owner.raw()),
+        agent::Event::Narrowed { owner, note, choice, names } => {
+            format!("narrowed {} {note:?} {choice:?} {names:?}", owner.raw())
+        }
         agent::Event::UnsentClosed { owner } => format!("unsent closed {}", owner.raw()),
         agent::Event::BudgetDenied { owner, reason } => format!("budget denied {} {reason:?}", owner.raw()),
         agent::Event::Failed { owner, failure, .. } => format!("failed {} {failure:?}", owner.raw()),
@@ -2234,5 +2232,21 @@ fn add_usage(left: Usage, right: Usage) -> Usage {
             (Some(left), Some(right)) => Some(left.checked_add(right).expect("bounded scheduled reasoning")),
             (None, _) | (_, None) => None,
         },
+    }
+}
+
+fn unstarted_delegate(result: &Returned, position: u32) {
+    match result {
+        Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped } => {}
+        Returned::NotRun { why: smith_domain_session::llm::NotRun::AfterFailedWrite { call } } => {
+            assert!(u32::from(*call) <= position + 1, "failure precedes unstarted call");
+        }
+        Returned::Owned { .. }
+        | Returned::Text { .. }
+        | Returned::Invalid { .. }
+        | Returned::Withdrawn
+        | Returned::NotRun { why: smith_domain_session::llm::NotRun::OutsideChoice { .. } } => {
+            panic!("an unstarted delegated call has no terminal right");
+        }
     }
 }

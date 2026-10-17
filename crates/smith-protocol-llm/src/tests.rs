@@ -352,15 +352,15 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             3,
         ),
         (
-            "Write a file; read its current version first. Whole-file limit 257 bytes. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
+            "Write a file; read its current version first. Whole-file limit 257 bytes. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch a change's edits across its files, then the command that checks them; they run one at a time in call order, and a write that fails, or any call answered invalid, leaves the writes and commands after it not run.",
             2,
         ),
         (
-            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. Whole-file limit 257 bytes. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
+            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. Whole-file limit 257 bytes. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch a change's edits across its files, then the command that checks them; they run one at a time in call order, and a write that fails, or any call answered invalid, leaves the writes and commands after it not run.",
             5,
         ),
         (
-            "Run a command; files may change. Max 151 output bytes; cuts are marked. Without yield_seconds, wait for command end. At yield, an unfinished command answers running with job number; timeout counts from command start. Batch writes, edits and commands; run serially in call order.",
+            "Run a command; files may change. Max 151 output bytes; cuts are marked. Without yield_seconds, wait for command end. At yield, an unfinished command answers running with job number; timeout counts from command start. Batch a change's edits across its files, then the command that checks them; they run one at a time in call order, and a write that fails, or any call answered invalid, leaves the writes and commands after it not run.",
             4,
         ),
         (

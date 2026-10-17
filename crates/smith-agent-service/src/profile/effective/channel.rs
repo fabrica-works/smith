@@ -4,8 +4,8 @@
 use super::list::Inventory;
 use super::{Layer, Value};
 
-pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v4::Limits) -> Option<()> {
-    let smith_transcript::v4::Limits {
+pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v5::Limits) -> Option<()> {
+    let smith_transcript::v5::Limits {
         replay_dialect,
         replay_bytes,
         text_text,
@@ -13,6 +13,8 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
         opaque_bytes,
         call_id,
         call_name,
+        call_name_name,
+        allowed_calls_names,
         call_input,
         entry_name,
         hit_path,
@@ -49,6 +51,8 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
     inventory.value("opaque_bytes", Value::Bytes(u64::from(opaque_bytes)))?;
     inventory.value("call_id", Value::Bytes(u64::from(call_id)))?;
     inventory.value("call_name", Value::Bytes(u64::from(call_name)))?;
+    inventory.value("call_name_name", Value::Bytes(u64::from(call_name_name)))?;
+    inventory.value("allowed_calls_names", Value::Count(u64::from(allowed_calls_names)))?;
     inventory.value("call_input", Value::Bytes(u64::from(call_input)))?;
     inventory.value("entry_name", Value::Bytes(u64::from(entry_name)))?;
     inventory.value("hit_path", Value::Bytes(u64::from(hit_path)))?;

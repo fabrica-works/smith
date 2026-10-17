@@ -16,7 +16,7 @@ use crate::{Endpoints, Error};
 /// Encode one domain turn under its configured endpoint and replay dialect.
 pub fn encode_turn(
     source: &record::Turn,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
     endpoints: &Endpoints,
 ) -> Result<Box<[u8]>, Error> {
     if source.version != record::VERSION || source.sequence == 0 {
@@ -88,7 +88,7 @@ pub fn encode_turn(
     Ok(writer.finish())
 }
 
-fn encode_message(source: &llm::Message, dialect: u32, limits: &wire::v4::Limits) -> Result<wire::Message, Error> {
+fn encode_message(source: &llm::Message, dialect: u32, limits: &wire::v5::Limits) -> Result<wire::Message, Error> {
     let role = match source.role {
         llm::Role::User => wire::Role::User,
         llm::Role::Assistant => wire::Role::Assistant,
@@ -102,7 +102,7 @@ fn encode_message(source: &llm::Message, dialect: u32, limits: &wire::v4::Limits
     Ok(wire::Message::new(limits, wire::MessageParts { role, blocks })?)
 }
 
-fn encode_block(source: &llm::Block, dialect: u32, limits: &wire::v4::Limits) -> Result<wire::Block, Error> {
+fn encode_block(source: &llm::Block, dialect: u32, limits: &wire::v5::Limits) -> Result<wire::Block, Error> {
     let block = match source {
         llm::Block::Text { text, replay } => wire::Block::Text(wire::Text::new(
             limits,
@@ -136,7 +136,7 @@ fn encode_block(source: &llm::Block, dialect: u32, limits: &wire::v4::Limits) ->
 fn encode_replay(
     source: Option<&llm::Replay>,
     dialect: u32,
-    limits: &wire::v4::Limits,
+    limits: &wire::v5::Limits,
 ) -> Result<Option<wire::Replay>, Error> {
     match source {
         Some(replay) => Ok(Some(wire::Replay::new(
@@ -147,7 +147,7 @@ fn encode_replay(
     }
 }
 
-fn encode_returned(source: &llm::Returned, limits: &wire::v4::Limits) -> Result<wire::Returned, Error> {
+fn encode_returned(source: &llm::Returned, limits: &wire::v5::Limits) -> Result<wire::Returned, Error> {
     let returned = match source {
         llm::Returned::Owned { outcome } => wire::Returned::Outcome(wire::OwnedOutcome::new(
             limits,
@@ -157,7 +157,9 @@ fn encode_returned(source: &llm::Returned, limits: &wire::v4::Limits) -> Result<
             limits,
             wire::InvalidParts { problem: encode_problem(problem, limits)? },
         )?),
-        llm::Returned::NotRun { .. } => wire::Returned::NotRun,
+        llm::Returned::NotRun { why } => {
+            wire::Returned::NotRun(wire::NotRun::new(limits, wire::NotRunParts { why: encode_not_run(why, limits)? })?)
+        }
         llm::Returned::Text { text, error, replay } => {
             if replay.is_some() {
                 return Err(Error::Transcript(record::Refusal::Unresolved));
@@ -169,7 +171,32 @@ fn encode_returned(source: &llm::Returned, limits: &wire::v4::Limits) -> Result<
     Ok(returned)
 }
 
-fn encode_problem(source: &llm::Problem, limits: &wire::v4::Limits) -> Result<wire::CallProblem, Error> {
+fn encode_not_run(source: &llm::NotRun, limits: &wire::v5::Limits) -> Result<wire::NotRunWhy, Error> {
+    Ok(match source {
+        llm::NotRun::Stopped => wire::NotRunWhy::Stopped,
+        llm::NotRun::AfterFailedWrite { call } => wire::NotRunWhy::AfterFailedWrite(wire::AfterFailedWrite::new(
+            limits,
+            wire::AfterFailedWriteParts { call: *call },
+        )?),
+        llm::NotRun::OutsideChoice { choice } => {
+            let only = match choice {
+                Some(names) => {
+                    let mut allowed = List::with_capacity(count(names.len())?);
+                    for name in names {
+                        allowed
+                            .push(wire::CallName::new(limits, wire::CallNameParts { name: name.clone() })?)
+                            .expect("room for allowed names");
+                    }
+                    Some(wire::AllowedCalls::new(limits, wire::AllowedCallsParts { names: allowed })?)
+                }
+                None => None,
+            };
+            wire::NotRunWhy::OutsideChoice(wire::OutsideChoice::new(limits, wire::OutsideChoiceParts { only })?)
+        }
+    })
+}
+
+fn encode_problem(source: &llm::Problem, limits: &wire::v5::Limits) -> Result<wire::CallProblem, Error> {
     let problem = match source {
         llm::Problem::UnknownTool => wire::CallProblem::UnknownTool,
         llm::Problem::Nesting => wire::CallProblem::Nesting,
@@ -206,7 +233,7 @@ fn encode_problem(source: &llm::Problem, limits: &wire::v4::Limits) -> Result<wi
 }
 
 #[expect(clippy::too_many_lines, reason = "every typed tool outcome has an explicit durable representation")]
-fn encode_outcome(source: &tools::Outcome, limits: &wire::v4::Limits) -> Result<wire::Outcome, Error> {
+fn encode_outcome(source: &tools::Outcome, limits: &wire::v5::Limits) -> Result<wire::Outcome, Error> {
     let outcome = match source {
         tools::Outcome::Read { content, first, lines, total, next, cut, window } => {
             wire::Outcome::Read(wire::Read::new(
@@ -411,8 +438,8 @@ fn hex(value: u8) -> u8 {
     }
 }
 
-/// Preserve the typed normalized failure descriptor under transcript version 4.
-fn encode_resolved(source: &tools::Resolved, limits: &wire::v4::Limits) -> Result<wire::Resolved, Error> {
+/// Preserve the typed normalized failure descriptor under transcript version 5.
+fn encode_resolved(source: &tools::Resolved, limits: &wire::v5::Limits) -> Result<wire::Resolved, Error> {
     let value = match source {
         tools::Resolved::Working { path } => {
             wire::Resolved::Working(wire::WorkingPath::new(limits, wire::WorkingPathParts { path: path.clone() })?)
@@ -428,7 +455,7 @@ fn encode_resolved(source: &tools::Resolved, limits: &wire::v4::Limits) -> Resul
     Ok(value)
 }
 
-fn encode_mismatch(source: &tools::Mismatch, limits: &wire::v4::Limits) -> Result<wire::Mismatch, Error> {
+fn encode_mismatch(source: &tools::Mismatch, limits: &wire::v5::Limits) -> Result<wire::Mismatch, Error> {
     let mismatch = match source {
         tools::Mismatch::NoMatch => wire::Mismatch::NoMatch,
         tools::Mismatch::Unchanged => wire::Mismatch::Unchanged,
@@ -461,7 +488,7 @@ fn encode_size_part(what: tools::SizePart) -> wire::SizePart {
     }
 }
 
-fn encode_exit(exit: tools::Exit, limits: &wire::v4::Limits) -> Result<wire::Exit, Error> {
+fn encode_exit(exit: tools::Exit, limits: &wire::v5::Limits) -> Result<wire::Exit, Error> {
     Ok(match exit {
         tools::Exit::Code { code } => wire::Exit::Code(wire::ExitCode::new(limits, wire::ExitCodeParts { code })?),
         tools::Exit::Signal { signal } => {
@@ -471,7 +498,7 @@ fn encode_exit(exit: tools::Exit, limits: &wire::v4::Limits) -> Result<wire::Exi
     })
 }
 
-fn encode_timeout(timeout: tools::TimeoutClamp, limits: &wire::v4::Limits) -> Result<wire::TimeoutClamp, Error> {
+fn encode_timeout(timeout: tools::TimeoutClamp, limits: &wire::v5::Limits) -> Result<wire::TimeoutClamp, Error> {
     Ok(match timeout {
         tools::TimeoutClamp::Within => wire::TimeoutClamp::Within,
         tools::TimeoutClamp::Clamped { asked, ceiling } => wire::TimeoutClamp::Clamped(wire::DurationClamp::new(
@@ -481,7 +508,7 @@ fn encode_timeout(timeout: tools::TimeoutClamp, limits: &wire::v4::Limits) -> Re
     })
 }
 
-fn encode_bytes(output: tools::BytesClamp, limits: &wire::v4::Limits) -> Result<wire::BytesClamp, Error> {
+fn encode_bytes(output: tools::BytesClamp, limits: &wire::v5::Limits) -> Result<wire::BytesClamp, Error> {
     Ok(match output {
         tools::BytesClamp::Within => wire::BytesClamp::Within,
         tools::BytesClamp::Clamped { asked, ceiling } => {

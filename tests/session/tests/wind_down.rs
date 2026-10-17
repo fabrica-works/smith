@@ -17,6 +17,7 @@ fn a_wind_down_offering_only_some_tools_answers_a_call_outside_them_as_not_run()
         owner: world.completing.expect("unsent completion"),
         note: note.as_slice().into(),
         choice: llm::ToolChoice::Only(Box::new([Token::new(19)])),
+        names: Some(Box::new([b"finish".as_slice().into()])),
     });
     world.complete(
         Box::new([llm::Block::ToolCall {
@@ -46,7 +47,7 @@ fn a_wind_down_offering_only_some_tools_answers_a_call_outside_them_as_not_run()
         &llm::Block::ToolResult {
             id: b"outside".as_slice().into(),
             result: llm::Returned::NotRun {
-                why: llm::NotRun::OutsideChoice { choice: llm::ToolChoice::Only(Box::new([Token::new(19)])) }
+                why: llm::NotRun::OutsideChoice { choice: Some(Box::new([b"finish".as_slice().into()])) }
             }
         }
     );

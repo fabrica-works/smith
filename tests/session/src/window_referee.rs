@@ -148,12 +148,13 @@ fn block_bytes(block: &Block) -> u64 {
                     Returned::Text { text, replay: saved, .. } => text.len() + replay(saved),
                     Returned::Invalid { problem } => problem_bytes(problem),
                     Returned::NotRun { why: agent::llm::NotRun::OutsideChoice { choice } } => match choice {
-                        agent::llm::ToolChoice::Auto | agent::llm::ToolChoice::None => 0,
-                        agent::llm::ToolChoice::Only(offered) => {
-                            offered.len() * std::mem::size_of::<skein_lib::Token>()
-                        }
+                        Some(names) => names.iter().map(|name| std::mem::size_of::<Box<[u8]>>() + name.len()).sum(),
+                        None => 0,
                     },
-                    Returned::NotRun { why: agent::llm::NotRun::Stopped } | Returned::Withdrawn => 0,
+                    Returned::NotRun {
+                        why: agent::llm::NotRun::Stopped | agent::llm::NotRun::AfterFailedWrite { .. },
+                    }
+                    | Returned::Withdrawn => 0,
                 }
         }
     };

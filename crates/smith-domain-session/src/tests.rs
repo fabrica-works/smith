@@ -2518,9 +2518,12 @@ fn narrowing_an_unsent_completion_appends_its_note_and_preserves_definitions() {
     assert_eq!(original.choice, crate::llm::ToolChoice::Auto);
     let note = bytes(b"The ordinary budget is spent. Finish now.");
     let chosen = crate::llm::ToolChoice::Only(Box::new([FINISH.ticket]));
-    let Some(Request::Complete { owner: next, prompt, .. }) =
-        h.step(Event::Narrowed { owner, note: note.clone(), choice: chosen.clone() })
-    else {
+    let Some(Request::Complete { owner: next, prompt, .. }) = h.step(Event::Narrowed {
+        owner,
+        note: note.clone(),
+        choice: chosen.clone(),
+        names: Some(Box::new([bytes(b"finish")])),
+    }) else {
         panic!("narrowing must reask without a provider terminal");
     };
     assert_eq!(next, owner);
@@ -2541,6 +2544,7 @@ fn a_call_outside_the_choice_is_not_run_and_needs_no_result_credit() {
         owner,
         note: bytes(b"Finish now."),
         choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+        names: Some(Box::new([bytes(b"finish")])),
     })));
     let content = Box::new([tool_call(b"outside", cat(b"main.rs"))]);
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
@@ -2554,9 +2558,7 @@ fn a_call_outside_the_choice_is_not_run_and_needs_no_result_credit() {
         &[Block::ToolResult {
             id: bytes(b"outside"),
             result: Returned::NotRun {
-                why: crate::llm::NotRun::OutsideChoice {
-                    choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket]))
-                }
+                why: crate::llm::NotRun::OutsideChoice { choice: Some(Box::new([bytes(b"finish")])) }
             },
         }]
     );
@@ -2585,6 +2587,7 @@ fn a_selected_descriptor_can_have_a_distinct_live_call_ticket() {
         owner,
         note: bytes(b"Finish now."),
         choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+        names: Some(Box::new([bytes(b"finish")])),
     })));
     let mut call = delegated(b"allowed", 1234, Effect::Write);
     let Block::ToolCall { call: Decoded::Delegated { descriptor, .. }, .. } = &mut call else { unreachable!() };
@@ -2609,6 +2612,7 @@ fn a_narrowing_note_follows_the_latest_settled_results() {
         owner,
         note: bytes(b"Finish now."),
         choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+        names: Some(Box::new([bytes(b"finish")])),
     }) else {
         panic!("narrowed completion reasks");
     };
@@ -2633,6 +2637,7 @@ fn a_narrowing_note_follows_a_yielded_session_waking_message() {
         owner,
         note: bytes(b"Finish now."),
         choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+        names: Some(Box::new([bytes(b"finish")])),
     }) else {
         panic!("narrowed completion reasks");
     };
@@ -2649,6 +2654,7 @@ fn an_allowed_descriptor_keeps_its_argument_problem_during_narrowing() {
         owner,
         note: bytes(b"Finish now."),
         choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+        names: Some(Box::new([bytes(b"finish")])),
     })));
     let problem = Problem::Missing { field: bytes(b"report") };
     let call = Block::ToolCall {
@@ -2689,10 +2695,7 @@ fn a_childs_last_turn_has_one_note_no_effects_and_yields_its_answer_for_budget()
         let Block::ToolResult { result, .. } = &record.messages.last().unwrap().content[0] else {
             panic!("actual tool result is retained");
         };
-        assert_eq!(
-            result,
-            &Returned::NotRun { why: crate::llm::NotRun::OutsideChoice { choice: crate::llm::ToolChoice::None } }
-        );
+        assert_eq!(result, &Returned::NotRun { why: crate::llm::NotRun::OutsideChoice { choice: None } });
         let ended = harness.step(Event::Continue { session: owner, content: bytes(b"Again.") });
         let Some(Request::Ended { end: End::Budget { spent: Dimension::Turns }, .. }) = ended else {
             panic!("the final answer cannot be continued: {ended:?}");
@@ -3066,3 +3069,6 @@ fn a_resumed_ordinary_window_carries_the_guard() {
         crate::llm::Purpose::Ordinary { guard: Some(crate::llm::Guard { line: 64_512, last_prompt: 15, from: 1 }) }
     );
 }
+
+#[path = "tests/batched_change.rs"]
+mod batched_change;

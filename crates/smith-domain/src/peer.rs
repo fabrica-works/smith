@@ -268,7 +268,7 @@ impl Peer {
         for sllm::Message { role, content } in messages {
             let mut blocks = List::with_capacity(u32::try_from(content.len()).expect("a message fits in memory"));
             for block in content {
-                blocks.push(self.block(block)).expect("room for every block");
+                blocks.push(Self::block(block)).expect("room for every block");
             }
             resolved.push(Message { role, content: blocks.into_boxed() }).expect("room for every message");
         }
@@ -330,7 +330,7 @@ impl Peer {
         }
     }
 
-    fn block(&self, block: sllm::Block) -> Block {
+    fn block(block: sllm::Block) -> Block {
         match block {
             sllm::Block::Text { text, replay } => Block::Text { text, replay },
             sllm::Block::Refusal { text, replay } => Block::Refusal { text, replay },
@@ -343,9 +343,8 @@ impl Peer {
                     sllm::Returned::NotRun { why } => Returned::NotRun {
                         why: match why {
                             sllm::NotRun::Stopped => llm::NotRun::Stopped,
-                            sllm::NotRun::OutsideChoice { choice } => {
-                                llm::NotRun::OutsideChoice { choice: self.retained_choice(choice) }
-                            }
+                            sllm::NotRun::AfterFailedWrite { call } => llm::NotRun::AfterFailedWrite { call },
+                            sllm::NotRun::OutsideChoice { choice } => llm::NotRun::OutsideChoice { choice },
                         },
                     },
                     sllm::Returned::Text { text, error, replay } => Returned::Text { text, error, replay },
@@ -356,7 +355,7 @@ impl Peer {
         }
     }
 
-    fn retained_choice(&self, choice: sllm::ToolChoice) -> Option<Box<[Box<[u8]>]>> {
+    pub(crate) fn retained_choice(&self, choice: sllm::ToolChoice) -> Option<Box<[Box<[u8]>]>> {
         match choice {
             sllm::ToolChoice::Auto => unreachable!("automatic choices reject no call"),
             sllm::ToolChoice::None => None,

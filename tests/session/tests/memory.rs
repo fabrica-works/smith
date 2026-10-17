@@ -1302,9 +1302,11 @@ fn run_call(ticket: u64, effect: Effect) -> Decoded {
 
 #[test]
 fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() {
+    const ALLOWED_CALLS: u64 = 2;
+    const ALLOWED_NAME_BYTES: u64 = 13;
     let block = size(size_of::<Block>());
     let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26 + 23;
-    let choice_cost = 2 * size(size_of::<Token>());
+    let choice_cost = ALLOWED_CALLS * (size(size_of::<Token>()) + size(size_of::<Box<[u8]>>())) + ALLOWED_NAME_BYTES;
     let note_bytes = 8192;
     let original = Limits { history_messages: 5, ..LIMITS };
     let credit = smith_domain_session::completion_reserve(&original).expect("whole next-completion credit");
@@ -1335,6 +1337,7 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
                 owner: opened.complete.expect("unsent prompt"),
                 note: bytes(note_bytes + extra),
                 choice: smith_domain_session::llm::ToolChoice::Only(Box::new([Token::new(1), Token::new(2)])),
+                names: Some(Box::new([b"finish".as_slice().into(), b"deliver".as_slice().into()])),
             },
         );
         if extra == 0 {

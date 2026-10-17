@@ -1,4 +1,4 @@
-family smith-transcript 4
+family smith-transcript 5
 
 # The aggregate turn is limited again by the receiving session's
 # Limits.session_bytes. These member ceilings cover its default fixtures and
@@ -74,7 +74,13 @@ enum CallProblem {
 record Said { text: text 1048576 error: bool }
 record Invalid { problem: CallProblem }
 record OwnedOutcome { value: Outcome }
-enum Returned { outcome: OwnedOutcome, said: Said, invalid: Invalid, not_run, withdrawn }
+record CallName { name: text 64 }
+record AllowedCalls { names: list 256 CallName }
+record OutsideChoice { only: option AllowedCalls }
+record AfterFailedWrite { call: u16 }
+enum NotRunWhy { stopped, outside_choice: OutsideChoice, after_failed_write: AfterFailedWrite }
+record NotRun { why: NotRunWhy }
+enum Returned { outcome: OwnedOutcome, said: Said, invalid: Invalid, not_run: NotRun, withdrawn }
 record ToolResult { id: text 256 returned: Returned }
 enum Block { text: Text, refusal: Text, call: Call, result: ToolResult, opaque: Opaque }
 enum Role { user, assistant }

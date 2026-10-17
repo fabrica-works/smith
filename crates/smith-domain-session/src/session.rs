@@ -131,6 +131,8 @@
 //! and [`tell`] of the requests the transition made, in one place; the tools
 //! tell of their own calls, and the session passes their facts on.
 
+#[path = "batching.rs"]
+mod batching;
 #[path = "compaction.rs"]
 mod compaction;
 #[path = "history.rs"]
@@ -179,6 +181,7 @@ struct Conversation {
     namespace: tools::Namespace,
     delegated: Box<[Descriptor]>,
     choice: ToolChoice,
+    choice_names: Option<Box<[Box<[u8]>]>>,
     final_turn: crate::final_turn::Final,
     output: u32,
     model_window: u32,
@@ -295,6 +298,8 @@ struct Tools {
     running: u32,
     /// The block where the calls not reached yet begin.
     next: u32,
+    /// The first failed call, counted from one among all calls.
+    failed: Option<u16>,
 }
 
 #[derive(Debug)]
@@ -678,6 +683,7 @@ pub(crate) fn narrowed(
     owner: Token,
     note: Box<[u8]>,
     choice: ToolChoice,
+    names: Option<Box<[Box<[u8]>]>>,
     out: &mut Queue<Request>,
 ) {
     let Some(id) = addressed(&domain.sessions, owner) else {
@@ -701,10 +707,13 @@ pub(crate) fn narrowed(
         conclude(domain, env, id, out, mark);
         return;
     }
-    let old = choice_bytes(&conversation.choice);
-    let new = choice_bytes(&choice);
+    let old = ticket_bytes(&conversation.choice)
+        .checked_add(choice_bytes(conversation.choice_names.as_deref()))
+        .expect("retained choice");
+    let new = ticket_bytes(&choice).checked_add(choice_bytes(names.as_deref())).expect("bounded names");
     conversation.bytes = conversation.bytes.checked_sub(old).expect("retained choice counted");
     conversation.choice = ToolChoice::Auto;
+    conversation.choice_names = None;
     let cost = match new.checked_add(u64::try_from(size_of::<Block>()).expect("block cell fits")) {
         Some(cost) => cost.checked_add(u64::try_from(note.len()).expect("note length fits")),
         None => None,
@@ -714,12 +723,14 @@ pub(crate) fn narrowed(
         || !charge(conversation, cost, &env.limits)
     {
         conversation.choice = choice;
+        conversation.choice_names = names;
         match history::hold_note(conversation, note, &env.limits) {
             Some(end) => finish(end),
             None => call(conversation, id, 0, env, out),
         }
     } else {
         conversation.choice = choice;
+        conversation.choice_names = names;
         let content = Box::new([Block::Text { text: note, replay: None }]);
         conversation.transcript.push(Message { role: Role::User, content }).expect("note slot checked");
         call(conversation, id, 0, env, out)
@@ -750,7 +761,7 @@ fn valid_choice(choice: &ToolChoice, offered: &[Descriptor]) -> bool {
     }
 }
 
-fn choice_bytes(choice: &ToolChoice) -> u64 {
+fn ticket_bytes(choice: &ToolChoice) -> u64 {
     match choice {
         ToolChoice::Auto | ToolChoice::None => 0,
         ToolChoice::Only(tickets) => u64::try_from(tickets.len())
@@ -758,6 +769,18 @@ fn choice_bytes(choice: &ToolChoice) -> u64 {
             .checked_mul(u64::try_from(size_of::<Token>()).expect("token cell fits"))
             .expect("admitted descriptor bound fits"),
     }
+}
+
+fn choice_bytes(choice: Option<&[Box<[u8]>]>) -> u64 {
+    let mut bytes = 0_u64;
+    if let Some(names) = choice {
+        for name in names {
+            let cell = u64::try_from(size_of::<Box<[u8]>>()).expect("name cell fits");
+            bytes = bytes.checked_add(cell).expect("admitted names fit");
+            bytes = bytes.checked_add(u64::try_from(name.len()).expect("bounded name")).expect("admitted names fit");
+        }
+    }
+    bytes
 }
 
 /// Settles a current reserved but unpublished provider request. Other states
@@ -1473,7 +1496,7 @@ fn use_tools(
         return finish(history::completion_limit(conversation, &content, &env.limits));
     }
     conversation.transcript.push(Message { role: Role::Assistant, content }).expect("checked for room above");
-    let tools = Tools { after: After::Complete, slots: List::with_capacity(count), running: 0, next: 0 };
+    let tools = Tools { after: After::Complete, slots: List::with_capacity(count), running: 0, next: 0, failed: None };
     advance(conversation, id, calls, tools, env, out)
 }
 
@@ -1501,7 +1524,7 @@ fn advance(
         conversation.closing_tools = Some(tools);
         return finish(OUT_OF_TIME);
     }
-    let share = history::reserve_batch(conversation, tools.next, &env.limits);
+    let share = history::reserve_batch(conversation, tools.next, tools.failed.is_some(), &env.limits);
     let message = conversation.transcript.last().expect("the assistant message is last while tooling");
     let end = u32::try_from(message.content.len()).expect("a message whose calls were counted has its blocks counted");
     let begin = tools.next;
@@ -1510,7 +1533,7 @@ fn advance(
     let mut next = end;
     for index in tools.next..end {
         let block = current_block(conversation, index);
-        if answer_unchosen(conversation, block, index, &mut tools.slots) {
+        if batching::answer_skipped(conversation, block, index, &mut tools) {
             continue;
         }
         match block {
@@ -1546,6 +1569,7 @@ fn advance(
                 };
                 assert!(answered == run, "the tools answer at once only the call they were given");
                 let metadata = calls.runs.get(run).expect("answered run").metadata.clone();
+                batching::answered_next(&mut tools, block, &result);
                 conversation.jobs.answered(&result, metadata);
                 calls.runs.retire(run);
                 // Refused at the entrance: its block and its id were counted
@@ -1584,6 +1608,7 @@ fn advance(
             Block::ToolCall { id: call, name: _, input: _, call: Decoded::Invalid { problem, .. }, .. } => {
                 // Its answer was counted when the message was recorded.
                 let answer = Returned::Invalid { problem: problem.clone() };
+                batching::answered_next(&mut tools, block, &answer);
                 let result = Block::ToolResult { id: call.clone(), result: answer };
                 tools.slots.push(Slot::Done { result }).expect("a slot for every call");
             }
@@ -1769,6 +1794,7 @@ fn tool_ran(
     tools.running = tools.running.checked_sub(1).expect("the run that ended was counted");
     // The result's block and its id were counted when the message was
     // recorded.
+    batching::answered(&mut tools, slot, current_block(conversation, block), &result);
     receive_result(conversation, credit, &result, &env.limits);
     let result = Block::ToolResult { id: call_id(conversation, block), result };
     *tools.slots.get_mut(slot).expect("a run fills its own slot") = Slot::Done { result };
@@ -1875,6 +1901,7 @@ fn final_prompt(conversation: &mut Conversation, env: &Env<Limits>) -> Option<En
     let note = conversation.final_turn.take_note(turns, time, due)?;
     let cost = u64::try_from(size_of::<Block>()).expect("one block cell fits");
     conversation.choice = ToolChoice::None;
+    conversation.choice_names = None;
     if conversation.compaction.asking()
         || conversation.transcript.room() == 0
         || !charge(conversation, Some(cost), &env.limits)
@@ -2079,6 +2106,7 @@ fn admit(
         namespace: spec.authority.namespace(),
         delegated: spec.delegated,
         choice: ToolChoice::Auto,
+        choice_names: None,
         final_turn,
         output: spec.output,
         model_window: spec.window,
@@ -2127,18 +2155,6 @@ fn next_sequence(conversation: &Conversation) -> u32 {
 fn current_block(conversation: &Conversation, index: u32) -> &Block {
     let message = conversation.transcript.last().expect("the assistant message is last while tooling");
     message.content.get(usize::try_from(index).expect("u32 fits usize")).expect("within the assistant message")
-}
-
-fn answer_unchosen(conversation: &Conversation, block: &Block, index: u32, slots: &mut List<Slot>) -> bool {
-    if chosen(&conversation.choice, block) {
-        return false;
-    }
-    let result = Block::ToolResult {
-        id: call_id(conversation, index),
-        result: Returned::NotRun { why: crate::llm::NotRun::OutsideChoice { choice: conversation.choice.clone() } },
-    };
-    slots.push(Slot::Done { result }).expect("one slot per call");
-    true
 }
 
 fn chosen(choice: &ToolChoice, block: &Block) -> bool {
@@ -2444,7 +2460,8 @@ fn blocks_fit(conversation: &Conversation, added: u32, limits: &Limits) -> bool 
 }
 
 fn receiving_reserve(conversation: &Conversation, limits: &Limits) -> Option<u64> {
-    let choices = choice_bytes(&conversation.choice).checked_mul(u64::from(limits.completion_blocks))?;
+    let choices =
+        choice_bytes(conversation.choice_names.as_deref()).checked_mul(u64::from(limits.completion_blocks))?;
     provider_reserve(limits)?.checked_add(choices)
 }
 
@@ -2497,7 +2514,11 @@ fn release_provider(conversation: &mut Conversation) {
 }
 
 fn receive_completion(conversation: &mut Conversation, content: &[Block], calls: u32, limits: &Limits) -> bool {
-    let cost = if calls == 0 { content_cost(content) } else { held(content, calls, &conversation.choice) };
+    let cost = if calls == 0 {
+        content_cost(content)
+    } else {
+        held(content, calls, &conversation.choice, conversation.choice_names.as_deref())
+    };
     let credit = conversation.provider_credit.take().expect("actual completion owns receiving credit");
     conversation.reserved = conversation.reserved.checked_sub(credit).expect("provider credit was reserved");
     let Some(content_bytes) = content_cost(content) else {
@@ -2552,12 +2573,12 @@ fn spec_cost(model: &[u8], system: &[u8], delegated: &[Descriptor], content: &[B
 /// before effects. The terminal transfers its credit into held bytes.
 /// Slot containers and their transient coexistence with assembled Block arrays
 /// are independently priced by `worst_case`; no Slot/Block size inequality is assumed.
-fn held(content: &[Block], calls: u32, choice: &ToolChoice) -> Option<u64> {
+fn held(content: &[Block], calls: u32, choice: &ToolChoice, names: Option<&[Box<[u8]>]>) -> Option<u64> {
     let slots = u64::try_from(size_of::<Block>()).ok()?.checked_mul(u64::from(calls))?;
     let mut cost = content_cost(content)?.checked_add(slots)?;
     for block in content {
         if !chosen(choice, block) {
-            cost = cost.checked_add(choice_bytes(choice))?;
+            cost = cost.checked_add(choice_bytes(names))?;
         }
         match block {
             Block::ToolCall { id, name: _, input: _, call: Decoded::Invalid { problem, .. }, .. } => {
@@ -2630,8 +2651,8 @@ fn returned_cost(result: &Returned) -> Option<u64> {
         Returned::Owned { outcome } => outcome_cost(outcome),
         Returned::Invalid { problem } => problem_cost(problem),
         Returned::NotRun { why } => match why {
-            crate::llm::NotRun::Stopped => Some(0),
-            crate::llm::NotRun::OutsideChoice { choice } => Some(choice_bytes(choice)),
+            crate::llm::NotRun::Stopped | crate::llm::NotRun::AfterFailedWrite { .. } => Some(0),
+            crate::llm::NotRun::OutsideChoice { choice } => Some(choice_bytes(choice.as_deref())),
         },
         Returned::Withdrawn => Some(0),
         Returned::Text { text, replay, .. } => len(text)?.checked_add(replay_cost(replay.as_ref())?),

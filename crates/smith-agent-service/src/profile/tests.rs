@@ -65,7 +65,7 @@ fn a_turn_holds_a_reasoning_block_at_the_completions_share() {
     let mut smaller = transcript;
     smaller.opaque_bytes -= 1;
     let problem = Opaque::new(&smaller, block.into_parts()).expect_err("one byte beyond the bound");
-    assert_eq!(problem.path, smith_transcript::v4::Path::OpaqueBytes);
+    assert_eq!(problem.path, smith_transcript::v5::Path::OpaqueBytes);
 }
 
 #[test]

@@ -6,8 +6,8 @@ use smith_agent_service::profile::{Layer, Limit, Value};
 
 use super::entry;
 
-pub(super) fn transcript(limits: &smith_transcript::v4::Limits) -> Box<[Limit]> {
-    let smith_transcript::v4::Limits {
+pub(super) fn transcript(limits: &smith_transcript::v5::Limits) -> Box<[Limit]> {
+    let smith_transcript::v5::Limits {
         replay_dialect,
         replay_bytes,
         text_text,
@@ -15,6 +15,8 @@ pub(super) fn transcript(limits: &smith_transcript::v4::Limits) -> Box<[Limit]> 
         opaque_bytes,
         call_id,
         call_name,
+        call_name_name,
+        allowed_calls_names,
         call_input,
         entry_name,
         hit_path,
@@ -51,6 +53,12 @@ pub(super) fn transcript(limits: &smith_transcript::v4::Limits) -> Box<[Limit]> 
         entry(Layer::Host, "process.channel.transcript.opaque_bytes", Value::Bytes(u64::from(opaque_bytes))),
         entry(Layer::Host, "process.channel.transcript.call_id", Value::Bytes(u64::from(call_id))),
         entry(Layer::Host, "process.channel.transcript.call_name", Value::Bytes(u64::from(call_name))),
+        entry(Layer::Host, "process.channel.transcript.call_name_name", Value::Bytes(u64::from(call_name_name))),
+        entry(
+            Layer::Host,
+            "process.channel.transcript.allowed_calls_names",
+            Value::Count(u64::from(allowed_calls_names)),
+        ),
         entry(Layer::Host, "process.channel.transcript.call_input", Value::Bytes(u64::from(call_input))),
         entry(Layer::Host, "process.channel.transcript.entry_name", Value::Bytes(u64::from(entry_name))),
         entry(Layer::Host, "process.channel.transcript.hit_path", Value::Bytes(u64::from(hit_path))),

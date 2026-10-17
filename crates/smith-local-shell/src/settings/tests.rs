@@ -712,7 +712,10 @@ fn jobs_and_job_wait_reach_the_agents_tool_limits() {
 fn the_default_task_role_reaches_the_resolved_run() {
     let resolved = composed("").unwrap_or_else(|why| panic!("{}", why.line()));
     assert_eq!(resolved.local.instructions.as_ref(), crate::role::TASK_ROLE.as_bytes());
-    assert_eq!(resolved.agent.declarations.role_bound, Some(4096));
+    assert_eq!(
+        resolved.agent.declarations.role_bound,
+        Some(u32::try_from(crate::role::TASK_ROLE.len()).expect("the task role fits four kibibytes"))
+    );
 }
 
 #[test]

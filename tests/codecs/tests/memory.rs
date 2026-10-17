@@ -5,7 +5,7 @@ use skein_heap::{Counting, Meter};
 use skein_lib::{List, Reader, Writer};
 
 use smith_charter::v2 as charter;
-use smith_transcript::v4 as transcript;
+use smith_transcript::v5 as transcript;
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -55,6 +55,8 @@ fn transcript_limits() -> transcript::Limits {
         opaque_bytes: 0,
         call_id: 0,
         call_name: 0,
+        call_name_name: 0,
+        allowed_calls_names: 0,
         call_input: 0,
         entry_name: 0,
         hit_path: 0,

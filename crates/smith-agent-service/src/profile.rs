@@ -163,7 +163,7 @@ pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools:
 fn transcript(
     domain: &domain::Limits,
     client: &shared::client::Limits,
-) -> Result<smith_transcript::v4::Limits, Refusal> {
+) -> Result<smith_transcript::v5::Limits, Refusal> {
     let session = domain.session;
     let tools = session.tools;
     let run = domain.run;
@@ -185,6 +185,9 @@ fn transcript(
         .checked_add(shared::REPLAY_HEADER_BYTES)
         .ok_or(derived(Layer::Transcript, "opaque_bytes"))?;
     limits.call_input = client.input;
+    limits.call_name_name = limits.call_name;
+    limits.allowed_calls_names =
+        run.host_tools.checked_add(4).ok_or(derived(Layer::Transcript, "allowed_calls_names"))?;
     limits.entry_name = tools.path_bytes;
     limits.hit_path = tools.path_bytes;
     limits.hit_text = tools.search_bytes;
@@ -231,11 +234,13 @@ fn transcript(
         ("other_path_path", limits.other_path_path, ceiling.other_path_path),
         ("outside_path_path", limits.outside_path_path, ceiling.outside_path_path),
         ("said_text", limits.said_text, ceiling.said_text),
+        ("call_name_name", limits.call_name_name, ceiling.call_name_name),
     ] {
         validate::transcript_field(field, Value::Bytes(u64::from(required)), Value::Bytes(u64::from(available)))?;
     }
     for (field, required, available) in [
         ("listed_entries", limits.listed_entries, ceiling.listed_entries),
+        ("allowed_calls_names", limits.allowed_calls_names, ceiling.allowed_calls_names),
         ("ambiguous_lines", limits.ambiguous_lines, ceiling.ambiguous_lines),
         ("turn_messages", limits.turn_messages, ceiling.turn_messages),
     ] {
@@ -352,7 +357,7 @@ fn channel_limits(
     policy: &Policy,
     bodies: smith_channel::Limits,
     charter: smith_charter::v2::Limits,
-    transcript: smith_transcript::v4::Limits,
+    transcript: smith_transcript::v5::Limits,
     io: &io::Limits,
 ) -> Result<channel::Limits, Refusal> {
     let refusal = derived(Layer::Channel, "output_frames");

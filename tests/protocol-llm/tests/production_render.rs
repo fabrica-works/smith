@@ -430,3 +430,107 @@ fn a_compactions_owed_results_are_cut_and_its_history_is_unchanged() {
     }
     assert!(kept <= 160);
 }
+
+fn render_not_run(why: llm::NotRun, calls: usize) -> Box<[u8]> {
+    const OUTPUT_TOKENS: u32 = 32;
+    let mut blocks = vec![llm::Block::Text { text: b"prelude".as_slice().into(), replay: None }];
+    for index in 0..calls {
+        blocks.push(llm::Block::ToolCall {
+            id: index.to_string().into_bytes().into(),
+            name: if index + 1 == calls { b"edit".as_slice() } else { b"read".as_slice() }.into(),
+            input: b"{}".as_slice().into(),
+            replay: None,
+        });
+    }
+    let history = llm::Prompt {
+        effort: None,
+        purpose: llm::Purpose::Ordinary { guard: None },
+        choice: llm::ToolChoice::Auto,
+        namespace: tools::Namespace::One,
+        affinity: llm::Affinity { key: [0; 16], thread: 0 },
+        asker: llm::Asker::Main,
+        endpoint: llm::Endpoint(1),
+        model: b"model".as_slice().into(),
+        system: Box::new([]),
+        tools: tools::Grants { inspect: false, modify: false, shell: false },
+        served: Box::new([]),
+        max_tokens: OUTPUT_TOKENS,
+        messages: Box::new([
+            llm::Message { role: llm::Role::Assistant, content: blocks.into() },
+            llm::Message {
+                role: llm::Role::User,
+                content: Box::new([llm::Block::ToolResult {
+                    id: b"next".as_slice().into(),
+                    result: llm::Returned::NotRun { why },
+                }]),
+            },
+        ]),
+    };
+    let rendered = adapter::prompt(history, &[], &limits()).expect("rendered history");
+    let skein_llm::Block::ToolResult { text, is_error, .. } = &rendered.messages[1].content[0] else {
+        panic!("result")
+    };
+    assert!(*is_error);
+    text.clone()
+}
+
+#[test]
+fn a_call_not_run_after_a_failed_write_names_it() {
+    const FAILED_CALL: u16 = 12;
+    let text = render_not_run(llm::NotRun::AfterFailedWrite { call: FAILED_CALL }, usize::from(FAILED_CALL));
+    assert_eq!(text.as_ref(), b"not run: call 12 (edit) failed before it; this call's changes were not made");
+}
+
+fn saved_outside_choice(choice: Option<Box<[Box<[u8]>]>>) -> llm::NotRun {
+    use smith_domain_session::{llm as session, record};
+    let mut endpoints = skein_lib::List::with_capacity(1);
+    endpoints
+        .push(smith_protocol_channel::Endpoint {
+            name: b"endpoint".as_slice().into(),
+            number: 1,
+            dialect: 0,
+            account: 0,
+        })
+        .expect("one endpoint");
+    let endpoints = smith_protocol_channel::Endpoints::new(endpoints);
+    let turn = record::Turn {
+        version: record::VERSION,
+        kind: record::Kind::First { affinity: session::Affinity { key: [0; 16], thread: 0 } },
+        endpoint: session::Endpoint(1),
+        model: b"model".as_slice().into(),
+        effort: None,
+        dialect: 0,
+        sequence: 1,
+        usage: session::Usage::ZERO,
+        spent: 0,
+        jobs: 0,
+        messages: Box::new([session::Message {
+            role: session::Role::User,
+            content: Box::new([session::Block::ToolResult {
+                id: b"outside".as_slice().into(),
+                result: session::Returned::NotRun { why: session::NotRun::OutsideChoice { choice } },
+            }]),
+        }]),
+    };
+    let bytes =
+        smith_protocol_channel::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
+    let resumed =
+        smith_protocol_channel::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("resumed turn");
+    let session::Block::ToolResult {
+        result: session::Returned::NotRun { why: session::NotRun::OutsideChoice { choice } },
+        ..
+    } = &resumed.messages[0].content[0]
+    else {
+        panic!("retained outside-choice result")
+    };
+    llm::NotRun::OutsideChoice { choice: choice.clone() }
+}
+
+#[test]
+fn a_resumed_outside_choice_call_renders_as_it_was_told() {
+    for choice in [None, Some(vec![b"finish".as_slice().into(), b"deliver".as_slice().into()].into())] {
+        let live = render_not_run(llm::NotRun::OutsideChoice { choice: choice.clone() }, 0);
+        let resumed = render_not_run(saved_outside_choice(choice), 0);
+        assert_eq!(resumed, live);
+    }
+}

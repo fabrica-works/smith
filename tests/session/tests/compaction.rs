@@ -77,6 +77,7 @@ fn a_conversation_narrowed_to_only_asks_only_again_after_its_compaction() {
         owner: world.completing.expect("first request"),
         note: b"Finish now.".as_slice().into(),
         choice: llm::ToolChoice::Only(Box::new([Token::new(19)])),
+        names: Some(Box::new([b"finish".as_slice().into()])),
     });
     world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
     continue_with(&mut world, b"go on");

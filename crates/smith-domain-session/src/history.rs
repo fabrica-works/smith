@@ -60,7 +60,8 @@ fn pending_blocks(limits: &Limits, summary: bool) -> Option<u32> {
 
 fn wanted_bytes(conversation: &Conversation, limits: &Limits, summary: bool) -> Option<u64> {
     let future = if summary { minimum(limits).checked_mul(u64::from(limits.completion_blocks))? } else { 0 };
-    let choices = super::choice_bytes(&conversation.choice).checked_mul(u64::from(limits.completion_blocks))?;
+    let choices =
+        super::choice_bytes(conversation.choice_names.as_deref()).checked_mul(u64::from(limits.completion_blocks))?;
     let instruction = if summary { summary_cost()? } else { 0 };
     // A call retains its rejecting choice or runs with result credit; those payloads never coexist.
     conversation
@@ -136,15 +137,16 @@ fn minimum(limits: &Limits) -> u64 {
 }
 
 /// Give future calls their smallest answer before sharing this batch's room.
-pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, limits: &Limits) -> u64 {
+pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, failed: bool, limits: &Limits) -> u64 {
     let message = conversation.transcript.last().expect("assistant awaiting results");
     let mut batch = None;
     let mut count = 0_u32;
     let mut following = 0_u32;
     let mut wanted = 0_u64;
     let mut ended = false;
+    let mut blocked = failed;
     for block in message.content.iter().skip(usize::try_from(next).expect("u32 fits")) {
-        if !super::chosen(&conversation.choice, block) {
+        if !super::chosen(&conversation.choice, block) || !super::batching::scheduled(block, &mut blocked) {
             continue;
         }
         let (effect, credit) = match block {
@@ -188,8 +190,12 @@ pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, limits: 
     assert!(share >= minimum(limits), "each scheduled result has a minimum answer");
     let mut reserved = 0_u64;
     let mut reached = 0_u32;
+    let mut blocked = failed;
     for block in message.content.iter().skip(usize::try_from(next).expect("u32 fits")) {
-        if !super::chosen(&conversation.choice, block) || reached == count {
+        if reached == count
+            || !super::chosen(&conversation.choice, block)
+            || !super::batching::scheduled(block, &mut blocked)
+        {
             continue;
         }
         let credit = match block {

@@ -199,7 +199,9 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::Overflowed { owner, end } => session::overflowed(domain, env, owner, end, out),
         Event::BudgetDenied { owner, reason } => session::budget_denied(domain, env, owner, reason, out),
         Event::UnsentClosed { owner } => session::unsent_closed(domain, env, owner, out),
-        Event::Narrowed { owner, note, choice } => session::narrowed(domain, env, owner, note, choice, out),
+        Event::Narrowed { owner, note, choice, names } => {
+            session::narrowed(domain, env, owner, note, choice, names, out);
+        }
         Event::Failed { owner, failure, evidence, detail } => {
             session::failed(domain, env, owner, failure, evidence, detail, out);
         }

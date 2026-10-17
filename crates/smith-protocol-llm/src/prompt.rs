@@ -111,12 +111,13 @@ fn translate(
     };
     let owed_message = messages.len().checked_sub(2);
     let result_maximum = owed_result_bound(purpose, &messages, limits.rendered_result)?;
-    let mut translated = List::with_capacity(u32::try_from(messages.len()).or(Err(Error::Limit))?);
+    let mut translated: List<shared::Message> =
+        List::with_capacity(u32::try_from(messages.len()).or(Err(Error::Limit))?);
     for (index, message) in messages.into_iter().enumerate() {
         let maximum = if Some(index) == owed_message { result_maximum } else { limits.rendered_result };
         let mut content = List::with_capacity(u32::try_from(message.content.len()).or(Err(Error::Limit))?);
         for block in message.content {
-            let block = translate_block(block, &namespace, limits, maximum)?;
+            let block = translate_block(block, &namespace, limits, maximum, translated.last())?;
             content.push(block).expect("room for each admitted source block");
         }
         let role = match message.role {
@@ -205,6 +206,67 @@ fn outside_choice(choice: Option<&[Box<[u8]>]>, maximum: u32) -> Result<Box<[u8]
         None => writer.put(b"none").or(Err(Error::Limit))?,
     }
     Ok(writer.finish())
+}
+
+fn after_failed_write(call: u16, previous: Option<&shared::Message>, maximum: u32) -> Result<Box<[u8]>, Error> {
+    let previous = previous.ok_or(Error::Invalid)?;
+    if previous.role != shared::Role::Assistant || call == 0 {
+        return Err(Error::Invalid);
+    }
+    let mut position = 0_u16;
+    for block in &previous.content {
+        match block {
+            shared::Block::ToolCall { name, .. } => {
+                position = position.checked_add(1).ok_or(Error::Limit)?;
+                if position == call {
+                    let prefix = b"not run: call ";
+                    let suffix = b") failed before it; this call's changes were not made";
+                    let mut digits = 0_usize;
+                    for divisor in [10_000_u16, 1_000, 100, 10, 1] {
+                        if call >= divisor {
+                            digits = digits.checked_add(1).ok_or(Error::Limit)?;
+                        }
+                    }
+                    let length = prefix
+                        .len()
+                        .checked_add(digits)
+                        .ok_or(Error::Limit)?
+                        .checked_add(2)
+                        .ok_or(Error::Limit)?
+                        .checked_add(name.len())
+                        .ok_or(Error::Limit)?
+                        .checked_add(suffix.len())
+                        .ok_or(Error::Limit)?;
+                    if length > usize::try_from(maximum).or(Err(Error::Limit))? {
+                        return Err(Error::Limit);
+                    }
+                    let mut writer = skein_lib::Writer::new(length);
+                    writer.put(prefix).or(Err(Error::Limit))?;
+                    let mut remaining = call;
+                    for divisor in [10_000_u16, 1_000, 100, 10, 1] {
+                        if call >= divisor {
+                            let digit = u8::try_from(remaining.checked_div(divisor).ok_or(Error::Limit)?)
+                                .or(Err(Error::Limit))?;
+                            writer.put(&[b'0'.checked_add(digit).ok_or(Error::Limit)?]).or(Err(Error::Limit))?;
+                            remaining = remaining.checked_rem(divisor).ok_or(Error::Limit)?;
+                        }
+                    }
+                    writer.put(b" (").or(Err(Error::Limit))?;
+                    writer.put(name).or(Err(Error::Limit))?;
+                    writer.put(suffix).or(Err(Error::Limit))?;
+                    return Ok(writer.finish());
+                }
+            }
+            shared::Block::Text { .. }
+            | shared::Block::Refusal { .. }
+            | shared::Block::Reasoning { .. }
+            | shared::Block::Oversize { .. }
+            | shared::Block::Cut { .. }
+            | shared::Block::Dropped { .. }
+            | shared::Block::ToolResult { .. } => {}
+        }
+    }
+    Err(Error::Invalid)
 }
 
 fn inventory(input: &llm::Prompt, application: &[ToolSchema], limits: &Limits) -> Result<(), Error> {
@@ -414,6 +476,7 @@ fn translate_block(
     namespace: &tools::Namespace,
     limits: &Limits,
     maximum: u32,
+    previous: Option<&shared::Message>,
 ) -> Result<shared::Block, Error> {
     match block {
         llm::Block::Text { text, replay } => Ok(shared::Block::Text { text, replay: replay_value(replay, limits)? }),
@@ -432,7 +495,7 @@ fn translate_block(
             Ok(shared::Block::ToolCall { id, name, arguments: input, replay: replay_value(replay, limits)? })
         }
         llm::Block::ToolResult { id, result } => {
-            let (text, error) = result_text(result, namespace, limits, maximum)?;
+            let (text, error) = result_text(result, namespace, limits, maximum, previous)?;
             Ok(shared::Block::ToolResult { id, text, is_error: error })
         }
     }
@@ -443,6 +506,7 @@ fn result_text(
     namespace: &tools::Namespace,
     limits: &Limits,
     maximum: u32,
+    previous: Option<&shared::Message>,
 ) -> Result<(Box<[u8]>, bool), Error> {
     match result {
         llm::Returned::Text { text, error, replay } => match replay {
@@ -452,6 +516,7 @@ fn result_text(
         llm::Returned::Withdrawn => Ok((bytes::copy_of(b"withdrawn"), true)),
         llm::Returned::NotRun { why } => match why {
             llm::NotRun::Stopped => Ok((bytes::copy_of(b"not run"), true)),
+            llm::NotRun::AfterFailedWrite { call } => Ok((after_failed_write(call, previous, maximum)?, true)),
             llm::NotRun::OutsideChoice { choice } => Ok((outside_choice(choice.as_deref(), maximum)?, true)),
         },
         llm::Returned::Invalid { problem } => Ok((crate::failure::problem(problem, maximum)?, true)),

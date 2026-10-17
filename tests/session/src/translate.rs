@@ -293,6 +293,9 @@ fn render_with_namespace(result: &agent::Returned, namespace: &Namespace) -> (Bo
         agent::Returned::NotRun { why: agent::NotRun::OutsideChoice { .. } } => {
             (b"not run: outside the narrowed choice".as_slice().into(), true)
         }
+        agent::Returned::NotRun { why: agent::NotRun::AfterFailedWrite { call } } => {
+            (format!("not run: after failed call {call}").into_bytes().into(), true)
+        }
         agent::Returned::NotRun { why: agent::NotRun::Stopped } => {
             (b"not run: the answer stopped first".as_slice().into(), true)
         }

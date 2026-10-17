@@ -129,7 +129,13 @@ pub enum Event {
     },
 
     /// Settles an unsent Complete, appends the note and asks with this choice from now on.
-    Narrowed { owner: Token, note: Box<[u8]>, choice: crate::llm::ToolChoice },
+    Narrowed {
+        owner: Token,
+        note: Box<[u8]>,
+        choice: crate::llm::ToolChoice,
+        /// Concrete names retained in not-run results; none when no call is allowed.
+        names: Option<Box<[Box<[u8]>]>>,
+    },
     /// Terminal for `Complete`: the call produced no message.
     Failed {
         owner: Token,

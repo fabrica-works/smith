@@ -102,7 +102,7 @@ pub fn stream_header(
             events: 3,
             channel: 2,
             charter: 2,
-            transcript: 4,
+            transcript: 5,
             chat_store: Some(smith_local_protocol::CHAT_STORE_VERSION),
         },
         limits,

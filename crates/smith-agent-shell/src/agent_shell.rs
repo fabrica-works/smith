@@ -222,7 +222,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
             events: smith_events::VERSION,
             channel: 2,
             charter: 2,
-            transcript: 4,
+            transcript: 5,
             chat_store: None,
         },
         limits: header_limits,

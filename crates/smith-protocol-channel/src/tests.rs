@@ -262,7 +262,7 @@ fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths()
             }]),
         }]);
         let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded turn");
-        assert_eq!(&bytes[..2], &[0, 4]);
+        assert_eq!(&bytes[..2], &[0, 5]);
         let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("saved failure");
         assert_eq!(decoded.messages, turn.messages, "typed descriptors survive durable translation");
     }
@@ -516,7 +516,7 @@ fn an_endpoint_number_resolves_its_name_or_is_absent() {
 
 fn decode_saved_transcript(
     bodies: &[Box<[u8]>],
-    limits: &smith_transcript::v4::Limits,
+    limits: &smith_transcript::v5::Limits,
     endpoints: &crate::Endpoints,
 ) -> Result<Option<smith_domain_session::record::Transcript>, smith_domain_session::record::Refusal> {
     crate::decode_transcript(

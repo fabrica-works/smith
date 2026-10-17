@@ -104,7 +104,7 @@ fn words(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) 
         }
         Tool::Job => {}
         Tool::Write | Tool::Edit | Tool::Shell => {
-            output.put(b"Batch writes, edits and commands; run serially in call order.");
+            output.put(b"Batch a change's edits across its files, then the command that checks them; they run one at a time in call order, and a write that fails, or any call answered invalid, leaves the writes and commands after it not run.");
         }
     }
 }

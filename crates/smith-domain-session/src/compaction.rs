@@ -256,7 +256,8 @@ pub(super) fn open_window(
 fn new_bytes(conversation: &Conversation, content: &[Block]) -> Option<u64> {
     spec_cost(&conversation.model, &conversation.system, &conversation.delegated, content)?
         .checked_add(conversation.namespace.owned_bytes()?)?
-        .checked_add(super::choice_bytes(&conversation.choice))?
+        .checked_add(super::ticket_bytes(&conversation.choice))?
+        .checked_add(super::choice_bytes(conversation.choice_names.as_deref()))?
         .checked_add(conversation.final_turn.note_bytes()?)?
         .checked_add(u64::try_from(conversation.task.len()).ok()?)?
         .checked_add(u64::try_from(conversation.summary.len()).ok()?)?

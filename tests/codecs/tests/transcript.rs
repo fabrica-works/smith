@@ -2,11 +2,11 @@
 
 use skein_codec::Reason;
 use skein_lib::Reader;
-use smith_transcript::v4::{CEILINGS, Path, Turn};
+use smith_transcript::v5::{CEILINGS, Path, Turn};
 
 #[test]
 fn turn_goldens_decode_at_their_measured_length() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v4");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v5");
     for name in ["record_turn_smallest.bin", "record_turn_full.bin"] {
         let bytes = std::fs::read(root.join(name)).expect("turn golden");
         let value = Turn::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("turn decodes");
@@ -22,10 +22,10 @@ fn turn_rejects_an_unsupported_version_before_fields() {
 
 #[test]
 fn nesting_problem_goldens_have_their_own_wire_tag() {
-    use smith_transcript::v4::CallProblem;
+    use smith_transcript::v5::CallProblem;
     for bytes in [
-        include_bytes!("../../../crates/smith-transcript/golden/v4/enum_call_problem_nesting_full.bin").as_slice(),
-        include_bytes!("../../../crates/smith-transcript/golden/v4/enum_call_problem_nesting_smallest.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v5/enum_call_problem_nesting_full.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v5/enum_call_problem_nesting_smallest.bin").as_slice(),
     ] {
         let mut reader = Reader::new(bytes);
         assert_eq!(CallProblem::decode(&CEILINGS, &mut reader).expect("nesting problem"), CallProblem::Nesting);
@@ -45,7 +45,7 @@ fn failure_goldens_keep_their_tags_and_now_require_a_resolved_path_payload() {
         },
     )
     .expect("bounded failure");
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v4");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v5");
     for (name, tag, expected) in [
         ("outside", 7, Outcome::Outside(failure.clone())),
         ("read_only", 8, Outcome::ReadOnly(failure.clone())),
@@ -92,7 +92,7 @@ fn indexed_edit_failure_goldens_keep_the_first_failure_and_matching_reason() {
 #[test]
 fn a_turn_round_trips_its_highest_job_number() {
     use skein_lib::Writer;
-    let smallest = include_bytes!("../../../crates/smith-transcript/golden/v4/record_turn_smallest.bin");
+    let smallest = include_bytes!("../../../crates/smith-transcript/golden/v5/record_turn_smallest.bin");
     let mut parts = Turn::decode(&CEILINGS, &mut Reader::new(smallest)).expect("smallest turn").into_parts();
     parts.jobs = 37;
     let turn = Turn::new(&CEILINGS, parts).expect("turn with jobs");
@@ -161,4 +161,40 @@ fn round_trip_outcome(value: &smith_transcript::Outcome) {
 #[test]
 fn the_transcripts_effort_bound_equals_the_charters() {
     assert_eq!(smith_transcript::CEILINGS.turn_effort_some, smith_charter::CEILINGS.llm_effort_some);
+}
+
+#[test]
+fn a_not_run_why_survives_a_round_trip() {
+    use skein_lib::{List, Writer};
+    use smith_transcript::{
+        AfterFailedWrite, AfterFailedWriteParts, AllowedCalls, AllowedCallsParts, CallName, CallNameParts, NotRun,
+        NotRunParts, NotRunWhy, OutsideChoice, OutsideChoiceParts, Returned,
+    };
+    const ALLOWED_CALLS: u32 = 2;
+    let mut names = List::with_capacity(ALLOWED_CALLS);
+    for name in [b"finish".as_slice(), b"deliver".as_slice()] {
+        names.push(CallName::new(&CEILINGS, CallNameParts { name: name.into() }).expect("bounded name")).expect("room");
+    }
+    let allowed = AllowedCalls::new(&CEILINGS, AllowedCallsParts { names }).expect("allowed calls");
+    for why in [
+        NotRunWhy::Stopped,
+        NotRunWhy::OutsideChoice(OutsideChoice::new(&CEILINGS, OutsideChoiceParts { only: None }).expect("no calls")),
+        NotRunWhy::OutsideChoice(
+            OutsideChoice::new(&CEILINGS, OutsideChoiceParts { only: Some(allowed) }).expect("choice"),
+        ),
+        NotRunWhy::AfterFailedWrite(
+            AfterFailedWrite::new(&CEILINGS, AfterFailedWriteParts { call: 12 }).expect("position"),
+        ),
+    ] {
+        let value = Returned::NotRun(NotRun::new(&CEILINGS, NotRunParts { why }).expect("not run"));
+        let mut writer = Writer::new(usize::try_from(value.measure()).expect("size"));
+        value.encode(&mut writer).expect("encoding");
+        assert_eq!(Returned::decode(&CEILINGS, &mut Reader::new(&writer.finish())).expect("decoding"), value);
+    }
+}
+
+#[test]
+fn a_version_four_transcript_is_refused() {
+    let problem = Turn::decode(&CEILINGS, &mut Reader::new(&[0, 4])).expect_err("version four");
+    assert_eq!((problem.path, problem.reason), (Path::TurnVersion, Reason::Version));
 }
