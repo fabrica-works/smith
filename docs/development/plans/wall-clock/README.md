@@ -276,7 +276,10 @@ the run ends.
     test. Rows that differ only in dialect, or in a value a round trip
     returns unchanged, are one table test; rows that expect different
     answers are separate tests. Landed tests in files an increment does
-    not otherwise change stay as they are.
+    not otherwise change stay as they are. When two tests of a file open
+    with the same three lines or more, those lines are written once, as
+    a named function of that file that takes what differs (the 15:08
+    steer's point 1, seen again in 07.1's `src/tests/window.rs`).
 19. **No waker of the coordinator's.** Before it idles on queue tasks,
     the coordinator names each in its `plan idle` text by id, label and
     session ("3787 smith-07 (w31), suite parity-change"), and starts no

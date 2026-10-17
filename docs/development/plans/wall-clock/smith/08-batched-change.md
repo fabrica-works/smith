@@ -123,11 +123,11 @@ Needs: smith 07's check [07.1] landed or dropped.
 Files: `crates/smith-domain-session/src/session.rs` (`Tools`, `:289-308`;
   `advance`, `:1491-1605`; `reserve_batch`'s call, `:1504`; `joins`,
   `:1648-1657`; the answers at `:1542-1556`, `:1586`, `tool_ran`,
-  `:1757-1779`; `returned_cost`'s `NotRun` arms, `:2636-2639`),
+  `:1757-1779`; `returned_cost`'s `NotRun` arms, `:2632-2635`),
   `crates/smith-domain-session/src/history.rs` (`reserve_batch`,
   `:139-205`; `:120`, `NotRun::Stopped`, read),
   `tests/session/src/world.rs` (the referee's unstarted delegated call,
-  `:1352-1357`),
+  `:1353-1358`),
   `crates/smith-domain-session/src/llm.rs` (`NotRun`, `:154-159`),
   `crates/smith-domain/src/llm.rs` (`:78-86`), `crates/smith-domain/src/peer.rs`
   (`:343-349`), `crates/smith-domain-tools/src/call.rs` (`effect`,
@@ -173,13 +173,13 @@ Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   it takes the `failed` state too, skips the writes and commands
   `advance` answers not run, and counts an invalid call as setting it,
   so that it reserves for exactly the calls `advance` starts (without
-  that, fuzzy panics at `session.rs:2610`, "actual call owned result
+  that, fuzzy panics at `session.rs:2535`'s `expect`, "actual call owned result
   credit"). `returned_cost` answers `Stopped | AfterFailedWrite { .. }
   => Some(0)` in one arm (clippy's `match_same_arms`). `advance` stays
   within clippy's `too_many_lines` (100): move the stop's answers into a
   helper of their own; aim for no new `#[expect]`, and when one is left,
   its `reason` names this step and the commit body lists it. The
-  session world's referee (`world.rs:1352-1357`) accepts an unstarted
+  session world's referee (`world.rs:1353-1358`) accepts an unstarted
   delegated call answered `AfterFailedWrite { call }` with `call` at or
   before its position, beside `Stopped`.
   The prompt renders it with the text above; `<tool>` is the name of the
@@ -212,7 +212,7 @@ Shape: `NotRun` gains `AfterFailedWrite { call: u16 }`, the failed
   rule 3).
 Test shape: `crates/smith-domain-session/src/tests.rs`, beside
   `adjacent_reads_run_together_and_a_write_runs_alone_and_results_go_back_in_order`
-  (`:791`): `a_failed_edit_leaves_the_writes_after_it_not_run`,
+  (`:793`): `a_failed_edit_leaves_the_writes_after_it_not_run`,
   `a_failed_edit_leaves_the_command_after_it_not_run`,
   `a_read_after_a_failed_edit_still_runs`,
   `an_invalid_call_stops_the_writes_after_it`,
