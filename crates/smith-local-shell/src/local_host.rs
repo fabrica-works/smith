@@ -650,6 +650,7 @@ impl Local {
             | kernel::Op::Shutdown { .. }
             | kernel::Op::Close { .. }
             | kernel::Op::Open { .. }
+            | kernel::Op::Lock { .. }
             | kernel::Op::Append { .. }
             | kernel::Op::Read { .. }
             | kernel::Op::Write { .. }

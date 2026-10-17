@@ -594,6 +594,8 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                     | file::Request::Rename { .. }
                     | file::Request::Remove { .. }
                     | file::Request::List { .. }
+                    | file::Request::Lock { .. }
+                    | file::Request::ListPage { .. }
                     | file::Request::MakeDirectory { .. }
                     | file::Request::OpenPrivate { .. }) => panic!("unexpected file request: {other:?}"),
                 },

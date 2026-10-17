@@ -277,18 +277,7 @@ impl Store {
                     self.fail(record, StoreFault::Io { file: record, error: kernel::Error::NotFound }, now, out);
                 }
             },
-            file::Event::Failed { committed: true, .. } => {
-                let writing = self.writing.as_ref().expect("committed belongs to Store");
-                self.retain_written(writing.file.name.clone(), digest(&writing.file.bytes));
-                let writing = self.writing.as_mut().expect("committed belongs to Store");
-                if writing.retried {
-                    self.fail(record, StoreFault::NotDurable { file: record }, now, out);
-                } else {
-                    writing.retried = true;
-                    writing.expected = Expect::Digest(digest(&writing.file.bytes));
-                    self.send_write(now, out);
-                }
-            }
+            file::Event::Failed { committed: true, .. } => self.retry_committed(record, now, out),
             file::Event::Failed { error, .. } => self.fail(record, StoreFault::Io { file: record, error }, now, out),
             file::Event::Conflict { .. } => self.fail(record, StoreFault::Conflict { file: record }, now, out),
             file::Event::TooLarge { .. } => self.fail(record, StoreFault::TooLarge { file: record }, now, out),
@@ -308,7 +297,9 @@ impl Store {
                 self.phase = Phase::Closed;
                 out.push(Action::Closed);
             }
-            file::Event::Made { .. }
+            file::Event::Locked { .. }
+            | file::Event::Busy { .. }
+            | file::Event::Made { .. }
             | file::Event::Opened { .. }
             | file::Event::Stated { .. }
             | file::Event::Written { .. }
@@ -316,6 +307,19 @@ impl Store {
             | file::Event::Renamed { .. }
             | file::Event::Cut { .. }
             | file::Event::Listed { .. } => unreachable!("store requests have whole-file terminals"),
+        }
+    }
+
+    fn retry_committed(&mut self, record: RecordName, now: Time, out: &mut Queue<Action>) {
+        let writing = self.writing.as_ref().expect("committed belongs to Store");
+        self.retain_written(writing.file.name.clone(), digest(&writing.file.bytes));
+        let writing = self.writing.as_mut().expect("committed belongs to Store");
+        if writing.retried {
+            self.fail(record, StoreFault::NotDurable { file: record }, now, out);
+        } else {
+            writing.retried = true;
+            writing.expected = Expect::Digest(digest(&writing.file.bytes));
+            self.send_write(now, out);
         }
     }
 

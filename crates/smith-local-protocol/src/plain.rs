@@ -123,7 +123,9 @@ impl Plain {
             | file::Event::TooLarge { .. }
             | file::Event::Failed { .. }
             | file::Event::Cancelled { .. } => return PlainAction::Failed,
-            file::Event::Opened { .. }
+            file::Event::Locked { .. }
+            | file::Event::Busy { .. }
+            | file::Event::Opened { .. }
             | file::Event::Stored { .. }
             | file::Event::Conflict { .. }
             | file::Event::Stated { .. }

@@ -126,7 +126,9 @@ pub(crate) fn terminal(kind: Kind, event: file::Event) -> tools::Done {
         }
         file::Event::Cancelled { .. } => tools::Done::Cancelled,
         file::Event::Failed { error, .. } => failure(kind, error),
-        file::Event::Scanned { .. }
+        file::Event::Locked { .. }
+        | file::Event::Busy { .. }
+        | file::Event::Scanned { .. }
         | file::Event::Opened { .. }
         | file::Event::Stated { .. }
         | file::Event::Written { .. }
@@ -159,6 +161,7 @@ fn failure(kind: Kind, error: kernel::Error) -> tools::Done {
         kernel::Error::TimedOut => tools::Done::TimedOut,
         kernel::Error::Cancelled => tools::Done::Cancelled,
         kernel::Error::Refused
+        | kernel::Error::Busy
         | kernel::Error::Reset
         | kernel::Error::BrokenPipe
         | kernel::Error::NotConnected

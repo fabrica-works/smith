@@ -234,6 +234,7 @@ impl Parent {
             | Op::Send { .. }
             | Op::Shutdown { .. }
             | Op::Open { .. }
+            | Op::Lock { .. }
             | Op::Append { .. }
             | Op::Read { .. }
             | Op::Write { .. }

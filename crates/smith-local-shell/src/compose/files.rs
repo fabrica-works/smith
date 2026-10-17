@@ -414,7 +414,9 @@ impl Host for ResultFile {
                 file::Event::Closed { .. } => self.state = State::Closed,
                 file::Event::Failed { error, .. } => self.failed(error),
                 file::Event::Cancelled { .. } => self.failed(kernel::Error::Cancelled),
-                file::Event::Made { .. }
+                file::Event::Locked { .. }
+                | file::Event::Busy { .. }
+                | file::Event::Made { .. }
                 | file::Event::Refused { .. }
                 | file::Event::Opened { .. }
                 | file::Event::Loaded { .. }

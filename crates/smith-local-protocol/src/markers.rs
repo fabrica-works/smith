@@ -102,7 +102,9 @@ impl Markers {
                 assert_eq!(owner, self.owner, "file terminal echoes marker owner");
                 return MarkerAction::Done(failed(run::DeliveryReason::TimedOut));
             }
-            file::Event::Opened { .. }
+            file::Event::Locked { .. }
+            | file::Event::Busy { .. }
+            | file::Event::Opened { .. }
             | file::Event::Scanned { .. }
             | file::Event::Stored { .. }
             | file::Event::Conflict { .. }

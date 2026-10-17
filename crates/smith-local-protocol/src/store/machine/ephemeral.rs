@@ -91,7 +91,9 @@ impl Store {
             file::Event::Removed { .. } | file::Event::Closed { .. } => None,
             file::Event::Failed { error, .. } => Some(error),
             file::Event::Cancelled { .. } => Some(kernel::Error::Cancelled),
-            file::Event::Made { .. }
+            file::Event::Locked { .. }
+            | file::Event::Busy { .. }
+            | file::Event::Made { .. }
             | file::Event::Refused { .. }
             | file::Event::Opened { .. }
             | file::Event::Loaded { .. }

@@ -448,6 +448,7 @@ impl skein_world::Machine for Adapter {
                 answers.push(Answer { ticket: call.ticket, result: Ok(Reply::Program(Program::Never)) });
             }
             Ask::Spawn { .. }
+            | Ask::Lock { .. }
             | Ask::Open { .. }
             | Ask::Read { .. }
             | Ask::Write { .. }

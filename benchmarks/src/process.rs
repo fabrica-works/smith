@@ -337,6 +337,7 @@ impl Host for Output {
                 | Op::Send { .. }
                 | Op::Shutdown { .. }
                 | Op::Open { .. }
+                | Op::Lock { .. }
                 | Op::Write { .. }
                 | Op::Append { .. }
                 | Op::Truncate { .. }

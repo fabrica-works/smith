@@ -106,6 +106,7 @@ impl Store {
                 let reason = match error {
                     kernel::Error::NotFound => local::ChatRefusal::Missing,
                     kernel::Error::Refused
+                    | kernel::Error::Busy
                     | kernel::Error::Reset
                     | kernel::Error::BrokenPipe
                     | kernel::Error::NotConnected
@@ -136,7 +137,9 @@ impl Store {
             file::Event::Cancelled { .. } | file::Event::Refused { .. } => {
                 self.selection_failed(local::ChatRefusal::Io, now, out);
             }
-            file::Event::Loaded { .. }
+            file::Event::Locked { .. }
+            | file::Event::Busy { .. }
+            | file::Event::Loaded { .. }
             | file::Event::Scanned { .. }
             | file::Event::Stored { .. }
             | file::Event::Conflict { .. }

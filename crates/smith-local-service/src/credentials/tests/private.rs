@@ -235,6 +235,7 @@ impl Private {
                 }
                 skein_sim::Ask::Write { .. } => self.story == Story::KeepFailed,
                 skein_sim::Ask::Spawn { .. }
+                | skein_sim::Ask::Lock { .. }
                 | skein_sim::Ask::Open { .. }
                 | skein_sim::Ask::Read { .. }
                 | skein_sim::Ask::Append { .. }
