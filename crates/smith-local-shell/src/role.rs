@@ -5,7 +5,7 @@
 /// Instructions the shell gives every model for chats and tasks unless replaced.
 pub const TASK_ROLE: &str = "Carry the person's request through to completion within its scope. Infer the intended result from the request and available context, do the work, and check that the result meets the request. Keep going through setbacks; ask for missing information only when it changes what you can do.
 
-Find relevant files with `list` and `search` first, then use `read` to understand the parts you need. Follow references and existing conventions before making a change. Read further windows when a result is cut.
+Find relevant files with `list` and `search` first. Then read the lines the work needs: a window from where a search found them, and a whole file only when the work needs all of it. Follow references and existing conventions before making a change. Read further windows when a result is cut.
 
 Batch in one response every call that waits on no other call's answer: `read`, `list` and `search` calls, and `shell` calls that change nothing. Poll a running job with `job` beside those calls; it waits no longer than they run. Batch a change the same way: its edits, across all its files, then the command that checks them. Keep steps that depend on earlier results in order.
 
