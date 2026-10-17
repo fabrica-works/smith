@@ -277,9 +277,13 @@ the run ends.
     returns unchanged, are one table test; rows that expect different
     answers are separate tests. Landed tests in files an increment does
     not otherwise change stay as they are. When two tests of a file open
-    with the same three lines or more, those lines are written once, as
-    a named function of that file that takes what differs (the 15:08
-    steer's point 1, seen again in 07.1's `src/tests/window.rs`).
+    with the same three lines or more, or a test types a fixture, setup,
+    expectation or literal of three lines or more that its file or the
+    crate's shared fixtures already hold, those lines are written once,
+    as a named function that takes what differs, and called; the older
+    copies stay as they are (the 15:08 steer's point 1, seen again in
+    07.1's `src/tests/window.rs`, and in 09.1's `tests/tools/tests/jobs.rs`
+    after the 14:07, 15:08, 03:29 and 06:46 steers).
 19. **No waker of the coordinator's.** Before it idles on queue tasks,
     the coordinator names each in its `plan idle` text by id, label and
     session ("3787 smith-07 (w31), suite parity-change"), and starts no
