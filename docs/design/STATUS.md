@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-17. How far smith's code is from its design, and which
+Updated 2026-10-18. How far smith's code is from its design, and which
 plans take it there. The designer keeps this file (skein's
 development.md, section 3.3).
 
@@ -20,33 +20,31 @@ development.md, section 3.3).
 
 ## 2. The design
 
-Left names each section's unbuilt part and what builds it. The steps of
-smith's reliability and parity plans that it named have all landed (each
-plan's retrospective, sections 1 and 2), and what they left unmet is
-below. "The wall-clock plan" is `docs/development/plans/wall-clock/`;
-"its own plan, drafting" is section 1's Claude Code plan; "not planned"
-is in section 3. Where a landed step left the design unmet, Left says
-what is missing, then what the code does instead.
+Left names each section's unbuilt part, then the plan of section 1 that
+builds it (": <plan>" after its items), or "not planned": section 3
+says what each waits for. Where the code does other than the design,
+Left says what is missing, then, in parentheses, what the code does
+instead.
 
 | Document | Built | Left |
 |---|---|---|
-| `domain/README.md` | partly | 4: `smith-mcp` and supervised processes with a view, not planned |
-| `domain/host.md` | partly | 4: a contained tree, not planned. 8: MCP host tools, not planned. 12: an isolated mode, not planned |
-| `domain/run.md` | partly | 5.1: MCP servers as a tool source, not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix, not planned. 6, 9.2: mid-work messages and threshold notes, not planned |
-| `domain/session.md` | partly | 5: a job's wait giving way to the rest of its response, and a failed write stopping the writes and commands after it: a call's failure stops nothing today, and a `job` call waits its own wait whatever its response holds (the wall-clock plan). 4, 8.1, 8.2: the check bounding the next prompt, its appended bytes counted at the window's measured ratio, the guard holding each prompt sent within the line, and a compaction's summary beside its prompt: the check reserves one `output` below the threshold and counts each appended byte as a token (`crates/smith-domain-session/src/window.rs`), no guard measures a request as rendered, and a compaction's owed results leave one `output` of the window for its summary (the wall-clock plan). 11: provider-native compaction, not planned |
-| `domain/tools.md` | partly | 3, 5: a `job` call's wait ended early by its session (the wall-clock plan). 5: containment, not planned |
-| `protocol/README.md` | partly | 5: `smith-mcp`, not planned. 9: contained trees, Codex routing extras, not planned. 4, 11: a connected agent, not planned |
-| `protocol/agent.md` | partly | 3: the view, not planned |
-| `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals, not planned |
-| `protocol/charter.md` | partly | 6, 8: the entrance's refusal of a negative spare, as `llm` (the wall-clock plan) |
-| `protocol/events.md` | partly | 6: version 3, with `run.compaction_material` among `session.started`'s effective limits (3.2): the code writes version 2 (`crates/smith-events/src/lib.rs`) (the wall-clock plan). 3.2: `containment: "trees"`, not planned |
-| `protocol/hosts.md` | partly | 3: the tree, not planned. 4: connecting later, not planned |
-| `protocol/limits.md` | partly | 2.1, 3.2, 3.9, 4: the line and the spare, a request's output beside its prompt, the history's bytes from the line with one whole completion's reserve, the guard's measure as encoded, `run.compaction_material` and each conversation's line given at its open, and the entrance's check of a charter's spare; 4: `host-part-holds-the-role` counting the task role as written: the check reserves its 4 KiB cap (`crates/smith-local-shell/src/role.rs`, `TASK_ROLE_BOUND`); 5, 11: memory shown returning when its use ends, and `memory` raised only should the worst case pass it (the wall-clock plan) |
-| `protocol/llm.md` | partly | 6: the guard, measuring a request's new part as encoded and refusing it unsent past the line. 3, 5: the descriptions' batched change and its check, a failed write leaving the writes after it not run, a poll beside other calls, and the not-run text naming the failed write by its position and tool (the wall-clock plan). 12: edit formats per dialect, not planned |
-| `protocol/transcript.md` | partly | 2, 6: version 5, a not-run call's why after a failed write, with that call's position (the wall-clock plan) |
-| `shell.md` | partly | 5.2: the tiers read per response by the benchmarks (the wall-clock plan). 6.3: `memory`'s status as the work needs. 6.6: the task role's topics 2 to 5, batched edits and their check, polls beside other work, ranged reads (the wall-clock plan). 5.1: directories made at startup synced into their parents, not planned. 8: per-tree limits, not planned. 9: `isolate`, not planned |
-| `testing.md` | partly | 6: the event stream's check pairing each `running` verdict with one end: `tests/agent-process/src/events.rs` passes over `job.ended` unpaired, not planned; memory shown returning when its use ends (the wall-clock plan). 2.1: fault sweeps, not planned. 2.2: real-loop signals, not planned. 6: replay by digests, containment checks, not planned |
-| `benchmarks.md` | partly | 1, 4.2, 11.5, 14, 16.6: the `parity-change` suite, a change's report and its stop; 5.4, 8.1, 8.2, 16.1, 16.2: spend priced per response at its prompt's tier, a response failed unsent priced at nothing, ten `shell-cwd` attempts, peak memory and responses in summaries: the harness prices an attempt's total at the tier its declared window reaches (`benchmarks/src/result.rs`), and `parity` runs five (the wall-clock plan). 3.1, 5.2: each probe's and each variant's calibration in its task file: 8 blocks in 4 of the 15 probe directories, and six task files to recalibrate before `suite smoke` relies on them, not planned (the parity plan's `later.md`). 11.1: the `history` probe's condition at the line, from the conversation's model and `run.compaction_material`: `benchmarks/src/agent/smith/events/threshold.rs` judges a compaction due at the threshold with one output reserved (the wall-clock plan). 11.1: `mid-work`, `build-environment`, not planned. 11.3: the `delegation` experiment, not planned. 6: Claude Code (its own plan, drafting). 15: beyond serial runs, not planned. 16.6: a change's projection on its own ratio: `summarise` multiplies in the ratios of the landed changes named to it (`benchmarks/src/parity/change.rs`), not planned |
+| `domain/README.md` | partly | 4: `smith-mcp` and supervised processes with a view: not planned |
+| `domain/host.md` | partly | 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned |
+| `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned. 6, 9.2: mid-work messages and threshold notes: not planned |
+| `domain/session.md` | partly | 11: provider-native compaction: not planned |
+| `domain/tools.md` | partly | 5: containment: not planned |
+| `protocol/README.md` | partly | 5: `smith-mcp`: not planned. 9: contained trees, Codex routing extras: not planned. 4, 11: a connected agent: not planned |
+| `protocol/agent.md` | partly | 3: the view: not planned |
+| `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned |
+| `protocol/charter.md` | yes | Nothing |
+| `protocol/events.md` | partly | 3.2: `containment: "trees"`: not planned |
+| `protocol/hosts.md` | partly | 3: the tree: not planned. 4: connecting later: not planned |
+| `protocol/limits.md` | yes | Nothing |
+| `protocol/llm.md` | partly | 12: edit formats per dialect: not planned |
+| `protocol/transcript.md` | yes | Nothing |
+| `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned |
+| `testing.md` | partly | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned |
+| `benchmarks.md` | partly | 3.1, 5.2: each probe's and each variant's calibration in its task file (8 blocks in 4 of the 15 probe directories), with six task files and the two `history` variants to recalibrate before `suite smoke` relies on them: not planned (the parity and wall-clock plans' `later.md`). 11.1: `mid-work`, `build-environment`: not planned. 11.3: the `delegation` experiment: not planned. 15: beyond serial runs: not planned. 16.6: a change's projection on its own ratio (`summarise` multiplies in the ratios of the landed changes named to it, `benchmarks/src/parity/change.rs`): not planned. 6: Claude Code: Claude Code, and smith on Anthropic |
 
 ## 3. Not planned
 
@@ -57,9 +55,8 @@ what is missing, then what the code does instead.
   directory's parent (`credentials/sign_in.rs:228`), with std, and never
   syncs them into their parents, so a power loss can drop a chat's
   directory with the files synced beneath it. skein's io makes the token
-  directory itself, and syncs it into its parent. skein's `make_root` has
-  landed (skein 31366e0, skein-03.s1 of jig's jig-protocol), and smith's
-  pinned skein has it: waits for a smith step that moves those sites onto
+  directory itself, and syncs it into its parent. smith's pinned skein
+  has `make_root`: waits for a smith step that moves those sites onto
   it. The temporary directories of `compose/files.rs` stay: nothing
   relies on them past a crash.
 - **Contained trees** (`protocol/agent.md`, sections 3 and 7; also
@@ -80,22 +77,16 @@ what is missing, then what the code does instead.
   Waits for the `parallel-children` and `budget` probes to show children
   re-orienting at a material cost.
 - **Messages mid-work and threshold notes** (`domain/run.md`, sections 6
-  and 9.2). It waited for the reliability plan's sessions 05 and 07,
-  which have landed; it now waits for nothing. The `mid-work` probe
-  comes with it.
+  and 9.2). Waits for nothing. The `mid-work` probe comes with it.
 - **Provider-native compaction** (`domain/session.md`, section 11).
-  The `compaction` experiment ran on 2026-10-14 (the reliability plan's
-  12.6), with no provider-native arm, and did not favour it. Waits for a
-  compaction experiment after the parity plan fixes the compaction
-  request (section 8.2).
+  Waits for a `compaction` experiment with a provider-native arm, which
+  no plan runs yet, to favour it.
 - **Edit formats per dialect** (`protocol/llm.md`, section 12). Waits
-  for the `edit-format` experiment, which no plan runs yet: the
-  reliability plan's 12.6 had no second format per dialect to compare.
+  for the `edit-format` experiment, which no plan runs yet (the
+  wall-clock plan's `later.md`).
 - **Codex routing extras and WebSocket** (`protocol/README.md`,
   section 9). Waits for the `affinity` experiment, which no plan runs
-  yet, to show a material gain: the reliability plan's 12.6 ran none of
-  its arms, two unavailable and the third unbuilt. WebSocket is on
-  skein's roadmap.
+  yet, to show a material gain. WebSocket is on skein's roadmap.
 - **MCP as a tool source** (`protocol/README.md`, sections 5 and 11;
   `domain/run.md`, section 5.1): `smith-mcp`, and through it the local
   host's first host tools. Waits for its design.
@@ -112,21 +103,29 @@ what is missing, then what the code does instead.
   the event stream's check pairing each `running` verdict with one end
   (`tests/agent-process/src/events.rs`). Waits for nothing.
 - **The probes' calibrations** (`benchmarks.md`, sections 3.1 and 5.2):
-  the probes and variants without a `[calibration]` block, and the six
-  task files the parity plan's `later.md` names for recalibration before
-  `suite smoke` relies on them. Waits for nothing but live budget.
+  the probes and variants without a `[calibration]` block, the six task
+  files the parity plan's `later.md` names for recalibration, and
+  `history` and `history/small-window`, whose blocks the window's check
+  (`domain/session.md`, 8.1) has outdated (the wall-clock plan's
+  `later.md`), each before `suite smoke` relies on them. Waits for
+  nothing but live budget.
 - **Real-loop signals** (`testing.md`, section 2.2): the referee's real
   interrupt cancels a run, and a second stops its tree. Waits for
   nothing.
-- **Replay by digests** (`testing.md`, section 6). Waits for skein's
-  harness to take digests of the state.
+- **Replay by digests** (`testing.md`, section 6): skein's harness
+  carries state digests, and smith's pinned skein has them (skein's
+  `testing.md`, 5: `state_digest` on `Host` and `Machine`,
+  `Digests::Traced`), but no smith host or fake machine gives one.
+  Waits for nothing: a smith step that hashes each process's domains
+  and each fake machine's state, and replays its simulated worlds with
+  them.
 - **Containment checks** (`testing.md`, section 6), with the
   `build-environment` probe (`benchmarks.md`, section 11.1). Wait for
   contained trees, cgroup v2 delegated to the user and unprivileged user
   namespaces.
 - **The delegation experiment** (`benchmarks.md`, section 11.3): each
   agent with its sub-agents off, then both on, on `shell-cwd`. Waits for
-  the parity plan's tasks and pins; it informs the user's open decision
+  a plan of its own (the parity plan's `later.md`); it informs the user's open decision
   on smith's `sub_agents` default (the reliability plan's decisions.md,
   10.7).
 - **Benchmarks beyond serial runs** (`benchmarks.md`, section 15):
