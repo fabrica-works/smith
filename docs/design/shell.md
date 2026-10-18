@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-17. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-18. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -770,7 +770,7 @@ The declared quantities of protocol/limits.md, section 2.2:
 | `search_hits`, `search_bytes` | 100 and 16 KiB | provisional; the tool-output probe |
 | `list_entries` | 512 | provisional |
 | `llm_pool` | 128 MiB | provisional; peak memory in `session.ended` |
-| `memory` | 2 GiB | decided: as large as smith's work needs, within the real memory a person's machine can spare, and never smaller than the derived worst case. A change whose worst case passes it raises it, naming the part and its bytes (protocol/limits.md, section 5) |
+| `memory` | 2,112 MiB (33 × 64 MiB) | decided: as large as smith's work needs, within the real memory a person's machine can spare, and never smaller than the derived worst case. A change whose worst case passes it raises it, naming the part and its bytes (protocol/limits.md, section 5) |
 
 ### 6.4 Run defaults
 

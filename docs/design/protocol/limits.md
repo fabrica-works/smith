@@ -1,6 +1,6 @@
 # Limits
 
-Provisional, 2026-10-09, revised 2026-10-17. How an agent's limits are
+Provisional, 2026-10-09, revised 2026-10-18. How an agent's limits are
 made:
 
 - the quantities a deployment declares;
@@ -179,10 +179,8 @@ are given and never from a lower layer's types: the service passes each
 the numbers it needs.
 
 **How bounds compose.** A worst case is the most that can hold at once,
-not the product of maxima that cannot. On 2026-10-10 the product's
-values derived 421 GB against `memory`'s 2 GiB, and a completion's
-reserve six times a window's history, because bounds were composed that
-way. Every derivation follows these rules:
+not the product of maxima that cannot. Every derivation follows these
+rules:
 
 1. **Joint bounds are charged at their shared total.** Items drawn from
    one shared quantity are charged at that quantity, plus a fixed cell

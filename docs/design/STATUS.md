@@ -29,11 +29,11 @@ instead.
 | Document | Built | Left |
 |---|---|---|
 | `domain/README.md` | partly | 4: `smith-mcp` and supervised processes with a view: not planned |
-| `domain/host.md` | partly | 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned |
-| `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned. 6, 9.2: mid-work messages and threshold notes: not planned |
-| `domain/session.md` | partly | 11: provider-native compaction: not planned |
+| `domain/host.md` | partly | 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`) |
+| `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned (the reliability and parity plans' `later.md`). 6, 9.2: mid-work messages and threshold notes: not planned (the reliability plan's `later.md`) |
+| `domain/session.md` | partly | 11: provider-native compaction: not planned (the reliability plan's `later.md`) |
 | `domain/tools.md` | partly | 5: containment: not planned |
-| `protocol/README.md` | partly | 5: `smith-mcp`: not planned. 9: contained trees, Codex routing extras: not planned. 4, 11: a connected agent: not planned |
+| `protocol/README.md` | partly | 5: `smith-mcp`: not planned. 9: contained trees, Codex routing extras: not planned (the reliability and parity plans' `later.md`). 4, 11: a connected agent: not planned |
 | `protocol/agent.md` | partly | 3: the view: not planned |
 | `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned |
 | `protocol/charter.md` | yes | Nothing |
@@ -42,7 +42,7 @@ instead.
 | `protocol/limits.md` | yes | Nothing |
 | `protocol/llm.md` | partly | 12: edit formats per dialect: not planned |
 | `protocol/transcript.md` | yes | Nothing |
-| `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned |
+| `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned (the reliability plan's `later.md`) |
 | `testing.md` | partly | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned |
 | `benchmarks.md` | partly | 3.1, 5.2: each probe's and each variant's calibration in its task file (8 blocks in 4 of the 15 probe directories), with six task files and the two `history` variants to recalibrate before `suite smoke` relies on them: not planned (the parity and wall-clock plans' `later.md`). 11.1: `mid-work`, `build-environment`: not planned. 11.3: the `delegation` experiment: not planned. 15: beyond serial runs: not planned. 16.6: a change's projection on its own ratio (`summarise` multiplies in the ratios of the landed changes named to it, `benchmarks/src/parity/change.rs`): not planned. 6: Claude Code: Claude Code, and smith on Anthropic |
 
