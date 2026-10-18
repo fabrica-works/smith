@@ -1,6 +1,6 @@
 # The channel
 
-Provisional, 2026-10-07, revised 2026-10-13. The channel between a run and
+Provisional, 2026-10-07, revised 2026-10-18. The channel between a run and
 its host is smith's application protocol on skein's framed channel
 (skein's `channel.md`). This document covers:
 
@@ -286,6 +286,11 @@ last one with `opens_window` (domain/host.md, section 6).
   - how long it is valid;
   - the credential, with whatever skein's LLM client needs beside it, such
     as an account's id.
+- **A value is one byte string:** the account's id length in two bytes,
+  big-endian, then the id, then the bearer token, never empty. A value
+  that does not read so is a credential the agent cannot install: a
+  start that carries one is refused, and a later grant of one fails as
+  any credential the agent cannot install.
 - **The agent's half keeps the values** in a table holding two generations
   per account, so a refresh does not cut a call in flight. It hands the
   domain only the account, the generation and when the grant lapses. The
