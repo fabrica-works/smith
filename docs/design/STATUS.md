@@ -142,3 +142,4 @@ instead.
 | Draft | About | Next |
 |---|---|---|
 | `draft/one-host.md` | smith's side of jig's one host: the inline agent | Nothing in smith: adopted into `domain/host.md`, section 9, built by session 03. jig's side is on jig's schedule |
+| `draft/accounts.md` | smith's side of jig's `draft/llm-accounts.md`: the product as its own client (accounts by provider and source, several per provider, smith's own Sign in with ChatGPT registration in the `openai` preset, Claude Code as a program, a credentials directory, refreshes locked across processes, `smith login` and `smith logout`); the agent's two backends, grants and notices; a conversation carried over between providers; live tests and benchmarks on smith's own accounts | not adopted: review; then a design pass in the documents its section 8 names, after skein's design pass for jig's `draft/llm-accounts.md` |
