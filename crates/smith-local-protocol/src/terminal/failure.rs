@@ -65,6 +65,29 @@ pub(super) fn detail(text: &mut Shown, diagnostic: &[u8]) {
     }
 }
 
+pub(super) fn account(text: &mut Shown, why: &local::AccountFailure) {
+    match why {
+        local::AccountFailure::Unavailable => append(text, b"A model account is unavailable"),
+        local::AccountFailure::NotRefreshed => append(text, b"A model account could not refresh"),
+        local::AccountFailure::Limited { account, reset_at } => {
+            append(text, b"run failed: account ");
+            decimal(text, u64::from(*account));
+            append(text, b" reached its usage limit");
+            if let Some(at) = reset_at {
+                append(text, b", usable again at ");
+                append(text, &smith_events::clock(*at));
+            }
+        }
+        local::AccountFailure::Refused { account, code, reason } => {
+            append(text, b"run failed: account ");
+            decimal(text, u64::from(*account));
+            append(text, b": the provider refused it");
+            detail(text, code);
+            detail(text, reason);
+        }
+    }
+}
+
 pub(super) fn credential(text: &mut Shown, account: u32, why: local::CredentialFailure) {
     append(text, b"account ");
     decimal(text, u64::from(account));

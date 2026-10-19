@@ -159,6 +159,7 @@ enum FirstFailure {
     Reject,
     Exhaust,
     Refused,
+    AccountRefused,
     Used,
 }
 
@@ -781,6 +782,11 @@ impl World {
     /// Let the first completion permanently refuse its model, keeping its diagnostic.
     pub fn refuse_first_model(&mut self) {
         self.first_failure = FirstFailure::Refused;
+    }
+
+    /// Make the provider refuse the first completion's account.
+    pub fn refuse_first_account(&mut self) {
+        self.first_failure = FirstFailure::AccountRefused;
     }
 
     /// Reject a failure diagnostic found in a durable turn or any provider prompt.
@@ -1606,6 +1612,21 @@ impl World {
                         evidence: agent::llm::Evidence::Response { status: Some(400) },
                         detail: b"model does not exist\nsecond line is private".as_slice().into(),
                         report: smith_domain::llm::Report::none(),
+                    }));
+                    return;
+                }
+                if matches!(self.first_failure, FirstFailure::AccountRefused) {
+                    self.first_failure = FirstFailure::Used;
+                    self.events.push_back(self.below(Below::Failed {
+                        owner,
+                        failure: agent::llm::Failure::Refused,
+                        evidence: agent::llm::Evidence::Response { status: Some(403) },
+                        detail: b"contact support\nprivate".as_slice().into(),
+                        report: agent::llm::Report {
+                            code: b"billing".as_slice().into(),
+                            request: Box::default(),
+                            field: Box::default(),
+                        },
                     }));
                     return;
                 }

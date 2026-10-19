@@ -120,7 +120,7 @@ fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8
                     && let Some(wall) = answered_at
                 {
                     put(line, b", usable again at ");
-                    clock(line, Wall::from_nanos(wall.as_nanos().saturating_add(wait.saturating_mul(1_000_000))));
+                    put(line, &clock(Wall::from_nanos(wall.as_nanos().saturating_add(wait.saturating_mul(1_000_000)))));
                 }
                 return;
             }
@@ -194,19 +194,19 @@ fn account(line: &mut List<u8>, number: u64, name: Option<&[u8]>) {
     }
 }
 
-fn clock(line: &mut List<u8>, at: Wall) {
+/// The wall clock's hour and minute in UTC, as `HH:MM`.
+#[must_use]
+pub fn clock(at: Wall) -> [u8; 5] {
     let minutes = at.as_nanos() / 60_000_000_000;
-    let hours = (minutes / 60) % 24;
-    let minutes = minutes % 60;
-    if hours < 10 {
-        put(line, b"0");
-    }
-    put(line, Decimal::of(hours).as_bytes());
-    put(line, b":");
-    if minutes < 10 {
-        put(line, b"0");
-    }
-    put(line, Decimal::of(minutes).as_bytes());
+    let hours = u8::try_from((minutes / 60) % 24).expect("hour fits u8");
+    let minutes = u8::try_from(minutes % 60).expect("minute fits u8");
+    [
+        b'0'.checked_add(hours / 10).expect("ASCII digit"),
+        b'0'.checked_add(hours % 10).expect("ASCII digit"),
+        b':',
+        b'0'.checked_add(minutes / 10).expect("ASCII digit"),
+        b'0'.checked_add(minutes % 10).expect("ASCII digit"),
+    ]
 }
 
 fn class(class: &FailureClass) -> &[u8] {

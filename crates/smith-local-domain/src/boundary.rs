@@ -4,7 +4,7 @@
 //! receives one terminal, including after a cancellation.
 
 use alloc::boxed::Box;
-use skein_lib::Token;
+use skein_lib::{Token, Wall};
 use smith_domain::{self as agent, run};
 
 /// One writable directory recorded before a delivery can commit.
@@ -133,9 +133,9 @@ pub enum CredentialFailure {
     /// The account could not be refreshed.
     Refresh,
     /// A borrowed access token is approaching expiry.
-    BorrowedExpiring { at: skein_lib::Wall },
+    BorrowedExpiring { at: Wall },
     /// A borrowed access token has reached its expiry.
-    BorrowedExpired { at: skein_lib::Wall },
+    BorrowedExpired { at: Wall },
 }
 
 /// How this invocation ended.
@@ -289,14 +289,16 @@ pub enum Failure {
 }
 
 /// An account's terminal failure shown to the person.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum AccountFailure {
     /// No usable account is available.
     Unavailable,
     /// The account could not refresh.
     NotRefreshed,
-    /// The account is exhausted.
-    Exhausted,
+    /// The account reached its usage limit, with a reset only when supplied.
+    Limited { account: u32, reset_at: Option<Wall> },
+    /// The provider refused the account, keeping its diagnostic.
+    Refused { account: u32, code: Box<[u8]>, reason: Box<[u8]> },
 }
 
 /// Why the child failed before it could answer (domain/host.md, section 4).

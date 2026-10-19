@@ -56,7 +56,10 @@ fn random_local_chats_settle_against_the_boundary_referee() {
             2 => {
                 world.drive(300);
                 assert!(world.notices().contains(&smith_local_domain::Notice::Failure(
-                    smith_local_domain::Failure::Account(smith_local_domain::AccountFailure::Exhausted)
+                    smith_local_domain::Failure::Account(smith_local_domain::AccountFailure::Limited {
+                        account: 0,
+                        reset_at: Some(skein_lib::Wall::from_nanos(60_000_000_000))
+                    })
                 )));
             }
             8 | 9 => {

@@ -576,14 +576,37 @@ fn an_expired_credential_is_refreshed_and_the_completion_retried() {
 }
 
 #[test]
-fn an_exhausted_account_is_shown_to_the_person() {
+fn a_limited_account_is_shown_with_its_reset() {
     let mut world = World::new(44);
     world.exhaust_first_account();
     world.line(b"Hello");
     world.drive(300);
     assert!(world.notices().contains(&smith_local_domain::Notice::Failure(smith_local_domain::Failure::Account(
-        smith_local_domain::AccountFailure::Exhausted
+        smith_local_domain::AccountFailure::Limited {
+            account: 0,
+            reset_at: Some(skein_lib::Wall::from_nanos(60_000_000_000))
+        }
     ))));
+    assert!(
+        world
+            .shown()
+            .iter()
+            .any(|text| text.as_ref() == b"run failed: account 0 reached its usage limit, usable again at 00:01\n")
+    );
+}
+
+#[test]
+fn a_refused_account_is_shown_with_its_code_and_reason() {
+    let mut world = World::headless(44, b"Hello");
+    world.refuse_first_account();
+    assert!(world.drive_to_exit(300));
+    assert!(
+        world
+            .shown()
+            .iter()
+            .any(|text| text.as_ref() == b"run failed: account 0: the provider refused it: billing: contact support\n")
+    );
+    assert_eq!(world.exit(), Some(smith_local_domain::ExitStatus::Credentials { account: 0 }));
 }
 
 #[test]

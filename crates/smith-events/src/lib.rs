@@ -27,7 +27,7 @@ pub use records::{
     Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
     Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
-pub use words::{DETAIL_BYTES, clip, effort_words, words};
+pub use words::{DETAIL_BYTES, clip, clock, effort_words, words};
 pub use write::{write, write_with_ceiling};
 
 /// The event vocabulary version emitted and accepted by this codec.

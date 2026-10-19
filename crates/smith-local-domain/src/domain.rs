@@ -1165,9 +1165,19 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             }
         }
         parent::Request::Unauthorized { account, .. } => out.push(Request::Credential { account }),
-        // smith 02.4 gives both account notices their own presentation.
-        parent::Request::Refused { .. } | parent::Request::Limited { .. } => {
-            out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::Exhausted)) });
+        parent::Request::Limited { account, reset, .. } => {
+            let mut reset_at = None;
+            if let Some(reset) = reset {
+                reset_at = Some(Wall::from_nanos(env.wall.as_nanos().saturating_add(reset.as_nanos())));
+            }
+            out.push(Request::Notice {
+                notice: Notice::Failure(Failure::Account(AccountFailure::Limited { account, reset_at })),
+            });
+        }
+        parent::Request::Refused { account, code, reason, .. } => {
+            out.push(Request::Notice {
+                notice: Notice::Failure(Failure::Account(AccountFailure::Refused { account, code, reason })),
+            });
         }
         parent::Request::Called { call, name, deadline, ask, .. } => match ask {
             host::Ask::Deliver { fields } => begin_delivery(

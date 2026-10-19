@@ -128,23 +128,54 @@ fn completion_and_command_spans_do_not_claim_checks_are_running() {
 }
 
 #[test]
-fn rejection_keeps_the_account_and_exhaustion_keeps_its_notice() {
-    let (mut domain, env, mut out) = running(crate::tests::config());
+fn each_account_notice_keeps_its_account() {
+    let (mut domain, mut env, mut out) = running(crate::tests::config());
+    env.wall = Wall::from_nanos(36_000_000_000_000);
     parent_request(
         &mut domain,
         &env,
         parent::Request::Unauthorized { client: Token::new(1), account: 7, generation: 4 },
         &mut out,
     );
-    let Some(Request::Credential { account: 7 }) = out.pop() else { panic!("refresh the named account") };
-    parent_request(
-        &mut domain,
-        &env,
-        parent::Request::Limited { client: Token::new(1), account: 7, reset: Some(Duration::from_secs(2)) },
-        &mut out,
-    );
-    let Some(Request::Notice { notice }) = out.pop() else { panic!("quota notice") };
-    assert_eq!(notice, Notice::Failure(Failure::Account(AccountFailure::Exhausted)));
+    let Some(Request::Credential { account }) = out.pop() else { panic!("refresh the named account") };
+    assert_eq!(account, 7);
+    for (request, expected) in account_notices() {
+        parent_request(&mut domain, &env, request, &mut out);
+        let Some(Request::Notice { notice }) = out.pop() else { panic!("account notice") };
+        assert_eq!(notice, Notice::Failure(Failure::Account(expected.clone())), "{expected:?}");
+        assert!(out.is_empty());
+    }
+}
+
+fn account_notices() -> [(parent::Request, AccountFailure); 4] {
+    let client = Token::new(1);
+    [
+        (
+            parent::Request::Limited { client, account: 7, reset: Some(Duration::from_secs(2)) },
+            AccountFailure::Limited { account: 7, reset_at: Some(Wall::from_nanos(36_002_000_000_000)) },
+        ),
+        (
+            parent::Request::Limited { client, account: 8, reset: Some(Duration::ZERO) },
+            AccountFailure::Limited { account: 8, reset_at: Some(Wall::from_nanos(36_000_000_000_000)) },
+        ),
+        (
+            parent::Request::Limited { client, account: 9, reset: None },
+            AccountFailure::Limited { account: 9, reset_at: None },
+        ),
+        (
+            parent::Request::Refused {
+                client,
+                account: 10,
+                code: b"billing".as_slice().into(),
+                reason: b"contact support".as_slice().into(),
+            },
+            AccountFailure::Refused {
+                account: 10,
+                code: b"billing".as_slice().into(),
+                reason: b"contact support".as_slice().into(),
+            },
+        ),
+    ]
 }
 
 #[test]

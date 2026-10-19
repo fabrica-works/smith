@@ -156,14 +156,7 @@ impl Terminal {
             }
             local::Notice::Failure(failure) => match failure {
                 local::Failure::NamesExhausted => append(&mut text, b"Chat names exhausted"),
-                local::Failure::Account(account) => append(
-                    &mut text,
-                    match account {
-                        local::AccountFailure::Unavailable => b"A model account is unavailable",
-                        local::AccountFailure::NotRefreshed => b"A model account could not refresh",
-                        local::AccountFailure::Exhausted => b"A model account is exhausted",
-                    },
-                ),
+                local::Failure::Account(account) => failure::account(&mut text, account),
                 local::Failure::HeadUnavailable { directory } => {
                     append(&mut text, b"run refused: repository ");
                     append(&mut text, directory);
@@ -431,13 +424,55 @@ mod tests {
 
     #[test]
     fn account_failures_keep_their_own_words() {
-        for (account, expected) in [
+        for (account, expected) in account_failure_rows() {
+            assert_eq!(
+                rendered(local::Notice::Failure(local::Failure::Account(account))).as_ref(),
+                expected,
+                "{expected:?}"
+            );
+        }
+    }
+
+    fn account_failure_rows() -> [(local::AccountFailure, &'static [u8]); 7] {
+        [
             (local::AccountFailure::Unavailable, b"A model account is unavailable\n".as_slice()),
             (local::AccountFailure::NotRefreshed, b"A model account could not refresh\n".as_slice()),
-            (local::AccountFailure::Exhausted, b"A model account is exhausted\n".as_slice()),
-        ] {
-            assert_eq!(rendered(local::Notice::Failure(local::Failure::Account(account))).as_ref(), expected);
-        }
+            (
+                local::AccountFailure::Limited {
+                    account: 7,
+                    reset_at: Some(skein_lib::Wall::from_nanos(36_060_000_000_000)),
+                },
+                b"run failed: account 7 reached its usage limit, usable again at 10:01\n".as_slice(),
+            ),
+            (
+                local::AccountFailure::Limited { account: 7, reset_at: None },
+                b"run failed: account 7 reached its usage limit\n".as_slice(),
+            ),
+            (
+                local::AccountFailure::Refused {
+                    account: 7,
+                    code: b"billing".as_slice().into(),
+                    reason: b"contact support\nprivate".as_slice().into(),
+                },
+                b"run failed: account 7: the provider refused it: billing: contact support\n".as_slice(),
+            ),
+            (
+                local::AccountFailure::Refused {
+                    account: 7,
+                    code: Box::default(),
+                    reason: b"contact support".as_slice().into(),
+                },
+                b"run failed: account 7: the provider refused it: contact support\n".as_slice(),
+            ),
+            (
+                local::AccountFailure::Refused {
+                    account: 7,
+                    code: b"billing".as_slice().into(),
+                    reason: Box::default(),
+                },
+                b"run failed: account 7: the provider refused it: billing\n".as_slice(),
+            ),
+        ]
     }
 
     #[test]
