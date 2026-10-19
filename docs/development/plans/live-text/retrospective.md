@@ -538,11 +538,11 @@ For smith's `docs/development/tech-debt.md`, which lists none of these, and for 
 
 | Proposal | Decision | Where |
 |---|---|---|
-| 1 | adopted: client-api's proposals 2 to 9 are the first it holds back, so real-loop and browser-1 are claimed once they are applied | skein 1d105bc: development.md 15.1 (no claim while an adopted proposal is unapplied); `plan check`'s refusal, with section 6: skein's kit, to land |
+| 1 | adopted: client-api's proposals 2 to 9 are the first it holds back, so real-loop and browser-1 are claimed once they are applied | skein 1d105bc: development.md 15.1 (no claim while an adopted proposal is unapplied); skein 4134983: `plan check`'s refusal, with section 6 |
 | 2 | adopted | skein 1d105bc: development.md 5.2 ("Done when"), 5.4 (the literal reading) and 5.6 |
-| 3 | adopted: the coordinator alone runs without the graph, as 37c676e meant | skein 1d105bc: implementer.md 8.1 (a thread without graph tools); the implementers' thread config, with 2.3, 7.1 and 7.2: skein's kit, to land |
+| 3 | adopted: the coordinator alone runs without the graph, as 37c676e meant | skein 1d105bc: implementer.md 8.1 (a thread without graph tools); the implementers' thread config, with 2.3, 7.1 and 7.2: the next kit batch (spawned threads inherit the coordinator's `enabled = false`; giving them the graph back needs a probe of how Codex configures a spawned thread) |
 | 4 | adopted | skein 1d105bc: development.md 5.4 (the literal reading checks each shown test against testing-strategy.md's section 10) |
-| 5 | adopted | skein 1d105bc: development.md 5.2 (the Inputs name the design's commits); `plan metrics`' count, with 4.4, 15.1 and 15.2: skein's kit, to land |
-| 6 | adopted, with the tools retrospective's proposal 5 (one metric) | skein 1d105bc: development.md 5.2 and 15.2, `chain_step_min` from a step's first thread and `chain_step_max`, one metric with the tools retrospective's proposal 5; `plan metrics`: skein's kit, to land |
-| 7 | adopted | skein's kit, to land: the pulse, with development.md 5.2 and 14.2 |
+| 5 | adopted | skein 1d105bc: development.md 5.2 (the Inputs name the design's commits); skein baaebb7: `plan metrics`' count and `plan check`'s refusal of Inputs that name no design commit, with 4.4, 15.1 and 15.2 |
+| 6 | adopted, with the tools retrospective's proposal 5 (one metric) | skein 1d105bc: development.md 5.2 and 15.2, `chain_step_min` from a step's first thread and `chain_step_max`, one metric with the tools retrospective's proposal 5; skein 0b006b8: `plan metrics` |
+| 7 | adopted | skein e002687: the pulse, with development.md 5.2 and 14.2 |
 | 8 | adopted | skein 1d105bc: development.md 5.2 (interface sketches) and 5.4 (the plan's commands) |
