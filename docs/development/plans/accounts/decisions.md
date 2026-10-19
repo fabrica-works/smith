@@ -1384,6 +1384,12 @@ commits is this plan's.
 
      Checked at skein and smith origin/main: `crates/skein-oauth-accounts/src/openid_tests.rs:78 fn signed_in_names_the_records_subject()`, 31001/31002 written 6 times there; `tests/oauth-accounts/src/sign_in/owner.rs:154 if matches!(self.story, Story::OpenIdAgain | Story::IssuedClientId) {`; `component/accounts.rs:346 pub(super) fn endpoint`, `:387 fn given(uri: &[u8], registration: &oauth::Registration, origins: &List<crate::Origin>) -> bool`; `exchange.rs` 5 lines with `Method::Post`; smith `crates/smith-agent-service/src/tests/accounts.rs:16 … Request::Limited { account: 7, reset: Some(Duration::from_millis(73)) } …`.
 
+147. **hearth-repin waits on hearth's suite on x1** (process, hearth repin's block of 2026-10-19T23:31:32Z).
+     Neither a budget change nor a test-cost step in this run: the timeout is hearth's own, not the repin's. On x1, hearth's `origin/main` 3df74d3 fails its default suite's 15 s global timeout the same way (513 and 511 of 2149 run at 15.01 s), and with the timeout lifted runs 25.4 s and 22.6 s, against the repin's 23.2 s. One test, `hearth-tree-world::memory` `walk::walking_a_layer_at_its_limits_holds_no_more_than_the_worst_case`, takes 12.6 s to 14.1 s of that alone. 3df74d3, the walk against a parent, landed at 23:03Z from hearth's own work (no `Plan` trailer), its gate passing at 8.780 s on another machine. That test's cost is for hearth's own work to fix, and the supervisor sends it there through the director. hearth's budget stays (`.config/nextest.toml`, `global-timeout = "15s"`, from hearth's workflow.md, section 2).
+
+     1. hearth-repin keeps 78a04040 as it is, and runs no gate until a later unblock or steer names the hearth commit that brings its default suite within budget on x1. Then it rebases the unchanged pins onto that commit and lands once; a gate that still times out there is a question. Its session may end its turn meanwhile.
+     2. The repository downstream of jig's repin starts now. None of its manifests names hearth, and the README placed its repin after hearth-repin only to set an order. Its row in "The closing repins" now starts once `jig-repin` has landed.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
