@@ -209,7 +209,8 @@ Removes: the channel's v3 schema, generated code and goldens;
 ### 01.3 skein's credential and failure classes
 Scope: llm.md 6, 7; skein's llm.md 2.5, 2.6, 4.8; questions 6, 13.
 Needs: skein 01's `Scheme`, `Credential`, `Report` and optional
-  credential; skein 02's `Provider::OpenAi`; live text's LLM
+  credential; skein 02.3's `Provider::OpenAi`, measured and prepared
+  (ruling 113); live text's LLM
   component step (`plan await coordinator live-text/smith-01.3`).
 Files: `Cargo.lock`; `crates/smith-protocol-llm/src/`: `grants.rs`,
   `framing.rs`, `failure.rs`, `component.rs`, `guard.rs`,

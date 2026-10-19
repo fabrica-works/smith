@@ -479,6 +479,34 @@ commits is this plan's.
      `client_worst_case` per account and per exchange, which now prices the
      terms; oauth.md 6.7 names each account's registration to match.
 
+113. **smith 01.3's pin takes skein 02.3** (plan defect, smith 01's block of 2026-10-19T14:36:10Z).
+     A plan defect: the README's "smith takes skein twice" pins smith 01.3 to
+     the later of skein 01.5's and 02.1's landings (04c223a), but 02.1 leaves
+     `Provider::OpenAi`'s measure and prepare `Err(Error::Unsupported)`, which
+     02.3 fills. 01.3's Shape ("`framing.rs`'s `prompt_allowance` takes
+     `Provider::OpenAi` with `Endpoint::openai()`") and its Test shape ("the
+     prompt allowance's rows gain `OpenAi`") need the filled route, and smith
+     04.1's agent-process world runs an `openai` endpoint on 01.3's pin. So the
+     pin moves, not the tests: smith 01.3 repins to the later of skein 01.5's
+     and 02.3's landings, `--grep='^Step: skein-0(1\.5|2\.3)$'`, today
+     31bbf58, as the amended README rule gives it, still in a commit of its
+     own whose body names `$c`. No interim `Unsupported` row, and nothing for
+     smith-repin to flip.
+
+     Between 04c223a and 31bbf58 only skein 05.3 (1a6e753, f634f9c) and 02.3
+     landed. 02.3's Shape says "Downstream: none". 05.3's Files name its smith
+     users, which the repin commit now repairs as decision 13 says ("those of
+     skein 05 or 08 that landed first"), as 05.3's Files give them (decision
+     15): `terms: None` in the `Registration` literals of smith-local-shell
+     `src/credentials/sign_in.rs`, smith-local-service
+     `src/credentials/tests/private.rs` and `tests/local-process/src/process/configuration.rs`;
+     the three new `ClientLimits` fields in smith-local-service
+     `src/credentials/tests.rs` and smith-local-shell
+     `src/credentials/product.rs` (`client_limits`). A further smith user of a
+     skein change at or before `$c` that `heavy cargo check --workspace
+     --all-targets` finds is repaired in the same commit and listed in its
+     body; past about 200 lines besides `Cargo.lock`, it is a question.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

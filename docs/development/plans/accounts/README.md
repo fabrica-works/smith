@@ -150,9 +150,10 @@ downstream repin.
   rebase, as `land` and the implementer's card say.
 - **smith takes skein twice** (decisions.md, 13). smith 01.3 repins
   skein at its start, in a commit of its own, to the later of skein
-  01.5's and 02.1's landings: `c=$(git -C ~/src/rust/skein log
+  01.5's and 02.3's landings (ruling 113: 02.1 leaves `Provider::OpenAi`'s
+  measure and prepare `Unsupported`, which 02.3 fills): `c=$(git -C ~/src/rust/skein log
   origin/main -E --all-match --grep='^Plan: accounts$'
-  --grep='^Step: skein-0(1\.5|2\.1)$' -1 --format=%H)`, then `heavy
+  --grep='^Step: skein-0(1\.5|2\.3)$' -1 --format=%H)`, then `heavy
   cargo update -p skein-llm --precise $c` and `heavy cargo check
   --workspace --all-targets`, the commit's body naming `$c`. That
   commit repairs what every skein step at or before `$c` broke: skein
