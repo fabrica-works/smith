@@ -395,6 +395,29 @@ commits is this plan's.
      9fbda6b, not 1716. A further site that picks a header by scheme or
      route takes the same arm, listed in the commit body.
 
+109. **skein 04's Shapes against main** (ready check of skein-04.1).
+     skein 04's ready check of skein-04.1, against skein b481ad9 (02.1 since
+     landed as 489df9e; read again at 9fbda6b), smith 9d4430e9, jig 149970b,
+     hearth 5efba43 and temper efe462a, corrects `skein/04-fake-credentials.md`:
+     the size baselines (`provider.rs` 1095, `tests/llm/src/fake.rs` 967,
+     `tests/llm/tests/fake.rs` 1367); `Auth` and `Presented` derive `Clone,
+     Copy, PartialEq, Eq, Debug` for the reference tests' `assert_eq!`; 04.1
+     names `provider::Server`'s field that carries the matched index from
+     `entrance` to `requested`'s `Query.credential`, and has
+     `Exchange::new_configured` and the test module's `delayed` copy
+     `input.credential.scheme` where they write `Scheme::Bearer`; 04.2's
+     existing `observe_head` gains `presented`, its socket helper is
+     `request::request(sim, server, client, peer, fields, body)` in its own
+     `tests/llm/request.rs` (`support::call` neither pumps the peer nor
+     returns the read buffer, and in `tests/support/mod.rs` it is dead code in
+     the `oauth` and `forge` binaries), and its unauthorized rows reach no
+     `Query`, as `requested` answers `server.refused` first; 04.4's callers
+     are 5 of `extra_worst_case` in `bounded_peer_memory.rs`, 1 in
+     `fake_memory.rs` and 2 of `prepared` in `fake.rs`, and
+     `fake_credentials.rs` defines its own `completion`, since `fake.rs`'s
+     helpers are private. A further site that hard-codes a scheme or a count
+     the plan names is corrected the same way, and listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

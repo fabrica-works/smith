@@ -45,9 +45,10 @@ account_id }`, skein 02.1's public route and skein 03.2 on skein's
   and indices (code-organization.md, 7). Values are compared in
   `provider/credentials.rs` alone. The fake compares bytes: no sign-in,
   refresh, JWT parser, credential generation or credential record.
-- `provider.rs` (1031) and `tests/llm/src/fake.rs` (959) grow by at most
-  ~100 per increment: rules go to `provider/credentials.rs` and
-  `provider/public.rs` (new). `tests/llm/tests/fake.rs` (1210) takes
+- `provider.rs` (1095 at skein b481ad9) and `tests/llm/src/fake.rs`
+  (967) grow by at most ~100 per increment: rules go to
+  `provider/credentials.rs` and `provider/public.rs` (new).
+  `tests/llm/tests/fake.rs` (1367) takes
   04.3's one test; the stories go in `fake_credentials.rs`.
 - Limits: the peers' worlds take `limits()` of its `tests/llm.rs`
   (observations 16; a row makes at most 6); the Exchange worlds take
@@ -83,19 +84,25 @@ Shape: `start`, `up`, `down` and `resume` take `credentials:
   does `authorization`. `entrance` reads the three fields into
   `credentials::Fields` (a repeated one is unauthorized) and
   `credentials::authorize(route, list, &fields, without_credential) ->
-  Auth` (`Matched(u32)`, `Open`, `Unauthorized`) matches them: on
+  Auth` (`Matched(u32)`, `Open`, `Unauthorized`; `Clone, Copy,
+  PartialEq, Eq, Debug`, for the reference test's `assert_eq!`) matches
+  them: on
   Responses `Authorization: Bearer` against every value; on Anthropic
   `x-api-key` against the keys and `Authorization: Bearer` against the
   bearers, both fields present unauthorized; on Codex the matched
   bearer's account id must equal `chatgpt-account-id`. No field is
   `Open` only under `without_credential`. The query's `credential` is
-  the matched index, else `None`. `Peer::new` and the Exchange call
+  the matched index, else `None`: `provider::Server` gains a field
+  holding it, which `entrance` sets and `requested` copies into
+  `Query.credential` (`documents::request` sets `None`). `Peer::new` and the Exchange call
   `route` and keep a one-entry list (04.2 and 04.4 take more).
   `prepared_with_options` of `tests/llm/src/fake.rs` maps
   `Provider::OpenAi` to `documents::Provider::OpenAi`, as it does
-  `OpenAiCodex`; `route` reads the route from the credential; `delayed`
-  sets `Endpoint::openai()` and a bearer on it (02.1's Shape: every
-  `Provider` match takes the arm). Downstream (`without_credential:
+  `OpenAiCodex` (landed with 02.1); `route` reads the route from the
+  credential; `delayed` sets `Endpoint::openai()` and a bearer on it
+  (02.1 left its arm empty). `Exchange::new_configured` and the test
+  module's `delayed` copy `input.credential.scheme` where they write
+  `Scheme::Bearer`, or a key call is unauthorized at the Proof. Downstream (`without_credential:
   false`, a one-entry slice; about 10 lines): smith
   `tests/protocol-llm/tests/component_peer.rs` `run` and
   `tests/agent-process/src/fake.rs` `configured_bounds`, jig
@@ -146,7 +153,7 @@ Needs: 04.1; 03.1's `Line::Fail` and `Query.credential`; 03.2's
   `provider::scripts`.
 Files: `testing/skein-fake-llm-protocol/src/provider.rs`,
   `src/provider/credentials.rs`; `testing/skein-fake-peers/src/llm.rs`,
-  `tests/llm.rs`, `tests/support/mod.rs`; `tests/llm/src/fake.rs`,
+  `tests/llm.rs`, `tests/llm/request.rs` (new); `tests/llm/src/fake.rs`,
   `tests/llm/tests/fake.rs`; `tests/llm-connection/src/simulated.rs`.
 Shape: `provider::Event::Head { headers, presented: Presented }`.
   `Presented { route, scheme: Option<Scheme>, index: Option<u32> }`
@@ -168,8 +175,7 @@ Shape: `provider::Event::Head { headers, presented: Presented }`.
   Some(0), .. }`, not the `authorization` field; `run_with_shutdown`
   counts `calls * 6` observations, its `large` runs use the largest list
   the head cap admits; `take` of `tests/llm/src/fake.rs` takes
-  `presented`, its head arm moved into `observe_head(headers,
-  presented)`; the heads test of `tests/llm/tests/fake.rs` expects the
+  `presented`, and its existing `observe_head` gains `presented`; the heads test of `tests/llm/tests/fake.rs` expects the
   reader's head less the three fields; the peers' `make` becomes
   `make_on(endpoint, credential, address, transport)`, and `make` calls
   it with the Codex call. Downstream: smith
@@ -186,9 +192,14 @@ Shape: `provider::Event::Head { headers, presented: Presented }`.
   (decisions.md 15). Jig's `diagnostics` uses `matches!`: none.
 Test shape: world, `testing/skein-fake-peers/tests/llm.rs`, each under
   0.1 s, a scripted socket client sending literal heads
-  (`support::request(peer, fields, body) -> Vec<u8>`, new: it connects
-  with `support::call`, sends a head carrying `fields`, then `body`, and
-  returns the bytes read):
+  (`request::request(sim, server, client, peer, fields, body) ->
+  Vec<u8>`, new in `tests/llm/request.rs`, declared `mod request;` in
+  `tests/llm.rs` alone, since in `tests/support/mod.rs` it is dead code
+  in the `oauth` and `forge` binaries: it connects from `client`, sends
+  a head carrying `fields`, then `body`, pumping the peer on `server`
+  between the client's operations, and returns the bytes read;
+  `support::call` neither pumps the peer nor returns the read buffer;
+  `expect`, not `unwrap`, outside a `#[test]`):
   `accept_returns_each_credentials_index_in_order`;
   `accept_refuses_a_list_the_route_cannot_serve`, rows a key with an
   account id, a Codex credential on a public list, a public one on a
@@ -197,11 +208,13 @@ Test shape: world, `testing/skein-fake-peers/tests/llm.rs`, each under
   `accept_is_refused_once_a_request_has_reached_the_peer`;
   `each_request_is_observed_by_route_scheme_and_index`, rows on
   Anthropic and the public route: a key at 0, a bearer at 1, an unknown
-  key and bearer (no index), no field (the scheme none), each with its
-  `Query.credential`; `no_head_observation_holds_a_credential_field`.
+  key and bearer (no index), no field (the scheme none), the matched
+  rows with their `Query.credential`; the unauthorized rows reach no
+  `Query` (`requested` answers `server.refused` first) and assert the
+  `Credential` observation alone; `no_head_observation_holds_a_credential_field`.
   Memory: the full fake process test of
   `tests/llm-connection/tests/memory.rs` passes with the largest list.
-  The reference test, with `make_on` and `support::request` new:
+  The reference test, with `make_on` and `request::request` new:
   ```rust
   #[test]
   fn each_request_is_observed_by_route_scheme_and_index() {
@@ -209,7 +222,9 @@ Test shape: world, `testing/skein-fake-peers/tests/llm.rs`, each under
       let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
       let mut peer = make_on(Endpoint::anthropic(), key, address, Transport::Plaintext).unwrap();
       assert_eq!(peer.accept(Credential::bearer(b"b1".as_slice().into())).unwrap(), 1);
-      support::request(&mut peer, b"authorization: Bearer b1\r\n", b"");
+      let mut sim = skein_sim::Sim::new(23, skein_sim::Config::calm());
+      let (server, client) = (sim.spawn_process(), sim.spawn_process());
+      request::request(&mut sim, server, client, &mut peer, b"authorization: Bearer b1\r\n", b"");
       let seen = peer.observations().iter().find_map(|o| match o {
           llm::Observation::Credential { route, scheme, index, .. } => Some((*route, *scheme, *index)),
           _ => None,
@@ -272,7 +287,7 @@ Test shape: units in `public.rs`'s tests, under 20 ms, reference test:
   as `make` does for the peer (the protocol crate cannot build them:
   `skein_llm_world` depends on it), a row per field of the fifteen and
   one with none; `a_refused_field_is_answered_unsupported_naming_it`,
-  via `support::request`, rows `top_p` and `prompt_cache_retention`, the
+  via `request::request`, rows `top_p` and `prompt_cache_retention`, the
   literal status line and error body;
   `the_public_route_takes_its_scope_from_the_cache_key_alone`, rows the
   key with no headers (a `Query` observed) and, invalid, the key with a
@@ -298,7 +313,8 @@ Needs: 04.2's list and `Presented`; 04.3's public rules; 03.2's failures
   by credential; skein 01.5's call with no credential.
 Files: `tests/llm/src/fake.rs`; `tests/llm/tests/fake_credentials.rs`
   (new), `tests/llm/tests/fake_memory.rs`; the callers in
-  `tests/llm/tests/bounded_peer_memory.rs` (6) and `fake.rs` (2).
+  `tests/llm/tests/bounded_peer_memory.rs` (5 of `extra_worst_case`),
+  `fake_memory.rs` (1 of it) and `fake.rs` (2 of `prepared`).
 Shape: `Exchange::prepared`, `prepared_with_codex_echo` and
   `prepared_with_options` take `credential: Option<Credential>`, as
   skein 01.5 makes the call's: `Some` is index 0, `None` an empty list
@@ -346,7 +362,9 @@ Test shape: worlds, `fake_credentials.rs`, each under 0.5 s (the real
   `MAX_CREDENTIALS` credentials at the head cap and a failing line
   naming each index, its report at the script cap, the high water within
   the Client's price plus `extra_worst_case`. The reference test, with
-  `world(provider, sent)` new: the Client is prepared with the
+  `world(provider, sent)` and `completion` new in `fake_credentials.rs`
+  (`fake.rs`'s `completion`, `echoed_completion_json` and `key_count`
+  are private to it): the Client is prepared with the
   credential at index `sent` of [key, bearer]; the Exchange is
   `prepared` with the key and `accept`s the bearer:
   ```rust
@@ -383,6 +401,7 @@ Removes: the Exchange's single `credential`.
 ```rust
 // testing/skein-fake-llm-protocol/src/provider/credentials.rs; provider.rs: pub use credentials::{MAX_CREDENTIALS, Presented, route};
 /// What one request presented: its route, the scheme its field shows, the index it matched.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Presented { pub route: skein_llm::Provider, pub scheme: Option<skein_llm::Scheme>, pub index: Option<u32> }
 /// The most credentials one peer holds.
 pub const MAX_CREDENTIALS: u32 = 16;
