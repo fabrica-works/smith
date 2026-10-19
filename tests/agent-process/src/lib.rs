@@ -181,14 +181,14 @@ pub fn service(seed: u64) -> agent::Service {
 /// The shared lower configuration for direct, spawned and colocated process worlds.
 #[must_use]
 pub fn configuration() -> agent::Config {
-    configuration_for(false)
+    configuration_for(skein_llm::Provider::OpenAiCodex)
 }
 
-fn configuration_for(anthropic: bool) -> agent::Config {
-    configuration_with_limits(anthropic, &limits())
+fn configuration_for(provider: skein_llm::Provider) -> agent::Config {
+    configuration_with_limits(provider, &limits())
 }
 
-fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::Config {
+fn configuration_with_limits(provider: skein_llm::Provider, limits: &agent::Limits) -> agent::Config {
     let mut endpoints = List::with_capacity(1);
     endpoints
         .push(channel::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 })
@@ -206,7 +206,11 @@ fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::
                 },
                 address: kernel::Addr::from((std::net::Ipv4Addr::LOCALHOST, 443)),
                 transport: skein_llm_connection::Transport::Plaintext,
-                llm: if anthropic { skein_llm::Endpoint::anthropic() } else { skein_llm_world::call(7).endpoint },
+                llm: match provider {
+                    skein_llm::Provider::Anthropic => skein_llm::Endpoint::anthropic(),
+                    skein_llm::Provider::OpenAi => skein_llm::Endpoint::openai(),
+                    skein_llm::Provider::OpenAiCodex => skein_llm_world::call(7).endpoint,
+                },
             },
             account: 0,
             identity: llm::IdentityProfile::Plain,
@@ -255,7 +259,10 @@ fn configuration_output(anthropic: bool, output: u32) -> agent::Config {
     let mut declaration = declarations(0);
     declaration.endpoints[0].models[0].output = output;
     let limits = agent::profile::derive(&profile(), &declaration).expect("scripted output profile derives");
-    let mut configuration = configuration_with_limits(anthropic, &limits);
+    let mut configuration = configuration_with_limits(
+        if anthropic { skein_llm::Provider::Anthropic } else { skein_llm::Provider::OpenAiCodex },
+        &limits,
+    );
     configuration.domain.models[0].output = output;
     configuration
 }
@@ -267,7 +274,7 @@ fn reasoning_configuration() -> agent::Config {
     declaration.endpoints[0].models[0].output = 16_384;
     declaration.endpoints[0].models[0].reasoning_item = 65_536;
     let limits = agent::profile::derive(&profile(), &declaration).expect("reasoning profile derives");
-    let mut configuration = configuration_with_limits(false, &limits);
+    let mut configuration = configuration_with_limits(skein_llm::Provider::OpenAiCodex, &limits);
     configuration.domain.models[0].window = 272_000;
     configuration.domain.models[0].output = 16_384;
     configuration
@@ -307,7 +314,7 @@ pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
 }
 
 pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> skein_channel::Frame {
-    start_workspace_message(charter, turns, workspace, false, None, &scenario_credential(false, false), None)
+    start_workspace_message(charter, turns, workspace, false, None, &withdrawn(b"acc", b"token"), None)
 }
 
 pub(crate) fn start_workspace_message(
@@ -316,7 +323,7 @@ pub(crate) fn start_workspace_message(
     workspace: bool,
     absolute: bool,
     message: Option<&smith_channel::Message>,
-    credential: &skein_llm::Credential,
+    value: &smith_channel::GrantValue,
     live: Option<smith_channel::LiveAsk>,
 ) -> skein_channel::Frame {
     let limits = smith_channel::CEILINGS;
@@ -331,16 +338,7 @@ pub(crate) fn start_workspace_message(
                     account: 0,
                     generation: 1,
                     valid: Duration::from_secs(7200),
-                    value: smith_channel::GrantValue::Withdrawn(
-                        smith_channel::WithdrawnValue::new(
-                            &limits,
-                            smith_channel::WithdrawnValueParts {
-                                id: credential.account_id.clone(),
-                                bearer: skein_lib::Secret::new(credential.value.clone()),
-                            },
-                        )
-                        .expect("credential envelope"),
-                    ),
+                    value: value.clone(),
                 },
             )
             .expect("grant"),
@@ -402,10 +400,13 @@ pub(crate) fn start_workspace_message(
     frame.finish().expect("full frame")
 }
 
+/// Private credential fixture used to check that channel content stays credential-free.
+pub const PRIVATE_GRANT: &[u8] = b"native-private-bearer-02.6";
+
 fn scenario_credential(anthropic: bool, private_grant: bool) -> skein_llm::Credential {
     skein_llm::Credential {
         scheme: skein_llm::Scheme::Bearer,
-        value: Box::from(if private_grant { b"native-private-bearer-02.6".as_slice() } else { b"token".as_slice() }),
+        value: Box::from(if private_grant { PRIVATE_GRANT } else { b"token".as_slice() }),
         account_id: if anthropic {
             Box::new([])
         } else {
@@ -503,3 +504,6 @@ mod memory {
         drop(agent);
     }
 }
+
+mod grants;
+pub use grants::{bearer, key, program, withdrawn};

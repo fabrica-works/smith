@@ -55,7 +55,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
     };
     let values = crate::Values {
         paths: Box::from([Box::from(*b"/tmp/src")]),
-        credentials: Box::from([Box::from(*b"\0\0secret")]),
+        credentials: Box::from([smith_protocol_channel::GrantValue::Bearer(Box::from(&b"secret"[..]))]),
     };
     let frame = crate::encode_start(
         start,
@@ -88,11 +88,11 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
         b"/tmp/src"
     );
     let grant = start.grants().get(0).expect("grant");
-    let smith_channel::GrantValue::Withdrawn(value) = grant.value() else {
-        panic!("withdrawn grant");
+    let smith_channel::GrantValue::Credential(value) = grant.value() else {
+        panic!("bearer grant");
     };
-    assert_eq!(value.id().len(), 0);
-    assert!(value.bearer().expose() == b"secret");
+    assert_eq!(value.scheme(), &smith_channel::Scheme::Bearer);
+    assert!(value.bytes().expose() == b"secret");
 }
 
 #[test]

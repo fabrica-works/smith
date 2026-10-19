@@ -10,19 +10,62 @@ use skein_lib::Map;
 
 use crate::Error;
 
-/// Secret bytes whose debug view cannot print the value.
-pub(crate) struct Secret(Box<[u8]>);
+/// A host's tagged grant, retained only below the domain.
+#[derive(Clone, PartialEq, Eq)]
+pub enum GrantValue {
+    /// A host's bearer credential.
+    Bearer(Box<[u8]>),
+    /// A host's key credential.
+    Key(Box<[u8]>),
+    /// A host's program source name, refused until accounts-sources.
+    Program(Box<[u8]>),
+    /// Withdrawn: an id and bearer, removed by accounts-sources.
+    Withdrawn { account_id: Box<[u8]>, bearer: Box<[u8]> },
+}
 
-impl fmt::Debug for Secret {
+impl fmt::Debug for GrantValue {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("[redacted credential]")
+        formatter.write_str("[redacted grant value]")
+    }
+}
+
+/// Check a program source's directory name at either channel boundary.
+pub fn program_name(name: &[u8]) -> Result<&[u8], Error> {
+    if name.is_empty() || name.len() > 32 {
+        return Err(Error::Grants);
+    }
+    for byte in name {
+        if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && *byte != b'-' {
+            return Err(Error::Grants);
+        }
+    }
+    Ok(name)
+}
+
+impl TryFrom<&smith_channel::GrantValue> for GrantValue {
+    type Error = Error;
+
+    fn try_from(value: &smith_channel::GrantValue) -> Result<Self, Self::Error> {
+        Ok(match value {
+            smith_channel::GrantValue::Credential(value) => match value.scheme() {
+                smith_channel::Scheme::Bearer => GrantValue::Bearer(Box::from(value.bytes().expose())),
+                smith_channel::Scheme::Key => GrantValue::Key(Box::from(value.bytes().expose())),
+            },
+            smith_channel::GrantValue::Program(value) => {
+                let name = program_name(value.name())?;
+                GrantValue::Program(Box::from(name))
+            }
+            smith_channel::GrantValue::Withdrawn(value) => {
+                GrantValue::Withdrawn { account_id: Box::from(value.id()), bearer: Box::from(value.bearer().expose()) }
+            }
+        })
     }
 }
 
 /// The last two credential values per configured account.
 #[derive(Debug)]
 pub(crate) struct Credentials {
-    values: Map<(u32, u64), Secret>,
+    values: Map<(u32, u64), GrantValue>,
 }
 
 impl Credentials {
@@ -30,37 +73,11 @@ impl Credentials {
         Credentials { values: Map::with_capacity(capacity) }
     }
 
-    pub(crate) fn value(&self, account: u32, generation: u64) -> Option<&[u8]> {
-        match self.values.get(&(account, generation)) {
-            Some(secret) => Some(&secret.0),
-            None => None,
-        }
+    pub(crate) fn value(&self, account: u32, generation: u64) -> Option<&GrantValue> {
+        self.values.get(&(account, generation))
     }
 
-    // smith 04.1 replaces the withdrawn envelope with tagged values.
-    pub(crate) fn keep_wire(
-        &mut self,
-        account: u32,
-        generation: u64,
-        value: &smith_channel::GrantValue,
-    ) -> Result<(), Error> {
-        let value = match value {
-            smith_channel::GrantValue::Withdrawn(value) => value,
-            smith_channel::GrantValue::Credential(_) | smith_channel::GrantValue::Program(_) => {
-                return Err(Error::Grants);
-            }
-        };
-        let payload = value.id().len().checked_add(value.bearer().expose().len()).ok_or(Error::Grants)?;
-        let size = payload.checked_add(2).ok_or(Error::Grants)?;
-        let mut bytes = skein_lib::Writer::new(size);
-        let id_len = u16::try_from(value.id().len()).or(Err(Error::Grants))?;
-        bytes.put(&id_len.to_be_bytes())?;
-        bytes.put(value.id())?;
-        bytes.put(value.bearer().expose())?;
-        self.keep(account, generation, bytes.finish())
-    }
-
-    pub(crate) fn keep(&mut self, account: u32, generation: u64, value: Box<[u8]>) -> Result<(), Error> {
+    pub(crate) fn keep(&mut self, account: u32, generation: u64, value: GrantValue) -> Result<(), Error> {
         if generation == 0 {
             return Err(Error::Grants);
         }
@@ -83,9 +100,39 @@ impl Credentials {
             let oldest = oldest.ok_or(Error::Grants)?;
             self.values.remove(&(account, oldest));
         }
-        if self.values.insert((account, generation), Secret(value)).is_err() {
+        if self.values.insert((account, generation), value).is_err() {
             return Err(Error::Grants);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::program_name;
+    use crate::Error;
+    // protocol/channel.md, section 6 bounds a program source name at 32 bytes.
+    const PROGRAM_NAME_BYTES: usize = 32;
+
+    #[test]
+    fn a_program_name_outside_its_charset_is_refused() {
+        let rows = [
+            (b"".as_slice(), Some(Error::Grants)),
+            (&[b'a'; PROGRAM_NAME_BYTES + 1], Some(Error::Grants)),
+            (b"Upper", Some(Error::Grants)),
+            (b"under_score", Some(Error::Grants)),
+            (b"\xc3\xa9", Some(Error::Grants)),
+        ];
+        for (index, (name, expected)) in rows.into_iter().enumerate() {
+            assert_eq!(program_name(name).err(), expected, "row {index}");
+        }
+    }
+
+    #[test]
+    fn a_program_name_at_both_length_bounds_is_accepted() {
+        let rows = [(b"a".as_slice(), b"a".as_slice()), (&[b'a'; PROGRAM_NAME_BYTES], &[b'a'; PROGRAM_NAME_BYTES])];
+        for (index, (name, expected)) in rows.into_iter().enumerate() {
+            assert_eq!(program_name(name), Ok(expected), "row {index}");
+        }
     }
 }

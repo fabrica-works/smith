@@ -271,7 +271,7 @@ impl Component {
     pub fn send_grant(
         &mut self,
         grant: channel::Grant,
-        credential: Box<[u8]>,
+        credential: smith_protocol_channel::GrantValue,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
         below: &mut Queue<Lower>,
@@ -279,7 +279,7 @@ impl Component {
         if self.phase != Phase::Admitted {
             return Err(Error::Order);
         }
-        let value = crate::translate::withdrawn(&credential, &self.bodies)?;
+        let value = crate::translate::grant_value(credential, &self.bodies)?;
         let grant = smith_channel::Grant::new(
             &self.bodies,
             smith_channel::GrantParts {

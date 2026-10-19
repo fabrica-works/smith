@@ -981,7 +981,7 @@ impl ProcessAdapter {
         env: &Env<io::Limits>,
         requests: &mut Queue<host::process::Request>,
         start_values: &mut Option<StartValues>,
-        grant_values: &Map<u32, Box<[u8]>>,
+        grant_values: &Map<u32, smith_protocol_channel::GrantValue>,
         host_events: &mut Queue<host::Input>,
         trace: &mut Option<crate::stream::Spawned>,
     ) {
@@ -1112,7 +1112,7 @@ impl ProcessAdapter {
         &mut self,
         request: host::process::Request,
         start_values: &mut Option<StartValues>,
-        grant_values: &Map<u32, Box<[u8]>>,
+        grant_values: &Map<u32, smith_protocol_channel::GrantValue>,
         host_events: &mut Queue<host::Input>,
     ) {
         match request {

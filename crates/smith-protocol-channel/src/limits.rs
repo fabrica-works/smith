@@ -125,6 +125,10 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     for version in &schema.versions {
         duplicate = duplicate.checked_add(List::<skein_channel::Kind>::worst_case(version.kinds.capacity())?)?;
     }
+    let grant_value_bytes = u64::from(limits.bodies.withdrawn_value_id)
+        .checked_add(u64::from(limits.bodies.withdrawn_value_bearer))?
+        .max(u64::from(limits.bodies.credential_value_bytes))
+        .max(u64::from(limits.bodies.program_value_name));
     let bytes = skein_channel::worst_case(&schema, skein_channel::Role::Responder, &limits.channel)?
         .checked_add(duplicate)?
         .checked_add(u64::from(limits.endpoints).checked_mul(u64::try_from(size_of::<crate::Endpoint>()).ok()?)?)?
@@ -151,8 +155,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         )?)?
         .checked_add(skein_lib::Map::<u32, u64>::worst_case(limits.turns)?)?
         .checked_add(List::<u32>::worst_case(limits.turns)?)?
-        .checked_add(skein_lib::Map::<(u32, u64), crate::credentials::Secret>::worst_case(limits.grants)?)?
-        .checked_add(u64::from(limits.grants).checked_mul(grant_bytes(&limits.bodies)?)?)?
+        .checked_add(skein_lib::Map::<(u32, u64), crate::GrantValue>::worst_case(limits.grants)?)?
+        .checked_add(u64::from(limits.grants).checked_mul(grant_value_bytes)?)?
         .checked_add(u64::try_from(size_of::<Component>()).ok()?)
 }
 
@@ -280,11 +284,4 @@ fn turn_cells(limits: &smith_transcript::v5::Limits) -> Option<u64> {
         ..*limits
     };
     smith_transcript::Turn::worst_case_heap(&cells)
-}
-
-// Until smith 04.1, retained withdrawn values use the table's two-byte envelope.
-fn grant_bytes(limits: &smith_channel::Limits) -> Option<u64> {
-    let withdrawn =
-        u64::from(limits.withdrawn_value_id).checked_add(u64::from(limits.withdrawn_value_bearer))?.checked_add(2)?;
-    Some(withdrawn.max(u64::from(limits.credential_value_bytes)).max(u64::from(limits.program_value_name)))
 }

@@ -15,7 +15,7 @@ pub struct Values {
     /// One filesystem path for each directory, in domain order.
     pub paths: Box<[Box<[u8]>]>,
     /// One credential value for each grant, in domain order.
-    pub credentials: Box<[Box<[u8]>]>,
+    pub credentials: Box<[smith_protocol_channel::GrantValue]>,
 }
 
 /// Encode a domain Start and its service-owned values as the first downlink frame.
@@ -85,7 +85,7 @@ pub fn encode_start(
     }
     let mut grants = List::with_capacity(limits.start_grants);
     for (grant, credential) in start.grants.into_iter().zip(values.credentials) {
-        let value = withdrawn(&credential, limits)?;
+        let value = grant_value(credential, limits)?;
         let item = wire::Grant::new(
             limits,
             wire::GrantParts { account: grant.account, generation: grant.generation, valid: grant.valid, value },
@@ -300,27 +300,33 @@ pub(crate) fn encode_reply(
     Ok(frame.finish()?)
 }
 
-// smith 04.1 replaces the lent envelope with tagged grant values.
-pub(crate) fn withdrawn(credential: &[u8], limits: &wire::Limits) -> Result<wire::GrantValue, Error> {
-    if credential.len() < 2 {
-        return Err(Error::Grants);
+pub(crate) fn grant_value(
+    value: smith_protocol_channel::GrantValue,
+    limits: &wire::Limits,
+) -> Result<wire::GrantValue, Error> {
+    use smith_protocol_channel::GrantValue;
+    match value {
+        GrantValue::Bearer(value) => credential_value(value, wire::Scheme::Bearer, limits),
+        GrantValue::Key(value) => credential_value(value, wire::Scheme::Key, limits),
+        GrantValue::Program(name) => {
+            smith_protocol_channel::program_name(&name).or(Err(Error::Grants))?;
+            let value = wire::ProgramValue::new(limits, wire::ProgramValueParts { name }).or(Err(Error::Grants))?;
+            Ok(wire::GrantValue::Program(value))
+        }
+        GrantValue::Withdrawn { account_id, bearer } => {
+            let value = wire::WithdrawnValue::new(
+                limits,
+                wire::WithdrawnValueParts { id: account_id, bearer: skein_lib::Secret::new(bearer) },
+            )
+            .or(Err(Error::Grants))?;
+            Ok(wire::GrantValue::Withdrawn(value))
+        }
     }
-    let length = usize::from(u16::from_be_bytes([
-        *credential.first().ok_or(Error::Grants)?,
-        *credential.get(1).ok_or(Error::Grants)?,
-    ]));
-    let end = length.checked_add(2).ok_or(Error::Grants)?;
-    if length > 1024 {
-        return Err(Error::Grants);
-    }
-    let id = credential.get(2..end).ok_or(Error::Grants)?;
-    let value = wire::WithdrawnValue::new(
-        limits,
-        wire::WithdrawnValueParts {
-            id: Box::from(id),
-            bearer: skein_lib::Secret::new(Box::from(credential.get(end..).ok_or(Error::Grants)?)),
-        },
-    )
-    .or(Err(Error::Grants))?;
-    Ok(wire::GrantValue::Withdrawn(value))
+}
+
+fn credential_value(bytes: Box<[u8]>, scheme: wire::Scheme, limits: &wire::Limits) -> Result<wire::GrantValue, Error> {
+    let value =
+        wire::CredentialValue::new(limits, wire::CredentialValueParts { scheme, bytes: skein_lib::Secret::new(bytes) })
+            .or(Err(Error::Grants))?;
+    Ok(wire::GrantValue::Credential(value))
 }

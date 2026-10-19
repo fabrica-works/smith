@@ -498,7 +498,13 @@ impl HostService {
             host::Down::Start { start, window } => process.send_start(
                 start,
                 window,
-                protocol::Values { paths: Box::new([]), credentials: Box::new([Box::from(&b"\0\x03acctoken"[..])]) },
+                protocol::Values {
+                    paths: Box::new([]),
+                    credentials: Box::new([smith_protocol_channel::GrantValue::Withdrawn {
+                        account_id: Box::from(&b"acc"[..]),
+                        bearer: Box::from(&b"token"[..]),
+                    }]),
+                },
                 token,
                 &mut self.process_events,
                 &mut self.io_requests,
@@ -514,7 +520,10 @@ impl HostService {
             }
             host::Down::Grant { grant } => process.send_grant(
                 grant,
-                Box::from(&b"\0\x03acctoken"[..]),
+                smith_protocol_channel::GrantValue::Withdrawn {
+                    account_id: Box::from(&b"acc"[..]),
+                    bearer: Box::from(&b"token"[..]),
+                },
                 token,
                 &mut self.process_events,
                 &mut self.io_requests,

@@ -1,7 +1,7 @@
 //! Channel opening stories (protocol/channel.md, sections 2 and 10).
 use skein_channel::{Closed, StreamMode};
 use smith_channel::CEILINGS;
-use smith_channel_world::{INITIAL_GRANT, LATEST_GRANT, Observation, REFRESHED_GRANT, World, window_turn_fixture};
+use smith_channel_world::{Observation, World, initial_grant, latest_grant, refreshed_grant, window_turn_fixture};
 
 #[test]
 fn the_halves_open_on_the_highest_version_both_speak() {
@@ -321,7 +321,7 @@ fn the_start_keeps_workspace_paths_saved_answers_and_grant_values_below_the_doma
         answered: 1,
         window: 2,
     }));
-    assert!(world.agent_grant_value(3, 4).as_deref() == Some(INITIAL_GRANT));
+    assert!(world.agent_grant_value(3, 4) == Some(initial_grant()));
     assert!(world.observations().contains(&Observation::AgentSavedHost {
         activation: 6,
         tool: Box::from(*b"check"),
@@ -737,34 +737,26 @@ fn facts_are_dropped_under_pressure_and_waiting_still_passes() {
 
 #[test]
 fn grants_refreshed_while_a_call_is_in_flight_reach_the_table() {
-    let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
-    world.settle();
-    world.send_start_with_context(
-        Box::from(&include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin")[..]),
-        smith_host_domain::SavedReply::TooLarge,
-    );
-    world.settle();
-    world.agent_admits();
-    world.settle();
+    let mut world = world_with_initial_grant();
     world.agent_calls_host(
         smith_domain::run::CallName { activation: 7, completion: 1, position: 0 },
         smith_domain::run::RelayName { owner: skein_lib::Token::new(10), attempt: 1 },
     );
     world.settle();
-    world.host_refreshes_grant(3, 5, Box::from(REFRESHED_GRANT));
+    world.host_refreshes_grant(3, 5, refreshed_grant());
     world.settle();
-    assert!(world.agent_grant_value(3, 4).as_deref() == Some(INITIAL_GRANT));
-    assert!(world.agent_grant_value(3, 5).as_deref() == Some(REFRESHED_GRANT));
+    assert!(world.agent_grant_value(3, 4) == Some(initial_grant()));
+    assert!(world.agent_grant_value(3, 5) == Some(refreshed_grant()));
     assert!(world.observations().contains(&Observation::AgentGrant {
         account: 3,
         generation: 5,
         valid: skein_lib::Duration::from_nanos(50),
     }));
-    world.host_refreshes_grant(3, 6, Box::from(LATEST_GRANT));
+    world.host_refreshes_grant(3, 6, latest_grant());
     world.settle();
     assert!(world.agent_grant_value(3, 4).is_none());
-    assert!(world.agent_grant_value(3, 5).as_deref() == Some(REFRESHED_GRANT));
-    assert!(world.agent_grant_value(3, 6).as_deref() == Some(LATEST_GRANT));
+    assert!(world.agent_grant_value(3, 5) == Some(refreshed_grant()));
+    assert!(world.agent_grant_value(3, 6) == Some(latest_grant()));
 }
 
 #[test]
@@ -1301,4 +1293,67 @@ fn a_refused_account_is_written_with_its_code() {
         let received = Some((refused.account(), refused.code()));
         assert_eq!(received, Some((7, expected)), "code length {}", code.len());
     }
+}
+
+fn grant_shape(value: Option<smith_protocol_channel::GrantValue>) -> Option<(&'static str, usize, usize)> {
+    use smith_protocol_channel::GrantValue;
+    value.map(|value| match value {
+        GrantValue::Bearer(bytes) => ("bearer", bytes.len(), 0),
+        GrantValue::Key(bytes) => ("key", bytes.len(), 0),
+        GrantValue::Program(name) => ("program", name.len(), 0),
+        GrantValue::Withdrawn { account_id, bearer } => ("withdrawn", bearer.len(), account_id.len()),
+    })
+}
+
+#[test]
+fn each_grant_form_reaches_the_table_by_its_tag() {
+    use smith_protocol_channel::GrantValue;
+    // Sizes follow the fixture words below.
+    const VALUE_BYTES: usize = 5;
+    const SOURCE_BYTES: usize = 6;
+    const ACCOUNT_BYTES: usize = 7;
+    let rows = [
+        (GrantValue::Bearer(Box::from(&b"value"[..])), Some(("bearer", VALUE_BYTES, 0))),
+        (GrantValue::Key(Box::from(&b"value"[..])), Some(("key", VALUE_BYTES, 0))),
+        (GrantValue::Program(Box::from(&b"source"[..])), Some(("program", SOURCE_BYTES, 0))),
+        (
+            GrantValue::Withdrawn { account_id: Box::from(&b"account"[..]), bearer: Box::from(&b"value"[..]) },
+            Some(("withdrawn", VALUE_BYTES, ACCOUNT_BYTES)),
+        ),
+    ];
+    let mut world = world_with_initial_grant();
+    for (index, (value, expected)) in rows.into_iter().enumerate() {
+        let generation = u64::try_from(index).expect("four rows").checked_add(5).expect("generation");
+        world.host_refreshes_grant(3, generation, value);
+        world.settle();
+        assert_eq!(grant_shape(world.agent_grant_value(3, generation)), expected, "row {index}");
+    }
+}
+
+#[test]
+fn a_grant_values_debug_shows_no_bytes() {
+    use smith_protocol_channel::GrantValue;
+    const HIDDEN: &str = "[redacted grant value]";
+    let rows = [
+        (GrantValue::Bearer(Box::from(&b"secret"[..])), HIDDEN),
+        (GrantValue::Key(Box::from(&b"secret"[..])), HIDDEN),
+        (GrantValue::Program(Box::from(&b"source"[..])), HIDDEN),
+        (GrantValue::Withdrawn { account_id: Box::from(&b"account"[..]), bearer: Box::from(&b"secret"[..]) }, HIDDEN),
+    ];
+    for (index, (value, expected)) in rows.into_iter().enumerate() {
+        assert_eq!(format!("{value:?}"), expected, "row {index}");
+    }
+}
+
+fn world_with_initial_grant() -> World {
+    let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+    world.settle();
+    world.send_start_with_context(
+        Box::from(&include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin")[..]),
+        smith_host_domain::SavedReply::TooLarge,
+    );
+    world.settle();
+    world.agent_admits();
+    world.settle();
+    world
 }

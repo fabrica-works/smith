@@ -28,7 +28,7 @@ use crate::process::{Launch, ProcessAdapter, ProcessLimits};
 pub struct Limits {
     pub local: local::Limits,
     pub inline: Option<InlineLimits>,
-    /// Maximum credential envelope bytes retained by the owner.
+    /// Maximum tagged grant payload bytes retained by the owner.
     pub envelope_bytes: u64,
     pub process: ProcessLimits,
     pub queue: u32,
@@ -173,7 +173,7 @@ pub fn memory_parts(limits: &Limits) -> Option<[(&'static str, u64); 6]> {
         .checked_add(Queue::<protocol::TerminalEvent>::worst_case(limits.queue)?)?
         .checked_add(u64::from(limits.queue).checked_mul(u64::try_from(size_of::<local::Event>()).ok()?)?)?
         .checked_add(Queue::<Box<[u8]>>::worst_case(limits.queue)?)?
-        .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.local.smith.accounts)?)?
+        .checked_add(Map::<u32, smith_protocol_channel::GrantValue>::worst_case(limits.local.smith.accounts)?)?
         .checked_add(u64::from(limits.local.smith.accounts).checked_mul(limits.envelope_bytes)?)?
         .checked_add(
             u64::from(limits.local.smith.run.directories).checked_mul(u64::try_from(size_of::<kernel::Fd>()).ok()?)?,
@@ -228,7 +228,7 @@ pub struct Service {
     host_events: Queue<host::Input>,
     shell: Queue<local::Request>,
     lower: Queue<host::process::Request>,
-    values: Map<u32, Box<[u8]>>,
+    values: Map<u32, smith_protocol_channel::GrantValue>,
     paths: Box<[Box<[u8]>]>,
     start_values: Option<StartValues>,
     failed: bool,
@@ -239,7 +239,7 @@ pub struct Service {
 #[derive(Debug)]
 pub struct StartValues {
     pub paths: Box<[Box<[u8]>]>,
-    pub credentials: Box<[Box<[u8]>]>,
+    pub credentials: Box<[smith_protocol_channel::GrantValue]>,
 }
 
 impl Service {
@@ -527,8 +527,14 @@ impl Service {
     }
 
     /// Lend a credential value only beside the domain's grant name.
-    pub fn credential(&mut self, grant: agent::Grant, envelope: Box<[u8]>) {
-        if u64::try_from(envelope.len()).expect("envelope bytes fit u64") > self.limits.envelope_bytes {
+    pub fn credential(&mut self, grant: agent::Grant, value: smith_protocol_channel::GrantValue) {
+        let bytes = match &value {
+            channel::GrantValue::Bearer(bytes)
+            | channel::GrantValue::Key(bytes)
+            | channel::GrantValue::Program(bytes) => bytes.len(),
+            channel::GrantValue::Withdrawn { account_id, bearer } => account_id.len().saturating_add(bearer.len()),
+        };
+        if u64::try_from(bytes).expect("grant payload bytes fit u64") > self.limits.envelope_bytes {
             self.local_events.push(local::Event::NoCredential {
                 account: grant.name.account,
                 reason: local::CredentialFailure::Missing,
@@ -536,7 +542,7 @@ impl Service {
             return;
         }
         if let Some(effects) = self.below.inline_mut()
-            && effects.grant(grant, &envelope, self.now).is_err()
+            && effects.grant(grant, &value, self.now).is_err()
         {
             self.local_events.push(local::Event::NoCredential {
                 account: grant.name.account,
@@ -544,7 +550,7 @@ impl Service {
             });
             return;
         }
-        self.values.insert(grant.name.account, envelope).expect("configured account capacity");
+        self.values.insert(grant.name.account, value).expect("configured account capacity");
         self.local_events.push(local::Event::Credential { grant });
     }
 
@@ -1047,7 +1053,7 @@ impl Service {
                     for grant in &start.grants {
                         credentials
                             .push(self.values.get(&grant.account).expect("credential supplied before Start").clone())
-                            .expect("one envelope per named grant");
+                            .expect("one value per named grant");
                     }
                     assert_eq!(
                         start.directories.len(),

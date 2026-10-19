@@ -4,11 +4,13 @@
 use skein_channel::StreamMode;
 use skein_lib::{Duration, Env, Queue, Reader, ReplyTo, Time, Token, Wall, Writer};
 use smith_channel::CEILINGS;
-use smith_channel_world::{INITIAL_GRANT, Observation, World};
+use smith_channel_world::{Observation, World, initial_grant};
 use smith_domain::{self as agent, Event as AgentEvent, Request as AgentRequest};
 use smith_host_domain::{self as host, Down, Up};
 
-const SYNTHETIC_GRANT: &[u8] = b"\0\0synthetic";
+fn synthetic_grant() -> smith_protocol_channel::GrantValue {
+    smith_protocol_channel::GrantValue::Bearer(Box::from(b"synthetic".as_slice()))
+}
 
 #[path = "composed/long.rs"]
 mod long;
@@ -44,7 +46,7 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     wire.send_domain_start(
         start,
         window,
-        smith_host_protocol::Values { paths: Box::default(), credentials: Box::from([Box::from(INITIAL_GRANT)]) },
+        smith_host_protocol::Values { paths: Box::default(), credentials: Box::from([initial_grant()]) },
     );
     wire.settle();
     assert!(wire.observations().contains(&Observation::HostSent(Token::new(2))));
@@ -271,7 +273,7 @@ fn carried_start_messages_cross_the_wire_in_order_and_an_overfull_start_is_refus
         wire.send_domain_start(
             start,
             host::channel::Window { turns: 100, bytes: 1_000_000_000 },
-            smith_host_protocol::Values { paths: Box::default(), credentials: Box::new([SYNTHETIC_GRANT.into()]) },
+            smith_host_protocol::Values { paths: Box::default(), credentials: Box::new([synthetic_grant()]) },
         );
         wire.settle();
         let decoded = wire.take_agent_start().expect("carried Start decoded");
@@ -375,7 +377,7 @@ fn an_empty_start_waits_without_a_fence_and_the_first_wire_message_opens_main() 
     wire.send_domain_start(
         start,
         host::channel::Window { turns: 100, bytes: 1_000_000_000 },
-        smith_host_protocol::Values { paths: Box::default(), credentials: Box::new([SYNTHETIC_GRANT.into()]) },
+        smith_host_protocol::Values { paths: Box::default(), credentials: Box::new([synthetic_grant()]) },
     );
     wire.settle();
     let decoded = wire.take_agent_start().expect("wire Start");

@@ -48,7 +48,7 @@ pub use quantities::{Configuration, Declared, Endpoint, Fraction, Model, Name, P
 /// The number of configured destinations the standard profile admits.
 pub const ENDPOINTS: u32 = 3;
 
-/// The number of credential accounts the standard profile admits.
+/// The count of distinct credential accounts the standard profile admits.
 pub const ACCOUNTS: u32 = 4;
 
 /// Compose layer limits from the selected profile and endpoint declarations.

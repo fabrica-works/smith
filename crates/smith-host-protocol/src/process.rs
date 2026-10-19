@@ -211,7 +211,7 @@ impl Process {
     pub fn send_grant(
         &mut self,
         grant: channel::Grant,
-        credential: Box<[u8]>,
+        credential: smith_protocol_channel::GrantValue,
         token: Token,
         above: &mut Queue<ProcessEvent>,
         below: &mut Queue<IoRequest>,

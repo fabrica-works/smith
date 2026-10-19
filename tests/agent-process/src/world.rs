@@ -33,6 +33,7 @@ struct Parent {
     acknowledge_turns: bool,
     acknowledged: u32,
     frames_at_release: usize,
+    refreshing: Option<smith_channel::GrantValue>,
 }
 
 impl Parent {
@@ -46,15 +47,17 @@ impl Parent {
         environment: bool,
         message: Option<&smith_channel::Message>,
         capture: smith_agent_service::sinks::Capture,
-        anthropic: bool,
-        credential: &skein_llm::Credential,
+        provider: skein_llm::Provider,
+        value: &smith_channel::GrantValue,
         live: Option<smith_channel::LiveAsk>,
         output: u32,
     ) -> Self {
         let mut peer = if matches!(tracing, Some((TraceCase::StoppedReasoning, _))) {
             crate::host_with_limits(crate::reasoning_configuration().limits.channel)
         } else if output > 0 {
-            crate::host_with_limits(crate::configuration_output(anthropic, output).limits.channel)
+            crate::host_with_limits(
+                crate::configuration_output(provider == skein_llm::Provider::Anthropic, output).limits.channel,
+            )
         } else {
             crate::host()
         };
@@ -65,7 +68,7 @@ impl Parent {
                 environment || matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
                 matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
                 message,
-                credential,
+                value,
                 live,
             ));
         }
@@ -92,11 +95,14 @@ impl Parent {
             acknowledge_turns: matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
             acknowledged: 0,
             frames_at_release: 0,
+            refreshing: None,
         };
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
                 program: b"smith".as_slice().into(),
-                args: if environment {
+                args: if provider == skein_llm::Provider::OpenAi {
+                    Box::new([Box::from(&b"openai"[..])])
+                } else if environment {
                     Box::new([Box::from(b"environment".as_slice())])
                 } else {
                     tracing.map_or_else(
@@ -112,7 +118,11 @@ impl Parent {
                                         Box::from(b"everything".as_slice())
                                     }
                                 },
-                                Box::from(if anthropic { b"anthropic".as_slice() } else { b"codex".as_slice() }),
+                                Box::from(if provider == skein_llm::Provider::Anthropic {
+                                    b"anthropic".as_slice()
+                                } else {
+                                    b"codex".as_slice()
+                                }),
                                 output.to_string().into_bytes().into_boxed_slice(),
                             ])
                         },
@@ -142,6 +152,11 @@ impl Parent {
     }
 
     fn acknowledge(&mut self) {
+        if self.admitted()
+            && let Some(value) = self.refreshing.take()
+        {
+            self.peer.play(crate::grants::refresh(value));
+        }
         if self.acknowledge_turns {
             let turns: Vec<_> = self
                 .peer
@@ -438,7 +453,11 @@ impl Host for Proc {
 fn make(spawn: &Spawn, inherited: &Inherited) -> Proc {
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (errors, capture) = crate::AgentErrors::pipe(fd);
-    let mut configuration = crate::configuration();
+    let mut configuration = if spawn.args.first().is_some_and(|arg| arg.as_ref() == b"openai") {
+        crate::configuration_for(skein_llm::Provider::OpenAi)
+    } else {
+        crate::configuration()
+    };
     if spawn.args.first().is_some_and(|arg| arg.as_ref() == b"environment") {
         configuration.limits.machine.env_bytes = 128;
         configuration.environment = smith_protocol_machine::Environment::encode(
@@ -464,7 +483,11 @@ fn make_tracing(spawn: &Spawn, inherited: &Inherited) -> Proc {
     } else if spawn.args[0].as_ref() == b"8" {
         crate::reasoning_configuration()
     } else {
-        crate::configuration_for(spawn.args[3].as_ref() == b"anthropic")
+        crate::configuration_for(if spawn.args[3].as_ref() == b"anthropic" {
+            skein_llm::Provider::Anthropic
+        } else {
+            skein_llm::Provider::OpenAiCodex
+        })
     };
     if spawn.args[0].as_ref() == b"6" {
         configuration.limits.llm.connection.connections = 3;
@@ -599,6 +622,13 @@ struct Release {
     released: bool,
 }
 
+#[derive(Clone, Copy)]
+enum CredentialStory {
+    Ordinary,
+    Supplied,
+    Refresh,
+}
+
 struct Referee {
     release: Option<Release>,
     cancel: bool,
@@ -611,6 +641,7 @@ struct Referee {
     full_completion: bool,
     tracing: Option<(TraceCase, u32)>,
     maximum_queries: usize,
+    credential_story: CredentialStory,
     expected: skein_world::Expectations<Proc, Terminal>,
 }
 impl skein_world::Referee<Proc> for Referee {
@@ -676,8 +707,10 @@ impl skein_world::Referee<Proc> for Referee {
         );
         let peer = procs.iter().find_map(|p| if let Proc::Peer(p, _) = p { Some(p) } else { None }).expect("peer");
         assert!(fake::queries(peer).count() <= self.maximum_queries, "bounded completion scenario");
+        let entrance_refused = (matches!(self.credential_story, CredentialStory::Supplied) && !parent.admitted())
+            || matches!(self.tracing, Some((TraceCase::Refused, _)));
         if matches!(self.hang_up, HangUp::Never) && parent.status.is_some() {
-            if matches!(self.tracing, Some((TraceCase::Refused, _))) {
+            if entrance_refused {
                 assert!(!parent.admitted(), "an entrance refusal has no admission");
             } else {
                 assert!(parent.admitted(), "the host observed admission; answer={:?}", parent.peer.observed());
@@ -687,23 +720,8 @@ impl skein_world::Referee<Proc> for Referee {
                 assert_eq!(fake::queries(peer).count(), 0, "empty zero-waiting work parks without a provider request");
             } else if self.provider_rejected || matches!(self.tracing, Some((TraceCase::ProviderRejected, _))) {
                 assert!(fake::context_rejected(peer), "the independent provider rejected the actual request");
-            } else if !self.cancel && !matches!(self.tracing, Some((TraceCase::Refused, _))) {
-                assert!(
-                    fake::replied(peer),
-                    "provider answered before agent exit; peer={:?}; answers={:?}",
-                    peer.observations(),
-                    parent
-                        .peer
-                        .observed()
-                        .iter()
-                        .filter(|frame| frame.kind == 0x0110)
-                        .map(|frame| smith_channel::Answer::decode(
-                            &smith_channel::CEILINGS,
-                            &mut skein_lib::Reader::new(&frame.body)
-                        )
-                        .expect("typed answer"))
-                        .collect::<Vec<_>>()
-                );
+            } else if !self.cancel && !matches!(self.credential_story, CredentialStory::Refresh) && !entrance_refused {
+                assert!(fake::replied(peer), "provider answered before agent exit");
             }
         }
         for frame in parent.peer.observed().get(self.reviewed..).expect("channel observations only grow") {
@@ -743,7 +761,11 @@ impl skein_world::Referee<Proc> for Referee {
         }
         self.reviewed = parent.peer.observed().len();
         assert!(self.admitted_facts <= 1 && self.answer_facts <= 1, "one fact terminal per activation");
-        if matches!(self.hang_up, HangUp::Never) && parent.status.is_some() && self.tracing.is_none() {
+        if matches!(self.hang_up, HangUp::Never)
+            && parent.status.is_some()
+            && self.tracing.is_none()
+            && !entrance_refused
+        {
             assert_eq!(
                 parent.peer.observed().iter().filter(|frame| frame.kind == 0x0106).count(),
                 1,
@@ -803,10 +825,10 @@ impl TraceCase {
         }
     }
 
-    fn peer(self, anthropic: bool, private_grant: bool) -> skein_fake_peers::llm::Peer {
+    fn peer(self, anthropic: bool, credential: skein_llm::Credential) -> skein_fake_peers::llm::Peer {
         use skein_fake_llm_domain::api;
         if self == Self::ChildAnswered || self == Self::ThreeChildren {
-            return child_peer(anthropic, self == Self::ThreeChildren, private_grant);
+            return child_peer(anthropic, self == Self::ThreeChildren, credential);
         }
         if self == Self::StoppedReasoning {
             return stopped_reasoning_peer();
@@ -853,7 +875,7 @@ impl TraceCase {
     }
 }
 
-fn child_peer(anthropic: bool, three: bool, private_grant: bool) -> skein_fake_peers::llm::Peer {
+fn child_peer(anthropic: bool, three: bool, credential: skein_llm::Credential) -> skein_fake_peers::llm::Peer {
     use skein_fake_llm_domain::api;
     let count = if three { 3 } else { 1 };
     let mut scripts = Vec::new();
@@ -889,7 +911,6 @@ fn child_peer(anthropic: bool, three: bool, private_grant: bool) -> skein_fake_p
             },
         ]),
     });
-    let credential = crate::scenario_credential(anthropic, private_grant);
     if anthropic {
         fake::configured_anthropic(scripts.into_boxed_slice(), credential)
     } else {
@@ -976,6 +997,9 @@ pub struct World {
     capture: smith_agent_service::sinks::Capture,
     anthropic: bool,
     private_grant: bool,
+    grant: Option<smith_channel::GrantValue>,
+    refreshing: Option<smith_channel::GrantValue>,
+    openai: bool,
     live: Option<smith_channel::LiveAsk>,
     script: Option<Box<[skein_fake_llm_domain::api::Turn]>>,
     output: u32,
@@ -1006,6 +1030,9 @@ impl World {
             capture: smith_agent_service::sinks::Capture::Everything,
             anthropic: false,
             private_grant: false,
+            grant: None,
+            refreshing: None,
+            openai: false,
             live: None,
             script: None,
             output: 0,
@@ -1305,9 +1332,16 @@ impl World {
             full_completion: self.full_completion,
             tracing: self.tracing,
             maximum_queries: self.maximum_queries(),
+            credential_story: if self.refreshing.is_some() {
+                CredentialStory::Refresh
+            } else if self.grant.is_some() {
+                CredentialStory::Supplied
+            } else {
+                CredentialStory::Ordinary
+            },
             expected: skein_world::Expectations::new(
                 self.seed,
-                vec![Terminal { hang_up: self.hang_up || self.hang_up_mid_call }],
+                vec![Terminal { hang_up: self.hang_up || self.hang_up_mid_call || self.refreshing.is_some() }],
             ),
         }
     }
@@ -1345,73 +1379,90 @@ impl World {
                 self.environment,
                 self.message.as_ref(),
                 self.capture,
-                self.anthropic,
-                &crate::scenario_credential(self.anthropic, self.private_grant),
+                if self.openai {
+                    skein_llm::Provider::OpenAi
+                } else if self.anthropic {
+                    skein_llm::Provider::Anthropic
+                } else {
+                    skein_llm::Provider::OpenAiCodex
+                },
+                &self.grant_value(),
                 self.live.clone(),
                 self.output,
             );
             parent.hold_channel = self.hold_channel;
+            parent.refreshing.clone_from(&self.refreshing);
             Proc::Parent(Box::new(parent))
         });
-        world.spawn(|| {
-            let peer = if let Some(turns) = &self.script {
-                fake::scripted(
-                    turns.clone(),
-                    crate::scenario_credential(self.anthropic, self.private_grant),
-                    self.anthropic,
-                )
-            } else if self.environment {
-                environment_peer()
-            } else if self.full_completion {
-                fake::configured(
-                    Box::new([skein_fake_llm_domain::api::Script {
-                        cue: Box::new([]),
-                        turns: Box::new([skein_fake_llm_domain::api::Turn {
-                            lines: (0..crate::limits().llm.adapter.client.output_items)
-                                .map(|index| skein_fake_llm_domain::api::Line::Text {
-                                    // First response metadata is item_1_<index> and final_answer.
-                                    text: vec![
-                                        b'x';
-                                        usize::try_from(
-                                            crate::limits().llm.adapter.client.answer
-                                                / crate::limits().llm.adapter.client.output_items
-                                                + u32::from(
-                                                    index
-                                                        < crate::limits().llm.adapter.client.answer
-                                                            % crate::limits().llm.adapter.client.output_items
-                                                )
-                                        )
-                                        .expect("bounded text per part")
-                                            - format!("item_1_{index}").len()
-                                            - b"final_answer".len()
-                                            - 9
-                                    ]
-                                    .into_boxed_slice(),
-                                })
-                                .collect(),
-                            finish: skein_fake_llm_domain::api::Finish::Stop,
-                            tokens: 1,
-                        }]),
-                    }]),
-                    skein_llm::Credential {
-                        value: b"token".as_slice().into(),
-                        account_id: b"acc".as_slice().into(),
-                        scheme: skein_llm::Scheme::Bearer,
-                    },
-                    Duration::ZERO,
-                )
-            } else if let Some((case, _)) = self.tracing {
-                case.peer(self.anthropic, self.private_grant)
-            } else {
-                fake::peer()
-            };
-            Proc::Peer(Box::new(self.hold_peer(peer)), None)
-        });
+        world.spawn(|| Proc::Peer(Box::new(self.hold_peer(self.make_peer())), None));
 
         let mut outcome = world.run();
         (self.records, self.trace_bytes) = read_records(&mut outcome.machine);
         self.outcome = Some(outcome);
-        self.parent().status == Some(kernel::Exit::Code(u8::from(self.hang_up || self.hang_up_mid_call)))
+        self.parent().status
+            == Some(kernel::Exit::Code(u8::from(self.hang_up || self.hang_up_mid_call || self.refreshing.is_some())))
+    }
+    fn make_peer(&self) -> skein_fake_peers::llm::Peer {
+        if let Some(turns) = &self.script {
+            fake::scripted(turns.clone(), self.credential(), self.anthropic)
+        } else if self.refreshing.is_some() {
+            fake::configured(
+                Box::new([skein_fake_llm_domain::api::Script {
+                    cue: Box::new([]),
+                    turns: Box::new([skein_fake_llm_domain::api::Turn {
+                        lines: Box::new([skein_fake_llm_domain::api::Line::Text { text: Box::from(&b"Hello"[..]) }]),
+                        finish: skein_fake_llm_domain::api::Finish::Stop,
+                        tokens: 1,
+                    }]),
+                }]),
+                crate::scenario_credential(false, false),
+                Duration::from_secs(1),
+            )
+        } else if self.environment {
+            environment_peer()
+        } else if self.full_completion {
+            fake::configured(
+                Box::new([skein_fake_llm_domain::api::Script {
+                    cue: Box::new([]),
+                    turns: Box::new([skein_fake_llm_domain::api::Turn {
+                        lines: (0..crate::limits().llm.adapter.client.output_items)
+                            .map(|index| skein_fake_llm_domain::api::Line::Text {
+                                // First response metadata is item_1_<index> and final_answer.
+                                text: vec![
+                                    b'x';
+                                    usize::try_from(
+                                        crate::limits().llm.adapter.client.answer
+                                            / crate::limits().llm.adapter.client.output_items
+                                            + u32::from(
+                                                index
+                                                    < crate::limits().llm.adapter.client.answer
+                                                        % crate::limits().llm.adapter.client.output_items
+                                            )
+                                    )
+                                    .expect("bounded text per part")
+                                        - format!("item_1_{index}").len()
+                                        - b"final_answer".len()
+                                        - 9
+                                ]
+                                .into_boxed_slice(),
+                            })
+                            .collect(),
+                        finish: skein_fake_llm_domain::api::Finish::Stop,
+                        tokens: 1,
+                    }]),
+                }]),
+                skein_llm::Credential {
+                    value: b"token".as_slice().into(),
+                    account_id: b"acc".as_slice().into(),
+                    scheme: skein_llm::Scheme::Bearer,
+                },
+                Duration::ZERO,
+            )
+        } else if let Some((case, _)) = self.tracing {
+            case.peer(self.anthropic, self.credential())
+        } else {
+            fake::peer()
+        }
     }
     fn parent(&self) -> &Parent {
         self.outcome
@@ -1593,3 +1644,5 @@ fn stopped_reasoning_peer() -> skein_fake_peers::llm::Peer {
         ]),
     }]))
 }
+
+mod grants;

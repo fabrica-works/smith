@@ -1,6 +1,7 @@
 //! Account grants, visits and source operations in the service's kernel namespace.
-//! The source driver owns expiry; the service owns envelopes and local-domain events.
+//! The source driver owns expiry; the service owns tagged values and local-domain events.
 use super::{Close, Error, Service, local};
+use alloc::boxed::Box;
 use skein_lib::{List, Queue, Time, Wall, Writer};
 
 impl Service {
@@ -52,15 +53,16 @@ impl Service {
             match out.pop() {
                 Some(crate::CredentialRequest::Ready { event: local::Event::Credential { grant }, value }) => {
                     let identifier = accounts.account_id(grant.name.account).expect("selected account");
-                    let bytes = identifier.len().checked_add(value.len()).expect("bounded credential fields");
-                    let length = bytes.checked_add(2).expect("bounded envelope");
-                    let mut envelope = Writer::new(length);
-                    envelope
-                        .put(&u16::try_from(identifier.len()).expect("bounded identifier").to_be_bytes())
-                        .expect("envelope prefix");
-                    envelope.put(identifier).expect("envelope identifier");
-                    envelope.put(&value).expect("envelope access value");
-                    self.credential(grant, envelope.finish());
+                    // accounts-sources moves the presets to their own sources.
+                    let value = if identifier.is_empty() {
+                        smith_protocol_channel::GrantValue::Bearer(value)
+                    } else {
+                        smith_protocol_channel::GrantValue::Withdrawn {
+                            account_id: Box::from(identifier),
+                            bearer: value,
+                        }
+                    };
+                    self.credential(grant, value);
                 }
                 Some(crate::CredentialRequest::Notice { account, reason }) => {
                     self.notice(now, local::Notice::Failure(local::Failure::Credential { account, reason }));

@@ -119,7 +119,7 @@ pub enum EndpointError {
     TooMany,
     /// Two destinations use the same numeric name.
     Duplicate,
-    /// An endpoint asks for an account outside the agent's configured range.
+    /// More distinct accounts than the agent admits.
     Account,
     /// A prompt named no configured destination.
     Unknown,
@@ -146,9 +146,10 @@ impl Endpoints {
         }
         let mut destinations = List::with_capacity(endpoint_limit);
         let mut options = Map::with_capacity(endpoint_limit);
+        let mut accounts = Map::with_capacity(account_limit);
         for (index, configured) in configured.into_iter().enumerate() {
-            if configured.account >= account_limit {
-                return Err(EndpointError::Account);
+            if !accounts.contains_key(&configured.account) {
+                accounts.insert(configured.account, ()).or(Err(EndpointError::Account))?;
             }
             let index = u32::try_from(index).or(Err(EndpointError::TooMany))?;
             if options.contains_key(&configured.name.0) {

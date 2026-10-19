@@ -12,12 +12,21 @@ use smith_protocol_channel as agent;
 
 pub mod referee;
 
-/// The current withdrawn grant fixture, including its empty-id envelope.
-pub const INITIAL_GRANT: &[u8] = b"\0\0secret";
-/// The first refreshed grant fixture.
-pub const REFRESHED_GRANT: &[u8] = b"\0\0new-secret";
-/// The second refreshed grant fixture.
-pub const LATEST_GRANT: &[u8] = b"\0\0latest";
+/// The current bearer grant fixture.
+#[must_use]
+pub fn initial_grant() -> agent::GrantValue {
+    agent::GrantValue::Bearer(Box::from(b"secret".as_slice()))
+}
+/// The first refreshed bearer grant fixture.
+#[must_use]
+pub fn refreshed_grant() -> agent::GrantValue {
+    agent::GrantValue::Bearer(Box::from(b"new-secret".as_slice()))
+}
+/// The second refreshed bearer grant fixture.
+#[must_use]
+pub fn latest_grant() -> agent::GrantValue {
+    agent::GrantValue::Bearer(Box::from(b"latest".as_slice()))
+}
 
 /// An opening observation independent of which half emitted it.
 #[derive(Debug, PartialEq, Eq)]
@@ -694,7 +703,7 @@ impl World {
                 smith_host_domain::channel::Window { turns: 2, bytes: 1_000_000_000 },
                 smith_host_protocol::Values {
                     paths: Box::from([Box::from(*b"/tmp/src")]),
-                    credentials: Box::from([Box::from(INITIAL_GRANT)]),
+                    credentials: Box::from([initial_grant()]),
                 },
                 skein_lib::Token::new(2),
                 &mut self.host.host_events,
@@ -924,7 +933,7 @@ impl World {
     }
 
     /// Refresh one service-owned credential under a new generation.
-    pub fn host_refreshes_grant(&mut self, account: u32, generation: u64, credential: Box<[u8]>) {
+    pub fn host_refreshes_grant(&mut self, account: u32, generation: u64, credential: agent::GrantValue) {
         if let Half::Host(host) = &mut self.host.half {
             host.send_grant(
                 smith_host_domain::channel::Grant { account, generation, valid: skein_lib::Duration::from_nanos(50) },
@@ -939,10 +948,10 @@ impl World {
 
     /// Read the agent half's credential table as a service would during LLM preparation.
     #[must_use]
-    pub fn agent_grant_value(&self, account: u32, generation: u64) -> Option<Box<[u8]>> {
+    pub fn agent_grant_value(&self, account: u32, generation: u64) -> Option<agent::GrantValue> {
         if let Half::Agent(agent) = &self.agent.half {
             let name = smith_domain::GrantName { account, generation };
-            return agent.grant_value(name).map(Box::from);
+            return agent.grant_value(name).cloned();
         }
         None
     }

@@ -521,7 +521,7 @@ impl Component {
 
     /// Read a retained credential only below the domain when preparing its LLM call.
     #[must_use]
-    pub fn grant_value(&self, name: smith_domain::GrantName) -> Option<&[u8]> {
+    pub fn grant_value(&self, name: smith_domain::GrantName) -> Option<&crate::GrantValue> {
         self.credentials.value(name.account, name.generation)
     }
 
@@ -797,7 +797,11 @@ impl Component {
                             let grant = refresh.grant();
                             let name =
                                 smith_domain::GrantName { account: grant.account(), generation: grant.generation() };
-                            match self.credentials.keep_wire(name.account, name.generation, grant.value()) {
+                            let kept = match crate::GrantValue::try_from(grant.value()) {
+                                Ok(value) => self.credentials.keep(name.account, name.generation, value),
+                                Err(error) => Err(error),
+                            };
+                            match kept {
                                 Ok(()) => {
                                     to_service.push(OpenEvent::Grant {
                                         grant: smith_domain::Grant { name, valid: grant.valid() },
@@ -929,7 +933,7 @@ impl Component {
 
     fn stash_initial_grants(&mut self, start: &smith_channel::Start) -> Result<(), Error> {
         for grant in start.grants() {
-            self.credentials.keep_wire(grant.account(), grant.generation(), grant.value())?;
+            self.credentials.keep(grant.account(), grant.generation(), crate::GrantValue::try_from(grant.value())?)?;
         }
         Ok(())
     }

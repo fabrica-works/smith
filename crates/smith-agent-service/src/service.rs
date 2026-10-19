@@ -236,8 +236,8 @@ impl Effects {
         Ok(workspace)
     }
 
-    /// Install a grant's bounded secret envelope before supplying the grant to the domain.
-    pub fn grant(&mut self, grant: domain::Grant, value: &[u8], now: Time) -> Result<(), Failure> {
+    /// Install a grant's tagged value before supplying the grant to the domain.
+    pub fn grant(&mut self, grant: domain::Grant, value: &channel::GrantValue, now: Time) -> Result<(), Failure> {
         if self.installed.get(&grant.name.account) == Some(&grant.name) {
             return Ok(());
         }
@@ -816,9 +816,9 @@ impl Service {
                         self.start_ready();
                     }
                 }
-                None => self.refuse_start(),
+                None => self.refuse_start(run::Invalid::Workspace),
             },
-            Err(()) => self.refuse_start(),
+            Err(()) => self.refuse_start(run::Invalid::Workspace),
         }
     }
 
@@ -835,10 +835,10 @@ impl Service {
         teardown::failed(self, self.failure.expect("kept first failure"));
     }
 
-    fn refuse_start(&mut self) {
+    fn refuse_start(&mut self, reason: run::Invalid) {
         self.pending_start = None;
         let token = self.next_send();
-        let answer = run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Workspace));
+        let answer = run::Answer::Refused(run::Refusal::Invalid(reason));
         crate::answers::remember(self, &answer, Box::default(), self.domain_env.now);
         let read = None;
         if let Some(events) = &mut self.events {
@@ -875,20 +875,20 @@ impl Service {
             let value = match self.channel.as_ref().expect("framed agent owns its channel").grant_value(grant.name) {
                 Some(value) => value,
                 None => {
-                    self.refuse_start();
+                    self.refuse_start(run::Invalid::Grants);
                     return;
                 }
             };
             let credential = match credential(value) {
                 Some(credential) => credential,
                 None => {
-                    self.refuse_start();
+                    self.refuse_start(run::Invalid::Grants);
                     return;
                 }
             };
             let lapses = self.domain_env.now.saturating_add(grant.valid);
             if self.llm.grant(grant.name, credential, lapses).is_err() {
-                self.refuse_start();
+                self.refuse_start(run::Invalid::Grants);
                 return;
             }
             grants
@@ -912,23 +912,24 @@ impl Service {
     }
 }
 
-/// A grant value is a two-byte big-endian account-ID length, then that ID
-/// and the bearer token. The host service uses the same bounded envelope.
-fn credential(value: &[u8]) -> Option<skein_llm::Credential> {
-    let header = value.get(..2)?;
-    let length = usize::from(u16::from_be_bytes([*header.first()?, *header.get(1)?]));
-    let end = 2_usize.checked_add(length)?;
-    let account_id = value.get(2..end)?;
-    let bearer = value.get(end..)?;
-    if bearer.is_empty() {
+/// Install only credential forms; accounts-sources supplies the program backend.
+fn credential(value: &channel::GrantValue) -> Option<skein_llm::Credential> {
+    let credential = match value {
+        channel::GrantValue::Bearer(value) => skein_llm::Credential::bearer(value.clone()),
+        channel::GrantValue::Key(value) => skein_llm::Credential::key(value.clone()),
+        channel::GrantValue::Withdrawn { account_id, bearer } => {
+            if account_id.is_empty() {
+                skein_llm::Credential::bearer(bearer.clone())
+            } else {
+                skein_llm::Credential::codex(bearer.clone(), account_id.clone())
+            }
+        }
+        channel::GrantValue::Program(_) => return None,
+    };
+    if credential.value.is_empty() {
         return None;
     }
-    // Transitional until smith 04.1 reads the grant's scheme tag.
-    Some(if account_id.is_empty() {
-        skein_llm::Credential::bearer(Box::from(bearer))
-    } else {
-        skein_llm::Credential::codex(Box::from(bearer), Box::from(account_id))
-    })
+    Some(credential)
 }
 
 /// Advance io, the components, and the domain once at injected clocks.
@@ -1565,7 +1566,7 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
                 None => 0,
             };
             if count > service.limits.machine.roots {
-                service.refuse_start();
+                service.refuse_start(run::Invalid::Workspace);
                 return;
             }
             let empty = match &start.mounts {
@@ -2642,10 +2643,10 @@ mod tests {
         assert!(effects.submissions().is_empty());
         let grant =
             domain::Grant { name: domain::GrantName { account: 0, generation: 1 }, valid: Duration::from_secs(60) };
-        effects.grant(grant, b"\0\x03acctoken", Time::ZERO).expect("first grant");
-        effects
-            .grant(grant, b"\0\x03acctoken", Time::from_nanos(1))
-            .expect("same saved generation on another activation");
+        let value =
+            channel::GrantValue::Withdrawn { account_id: Box::from(&b"acc"[..]), bearer: Box::from(&b"token"[..]) };
+        effects.grant(grant, &value, Time::ZERO).expect("first grant");
+        effects.grant(grant, &value, Time::from_nanos(1)).expect("same saved generation on another activation");
         effects.close();
         for _ in 0..3_u32 {
             effects.iterate(Time::ZERO, Wall::EPOCH);
@@ -2679,12 +2680,27 @@ mod tests {
     }
 
     #[test]
-    fn grant_envelope_splits_account_and_bearer_without_leaking_the_header() {
-        let value = credential(&[0, 3, b'a', b'c', b'c', b't', b'o', b'k']).expect("grant");
-        assert!(&*value.account_id == b"acc");
-        assert!(&*value.value == b"tok");
-        assert!(credential(&[0, 2, b'a']).is_none());
-        assert!(credential(&[0, 0]).is_none());
+    fn each_grant_value_installs_its_scheme() {
+        use channel::GrantValue;
+        use skein_llm::Scheme;
+        let rows = [
+            (GrantValue::Bearer(Box::from(&b"value"[..])), Scheme::Bearer, &b""[..]),
+            (GrantValue::Key(Box::from(&b"value"[..])), Scheme::Key, &b""[..]),
+            (
+                GrantValue::Withdrawn { account_id: Box::from(&b"account"[..]), bearer: Box::from(&b"value"[..]) },
+                Scheme::Bearer,
+                &b"account"[..],
+            ),
+            (
+                GrantValue::Withdrawn { account_id: Box::default(), bearer: Box::from(&b"value"[..]) },
+                Scheme::Bearer,
+                &b""[..],
+            ),
+        ];
+        for (index, (input, scheme, account_id)) in rows.into_iter().enumerate() {
+            let installed = credential(&input).expect("installable form");
+            assert_eq!((installed.scheme, installed.account_id.as_ref()), (scheme, account_id), "row {index}");
+        }
     }
 
     #[test]

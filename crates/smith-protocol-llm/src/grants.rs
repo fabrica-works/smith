@@ -23,6 +23,8 @@ pub enum GrantError {
     Missing,
     /// The requested generation's validity has ended.
     Lapsed,
+    /// The credential cannot be installed for the endpoint dialect.
+    Scheme,
 }
 
 struct Entry {
@@ -56,16 +58,19 @@ impl Grants {
     /// already has two. A stale refresh never replaces a value in flight.
     pub fn grant(&mut self, name: GrantName, credential: Credential, lapses: Time) -> Result<(), GrantError> {
         let bytes = credential.value.len().checked_add(credential.account_id.len()).ok_or(GrantError::Bounds)?;
-        if name.account >= self.accounts
-            || name.generation == 0
-            || bytes > usize::try_from(self.value_bytes).expect("u32 fits usize")
-        {
+        if name.generation == 0 || bytes > usize::try_from(self.value_bytes).expect("u32 fits usize") {
             return Err(GrantError::Bounds);
         }
         let mut count = 0_u32;
         let mut oldest = None;
         let mut newest = 0_u64;
+        let mut distinct = 0_u32;
+        let mut previous = None;
         for ((account, generation), _) in &self.values {
+            if previous != Some(*account) {
+                distinct = distinct.checked_add(1).ok_or(GrantError::Bounds)?;
+                previous = Some(*account);
+            }
             if *account == name.account {
                 count = count.checked_add(1).ok_or(GrantError::Bounds)?;
                 if oldest.is_none() {
@@ -73,6 +78,9 @@ impl Grants {
                 }
                 newest = newest.max(*generation);
             }
+        }
+        if count == 0 && distinct >= self.accounts {
+            return Err(GrantError::Full);
         }
         if count > 0 && name.generation <= newest {
             return Err(GrantError::Stale);
@@ -96,12 +104,8 @@ impl Grants {
             return Err(GrantError::Lapsed);
         }
         let value = bytes::copy_of(&entry.credential.value);
-        // Transitional until smith 04.1 gives the table its scheme tags.
-        Ok(if entry.credential.account_id.is_empty() {
-            Credential::bearer(value)
-        } else {
-            Credential::codex(value, bytes::copy_of(&entry.credential.account_id))
-        })
+        let account_id = bytes::copy_of(&entry.credential.account_id);
+        Ok(Credential { value, account_id, scheme: entry.credential.scheme })
     }
 
     /// Worst retained table and secret payload ownership for configured caps.

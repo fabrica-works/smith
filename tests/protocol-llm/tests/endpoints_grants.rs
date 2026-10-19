@@ -71,7 +71,7 @@ fn numeric_names_resolve_the_complete_destination_and_options() {
 }
 
 #[test]
-fn duplicate_names_and_out_of_range_accounts_fail_at_startup() {
+fn duplicate_names_fail_at_startup() {
     assert!(matches!(
         Endpoints::new(
             Box::new([
@@ -82,10 +82,6 @@ fn duplicate_names_and_out_of_range_accounts_fail_at_startup() {
             1,
         ),
         Err(EndpointError::Duplicate)
-    ));
-    assert!(matches!(
-        Endpoints::new(Box::new([destination(9, 1, shared::Provider::Anthropic)]), 1, 1),
-        Err(EndpointError::Account)
     ));
     assert!(matches!(
         Endpoints::new(Box::new([destination(9, 0, shared::Provider::Anthropic)]), 0, 1),
@@ -167,4 +163,40 @@ fn a_withdrawn_pair_keeps_the_bearer_in_value() {
     assert!(output.value.as_ref() == b"bearer-bytes");
     assert!(output.account_id.as_ref() == b"account-id");
     assert_eq!(output.scheme, shared::Scheme::Bearer);
+}
+
+// profile::ACCOUNTS admits four distinct names, independent of their numeric value.
+const ACCOUNT_COUNT: u32 = 4;
+const SPARSE_ACCOUNT: u32 = 0x9f3a_0001;
+const GRANT_BYTES: u32 = 64;
+
+#[test]
+fn a_sparse_account_number_is_granted_and_used() {
+    let mut grants = Grants::new(ACCOUNT_COUNT, GRANT_BYTES).expect("bounded table");
+    let name = GrantName { account: SPARSE_ACCOUNT, generation: 1 };
+    grants.grant(name, Credential::key(b"key".as_slice().into()), Time::from_nanos(100)).expect("sparse grant");
+    let installed = grants.read(name, Time::ZERO).expect("sparse name resolves");
+    assert_eq!(installed.scheme, shared::Scheme::Key);
+    assert!(installed.account_id.is_empty());
+}
+
+#[test]
+fn a_fifth_distinct_account_is_refused() {
+    let mut grants = Grants::new(ACCOUNT_COUNT, GRANT_BYTES).expect("bounded table");
+    for account in 0..ACCOUNT_COUNT {
+        grants
+            .grant(GrantName { account, generation: 1 }, credential(b"value", b""), Time::from_nanos(100))
+            .expect("four accounts fit");
+    }
+    assert_eq!(
+        grants.grant(
+            GrantName { account: SPARSE_ACCOUNT, generation: 1 },
+            credential(b"value", b""),
+            Time::from_nanos(100)
+        ),
+        Err(GrantError::Full)
+    );
+    let endpoints =
+        (0..=ACCOUNT_COUNT).map(|account| destination(account, account, shared::Provider::Anthropic)).collect();
+    assert!(matches!(Endpoints::new(endpoints, ACCOUNT_COUNT + 1, ACCOUNT_COUNT), Err(EndpointError::Account)));
 }

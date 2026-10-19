@@ -451,9 +451,6 @@ fn build_endpoints(
         {
             return Err("endpoint name is empty or too long".into());
         }
-        if endpoint.account >= ACCOUNTS {
-            return Err("endpoint account is outside the profile".into());
-        }
         if !names.insert(endpoint.name.clone()) || !numbers.insert(endpoint.number) {
             return Err("duplicate endpoint name or number".into());
         }

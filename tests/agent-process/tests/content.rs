@@ -316,3 +316,24 @@ fn native_provider_failure_keeps_status_and_capture_selected_detail_in_every_ter
         world.assert_agent_clean();
     }
 }
+
+#[test]
+fn no_grant_value_reaches_a_turn_fact_or_trace() {
+    use smith_agent_process_world::{PRIVATE_GRANT, bearer};
+    let charter = charter();
+    let secret = PRIVATE_GRANT;
+    // Ruling 124: smith-repin adds the key row with the fake that accepts x-api-key.
+    let rows = [(bearer(secret), (true, false))];
+    for (index, (value, expected)) in rows.into_iter().enumerate() {
+        let mut world = World::new(39, &charter);
+        world.private_grant();
+        world.anthropic();
+        world.granting(value);
+        world.observe_facts(TraceCase::ChildAnswered, 4);
+        let settled = world.settle();
+        let leaked = world.observed().iter().any(|frame| frame.body.windows(secret.len()).any(|bytes| bytes == secret))
+            || world.trace_bytes().windows(secret.len()).any(|bytes| bytes == secret);
+        assert_eq!((settled, leaked), expected, "row {index}");
+        world.assert_agent_clean();
+    }
+}

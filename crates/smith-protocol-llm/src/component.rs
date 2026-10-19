@@ -242,6 +242,23 @@ impl Component {
 
     /// Install a validated generation from the channel or a colocated host.
     pub fn grant(&mut self, name: GrantName, credential: Credential, lapses: Time) -> Result<(), GrantError> {
+        if credential.value.is_empty() {
+            return Err(GrantError::Scheme);
+        }
+        for (_, options) in &self.options {
+            if options.account == name.account {
+                let accepted = match options.provider {
+                    skein_llm::Provider::OpenAiCodex => match credential.scheme {
+                        skein_llm::Scheme::Bearer => !credential.account_id.is_empty(),
+                        skein_llm::Scheme::Key => false,
+                    },
+                    skein_llm::Provider::OpenAi | skein_llm::Provider::Anthropic => credential.account_id.is_empty(),
+                };
+                if !accepted {
+                    return Err(GrantError::Scheme);
+                }
+            }
+        }
         self.grants.grant(name, credential, lapses)
     }
 
@@ -391,7 +408,7 @@ impl Component {
                 Self::local_failure(owner, llm::Failure::Unauthorized, bounds.max_failure_bytes, to_domain);
                 return;
             }
-            Err(GrantError::Bounds | GrantError::Stale | GrantError::Full) => {
+            Err(GrantError::Bounds | GrantError::Stale | GrantError::Full | GrantError::Scheme) => {
                 Self::local_failure(owner, llm::Failure::Invalid, bounds.max_failure_bytes, to_domain);
                 return;
             }

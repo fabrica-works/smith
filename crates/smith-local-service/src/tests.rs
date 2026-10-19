@@ -514,7 +514,10 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
                         name: smith_domain::GrantName { account: 0, generation: 1 },
                         valid: Duration::from_secs(7200),
                     },
-                    Box::from(b"\0\x03acctoken".as_slice()),
+                    smith_protocol_channel::GrantValue::Withdrawn {
+                        account_id: Box::from(&b"acc"[..]),
+                        bearer: Box::from(&b"token"[..]),
+                    },
                 ),
                 local::Request::Notice {
                     notice:
