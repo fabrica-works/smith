@@ -40,7 +40,7 @@ on `origin/main`; 02.2 also waits for smith 04.1's grant value union.
   by nothing until `accounts-sources` (decision 7).
 - The event vocabulary and its words are smith 05.1's and 05.2's: until
   then the agent and the local service write version 3's nearest.
-- Downstream defaults: a refused notice is handled as rejected was, a
+- Downstream defaults: a refused notice reaches no event (ruling 130), a
   new fault as a model failure (decision 16). Codec and world tiers only
   (decision 10).
 

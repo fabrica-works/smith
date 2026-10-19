@@ -145,7 +145,9 @@ be the user's (development.md, 10.4).
     - the driver's new failures map onto the nearest outcome there is:
       busy as a transient exchange failure, not granted and another
       subject as sign in again;
-    - the refused notice is handled as the rejected one was;
+    - the refused notice reaches no event downstream, as a refused
+      completion raised no notice before smith 02.2: the run's failed
+      answer carries it (ruling 130);
     - a grant goes as the tagged withdrawn form (decision 2), which the
       agent accepts until the second part;
     - an ID token failure (`Unverified`), and `Incomplete`, which no
@@ -968,6 +970,37 @@ commits is this plan's.
      Checked: `plan status` at 17:18Z (smith 01 3 of 3 landed; smith 04 1 of
      2, 04.2 running); the kit's `plan set STEP KEY=VALUE…` adds a ledger row
      (`set) set_step "$@"`).
+
+130. **jig's refused notice** (cross-session scope, jig repin.s1's block of 2026-10-19T17:52:15Z).
+     No accessor. smith's `parent::Request::Refused` reaches no hub event in
+     jig: its arm does nothing, and the run's failed answer, which smith sends
+     as before, carries the refusal. Decision 16's bullet "the refused notice
+     is handled as the rejected one was" was a plan defect, now amended to
+     "reaches no event downstream":
+     - Decision 16 itself says the repins "keep today's behaviour", and the
+       director kept it as "map ... the refused notice onto today's outcomes"
+       (decisions.md, For the user, C). Today a refused completion raises no
+       notice at all: before smith 02.2 (92192967), `Failure::Refused` sat
+       with `Overloaded` and `Unavailable` in the arm that pushes none.
+     - smith's design, in its own words: a run that met a refused account
+       "ends failed for its account, except an unauthorized credential, which
+       a refreshed grant may answer" (host.md 7). jig's rejected is "a
+       generation unauthorized by its provider" (llm.md 5.2), which starts a
+       refresh. A refused notice routed as rejected would refresh a grant that
+       no refresh answers, with a generation the notice does not carry.
+
+     So in `testing/jig-test-worker/src/domain.rs`, `up`:
+     `smith::parent::Request::Unauthorized { client, account, generation }`
+     goes to `host::Event::Rejected` as `Rejected` did, `Limited { client,
+     account, reset }` to `host::Event::Exhausted { retry_after: reset, .. }`,
+     and `Refused { .. }` to nothing. jig-domain-host gains no public API.
+     jig's own handling of the refused notice stays with the second part
+     (later.md's "jig's part of LLM accounts" row).
+
+     temper's repin meets the same match in
+     `crates/temper-worker-domain/src/agents.rs`, `up`, and maps it the same
+     way. Any further match on smith's `Refused` notice downstream takes the
+     same arm, listed in its commit body.
 
 ## For the user
 

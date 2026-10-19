@@ -37,8 +37,8 @@ text's LLM component step (decisions.md, 17).
 - smith takes skein twice (README, Rules; decision 13): 01.3 repins at
   its start and `smith-repin` takes the rest. jig's breaks are
   `jig-repin.s1`'s (decision 22); the repository downstream of jig's
-  are its own repin's, on decision 16's defaults: a refused notice is
-  handled as rejected was.
+  are its own repin's, on decision 16's defaults: a refused notice
+  reaches no event downstream (ruling 130).
 - No new live or process tier (decision 10); the licence is decision
   11's.
 
