@@ -81,7 +81,10 @@ Files: `crates/smith-events/`: `src/{lib,records,read,write,limits,
   shell/src/startup.rs`, `smith-agent-service/src/service.rs`).
   `tests/codecs/tests/events.rs` retargets its version-4 reads to 5
   (`unsupported-v5.jsonl`, `Error::Version(5)`), and smith-events'
-  `src/tests.rs` its `"v":4` line.
+  `src/tests.rs` its `"v":4` line; there too, the `CompletionFailure`
+  literals of `every_provider_class_has_its_words` and
+  `a_rejected_credential_names_its_account_in_the_shared_words` take the
+  new fields (ruling 132).
 Shape: `VERSION` 4. `Model` gains `account: Option<u32>` and
   `backend: Backend` (new: `Direct`, `ClaudeCode`, `Unknown`) in
   `run.started`, `conversation.opened` and `response.started`;
@@ -153,13 +156,22 @@ Shape: `AnswerFailure.account` is `Option<u32>`; `reset_ms` replaces
   so `Event::RunCompleted` is 240 bytes over `ResponseCompleted`:
   `Event` takes `#[expect(clippy::large_enum_variant,
   reason = "a record is built once and written directly")]`.
-  `words.rs` says shell.md 4.3's words: "account N reached its usage
+  `words.rs` says shell.md 4.3's words in `model()`, in place of its
+  " exhausted" and ": the provider rejected its credential", and
+  `account()` takes the `u32` (ruling 132): "account N reached its usage
   limit" and, the reset known, ", usable again at HH:MM"; "account N:
   the provider refused it" and ": CODE"; and "account N unauthorized";
   `class()` words `refused`, `unsupported`, and `limited` for the
   exhausted class. The terminal's failure line follows: "run failed:
   account work reached its usage limit, usable again at 10:01". 4.3's
   `; manage it at <address>` is not printed (02.4).
+  smith-events' `src/tests.rs`: `word_failure`'s `retry_after_ms` is
+  `reset_ms`, and `an_exhausted_answer_names_its_account_and_time_when_known`
+  and `a_rejected_credential_names_its_account_in_the_shared_words` give
+  way to `an_account_failure_has_its_words`' rows. The largest samples
+  of `tests/codecs/tests/support/{events,events_max}.rs` take
+  `Some(u32::MAX)` for the notice's and answer failure's account, which
+  were `Some(u64::MAX)`, and `reset_ms` (ruling 132).
 Test shape: codecs: goldens for each notice (`account_limited` with
   and without `reset_ms`; `account_refused` with its code) and each
   answer failure shape (account and state, each state; program, exit,

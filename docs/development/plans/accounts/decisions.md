@@ -1032,6 +1032,30 @@ commits is this plan's.
      A further fixture that writes an endpoint with a dialect other than its
      provider's is built the same way, and listed in the commit body.
 
+132. **smith 05's Shapes against main** (ready check of smith-05.1).
+     The ready check of smith-05.1 (skein c8466bf6, smith afe685d3; smith
+     cbcecbbd moved no smith-events or `tests/codecs` file) found
+     `smith/05-events.md` short of main in three places; checked by `git
+     grep` on smith origin/main b638629f, and the session file now says:
+     - 05.1: smith-events' `src/tests.rs` `every_provider_class_has_its_words`
+       and `a_rejected_credential_names_its_account_in_the_shared_words` build
+       `CompletionFailure` without `..`, so they take its new fields.
+     - 05.2: the account words are `words.rs`'s `model()`, whose " exhausted"
+       and ": the provider rejected its credential" give way to shell.md
+       4.3's; `account(line, number: u64, ..)` takes the `u32`. In
+       `src/tests.rs`, `word_failure`'s `retry_after_ms` becomes `reset_ms`,
+       and `an_exhausted_answer_names_its_account_and_time_when_known` and
+       `a_rejected_credential_names_its_account_in_the_shared_words` give way
+       to `an_account_failure_has_its_words`' rows.
+     - 05.2: `tests/codecs/tests/support/events.rs` (2) and `events_max.rs` (2)
+       write `account: Some(u64::MAX)`, which becomes `Some(u32::MAX)` with
+       the account's `Option<u32>`, beside `reset_ms`.
+     The check compiled smith-events with the sketches' types under clippy;
+     it ran no suite, and the workspace compile past smith-local-shell
+     (benchmarks, agent-process, end-to-end) waited in the queue. A further
+     file the workspace check finds broken by these types is fixed the same
+     way, and listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
