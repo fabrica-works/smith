@@ -1146,6 +1146,55 @@ commits is this plan's.
         - the budget spent without a cause: report what was ruled out, and stop;
           no third gate.
 
+136. **skein 09.1's Shapes against main** (ready check of skein-09.1).
+     skein 09.1's Shapes against main, from its re-check at skein 588ef5f
+     (it started at 19:00Z; its ready check ran at 11565f3, before 08.x moved
+     its files). In `skein/09-driver-shared.md`, 09.1:
+
+     - Files name every exhaustive match that 09.1's new `Event::SignedOut`
+       and `FileLower::Remove` break, where they are now: `tests.rs`'
+       `refusal_of` and `failure_of`; `private_tests.rs`' `assert_visit`,
+       `Owner::next` and the abort test's matches over `FileLower`;
+       `accounts_tests.rs`' match over `Option<FileLower>` (new to Files);
+       `tests/oauth-accounts/`'s `world.rs` (`observe`, `private_io`),
+       `sign_in.rs` (`private_io`'s `match lower`; `observe` moved to
+       `sign_in/owner.rs`, new to Files, about 84 lines), `accounts.rs`
+       (`observe`, `protocol_files`; new to Files) and `tests/memory.rs`' two
+       `FileLower` panic arms. Only `SignedOut` joins the panic arms here:
+       `Lock` and `Unlock` are not on `main`. A further match takes the new
+       arm the same way, listed in the commit body.
+     - Downstream names jig's `crates/jig-protocol-accounts/src/translate.rs`
+       for `match ends`, `match asked` (in `up`) and `refused`, which smith's
+       `credentials.rs` does not have.
+     - Test shape: a unit row needing an owner with sign-in accounts and
+       terms, several accounts, or a taker of `FileLower::Remove` gets it as
+       a method of `private_tests.rs`' `Owner` (rule 110, ruling 134):
+       `Owner::with_terms` (private today) made `pub(super)`, and
+       `accounts_tests.rs`' or `ports_tests.rs`' `owner` moved there where
+       one serves, never a second copy; an arm a new variant forces in their
+       files moves nothing under ruling 134.
+     - The world's `Story::Confirmed` and `Unconfirmed` set
+       `revocation_endpoint` on the token endpoint's loopback origin (the
+       worlds' `Terms` set `None` today, in `sign_in.rs`,
+       `sign_in/issuer.rs` and `private.rs`), else `Unusable::Origin`
+       refuses the registration; `NoRevocation` keeps `None`.
+
+     Checked at skein origin/main 588ef5f (`git grep -n`):
+     `private_tests.rs:21: fn with_terms(` (private), `:76 pub(super) fn
+     next`, `:330 fn assert_visit`; `tests.rs:648 fn refusal_of`, `:670 fn
+     failure_of`; `accounts_tests.rs:131 Some(FileLower::Request { .. } |
+     FileLower::Cancel { .. }) | None`; `tests/oauth-accounts/src/sign_in.rs:218
+     fn private_io`, `sign_in/owner.rs:81 pub(super) fn observe` (to line
+     164), `:90 accounts::Event::Keep`; `accounts.rs:144 observe`, `:213
+     protocol_files`; `world.rs:427 observe`, `:519 private_io`;
+     `tests/memory.rs:344, 368 FileLower::Request { .. } |
+     FileLower::Cancel { .. } => panic!`; `revocation_endpoint: None` at
+     `sign_in.rs:78`, `sign_in/issuer.rs:83`, `private.rs:397`;
+     `boundary.rs` has `Keep` and no `Lock` or `Unlock`. jig origin/main
+     75af442e `translate.rs:25 pub fn up`, `:38 match ends`, `:45 match
+     asked`, `:86 fn refused`; smith f4560988 `credentials.rs` has none of
+     `match ends`, `match asked`, `fn refused`.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

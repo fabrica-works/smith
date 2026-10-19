@@ -68,14 +68,22 @@ Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
   `component/names.rs` (`named`'s match over `Request`, which has no
   `..`, maps `SignOut` by `lookup(account, Asked::SignOut, up)`),
   `component/accounts.rs` (`admit`'s `Unusable::Origin`), `keeper.rs`,
-  `exchange.rs`, `boundary.rs`, `lib.rs`, `tests.rs`,
-  `sign_out_tests.rs` (new), `private_tests.rs`;
+  `exchange.rs`, `boundary.rs`, `lib.rs`, `tests.rs` (`refusal_of`
+  and `failure_of` match `Event` whole), `sign_out_tests.rs` (new),
+  `private_tests.rs` (`assert_visit`'s match over `Event`, `Owner::next`
+  and the abort test's matches over `FileLower`), `accounts_tests.rs`
+  (its match over `Option<FileLower>`);
   `testing/skein-world/src/files.rs`; `tests/oauth-accounts/`:
-  `src/sign_out.rs` (new), `src/lib.rs`, `src/world.rs`,
-  `src/sign_in.rs` (`observe` moves its `Keep` arm into a `keep`
-  helper, as `SignedOut`, `Lock` and `Unlock` join its panic arms and
-  it nears 100 lines; its `match lower` over `FileLower` gains a
-  `Remove` arm), `tests/sign_out.rs` (new), `tests/memory.rs`.
+  `src/sign_out.rs` (new), `src/lib.rs`, `src/world.rs` (`observe`'s
+  match over `Event`, `private_io`'s over `FileLower`), `src/sign_in.rs`
+  (`private_io`'s `match lower` over `FileLower` gains a `Remove` arm),
+  `src/sign_in/owner.rs` (`observe`, about 84 lines: `SignedOut` joins
+  its panic arms; its `Keep` arm moves into a `keep` helper if it nears
+  100 lines), `src/accounts.rs` (`observe`'s match over `Event`,
+  `protocol_files`' over `FileLower`), `tests/sign_out.rs` (new),
+  `tests/memory.rs` (its two `FileLower` panic arms). Each match over
+  `Event` or `FileLower` found later takes the new arm the same way, and
+  the commit body lists it (ruling 136).
 Shape: `Request::SignOut { account }` ends in `Event::SignedOut {
   account, revoked }`, or `Failed { ends: Ends::SignOut }`, or
   `Refused { asked: Asked::SignOut }`: `Source` for a handed-in account,
@@ -105,9 +113,10 @@ Shape: `Request::SignOut { account }` ends in `Event::SignedOut {
   token endpoint's is `Unusable::Origin { account }` (new) until 10.2
   gives accounts their origins.
   Downstream: `SignedOut` breaks smith-local-service's `emit`
-  (`credentials.rs`) and jig's `translate::up`; `Ends::SignOut` and
-  `Asked::SignOut` its `match ends` and `match asked`, `NoRecord` its
-  `refused`. `FileLower::Remove` breaks each match over `FileLower`:
+  (`credentials.rs`) and jig's `translate::up`
+  (`crates/jig-protocol-accounts/src/translate.rs`); `Ends::SignOut` and
+  `Asked::SignOut` break `up`'s `match ends` and `match asked` there,
+  and `NoRecord` that file's `refused`. `FileLower::Remove` breaks each match over `FileLower`:
   smith-local-service's `credentials.rs` and `credentials/private.rs`;
   jig's `tests/protocol-accounts/src/owner.rs` and
   `testing/jig-test-service/src/accounts.rs`; the repository downstream
@@ -115,7 +124,13 @@ Shape: `Request::SignOut { account }` ends in `Event::SignedOut {
   arm is unreachable (decision 16).
 Test shape: unit, `src/sign_out_tests.rs`, a new file over `setup`,
   `hand_in` and `assert_refused` of `src/tests.rs`, with its `limits()`;
-  each under 20 ms. Reference:
+  each under 20 ms. A row that needs an owner with sign-in accounts and
+  terms, several accounts, or a taker of `FileLower::Remove` gets it as
+  a method of `private_tests.rs`' `Owner` (README, rule 110, ruling
+  134): `Owner::with_terms` made `pub(super)`, and `accounts_tests.rs`'
+  `owner` or `ports_tests.rs`' `owner` moved there where one serves,
+  never a second copy; an arm that a new variant forces in their files
+  moves nothing (ruling 136). Reference:
   ```rust
   #[test]
   fn a_sign_out_is_refused_where_it_does_not_belong() {
@@ -143,7 +158,13 @@ Test shape: unit, `src/sign_out_tests.rs`, a new file over `setup`,
   `a_terms_endpoint_on_another_origin_is_unusable`.
   World, `tests/sign_out.rs`, a new file over `world::limits()`, the
   simulated and protocol worlds as rows, each under 0.5 s (the issuer
-  runs as a process). `world::Fact` gains `SignedOut(bool)`. Reference:
+  runs as a process). `world::Fact` gains `SignedOut(bool)`. The
+  worlds' `Terms` set `revocation_endpoint: None` today (`sign_in.rs`,
+  `sign_in/issuer.rs`, `private.rs`): `Story::Confirmed` and
+  `Unconfirmed` set it on the token endpoint's origin, the issuer's
+  loopback one (`issuer_endpoint` allows http only on loopback), else
+  `Unusable::Origin` refuses the registration; `NoRevocation` keeps
+  `None` (ruling 136). Reference:
   ```rust
   #[test]
   fn a_sign_out_settles_for_both_keepers() {
