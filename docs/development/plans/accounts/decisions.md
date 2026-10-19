@@ -916,6 +916,38 @@ commits is this plan's.
      A further user of what 11.1 changes is refreshed the same way and listed
      in the commit body.
 
+128. **skein 07's Shapes against main** (re-check of skein-07.1).
+     The re-check of skein-07.1, from skein c7f4949 to 8564196 (06.2 landed),
+     found `skein/07-openid.md` short of the code; checked by `git grep` on
+     skein origin/main 4dc2ce3, it now says:
+     - 07.1's `HttpRequest` literals add `testing/skein-fake-oauth/src/tests.rs`
+       (`fn post`, `fn exchange`: `request: HttpRequest {`), each taking
+       `method: Method::Post`; the one in `tests/oauth-accounts/src/world.rs`
+       is in `pub(crate) fn protocol_client`; `tests/oauth/tests/memory.rs`'
+       `ClientLimits` literal is in `fn check_client`.
+     - The reference test `the_keys_are_fetched_again_at_each_sign_in` ends
+       each round with `assert!(client_step(&mut client,
+       oauth::Event::Reset).is_none());`: `client_step` is `#[must_use]` and
+       `tests/oauth/Cargo.toml` has `unused_must_use = "deny"`.
+     - `machine_tests/terms.rs`' `terms(openid, ..)` builds `OpenId { issuer:
+       boxed(b"https://issuer.example"), key_set: None }`, whose first GET is
+       the metadata: `terms(true, ..)` names a key set URL
+       (`https://issuer.example/keys`), so that the nonce tests answer one
+       GET with a one-key set literal.
+     - `world.rs`' `an_openid_sign_in_fails_before_its_check_exists` builds
+       `issuer_for(&registration)` (`configured_issuer(registration, None)`,
+       a fake with no `OpenId`, which answers each GET 404): it takes 07.1's
+       `openid_registration()` and `openid_issuer(None)` instead.
+     - 06.2 left `documents()` at `document_bytes: 4096, string_bytes: 1024`,
+       so "under main's 1024 and 256" goes.
+     - 07.2: `jwt.rs`' module doc ("Payload metadata only: this decoder does
+       not authenticate JWT signatures.") names `verify_id_token`'s check;
+       the fake's `Fault::Expired(ago)` takes `ago` from the wall
+       (`wall.as_secs().checked_sub(..)`, else `Error::Limits`), so each
+       world row's token POST is at `wall(n)`, n at least 60.
+     A further user of what 07.1 or 07.2 changes is refreshed the same way
+     and listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

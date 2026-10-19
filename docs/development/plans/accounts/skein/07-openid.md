@@ -81,12 +81,15 @@ Files: `crates/skein-oauth/src/keys.rs` (new), `machine.rs`,
   `HttpRequest` literals: `tests/oauth/tests/world.rs`
   (`authorization_code_cannot_be_redeemed_twice`), `memory.rs`
   (`client_and_rotating_issuer_steps_fit_declared_heap_bounds`),
-  `tests/oauth-accounts/src/world.rs` (`protocol`),
-  `src/sign_in/protocol.rs` (`protocol`), `exchange.rs` (`token_web`)
-  and `testing/skein-fake-peers/src/oauth.rs` (`post`). The
+  `tests/oauth-accounts/src/world.rs` (`protocol_client`),
+  `src/sign_in/protocol.rs` (`protocol`), `exchange.rs` (`token_web`),
+  `testing/skein-fake-peers/src/oauth.rs` (`post`) and
+  `testing/skein-fake-oauth/src/tests.rs` (`post`, `exchange`), each
+  taking `method: Method::Post` (ruling 128). The
   `ClientLimits` literals: `machine_tests.rs` (`limits`),
   `tests/oauth/src/lib.rs` (`client_limits`), `tests/oauth/tests/`
-  `memory.rs` and `fuzzy_world.rs` (`scenario`) where 05.2 left them,
+  `memory.rs` (`check_client`) and `fuzzy_world.rs` (`scenario`) where
+  05.2 left them,
   `tests/oauth-accounts/src/world.rs` (`limits`), `tests/memory.rs`
   (`every_account_holds_a_maximal_record_within_the_heap_bound`) and
   skein-oauth-accounts's `src/tests.rs` (`limits`).
@@ -132,9 +135,8 @@ Shape: `HttpRequest.method: Method` (new `Method { Post, Get }`); a
   each of those three has smallest valid value 0. A host's
   `string_bytes` must hold a key's `n` (342 bytes at 2048 bits), or no
   set is readable; no host downstream takes OpenID terms. 07.1's worlds
-  rest on 06.2's `documents()` (`document_bytes` 4096, `string_bytes`
-  1024): under main's 1024 and 256 no key is readable; under 06.2's,
-  four keys (1666 bytes, 61 tokens) fit `tokens` 64, five (2080 bytes,
+  rest on `documents()` as 06.2 left it (`document_bytes` 4096,
+  `string_bytes` 1024): four keys (1666 bytes, 61 tokens) fit `tokens` 64, five (2080 bytes,
   75 tokens) do not. Fixture in
   `tests/oauth/src/lib.rs`: 1024, 2048, 4 and 2048, and `begin`,
   `openid_registration` and `openid_issuer` (new; the test shape). The
@@ -149,7 +151,9 @@ Shape: `HttpRequest.method: Method` (new `Method { Post, Get }`); a
   OpenID terms. The tests that meet the GET (ruling 118):
   `machine_tests/terms.rs`' `a_nonce_is_bounded_and_needs_openid` and
   `an_admitted_nonce_is_sent_in_the_visit_url` answer the key GET (a
-  one-key set literal) before they read the `Visit`; `machine_tests.rs`'
+  one-key set literal) before they read the `Visit`: `terms(true, ..)`
+  names a key set URL (`https://issuer.example/keys`), so that their
+  one GET is the key set's, not the metadata's (ruling 128); `machine_tests.rs`'
   `limits()` sets `metadata_bytes` 1024, `key_set_bytes` 4096, `keys` 4,
   `document_bytes` 4096 and `tokens` 128 (the row of `keys` and one more
   is 2080 bytes and 75 tokens), so that
@@ -158,8 +162,10 @@ Shape: `HttpRequest.method: Method` (new `Method { Post, Get }`); a
   `modulus_bits` reads as a string (a 4097-bit `n` is 684 base64url
   bytes); a test that rests on `string_bytes` 512 keeps its own limits.
   `world.rs`' `an_openid_sign_in_fails_before_its_check_exists`, whose
-  `visit()` now meets the GET, answers the keys first through `begin`,
-  the fake's `Event::Get` and the answer; its `Malformed` holds until
+  `visit()` now meets the GET, takes `openid_registration()` and
+  `openid_issuer(None)` in place of its own terms and `issuer_for`,
+  whose fake holds no `OpenId` and answers each GET 404, and answers the
+  key set first through `begin`, the fake's `Event::Get` and the answer; its `Malformed` holds until
   07.2 removes the guard. Downstream, the `ClientLimits` literals take 0,
   0, 0 and 2048: smith-local-shell `src/credentials/product.rs`,
   smith-local-service `src/credentials/tests.rs`; jig's
@@ -209,7 +215,7 @@ Test shape: unit, `machine_tests/openid.rs` over `machine_tests.rs`'
           let visit = client_step(&mut client, oauth::Event::Http(answer));
           assert!(matches!(visit, Some(oauth::Request::Visit { .. })));
           assert!(client_step(&mut client, oauth::Event::Cancel).is_some());
-          client_step(&mut client, oauth::Event::Reset);
+          assert!(client_step(&mut client, oauth::Event::Reset).is_none());
       }
   }
   ```
@@ -278,7 +284,8 @@ Shape: `verify_id_token` (new, crate-private, in `jwt.rs`) takes the
   `skein-oauth` entry. `ClientLimits.skew: Duration` (new), counted
   nowhere; `Client::new` admits any. Fixture 60 s; smallest valid 0,
   which the driver's and downstream's 07.1 sites take; jig's `translate.rs` arm
-  stays unreachable.
+  stays unreachable. `jwt.rs`' module doc ("this decoder does not
+  authenticate JWT signatures") names `verify_id_token`'s check.
 Test shape: unit, `src/tests.rs` (`limits()`, `wall`, `boxed`, over
   header and payload literals and RFC 7515 A.2's vector), each under
   20 ms: `an_id_tokens_alg_must_be_rs256`, rows `none`, `HS256`,
@@ -335,7 +342,9 @@ Test shape: unit, `src/tests.rs` (`limits()`, `wall`, `boxed`, over
   `Missing`, `NoIdToken` -> `Missing`;
   `keys_and_audiences_the_check_ignores_still_sign_in`, rows
   `ExtraEcKey`, `TwoAudiences`, `Expired(59 s)` (the fixture skew's
-  edge, one second inside it);
+  edge, one second inside it); each token POST at `wall(n)`, n at least
+  60: the fake's `Expired` takes its `Duration` from the wall, and
+  fails `Error::Limits` below it (ruling 128);
   `an_unverified_code_is_not_redeemed_again`;
   `an_issued_client_id_is_the_audience_checked`, under issued terms.
   The world's `an_openid_sign_in_fails_before_its_check_exists` goes.
