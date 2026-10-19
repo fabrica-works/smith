@@ -444,6 +444,41 @@ commits is this plan's.
      of `client_worst_case` for the answer's ruling, and do not land 05.3
      before it; commit locally meanwhile.
 
+112. **skein 05.3's empty term names** (design gap, skein 05's block of 2026-10-19T13:52:37Z).
+     The designer's answer, skein 0ccaf590 and smith d275fd98, settles what ruling 111 left open; 05.3 lands with it:
+
+     An empty added parameter name and an empty sign-in-again name are refused
+     by `validate_registration` as `Limit`, not `Malformed`, and not counted
+     as a byte. An empty value is admitted. oauth.md, section 1, at `0ccaf590`:
+     "parameters added to the authorization URL, each a name of at least one
+     byte and a value, which may be empty"; "the error names that mean sign in
+     again, each of at least one byte". Section 5: "A registration whose terms
+     hold an empty parameter name or an empty error name is refused as `Limit`:
+     each entry then holds at least one byte of the terms' sum, so that sum
+     also bounds how many entries there are. `worst_case` counts the in-progress
+     machine with its registration (each of the terms' entries with its own
+     storage, beside its bytes)". Section 4 is unchanged: "`InvalidRedirect`
+     and `Limit` identify local admission failures."
+
+     05.3, as amended:
+     - Shape: refuses as `Limit` "an empty added parameter name or
+       sign-in-again name (as an empty client id is; an empty value is
+       admitted)". `client_worst_case` counts "`parameter_bytes` as bytes and
+       again as at most that many entries, each priced at
+       `size_of::<Parameter>()`, the larger of the two entries".
+     - Test shape: `terms_are_refused_where_the_design_refuses` gains rows "an
+       empty parameter name and an empty sign-in-again name (`Limit`), beside
+       an empty value (admitted, the URL carrying `name=`)"; and the bound's
+       first measure, memory, `tests/oauth/tests/memory.rs`:
+       `terms_at_their_most_entries_fit_the_worst_case` (256 parameters, each
+       the name `a` and an empty value, built inside the meter, stepped to its
+       `Visit`, `url_bytes` 2048, against `client_worst_case`).
+     - Size: about 275 lines. 05.4 is unchanged.
+
+     The driver needs nothing new: `limits::worst_case` already counts
+     `client_worst_case` per account and per exchange, which now prices the
+     terms; oauth.md 6.7 names each account's registration to match.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
