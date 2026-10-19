@@ -318,6 +318,15 @@ commits is this plan's.
      - The `add` sketch's body is never `todo!()`.
      Ran: clippy on `skein-oauth-accounts` with the sketch (only its `todo!()` and unused parameters failed). Not run: the suites, the build lane being held by gates; the re-check at 08's start runs them.
 
+103. **skein 02's Shapes against main** (ready check of skein-02.1).
+     skein 02's ready check, against skein `887302f8`, corrected `skein/02-public-route.md`:
+     - 02.1 Shape: the exhaustive `Provider` matches it missed, `tests/llm/tests/derive.rs` `archived_heads_fit_with_headroom_and_complete_with_derived_limits` and `fake.rs` `absent_affinity_sends_none_and_anthropic_ignores_it_on_the_actual_wire`, `peer_native_request` and the two of `growing_conversations_preserve_native_content_and_encode_twice_identically`; `translate.rs` `validate_codex` and `charge_replay_item` keep `OpenAiCodex` until 02.3.
+     - 02.1 Test shape and Proof: the rows refusing one OpenAI route's replay on the other move to 02.3, since 02.1's transitional `Error::Unsupported` refuses every `OpenAi` call first.
+     - 02.2 Shape: `openai::StreamDecoder::new` and `with_reasoning_drop` take the `Provider` first, kept in a field for `accept`'s `classify`.
+     - 02.3 Shape: the public route's request id is the head's `x-request-id` (llm.md 4.8), and the unread `openai::identity::REQUEST_HEADER` goes; `measure_request` and `encode_request` take the route, and `charge_replay_item` counts reasoning on either OpenAI route; `public_call` and the reference test set `Some(...)` credentials, after 01.5.
+     - Done when: `rg -oIw`, not `rg -ohw` (`-h` prints rg's help), in 02's and in 01's.
+     Ran: the 02.2 reference test with the names on main, under clippy on skein-llm-world; skein-llm-world's nextest, 139 passed in the default profile and 7 in fuzzy.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

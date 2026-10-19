@@ -81,10 +81,18 @@ Shape: `Provider::OpenAi` (new): the public Responses route.
   `measure_headers` and `provider_headers`; in `derive/tests.rs`
   `owner_declared_counts_*`; `tests/llm/src/fake.rs`
   `prepared_with_options` and `delayed`; in `tests/llm/tests/`
-  `derive.rs` `capture`, `fake.rs` `input` and `check_feedback`,
+  `derive.rs` `capture` and
+  `archived_heads_fit_with_headroom_and_complete_with_derived_limits`,
+  `fake.rs` `input`, `check_feedback`,
+  `absent_affinity_sends_none_and_anthropic_ignores_it_on_the_actual_wire`,
+  `peer_native_request` and the two of
+  `growing_conversations_preserve_native_content_and_encode_twice_identically`,
   `fuzzy_client.rs` (its documents match), `live.rs` `input`; and
   `tests/llm-connection/tests/fake_protocol.rs` `run`. Each loop over
-  the routes keeps its two until 02.3, and `live.rs` has no suite for
+  the routes keeps its two until 02.3, and so do `translate.rs`
+  `measure_request` and `encode_request`, through `validate_codex`'s
+  `OpenAiCodex`, and `charge_replay_item`'s `== Provider::OpenAiCodex`:
+  no `OpenAi` call is admitted before 02.3, and `live.rs` has no suite for
   the route (decision 10). The README lists the route.
   Transitional, ended by 02.3: admission refuses a call on `OpenAi` as
   `Error::Unsupported`. `heavy cargo check --workspace --all-targets`
@@ -100,7 +108,9 @@ Shape: `Provider::OpenAi` (new): the public Responses route.
 Test shape: world, `tests/llm/tests/replay.rs`, with `call` and
   `limits` of `tests/llm/src/lib.rs`, each under 0.1 s:
   `each_route_replays_only_its_own_metadata`, rows tag 1, 2, 3 written
-  and read back, and each OpenAI route's replay refused on the other;
+  and read back (the rows refusing each OpenAI route's replay on the
+  other are 02.3's: until it, admission refuses every `OpenAi` call as
+  `Unsupported`, which no such row can tell from the refusal);
   `a_replay_written_before_reads_the_same`, literal bytes of tags 1
   and 2. In `derive.rs`, a row for `OpenAi` in
   `declared_quantities_price_the_retained_event_*` (head 16384, 128
@@ -111,8 +121,7 @@ Test shape: world, `tests/llm/tests/replay.rs`, with `call` and
   `the_public_route_takes_the_head_floor`, the head, fields and error
   body of `Limits::derive(&DECLARED).dialect(Provider::OpenAi)`.
 Proof: world, `each_route_replays_only_its_own_metadata`: the tag byte
-  reads 1, 2 and 3 for the three routes, and a Codex replay is refused
-  on the public route; under 0.1 s; unit,
+  reads 1, 2 and 3 for the three routes; under 0.1 s; unit,
   `the_public_route_takes_the_head_floor`: the head is 16 KiB with 128
   fields; under 20 ms. Nothing sends on the route until 02.3, so no
   higher layer reaches it.
@@ -132,7 +141,11 @@ Files: `crates/skein-llm/src/{dialect,client}.rs`,
 Shape: `openai::classify` takes the provider: `classify(provider,
   status, error, rate, wall)`, called by `client.rs` `error_end` and
   `error_cut`, `dialect.rs` `provider_error`, and `accept` of
-  `openai/response.rs` and `anthropic/response.rs`. On Anthropic the
+  `openai/response.rs` and `anthropic/response.rs`. The native
+  `openai::StreamDecoder` keeps its route: `new` and
+  `with_reasoning_drop` take the `Provider` first, held in a field its
+  `accept` passes to `classify`; their callers are `dialect.rs`
+  `Decoder::new` and `openai/tests.rs`'s five. On Anthropic the
   error's type decides first, as llm.md 4.7's list; `rejected` makes a
   `rate_limit_error` `Exhausted`, its reset from the unified reset,
   else `None`; `billing_error` is `Exhausted { retry_after: None }`; a
@@ -213,8 +226,9 @@ Needs: 02.1's route; 02.2's code-first `classify` (the code table is
   02.4's); skein 01's call with no credential (01.5) and its report
   values (01.4).
 Files: `crates/skein-llm/src/{client,translate,dialect}.rs`,
-  `openai/response.rs`; `tests/llm/src/lib.rs`; `tests/llm/tests/`
-  `public_route.rs` (new), `credentials.rs`.
+  `openai/{response,identity}.rs`; `tests/llm/src/lib.rs`;
+  `tests/llm/tests/` `public_route.rs` (new), `credentials.rs`,
+  `replay.rs`.
 Shape: `provider_headers` on `OpenAi`: `Authorization: Bearer` for
   either scheme, none without a credential, no `chatgpt-account-id`, no
   `session-id` or `thread-id`; affinity renders in the body's
@@ -227,11 +241,19 @@ Shape: `provider_headers` on `OpenAi`: `Authorization: Bearer` for
   call on `response.completed` (`EndTurn`), `response.incomplete`
   (`MaxTokens` or `Refusal`), `response.failed` or `error` (by code,
   02.2); `response.done` stays Codex's; a stream ending without one is
-  `Protocol`. The request id is `x-request-id`. If the draw below
+  `Protocol`. The request id is the head's `x-request-id` (llm.md 4.8),
+  read by `response_head` on `OpenAi` beside 01.4's `x-oai-request-id`,
+  through a constant beside 01.4's; `openai::identity::REQUEST_HEADER`,
+  which holds that value, is read nowhere, and sits in Codex's captured
+  identity, goes. `translate.rs` `measure_request` and `encode_request`
+  take the route: `validate_codex` validates against it, and
+  `charge_replay_item` counts a reasoning item on either OpenAI route
+  (llm.md: "Responses writes a reasoning item for each segment of its
+  reasoning"). Neither OpenAI route takes the other's replay. If the draw below
   finds a field of the refused list in Codex's body, the field goes
   from both routes' bodies. `tests/llm/src/lib.rs` gains
   `public_call(owner)`: `call` on `Endpoint::openai()` with a bearer
-  and no account id. Downstream: none.
+  (`Some`, 01.5's optional credential) and no account id. Downstream: none.
 Test shape: world, `tests/llm/tests/public_route.rs`, its cases labelled
   synthetic, with `World`, `public_call`, `limits_for(Provider::OpenAi)`
   (bounds from `Limits::derive(&TINY_DECL)`), `response` and
@@ -254,14 +276,16 @@ Test shape: world, `tests/llm/tests/public_route.rs`, its cases labelled
   (an account id) and
   `an_endpoint_header_naming_a_credential_field_is_refused`
   (`session-id`, `thread-id`, `Authorization`, `x-api-key` and
-  `chatgpt-account-id`). Reference test:
+  `chatgpt-account-id`). In `replay.rs`,
+  `each_route_replays_only_its_own_metadata` gains the rows refusing
+  each OpenAI route's replay on the other. Reference test:
   ```rust
   #[test]
   fn a_key_and_a_token_send_byte_identical_bodies() {
       let mut bodies = Vec::new();
       for make in [Credential::key, Credential::bearer] {
           let mut input = public_call(1);
-          input.credential = make(b"secret-test-token".to_vec().into());
+          input.credential = Some(make(b"secret-test-token".to_vec().into()));
           let mut world = World::new(input, limits_for(Provider::OpenAi), response(401, "", b"{}", false), 1);
           world.request(client::Request::Start);
           world.run();
@@ -384,7 +408,7 @@ None: the plan answers the three it had, in 02.1, 02.2 and 02.3.
 ## Done when
 
 - skein's `scripts/check.sh` passes on `origin/main`.
-- `rg -ohw -e 'fn anthropic_failures_are_classed_by_type_first'
+- `rg -oIw -e 'fn anthropic_failures_are_classed_by_type_first'
   -e 'fn a_key_and_a_token_send_byte_identical_bodies'
   -e 'fn each_code_of_the_table_gives_its_class'
   -e 'fn a_mid_stream_code_outside_the_table_is_unavailable'

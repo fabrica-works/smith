@@ -387,7 +387,7 @@ None: decision 21's readings are folded into 01.4 and 01.5.
   select(.license != "MIT") | .name'` prints nothing, and `head -1
   LICENSE` prints `MIT License`.
 - skein's `scripts/check.sh` passes on `origin/main`.
-- `rg -ohw -e 'fn each_scheme_goes_where_its_route_takes_it'
+- `rg -oIw -e 'fn each_scheme_goes_where_its_route_takes_it'
   -e 'fn exhausted_without_a_reset_carries_none_never_zero'
   -e 'fn a_report_value_past_its_bound_is_empty'
   -e 'fn a_call_without_a_credential_sends_no_credential_field'
