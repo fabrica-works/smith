@@ -88,6 +88,7 @@ gate, and repairs with decisions 15 and 16's defaults (Rules).
 
 | Step | Starts once | Moves |
 |---|---|---|
+| `jig-repin.s1` | smith 01 and smith 04 have landed (ruling 129) | jig's smith to smith's `origin/main`, and its skein with `--precise` to the revision smith's `Cargo.lock` pins; repairs smith 01's and 04's breaks, about 60 to 80 lines (decision 22) |
 | `smith-repin` | every skein step has landed | smith's skein to skein's `origin/main`, adding the key row of smith 04.1's `no_grant_value_reaches_a_turn_fact_or_trace` (ruling 124) |
 | `jig-repin` | `smith-repin` and every smith step have landed | jig's skein and smith, together, to their `origin/main` |
 | `hearth-repin` | `jig-repin` has landed | hearth's skein to skein's `origin/main` |
@@ -127,7 +128,11 @@ smith's and about 40 for skein's.
 - **When slots are short,** start first: skein 01, skein 02, skein 03,
   skein 04 (the longest chain), smith 01, skein 05; then skein 06, skein
   08, smith 04, smith 02, smith 03, smith 05, skein 07, skein 09, skein
-  10 and skein 11 as they open.
+  10 and skein 11 as they open. From ruling 129, toward `smith-repin`
+  and `jig-repin`, whose landings another plan waits on: `jig-repin.s1`,
+  skein 09 (09.1 to 10.2, the longest chain left to `smith-repin`),
+  skein 04 (04.2 to 04.4, then 11.1), skein 07, smith 02, smith 03,
+  smith 05, then skein 11.
 
 **The longest chain,** 17 steps: skein 01.1 to 01.4, 02.2, 02.3, 02.4,
 03.2, 04.1 to 04.4, 11.1, then `smith-repin`, `jig-repin`,

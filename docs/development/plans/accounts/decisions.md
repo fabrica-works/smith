@@ -948,6 +948,27 @@ commits is this plan's.
      A further user of what 07.1 or 07.2 changes is refreshed the same way
      and listed in the commit body.
 
+129. **The order toward the repins** (director's request of 2026-10-19T17:22Z).
+     The director reports that forge-kit's temper 02.1 waits on this run's
+     `smith-repin` and `jig-repin`, and asks that the steps on their path go
+     first, the plan's dependencies unchanged. The README now says:
+     - The closing repins gain `jig-repin.s1`, which the README already plans
+       ("the supervisor adds `jig-repin.s1` once smith 01 and 04 have landed",
+       decision 22): it starts once smith 01 (landed, 3 of 3) and smith 04
+       (04.1 landed; 04.2 running) have, and moves jig's smith to
+       `origin/main` and its skein with `--precise` to smith's `Cargo.lock`
+       pin, repairing smith 01's and 04's breaks. Added now so that it starts
+       at 04.2's landing; the closing `jig-repin` still runs.
+     - "When slots are short" gains the order from here: `jig-repin.s1`,
+       skein 09 (09.1 to 10.2, five steps, the longest chain left to
+       `smith-repin`, which needs every skein step), skein 04 (04.2 to 04.4,
+       then 11.1), skein 07, smith 02 (02.2 to 02.4, then smith 05, which
+       `jig-repin` needs with every smith step), smith 03, smith 05, then
+       skein 11.
+     Checked: `plan status` at 17:18Z (smith 01 3 of 3 landed; smith 04 1 of
+     2, 04.2 running); the kit's `plan set STEP KEY=VALUE…` adds a ledger row
+     (`set) set_step "$@"`).
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
