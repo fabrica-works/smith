@@ -1376,6 +1376,9 @@ commits is this plan's.
 
      skein-10.s1 is skein's, so `smith-repin` waits on it as on every skein step; no closing repin has landed, so none is added again. jig's `classify` (`crates/jig-protocol-accounts/src/translate.rs`) already lacks `Busy` and `NotGranted`, and `AnotherSubject` is a third: `jig-repin` takes all three, `AnotherSubject` as sign in again (decision 16), as 10.1's Downstream says.
 
+145. **jig's client race to later.md** (steer of 2026-10-19T21:14:02Z).
+     jig-repin.s1 spent ruling 139's second budget without a cause: its commit 1b0fdc68 records 20 focused browser runs through `heavy`, all passed (`client-race-{1..20}.log`), and a first gate after the rebase that failed only the same wait for `Cancelled` (`logs/20261019T201905-140.log`); it landed under the README's "A known timing flake" as ruling 139 amended it. Ruling 139, outcome 3, leaves the race to `later.md`: its row now names the story, the symptom, where to look first, and when it is taken up, as jig's (development.md, section 5.7); the designer's next landing adds it to jig's `STATUS.md`. The README's flake rule for that story stands until the race's fix lands.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
