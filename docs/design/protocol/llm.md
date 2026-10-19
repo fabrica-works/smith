@@ -1,6 +1,6 @@
 # LLM calls
 
-Provisional, 2026-10-07, revised 2026-10-17. `smith-protocol-llm` is the
+Provisional, 2026-10-07, revised 2026-10-19. `smith-protocol-llm` is the
 agent's component for LLM calls. It translates `smith-domain`'s LLM
 vocabulary to skein's LLM client and back:
 
@@ -341,9 +341,26 @@ A completion's prompt is built from what the domain gives:
   the usage: input, cache read, cache write, output and reasoning tokens,
   each one reported or not (skein's `llm.md`).
 - **Text in flight** is counted for the run's facts, never carried to
-  the domain or the channel (channel.md, section 8). The deltas go to
-  the service's event sink as `text.delta` records, only under the
-  capture policy or when a front end asks (events.md, section 3.5).
+  the domain (channel.md, section 8). The deltas go beside the domain,
+  to the service, which hands them to two consumers, each by its own
+  ask:
+  - **the event stream,** as `text.delta` records, only under the
+    capture policy or when a front end asks (events.md, section 3.5);
+  - **the channel,** as live content, when the start's ask names the
+    delta's kind (channel.md, section 4). The service coalesces and sends
+    pieces; this component only hands over the deltas, each with the call
+    it belongs to and its kind, and the service names each call's turn and
+    retry from what the domain told it.
+
+  This component hands deltas over when either consumer asks: the event
+  sink or a front end, or an ask that names a kind built, now `text`. It
+  does so for the
+  run's main conversation's completions only: a sub-agent's and a
+  compaction's give none, whoever asks. A delta of a kind nobody asks
+  for, or that is not built, is not handed over: a tool call's
+  arguments (`ToolArguments`) and reasoning deltas stay dropped here
+  until their kinds are built. Nothing of the delta reaches the domain,
+  whatever asks.
 - **The guard, before an ordinary request is sent.** When the session
   gives a request the line, its last prompt's reported size and where
   the new part starts (domain/session.md, 8.1), this layer measures the
@@ -487,6 +504,10 @@ component and skein's client against scripted byte peers, in each dialect.
     field;
   - the request's bytes, the first byte and the largest gap measured
     for the event stream, and deltas given to it only when asked;
+  - deltas handed over for the channel when the ask names `text`, and for
+    no one when neither asks; reasoning and arguments deltas handed over
+    for no ask; a sub-agent's and a compaction's completions handing
+    none;
   - a call cut off, and nesting asked for, each answered as its problem;
   - `finish`'s schema for each form of contract, and a result decoded from
     it;
@@ -549,9 +570,10 @@ All run in virtual time, in milliseconds each, within the focused suite.
 
 - **More providers:** API keys, other dialects, local models. They are
   skein's client's to add, and configuration's to name.
-- **Live text for a host across a channel,** such as a chat showing a
-  spawned agent's words as they come: facts carry no content, and the
-  event stream's `text.delta` stays in the agent's process.
+- **Reasoning and a tool call's arguments as they stream:** the channel
+  carries their kinds (channel.md, section 4) and this component drops
+  their deltas until they are built. Reasoning also needs each provider
+  asked for readable reasoning, which skein's requests do not yet do.
 - **MCP tools:** schemas passed through like host tools', once MCP is a
   tool source.
 - **Edit formats:** which format each dialect is offered, once measured;

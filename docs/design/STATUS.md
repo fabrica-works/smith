@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-18. How far smith's code is from its design, and which
+Updated 2026-10-19. How far smith's code is from its design, and which
 plans take it there. The designer keeps this file (skein's
 development.md, section 3.3).
 
@@ -29,18 +29,18 @@ instead.
 | Document | Built | Left |
 |---|---|---|
 | `domain/README.md` | partly | 4: `smith-mcp` and supervised processes with a view: not planned |
-| `domain/host.md` | partly | 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`) |
+| `domain/host.md` | partly | 2, 3: live content, the ask and the host's half handing pieces to its owner: not planned (live text). 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`) |
 | `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned (the reliability and parity plans' `later.md`). 6, 9.2: mid-work messages and threshold notes: not planned (the reliability plan's `later.md`) |
 | `domain/session.md` | partly | 11: provider-native compaction: not planned (the reliability plan's `later.md`) |
 | `domain/tools.md` | partly | 5: containment: not planned |
 | `protocol/README.md` | partly | 5: `smith-mcp`: not planned. 9: contained trees, Codex routing extras: not planned (the reliability and parity plans' `later.md`). 4, 11: a connected agent: not planned |
 | `protocol/agent.md` | partly | 3: the view: not planned |
-| `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned |
+| `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned. 3, 4, 5, 7, 8: the ask in the start and live content in pieces, with their order and best effort: not planned (live text) |
 | `protocol/charter.md` | yes | Nothing |
 | `protocol/events.md` | partly | 3.2: `containment: "trees"`: not planned |
 | `protocol/hosts.md` | partly | 3: the tree: not planned. 4: connecting later: not planned |
-| `protocol/limits.md` | yes | Nothing |
-| `protocol/llm.md` | partly | 12: edit formats per dialect: not planned |
+| `protocol/limits.md` | partly | 2.3, 2.4, 3.6: the piece, the interval and the held bytes of live content: not planned (live text) |
+| `protocol/llm.md` | partly | 6: deltas handed over for the channel's ask: not planned (live text). 12: edit formats per dialect: not planned |
 | `protocol/transcript.md` | yes | Nothing |
 | `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned (the reliability plan's `later.md`) |
 | `testing.md` | partly | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned |
@@ -136,6 +136,18 @@ instead.
   changes named to it (`benchmarks/src/parity/change.rs`). Waits for the
   next plan that measures a change against its parent; until then, a
   plan names no landed change to it.
+
+- **A run's live text** (`protocol/channel.md`, sections 3, 4, 5, 7 and
+  8; `protocol/llm.md`, section 6; `protocol/limits.md`, 2.3, 2.4 and
+  3.6; `domain/host.md`, sections 2 and 3): the start's ask, and the
+  main conversation's text up the channel in pieces, best effort, which
+  the agent's service coalesces from the LLM component's deltas; the
+  host's half decodes them and hands them to its owner. The code sends
+  only the count of the text (`TextArrived`). Designed; it waits for the
+  downstream repository's
+  live-text plan, after that repository's tools plan and the LLM
+  accounts work. Reasoning and a tool call's input as they stream have
+  schemas in the channel and no producer: later work.
 
 ## 4. Drafts
 

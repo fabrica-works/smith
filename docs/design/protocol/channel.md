@@ -1,6 +1,6 @@
 # The channel
 
-Provisional, 2026-10-07, revised 2026-10-18. The channel between a run and
+Provisional, 2026-10-07, revised 2026-10-19. The channel between a run and
 its host is smith's application protocol on skein's framed channel
 (skein's `channel.md`). This document covers:
 
@@ -8,7 +8,7 @@ its host is smith's application protocol on skein's framed channel
 - its kinds and their records;
 - their order and the rules a peer can break;
 - flow control;
-- grants and facts.
+- grants, facts and live content.
 
 The records' codecs are in `smith-channel`. The agent's half is
 `smith-protocol-channel`, and the host's half is `smith-host-protocol`
@@ -21,7 +21,8 @@ of domain/host.md, section 2.
 - **One channel per run,** on skein's framed channel. The host is the
   initiator, since it spawns or connects, and the agent responds.
 - **Down, from the host:**
-  - the start, with the messages that triggered the run and its identity;
+  - the start, with the messages that triggered the run, its identity
+    and the host's ask for live content;
   - messages;
   - answers to calls;
   - acknowledgements of turns;
@@ -36,6 +37,7 @@ of domain/host.md, section 2.
   - long operations;
   - notices about credentials;
   - facts;
+  - live content, in pieces;
   - the answer, its last word, with the last message read.
 - **The host's half decodes what its domain holds.** On the wire the
   charter, the result and turns' bodies are bytes in their own codecs.
@@ -50,12 +52,17 @@ of domain/host.md, section 2.
 - **Credentials travel as grants.** Their values cross the channel and stop
   at each side's protocol layer, so each domain sees an account and a
   generation only.
+- **Live content is not a fact.** What the run's main conversation
+  streams before a turn commits (its text, later its reasoning and a
+  tool call's input) crosses as pieces, only at the host's ask, with
+  room to spare, and never holding the run back (sections 4 and 7). The facts stay
+  content-free (section 8).
 - **Durations, never times.** Each side turns a duration into a deadline on
   its own clock.
 - **Flow control has three parts:**
   - turns are held until acknowledged, within a window the start sets;
-  - facts go only while the run is admitted and has not answered, and only
-    with room to spare;
+  - facts and live content go only while the run is admitted and has not
+    answered, and only with room to spare;
   - each half's queue is sized from its domain's limits.
 
 ## 2. Opening
@@ -140,6 +147,12 @@ of domain/host.md, section 2.
   start (domain/host.md, section 2). A headless host sends its prompt so;
   a host that starts a run before it has a message sends none;
 - **the grants** the charter's endpoints need;
+- **the ask,** if the host wants live content: one boolean for each
+  kind of it, `text`, `reasoning` and `input` (section 4). An absent ask,
+  or one with every kind false, asks for nothing, and nothing is sent.
+  The agent sends only the kinds it builds, now `text`: an ask for
+  another kind is not refused, and gets nothing. The ask holds for every
+  activation the start opens, and a resume's start makes its own;
 - **the window:** how many turns, and how many bytes of them, may be
   unacknowledged (section 7). It must hold at least one turn of the largest
   size the agent may send, or the start is invalid. A host that keeps no
@@ -180,7 +193,38 @@ of domain/host.md, section 2.
 | rejected | an account and a generation | when a provider refused that credential |
 | exhausted | an account, and how long until it may be used again | when its account ran out |
 | fact | one fact (section 8) | while the run is admitted and has not answered, with room to spare; any other is not projected, and counted (section 7) |
+| live | a piece of live content (below) | while the run is admitted and has not answered, only for a kind the start asked for, with room to spare; any other is dropped, and counted (section 7) |
 | answer | the turns it took; what it spent; the last message read, if any; how it ended (below) | the last word |
+
+**A piece of live content** is what the run's main conversation's
+completion streamed, in bytes, before its turn commits:
+
+- **`turn`:** the number the turn being written will have in this
+  activation, as the turn records number them (the last turn told, plus
+  one);
+- **`retry`:** the completion's retry within that turn, from 0. Each
+  retry's content starts again at offset 0, and replaces the last
+  one's;
+- **`kind`:** `text`, `reasoning` or `input`;
+- **`offset`:** the first byte's offset within that retry's stream of
+  that kind, and for `input` within that call's input;
+- **`bytes`:** the content, within the piece bound (protocol/limits.md,
+  3.6);
+- **the call,** for kind `input` only: the call's provider id and its
+  tool's name, as the completion names them. Absent for the other
+  kinds.
+
+The schema carries all three kinds, so that building reasoning or a
+tool's input later changes no version. Only `text` is produced: a
+completion of a sub-agent or a compaction gives none, and the other
+kinds have no producer yet. Content is bytes: a piece may end inside a
+character, and the host's owner joins the pieces before it decodes.
+
+Pieces of one stream of one retry follow in offset order, each starting
+at or after the end of the one before. A start after the end is a gap,
+the bytes between dropped (section 7); a reader marks a gap and carries
+on. The pieces carry no count of what was dropped: the agent counts it
+(section 7).
 
 **Long operations** are what the run waits on below it with deadlines of
 its own, so the host's watchdog stretches over them (domain/host.md,
@@ -240,6 +284,15 @@ last one with `opens_window` (domain/host.md, section 6).
   - the last message read names a message the host sent, and never goes
     back across turns, waits and the answer;
   - a long done ends a long operation still open;
+  - a piece comes only while the run is admitted and has not answered,
+    only for a kind the start asked for and the agent builds, and its
+    turn is the last one told plus one. Within a stream, a retry never
+    goes back, a piece starts at or after the end of the one before it,
+    and the bytes of a stream start at offset 0 in each retry;
+  - **no piece follows its turn:** the pieces of a turn go up before that
+    turn's record, and once the record is sent, no piece of that turn
+    follows. The first piece of a retry starts at offset 0 unless the
+    bytes before it were dropped, which is a gap from 0;
   - the answer is the last word, and its turn count is the turns told in
     this activation.
 
@@ -277,6 +330,9 @@ last one with `opens_window` (domain/host.md, section 6).
   Both halves move to it together. A peer that speaks only version 1
   shares no version with one that speaks only version 2, and the run ends
   before its start is read (section 2).
+- **Version 3.** One bump covers the ask in the start and live content in
+  pieces, with their order and best effort (sections 3, 4 and 7). Both
+  halves move to it together, as they moved to version 2.
 
 ## 6. Grants
 
@@ -322,10 +378,22 @@ last one with `opens_window` (domain/host.md, section 6).
   answer. Every other fact, before admitted, after the answer or without
   room, is dropped from the projection and counted as not projected; none
   holds the run back, and none is taken from the other sinks.
+- **Live content is best effort,** as facts are: a piece goes up only
+  while the queue's room leaves enough free for everything else, by the
+  rule for facts, and none holds the run back. The agent coalesces what
+  the completion streams into pieces by a byte bound and an interval,
+  whichever comes first. Bytes with no room to go are held, up to a
+  bound; past it the newest are dropped, so what is held stays whole from
+  its start, and the next piece to go starts past the dropped bytes: a
+  gap (section 4). Every dropped byte is counted, as live bytes not
+  projected, beside the facts' count. The numbers are in
+  protocol/limits.md, 3.6. When a turn's record is ready, the bytes still
+  held for it are sent or dropped first, so no piece follows its turn
+  (section 5).
 - **Each half's queue** is sized from its domain's limits:
   - **the agent's:** the window, the calls in flight, a refusal for each
     message in flight, the notices, the long operations open, the answer,
-    and a reserve for facts;
+    and a reserve for facts and pieces;
   - **the host's:** the start, the messages in flight, the answers to the
     calls in flight, the acknowledgements, the grants and a cancel.
 
@@ -346,16 +414,19 @@ liveness:
 - a run admitted or ended;
 - an LLM call started, retried or finished;
 - a tool, or a check, started or finished;
-- text arriving from the LLM, counted, never carried.
+- text arriving from the LLM, counted, never carried. The count is the
+  fact's: the text itself crosses only as live content (section 4).
 
 The run's other facts (domain/run.md, section 11) reach the event stream
 only.
 
-A trace with content is not a fact, and never crosses the channel. It is
-the event stream, a separate sink of the same facts with content as its
-capture policy allows, under its own delivery policy and its own count of
-loss (events.md). Where one is kept is the agent's configuration
-(agent.md).
+Content is not a fact. A trace with content is the event stream, a
+separate sink of the same facts with content as its capture policy
+allows, under its own delivery policy and its own count of loss
+(events.md), and never crosses the channel. Content crosses the channel
+only as live content, at the host's ask, in pieces that are never
+facts: the run's domain never holds it (domain/run.md, section 11). Where
+a trace is kept is the agent's configuration (agent.md).
 
 ## 9. What the domains are owed, and what skein owes
 
@@ -410,6 +481,18 @@ loss (events.md). Where one is kept is the agent's configuration
   - grants refreshed while a call is in flight;
   - facts dropped under pressure, and facts after the answer, each
     counted as not projected while the event stream keeps them all;
+  - a start asking for text: a completion's pieces arrive in order with
+    their turn, retry and offset, before that turn's record, and the
+    joined bytes equal the text the turn tells;
+  - a start with no ask, and one asking for reasoning and input only:
+    no piece, and the facts as before;
+  - a retried completion: the second try's pieces start again at offset
+    0, and a reader keeps only that try's;
+  - a channel with no room: pieces held, then dropped past the held
+    bound, a gap in the offsets, the drop counted, and the turn's record
+    still sent with nothing behind it;
+  - the main conversation only: a sub-agent's and a compaction's
+    completions give no piece;
   - no version in common, a version-1 peer among them;
   - a host's terms too small, refused at the opening;
   - an agent that exits after its last word, still read to the end.
@@ -420,7 +503,10 @@ loss (events.md). Where one is kept is the agent's configuration
     the answer's fence;
   - every call answered once;
   - turns in order;
-  - no credential's value in a turn, a fact or a domain.
+  - no piece after its turn's record, and no piece before the admitted
+    or after the answer;
+  - pieces of a kind the start did not ask for: none;
+  - no credential's value in a turn, a fact, a piece or a domain.
 
 ## 11. From temper
 
@@ -452,4 +538,8 @@ loss (events.md). Where one is kept is the agent's configuration
   whole on either side.
 - **A connected agent's credential** (README.md, section 11).
 - **Which facts cross:** whether a host wants more than liveness from them,
-  such as a call's model or a tool's name.
+  such as a call's model or a tool's name. Content is answered: it crosses
+  as live content (section 4), never as a fact.
+- **Reasoning and a tool's input as they stream:** the schema carries
+  them (section 4); building them, and asking each provider for readable
+  reasoning, is later work.

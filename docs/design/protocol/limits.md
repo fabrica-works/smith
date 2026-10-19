@@ -1,6 +1,6 @@
 # Limits
 
-Provisional, 2026-10-09, revised 2026-10-18. How an agent's limits are
+Provisional, 2026-10-09, revised 2026-10-19. How an agent's limits are
 made:
 
 - the quantities a deployment declares;
@@ -142,6 +142,7 @@ name `smith check` and the event stream's header print it under
 | `write_deadline` | duration | the most one write of the event stream may stay in flight before its destination is given up (events.md, section 5.2) |
 | `wrap_up` | duration | the most time a sub-agent keeps for its final turn (domain/run.md, 5.3); a child's allowance is the smaller of this and a quarter of its effective time |
 | `cancel_grace` | duration | the inline agent's grace for a cancel, before it drops a run (domain/host.md, 9.2) |
+| `live_interval` | duration | the longest the agent holds live bytes before sending them as a piece (channel.md, section 7); the default is 100 ms |
 | `exit_grace` | duration | a host's grace for a spawned agent to exit after its answer, above the agent's teardown bound (section 4) |
 
 ### 2.4 Fixed by the vocabulary
@@ -162,6 +163,10 @@ in every deployment:
 - **an operator's line:** one line on standard error, a failure's
   detail clipped to its first 512 bytes at a character's boundary
   (agent.md, section 6);
+- **a piece of live content:** at most 4 KiB of bytes, plus its fixed
+  fields (a turn, a retry, a kind, an offset, and for an input the
+  call's provider id and tool's name, each within the vocabulary's
+  bound), the channel schema's (channel.md, section 4);
 - **a model's effort:** a name of at most 32 bytes, the charter schema's
   (charter.md, section 2). The list of names a model accepts is its
   declaration (`docs/design/shell.md`, 6.1), never the vocabulary's.
@@ -406,7 +411,21 @@ terms (channel.md, sections 2 and 7):
 - **a message's frame:** a message at its bound (3.9);
 - **its queue:** the window's turns, the calls in flight (at most
   `conversations`), the notices, the long operations, the answer and a
-  reserve for facts, charged by rule 5 of section 3;
+  reserve for facts and pieces, charged by rule 5 of section 3;
+- **live content,** channel.md, section 7. Three numbers, all for the
+  run's main conversation, the only one that gives any:
+  - **the piece:** at most 4096 bytes (2.4), a frame of that and its
+    fixed fields. A delta longer than it goes in several pieces;
+  - **the interval:** `live_interval`, 100 ms (2.3). A piece goes when
+    its bytes reach the bound or the interval ends since the oldest
+    unsent byte, whichever comes first;
+  - **the held bytes:** four pieces, 16 KiB, by rule 5: what can wait
+    at once for a channel with no room is one stream's bytes, never a
+    count of the largest pieces. Past it the newest bytes are dropped
+    and counted (channel.md, section 7). A piece is cut from the held
+    bytes, so nothing else in this path is charged. The queue's reserve
+    for pieces is one piece's frame, since the agent sends one piece at
+    a time. The service's sum adds the held bytes once (3.8, section 5);
 - **by direction,** by rule 6. What the agent writes is bounded by its
   own derived limits. What it reads is bounded by what it admits: a
   start within the charter's run bound, a message within its bound. The
@@ -805,6 +824,10 @@ version of it (events.md, section 6).
   `Idle` and retried; the session's time ending once, without a retry.
 - **Rendering:** a result past its bound cut with its marker; random
   outcomes at random caps rendered within the bound.
+- **Live content:** a stream longer than the held bytes against a
+  channel with no room, dropped past the bound and counted; pieces never
+  larger than the piece bound; a piece sent at the interval's end with
+  fewer bytes than the bound (channel.md, section 10).
 - **Memory:** skein's counting allocator against the formula, with the
   LLM pool full and every conversation open, each holding `jobs` jobs at
   their kept output's ceiling, in the agent's simulated world (agent.md,

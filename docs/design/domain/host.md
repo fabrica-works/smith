@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-05, revised 2026-10-14. The other side of a run:
+Provisional, 2026-10-05, revised 2026-10-19. The other side of a run:
 what a host owes an agent and is owed, the channel between them, and the
 domains smith ships for hosts: `smith-host-domain`, which a host embeds
 to start and supervise agent processes; `smith-inline-agent`, its twin,
@@ -42,8 +42,10 @@ Down, from the host:
 
 - **the start** first (run.md, 3.2): the charter, the workspace, the
   transcript and the calls answered after it, the messages that
-  triggered the run, credential grants, an activation number, and the
-  run's identity. The transcript is the current window's turns only:
+  triggered the run, credential grants, an activation number, the
+  run's identity, and, if the host wants its words as they come, the ask
+  for live content: one boolean for each kind (`text`, `reasoning`,
+  `input`; protocol/channel.md, section 3). The transcript is the current window's turns only:
   those from the last turn that opens a window, as each told turn says
   (section 6). The identity is opaque, of the size the vocabulary seals
   (protocol/limits.md, section 2.4); the host keeps it the same across
@@ -72,6 +74,16 @@ Up, from the run:
   keeps them all by default; on the channel, projected for liveness, and
   dropped and counted as not projected when there is no room, never
   holding the run (run.md, section 11);
+- **live content,** at the ask: pieces of what the run's main
+  conversation streams before a turn commits, each with its turn, retry,
+  kind and offset (protocol/channel.md, section 4). It is not a fact and
+  never enters the host's domain: the domain stays content-free, and the
+  host's half of the protocol (`smith-host-protocol`) decodes each piece
+  and hands it, naming the run, to the host's owner, beside the domain.
+  It is best effort and may show a gap, and a piece never follows its
+  turn's record. In process there is no channel: the LLM
+  component the host's root owns reads the ask from the host and hands
+  the deltas to the host's owner directly (section 9.1);
 - **long operations:** the run's checks, each LLM completion, each
   command until it ends or is answered `running`, and each `job` call's
   wait (tools.md, section 5), each with its span, bounded by the limits,
@@ -143,6 +155,11 @@ not decode.
   reads it, like any input, and adds the workspace it prepared. Only a
   host tool's input stays the bytes the LLM wrote, for the host's own
   protocol layer to read.
+- **Live content bypasses the domain.** The host's half decodes a piece
+  as it arrives and gives it to its owner, the host's root, with the
+  run's name. `smith-host-domain` is not told, holds no content, and
+  needs none to supervise: a piece counts as progress for the watchdog
+  like any record the half reads (protocol/channel.md, section 7).
 - **Bounded.** Every payload has a limit, sealed by its value
   constructor; a host's limits may be smaller, never larger.
 

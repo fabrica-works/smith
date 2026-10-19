@@ -1,6 +1,6 @@
 # The run
 
-Provisional, 2026-10-05, revised 2026-10-14. What a smith run is, as a
+Provisional, 2026-10-05, revised 2026-10-19. What a smith run is, as a
 domain layer: one activation of an agent, from the charter its host gives
 it to the answer it gives back. It is the child domain `smith-domain-run`,
 composed with its sessions by `smith-domain` (README.md, section 4). The
@@ -787,7 +787,9 @@ never when a sink takes it:
   winding down, when it changes (9.1); and, as a sub-agent's return
   writes its usage line, the values that line tells, with the call
   (9.2);
-- text arriving from the LLM, counted, never carried.
+- text arriving from the LLM, counted, never carried. Live content
+  (protocol/channel.md, section 4) is not a fact: it goes beside the
+  domain, at the host's ask.
 
 The protocol layer turns them into the event vocabulary
 (`protocol/events.md`), and each sink applies its own policy and counts
@@ -797,7 +799,8 @@ dropping; the channel's projection, for the host's liveness, drops what
 does not fit, counting it as not projected, and never holds the run.
 Content (prompts, completions, also as their text streams, and
 tools' input and output) goes only to the event stream, as its capture
-policy allows. The records that say how the run and its process ended are
+policy allows, and as live content to the host that asked (never through
+the domain). The records that say how the run and its process ended are
 built from the answer and the process, not from facts, and are never
 dropped. Nothing the agent decides depends on a fact: a sink may slow the
 run, never change what it does. What must be delivered (turns, calls,
