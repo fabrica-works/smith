@@ -360,6 +360,27 @@ commits is this plan's.
      hold a version 3 record at its caps takes the next power of two that
      holds it, and the commit body lists it. 05.2's Shape now says so.
 
+107. **smith 01.2's credential fields** (cross-session scope, smith 01's block of 2026-10-19T12:50:35Z).
+     Neither: the generator has the mechanism, and smith does not wait. skein's
+     codec.md, section 3, says it in its own words: "A credential is a
+     `secret N`, never `bytes N`: a token, a key, a secret, a grant's value.
+     Its bytes cross as `bytes N` would; its type, lib's `Secret` (lib.md,
+     section 6), shows only its length in `Debug`, so a record that holds one
+     is printed, logged or traced without it. Its owner reads the bytes with
+     `expose`, to use or send them." 01.2's Shape wrote `bytes 8192` for both
+     values, a plan defect. In `channel-v4.schema`, `CredentialValue` is
+     `{ scheme: Scheme bytes: secret 8192 }` and `WithdrawnValue` is
+     `{ id: text 1024 bearer: secret 8192 }`. The generator at smith's pinned
+     skein (5c8ae967) parses `secret` and emits `skein_lib::Secret` for it,
+     which derives `Clone`, `PartialEq`, `Eq` and `Hash` and writes its own
+     `Debug` as its length, so the generated derives stand and the drift check
+     holds. The bytes on the wire, and so the goldens, are those `bytes 8192`
+     would give. The host builds each value with `skein_lib::Secret::new`, and
+     the agent reads it with `expose` where it repacks the table's envelope.
+     Version 3's `GrantValue { credential: bytes 8192 }` goes with `v3`. A
+     further v4 field that holds a credential, a token or a key is a
+     `secret N` too; no other field of the schema holds one.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

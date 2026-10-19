@@ -96,10 +96,14 @@ Files: `crates/smith-channel/`: `schema/channel-v4.schema` (new),
   `tests/hosts/src/lib.rs`; `tests/agent-process/src/{lib,tracing}.rs`;
   `tests/end-to-end/end_to_end.rs` (formats line).
 Shape: from v3: `enum Scheme { bearer, key }`, `record
-  CredentialValue { scheme: Scheme bytes: bytes 8192 }`, `record
+  CredentialValue { scheme: Scheme bytes: secret 8192 }`, `record
   ProgramValue { name: text 32 }`, `record WithdrawnValue { id: text
-  1024 bearer: bytes 8192 }` and `enum GrantValue { credential,
-  program, withdrawn }`. The id's 1024 is `Source::account_id_bytes()`
+  1024 bearer: secret 8192 }` and `enum GrantValue { credential,
+  program, withdrawn }`. Both values are `secret` (skein codec.md 3:
+  "A credential is a `secret N`, never `bytes N`"; ruling 107): they
+  cross as `bytes 8192` would, their generated fields are
+  `skein_lib::Secret`, whose `Debug` is its length, and their owners
+  read them with `expose`. The id's 1024 is `Source::account_id_bytes()`
   in `crates/smith-local-service/src/credentials.rs`; the shipped
   profile's `grant_value_bytes` (2048, agent-service `profile.rs`)
   bounds id and bearer each and stays above it. The codec checks
