@@ -51,7 +51,9 @@ pub fn run() {
     let at = clock.now();
     let launch = kind.launch(root, &document);
     let mut world = real::World::new(Judge);
-    world.spawn_with_fds(vec![root], || Process::Sample(Box::new(HostService::new(launch, at.now, at.wall, 4096))));
+    world.spawn_with_fds(vec![root], || {
+        Process::Sample(Box::new(HostService::new(launch, at.now, at.wall, 4096, None)))
+    });
     world.spawn(|| {
         Process::Script(Proc::Peer(Box::new(smith_agent_process_world::fake::configured_transport(
             Box::new([peer_script()]),

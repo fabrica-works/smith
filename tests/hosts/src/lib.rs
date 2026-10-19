@@ -38,6 +38,8 @@ pub struct Seen {
     pub gone: Option<host::End>,
     pub detail: Option<Box<[u8]>>,
     pub turns: u32,
+    /// Owner's pieces with the number of domain turns already told at arrival.
+    pub pieces: Vec<(u32, smith_channel::Live)>,
     pub calls: u32,
     pub exits: u32,
     pub reaps: u32,
@@ -134,9 +136,9 @@ fn io_limits() -> io::Limits {
     }
 }
 
-fn start() -> host::Start {
+fn start(live: Option<host::channel::LiveAsk>) -> host::Start {
     host::Start {
-        live: None,
+        live,
         messages: Box::default(),
         logical_run: Token::new(1),
         identity: None,
@@ -162,7 +164,13 @@ fn start() -> host::Start {
 impl HostService {
     /// Construct one host slot and queue a parent Spawn.
     #[must_use]
-    pub fn new(launch: smith_local_service::Launch, now: Time, wall: Wall, detail_bytes: u32) -> HostService {
+    pub fn new(
+        launch: smith_local_service::Launch,
+        now: Time,
+        wall: Wall,
+        detail_bytes: u32,
+        live: Option<host::channel::LiveAsk>,
+    ) -> HostService {
         let mut domain_limits = host_limits();
         domain_limits.detail_bytes = detail_bytes;
         let io_limits = io_limits();
@@ -204,7 +212,7 @@ impl HostService {
             protocol::output_bytes(&service.process_limits).expect("host directional frame");
         service
             .domain_events
-            .push(host::Input::Parent(host::parent::Event::Spawn { client: Token::new(1), start: start() }));
+            .push(host::Input::Parent(host::parent::Event::Spawn { client: Token::new(1), start: start(live) }));
         service
     }
 
@@ -350,7 +358,15 @@ impl HostService {
             OpenEvent::Turn { turn } => {
                 host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Turn { turn } })
             }
-            OpenEvent::Live { .. } => host::Input::Process(host::process::Event::Progress { owner: agent }),
+            OpenEvent::Live { turn, retry, kind, offset, bytes, call } => {
+                let piece = smith_channel::Live::new(
+                    &smith_channel::CEILINGS,
+                    smith_channel::LiveParts { turn, retry, kind, offset, bytes, call },
+                )
+                .expect("process already validated the live record");
+                self.seen.pieces.push((self.seen.turns, piece));
+                host::Input::Process(host::process::Event::Progress { owner: agent })
+            }
             OpenEvent::Fact { body } => {
                 host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Fact { body } })
             }

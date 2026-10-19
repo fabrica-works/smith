@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use skein_fake_llm_domain::api;
+    use skein_lib::Duration;
     use smith_host_domain::End;
     use smith_hosts_world::{Program, World};
 
@@ -88,5 +90,40 @@ mod tests {
         assert!(world.seen().gone.is_some());
         assert_eq!(world.seen().exits, 1);
         assert_eq!(world.seen().reaps, 1);
+    }
+
+    #[test]
+    fn a_host_asking_for_text_hears_the_reply_in_pieces_before_its_turn() {
+        const SEED: u64 = 37;
+        const HOLD: &[u8] = b"host-reply";
+        const FIRST: &[u8] = b"Hel";
+        const LAST: &[u8] = b"lo";
+        // The prefix's three bytes, released after one query and its live interval.
+        const FIRST_BYTES: u64 = 3;
+        const QUERY: usize = 1;
+        const RELEASE_AFTER: Duration = Duration::from_secs(1);
+        let mut world = World::new(SEED, Program::Service);
+        world.ask(true, false, false);
+        world.script(Box::new([api::Turn {
+            lines: Box::new([api::Line::Pieces {
+                pieces: Box::new([
+                    api::Piece { text: FIRST.into(), hold: None },
+                    api::Piece { text: LAST.into(), hold: Some(HOLD.into()) },
+                ]),
+            }]),
+            finish: api::Finish::Stop,
+            tokens: 1,
+        }]));
+        world.release_after(HOLD, QUERY, RELEASE_AFTER);
+        world.settle();
+        let pieces: Vec<_> = world
+            .seen()
+            .pieces
+            .iter()
+            .map(|(told, piece)| (*told, piece.turn(), piece.retry(), piece.offset(), piece.bytes()))
+            .collect();
+        assert_eq!(pieces, [(0, 1, 0, 0, FIRST), (0, 1, 0, FIRST_BYTES, LAST)]);
+        let joined: Vec<_> = world.seen().pieces.iter().flat_map(|(_, piece)| piece.bytes().iter().copied()).collect();
+        assert_eq!(joined, b"Hello");
     }
 }

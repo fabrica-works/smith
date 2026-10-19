@@ -748,6 +748,12 @@ impl Service {
         self.channel.as_ref().expect("framed agent owns its channel").lost_facts()
     }
 
+    /// Live bytes omitted from the host channel.
+    #[must_use]
+    pub fn lost_live_bytes(&self) -> u64 {
+        self.channel.as_ref().expect("framed agent owns its channel").lost_live_bytes()
+    }
+
     /// Give Skein IO the inherited channel and termination descriptors. The
     /// shell opens these before iterating; io closes them after the run.
     pub fn adopt_streams(

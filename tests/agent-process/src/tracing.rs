@@ -21,6 +21,7 @@ pub(super) struct Tracing {
     next: u64,
     started: bool,
     pub(super) channel_loss: u64,
+    pub(super) lost_live_bytes: u64,
     capture: agent::sinks::Capture,
     header: Option<List<smith_events::EffectiveLimit>>,
 }
@@ -90,6 +91,7 @@ impl Tracing {
             next: u64::MAX - 1,
             started: false,
             channel_loss: 0,
+            lost_live_bytes: 0,
             capture,
             header: Some(header),
         }
@@ -162,6 +164,7 @@ impl Host for Tracing {
             self.service.root_opened(self.roots.next().ok_or(()), host);
         }
         self.channel_loss = self.service.lost_channel_facts();
+        self.lost_live_bytes = self.service.lost_live_bytes();
         if let Some(answered) = agent::done(&self.service) {
             self.result = Some(answered);
             let mut unused = std::mem::take(&mut self.unused);

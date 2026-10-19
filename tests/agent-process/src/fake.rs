@@ -76,24 +76,33 @@ pub fn peer() -> llm::Peer {
 /// The same one-turn text response in the selected provider dialect.
 #[must_use]
 pub fn peer_for(anthropic: bool) -> llm::Peer {
-    let scripts = Box::new([api::Script {
-        cue: Box::new([]),
-        turns: Box::new([api::Turn {
-            lines: Box::new([api::Line::Text { text: b"Hello".as_slice().into() }]),
-            finish: api::Finish::Stop,
-            tokens: 1,
-        }]),
+    let turns = Box::new([api::Turn {
+        lines: Box::new([api::Line::Text { text: b"Hello".as_slice().into() }]),
+        finish: api::Finish::Stop,
+        tokens: 1,
     }]);
-    let credential =
-        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() };
+    let scripts = Box::new([api::Script { cue: Box::new([]), turns }]);
+    let credential = standard_credential();
     if anthropic { configured_anthropic(scripts, credential) } else { configured(scripts, credential, Duration::ZERO) }
+}
+
+fn standard_credential() -> skein_llm::Credential {
+    skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() }
+}
+
+/// Script a reply with the shared scenario's standard credential.
+#[must_use]
+pub fn scripted_reply(turns: Box<[api::Turn]>, anthropic: bool) -> llm::Peer {
+    scripted(turns, standard_credential(), anthropic)
 }
 
 /// Write the supplied turns through the scenario's provider dialect.
 #[must_use]
 pub fn scripted(turns: Box<[api::Turn]>, credential: skein_llm::Credential, anthropic: bool) -> llm::Peer {
     let scripts = Box::new([api::Script { cue: Box::new([]), turns }]);
-    if anthropic { configured_anthropic(scripts, credential) } else { configured(scripts, credential, Duration::ZERO) }
+    // Live pressure stories pass 16 KiB by one byte; keep script and document room
+    // at the same existing 128 KiB bound used by the reasoning replay fixture.
+    configured_bounds(scripts, credential, Duration::ZERO, Transport::Plaintext, anthropic, false, (131_072, 131_072))
 }
 
 /// Build a seeded plaintext loopback peer for a local scenario.

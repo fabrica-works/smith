@@ -2,6 +2,7 @@
 //! 2.1 and 5). It keeps only configuration and the settled outcome; scheduling,
 //! hosted-child ownership and teardown belong to Skein. The referee watches
 //! parent observations and requests shutdown or scripted child faults.
+use skein_fake_llm_domain::api;
 use skein_io::kernel;
 use skein_lib::{Duration, Queue, Time, Token, Wall};
 use skein_shell::Host;
@@ -301,7 +302,17 @@ enum Scenario {
     Crash(u32),
 }
 
+#[derive(Clone)]
+struct Release {
+    name: Box<[u8]>,
+    queries: usize,
+    after: Duration,
+    at: Option<Time>,
+    released: bool,
+}
+
 struct Referee {
+    release: Option<Release>,
     seed: u64,
     scenario: Scenario,
     iteration: u32,
@@ -312,7 +323,20 @@ struct Referee {
 }
 
 impl skein_world::Referee<Proc> for Referee {
-    fn act(&mut self, _now: Time, procs: &mut [Proc]) {
+    fn act(&mut self, now: Time, procs: &mut [Proc]) {
+        if let Some(release) = &mut self.release {
+            for proc in &mut *procs {
+                if let Proc::Peer(peer) = proc {
+                    if fixture::fake::queries(peer).count() >= release.queries && release.at.is_none() {
+                        release.at = Some(now.saturating_add(release.after));
+                    }
+                    if !release.released && release.at.is_some_and(|at| now >= at) {
+                        peer.release(&release.name).expect("named hold fits the peer");
+                        release.released = true;
+                    }
+                }
+            }
+        }
         self.iteration = self.iteration.checked_add(1).expect("finite scenario");
         let parent = procs
             .iter()
@@ -388,7 +412,8 @@ impl skein_world::Referee<Proc> for Referee {
     }
 
     fn next_deadline(&self) -> Option<Time> {
-        self.meeting.next_deadline()
+        let release = self.release.as_ref().filter(|release| !release.released).and_then(|release| release.at);
+        self.meeting.next_deadline().into_iter().chain(release).min()
     }
 
     fn overdue(&self, now: Time) -> Option<String> {
@@ -412,12 +437,39 @@ pub struct World {
     scenario: Scenario,
     memory: Memory,
     outcome: Option<Outcome<Proc, Machine>>,
+    live: Option<smith_host_domain::channel::LiveAsk>,
+    script: Option<Box<[api::Turn]>>,
+    release: Option<Release>,
 }
 
 impl World {
     #[must_use]
     pub fn new(seed: u64, program: Program) -> Self {
-        Self { seed, program, scenario: Scenario::Plain, memory: Memory::Unchecked, outcome: None }
+        Self {
+            seed,
+            program,
+            scenario: Scenario::Plain,
+            memory: Memory::Unchecked,
+            outcome: None,
+            live: None,
+            script: None,
+            release: None,
+        }
+    }
+
+    /// Put the owner's live-content request in the actual host Start.
+    pub fn ask(&mut self, text: bool, reasoning: bool, input: bool) {
+        self.live = Some(smith_host_domain::channel::LiveAsk { text, reasoning, input });
+    }
+
+    /// Give the independent peer the scenario's scripted reply.
+    pub fn script(&mut self, turns: Box<[api::Turn]>) {
+        self.script = Some(turns);
+    }
+
+    /// Release the named hold after the query has waited in virtual time.
+    pub fn release_after(&mut self, name: &[u8], queries: usize, after: Duration) {
+        self.release = Some(Release { name: name.into(), queries, after, at: None, released: false });
     }
 
     /// After admission, pause the agent and request Cancel from its parent.
@@ -458,6 +510,7 @@ impl World {
         let mut machine = skein_fake_machine::Machine::new();
         let root = machine.lay(&[]);
         let referee = Referee {
+            release: self.release.clone(),
             seed: self.seed,
             scenario: self.scenario,
             iteration: 0,
@@ -482,9 +535,16 @@ impl World {
                 Time::ZERO,
                 config.wall,
                 if self.program == Program::Service { 4096 } else { super::host_limits().detail_bytes },
+                self.live,
             )))
         });
-        harness.spawn(|| Proc::Peer(Box::new(fixture::fake::peer())));
+        harness.spawn(|| {
+            let peer = match &self.script {
+                Some(turns) => fixture::fake::scripted_reply(turns.clone(), false),
+                None => fixture::fake::peer(),
+            };
+            Proc::Peer(Box::new(peer))
+        });
         self.outcome = Some(harness.run());
     }
 

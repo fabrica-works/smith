@@ -83,6 +83,10 @@ const LAST: &[u8] = b"lo";
 // The fixture releases one second after its first query, beyond the 100 ms interval.
 const RELEASE_AFTER: Duration = Duration::from_secs(1);
 const FIRST_QUERY: usize = 1;
+// The provider idle deadline expires on query one; query two is its retry.
+const RETRY_QUERY: usize = 2;
+const LIVE_KIND: u16 = 0x0112;
+const TURN_KIND: u16 = 0x0109;
 // Byte offsets of the literal prefix "Hel".
 const FIRST_BYTES: u64 = 3;
 
@@ -119,4 +123,52 @@ fn a_held_reply_shows_its_first_piece_at_the_intervals_end() {
     assert_eq!(positions(&before), [(0, 0, FIRST)]);
     let pieces = world.pieces();
     assert_eq!(positions(&pieces), [(0, 0, FIRST), (0, FIRST_BYTES, LAST)]);
+}
+
+#[test]
+fn a_retry_sends_its_pieces_again_from_offset_zero() {
+    let mut world = held_world(RETRY_QUERY);
+    assert!(world.settle());
+    let pieces = world.pieces();
+    assert_eq!(positions(&pieces), [(0, 0, FIRST), (1, 0, FIRST), (1, FIRST_BYTES, LAST)]);
+}
+
+#[test]
+fn no_retry_piece_follows_its_turns_record() {
+    let mut world = held_world(RETRY_QUERY);
+    assert!(world.settle());
+    let kinds: Vec<_> = world.observed().iter().map(|frame| frame.kind).collect();
+    let turn = kinds.iter().position(|&kind| kind == TURN_KIND).expect("turn record");
+    let last_piece = kinds.iter().rposition(|&kind| kind == LIVE_KIND).expect("retry piece");
+    assert!(last_piece < turn, "no piece follows its turn");
+}
+
+// limits.md 3.6's held-byte bound; one frame leaves no room for live pieces.
+const HELD_BYTES: usize = 16_384;
+const NO_LIVE_ROOM: u32 = 1;
+static HELD_REPLY: [u8; HELD_BYTES] = [b'x'; HELD_BYTES];
+static OVERFLOW_REPLY: [u8; HELD_BYTES + 1] = [b'x'; HELD_BYTES + 1];
+const HELD_LOSS: u64 = 16_384;
+const OVERFLOW_LOSS: u64 = 16_385;
+const TURN_RECORDS: usize = 1;
+// The model's eight-byte output allowance per token covers 16 KiB plus one.
+const PRESSURE_OUTPUT_TOKENS: u32 = 4096;
+
+#[test]
+fn a_channel_with_no_room_holds_the_bound_and_drops_the_newest() {
+    for (reply, lost) in [(HELD_REPLY.as_slice(), HELD_LOSS), (OVERFLOW_REPLY.as_slice(), OVERFLOW_LOSS)] {
+        let mut world = world(TraceCase::Failed);
+        world.observe_facts(TraceCase::Failed, NO_LIVE_ROOM);
+        world.output_tokens(PRESSURE_OUTPUT_TOKENS);
+        world.ask(true, false, false);
+        world.script(Box::new([api::Turn {
+            lines: Box::new([api::Line::Pieces { pieces: Box::new([api::Piece { text: reply.into(), hold: None }]) }]),
+            finish: api::Finish::Stop,
+            tokens: 1,
+        }]));
+        assert!(world.settle());
+        assert_eq!(world.lost_live_bytes(), lost, "reply bytes={}", reply.len());
+        assert!(world.pieces().is_empty(), "one frame reserves no live room");
+        assert_eq!(world.observed().iter().filter(|frame| frame.kind == TURN_KIND).count(), TURN_RECORDS);
+    }
 }

@@ -1017,6 +1017,7 @@ name = "smith-hosts-world"
 version = "0.0.0"
 dependencies = [
  "serde_json",
+ "skein-fake-llm-domain",
  "skein-fake-machine",
  "skein-fake-peers",
  "skein-io",

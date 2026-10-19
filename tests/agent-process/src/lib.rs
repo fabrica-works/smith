@@ -250,6 +250,16 @@ fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::
     }
 }
 
+/// Keep shipped derivation for a scripted reply beyond the tiny model's output.
+fn configuration_output(anthropic: bool, output: u32) -> agent::Config {
+    let mut declaration = declarations(0);
+    declaration.endpoints[0].models[0].output = output;
+    let limits = agent::profile::derive(&profile(), &declaration).expect("scripted output profile derives");
+    let mut configuration = configuration_with_limits(anthropic, &limits);
+    configuration.domain.models[0].output = output;
+    configuration
+}
+
 /// The same process with the live reasoning-item entrance for the stopped-turn story.
 fn reasoning_configuration() -> agent::Config {
     let mut declaration = declarations(0);

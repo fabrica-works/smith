@@ -49,9 +49,12 @@ impl Parent {
         anthropic: bool,
         credential: &skein_llm::Credential,
         live: Option<smith_channel::LiveAsk>,
+        output: u32,
     ) -> Self {
         let mut peer = if matches!(tracing, Some((TraceCase::StoppedReasoning, _))) {
             crate::host_with_limits(crate::reasoning_configuration().limits.channel)
+        } else if output > 0 {
+            crate::host_with_limits(crate::configuration_output(anthropic, output).limits.channel)
         } else {
             crate::host()
         };
@@ -110,6 +113,7 @@ impl Parent {
                                     }
                                 },
                                 Box::from(if anthropic { b"anthropic".as_slice() } else { b"codex".as_slice() }),
+                                output.to_string().into_bytes().into_boxed_slice(),
                             ])
                         },
                     )
@@ -454,7 +458,10 @@ fn make(spawn: &Spawn, inherited: &Inherited) -> Proc {
 }
 
 fn make_tracing(spawn: &Spawn, inherited: &Inherited) -> Proc {
-    let mut configuration = if spawn.args[0].as_ref() == b"8" {
+    let output = std::str::from_utf8(&spawn.args[4]).expect("output argument").parse().expect("output tokens");
+    let mut configuration = if output > 0 {
+        crate::configuration_output(spawn.args[3].as_ref() == b"anthropic", output)
+    } else if spawn.args[0].as_ref() == b"8" {
         crate::reasoning_configuration()
     } else {
         crate::configuration_for(spawn.args[3].as_ref() == b"anthropic")
@@ -480,7 +487,7 @@ fn unused_roots(spawn: &Spawn) -> Vec<skein_world::StartupRoot> {
         .into_iter()
         .map(|name| skein_world::StartupRoot { name: name.as_slice().into(), path: name.as_slice().into() })
         .collect();
-    if spawn.args.len() == 4 {
+    if spawn.args.len() >= 4 {
         roots.push(skein_world::StartupRoot {
             name: b"event-trace".as_slice().into(),
             path: b"event-trace".as_slice().into(),
@@ -963,6 +970,7 @@ pub struct World {
     private_grant: bool,
     live: Option<smith_channel::LiveAsk>,
     script: Option<Box<[skein_fake_llm_domain::api::Turn]>>,
+    output: u32,
     release: Option<Release>,
 }
 impl World {
@@ -992,8 +1000,14 @@ impl World {
             private_grant: false,
             live: None,
             script: None,
+            output: 0,
             release: None,
         }
+    }
+
+    /// Derive the scripted model's output capacity through the shipped profile.
+    pub fn output_tokens(&mut self, output: u32) {
+        self.output = output;
     }
 
     /// Supply the provider's turns in place of the scenario's default script.
@@ -1193,6 +1207,12 @@ impl World {
         self.observations().channel_loss
     }
 
+    /// Live bytes omitted from the owner's channel by the actual service.
+    #[must_use]
+    pub fn lost_live_bytes(&self) -> u64 {
+        self.observations().lost_live_bytes
+    }
+
     /// Destination loss reported in the actual last stream record.
     #[must_use]
     pub fn trace_loss(&self) -> u64 {
@@ -1320,6 +1340,7 @@ impl World {
                 self.anthropic,
                 &crate::scenario_credential(self.anthropic, self.private_grant),
                 self.live.clone(),
+                self.output,
             );
             parent.hold_channel = self.hold_channel;
             Proc::Parent(Box::new(parent))
