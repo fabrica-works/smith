@@ -1108,6 +1108,44 @@ commits is this plan's.
        one test. The rules already say both; the landed tests stay, as ruling
        125 keeps files a change does not otherwise touch.
 
+135. **jig repin.s1's browser failure** (cross-session scope, jig repin.s1's block of 2026-10-19T19:00:21Z).
+     The failure is jig-repin.s1's to diagnose: it appears only on the repin's
+     tree. jig 1bc89fa7's gate passed all 13 browser tests at skein 2432239c and
+     smith f47f4df9; the repin moves smith to cbcecbbd (43 commits) and skein to
+     31bbf586, whose browser crates (`testing/skein-browser`,
+     `testing/skein-fake-person-browser`, `crates/skein-ui-web`,
+     `crates/skein-ui-bundle`) differ from 2432239c only by a license line
+     (1222e7b). So the cause lies below the browser, in what the new pins change
+     on the cancellation path the story drives (Confirm, then Cancel, then the
+     run's end reaching the hub's facts), and the repin's row says it "repairs
+     smith 01's and 04's breaks" (README, the closing repins).
+
+     A bounded diagnosis, in the repin's session, with this budget: 45 minutes
+     and at most 10 focused runs of
+     `tests/client-browser/tests/browser_tier.rs`'
+     `under_a_prefix_the_inbox_s_links_carry_the_prefix`, through `heavy`, with
+     the browser profile the gate runs (`cargo nextest run --profile browser`,
+     filtered to the one test); no full gate meanwhile.
+
+     1. First, one focused run at jig's `origin/main` (its old pins) in a
+        detached scratch worktree under the run's `wt/`, removed after. If it
+        fails there too, the failure is not the repin's: report that at once.
+     2. Then find where the cancelled run's end stops under the new pins: what
+        smith's service and hub answer the Cancel with, and whether the fact
+        reaches the client (its snapshot stays `Live`, "Behind: waiting for
+        current facts"). Diagnostic output is temporary and never lands.
+     3. The outcome:
+        - a cause in jig's code (a translation, route or fixture that smith's or
+          skein's new behaviour breaks): fix it as an edit that follows the
+          repin's Shape (implementer.md, 8.5: "the behaviour your Shape adds
+          explains it"), name the cause and the fix in the commit body, and
+          `land` once;
+        - a cause in smith or skein: stop and report it by repository, path and
+          symbol, with the focused run's evidence; the ruling that answers adds
+          the fix upstream;
+        - the budget spent without a cause: report what was ruled out, and stop;
+          no third gate.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
