@@ -52,8 +52,11 @@ Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
   `component/lock.rs`, `component/sign_out.rs`, `boundary.rs`,
   `shared_tests.rs`; `tests/oauth-accounts/`: `src/shared.rs` (its
   `observe` hands a lock answer to a helper that matches `Story`, so
-  no fn passes 100 lines), `tests/shared.rs`, `tests/memory.rs`,
-  `tests/fuzzy_shared.rs` (new).
+  no fn passes 100 lines), `src/world.rs`' `Contracts` (the referee's
+  one `Unlock` per `Held`, none after `Closed`; `src/sign_in.rs`' too
+  where the shared world runs under it), `tests/referee.rs` (its rows),
+  `tests/shared.rs`, `tests/memory.rs`, `tests/fuzzy_shared.rs` (new)
+  (ruling 138).
 Shape: no record under the lock: the account holds none, a refresh fails
   its grant as expired, a sign-out ends `SignedOut { revoked: false }`
   with nothing to revoke, a sign-in goes ahead. Another subject (skein
@@ -99,7 +102,7 @@ Test shape: unit, `src/shared_tests.rs`, over 09.3's helpers, each under
   --profile fuzzy -p skein-oauth-accounts-world -E
   'binary(=fuzzy_shared)'`: 64 seeds, the loop's bound, about 5 s of
   the profile's 60. The file opens as `tests/fuzzy_world.rs` does,
-  with `Rng`, `shared::{self, Story}` (`Copy` and `Debug`) and
+  with `skein_lib::Rng`, `shared::{self, Story}` (`Copy` and `Debug`) and
   `skein_world::Memory`, and no `HEAP`: the run is `Unchecked`.
   Reference:
   ```rust
@@ -138,14 +141,26 @@ Scope: oauth.md 6.2's origins; 2.1 and 2.2's keys and ID token by GET;
   6.3's expected subject, "Another subject", and `signed in`'s subject.
 Needs: skein 07's GET requests, key set fetch and `Unverified` [07.1],
   and its ID token check [07.2]; skein 06.2's ID token, key set and
-  metadata for the worlds.
+  metadata for the worlds; skein 11.1's routes for the metadata, key
+  set and revocation at `skein_fake_peers::oauth::Peer`, which the
+  worlds reach through `src/sign_in/issuer.rs` (landed, 21ad555;
+  ruling 138).
 Files: `crates/skein-oauth-accounts/src/`: `accounts.rs`,
   `component.rs`, `component/sign_in.rs`, `component/lock.rs`,
-  `component/accounts.rs` (`admit`), `exchange.rs`, `boundary.rs`,
-  `lib.rs` (it exports `Origin`), `limits.rs`, `tests.rs`,
-  `shared_tests.rs`, `private_tests.rs`; `tests/oauth-accounts/`:
-  `src/sign_in.rs`, `src/sign_in/issuer.rs`, `src/sign_in/cuts.rs`,
-  `src/world.rs`, `tests/sign_in.rs`, `tests/memory.rs` (its
+  `component/accounts.rs` (`admit`, `Source::SignIn`),
+  `component/names.rs` (`named`), `component/private.rs`
+  (`sign_in_allowed`'s match takes `Failure::AnotherSubject`),
+  `exchange.rs`, `boundary.rs`, `lib.rs` (it exports `Origin`),
+  `limits.rs`, `tests.rs`, `shared_tests.rs`, `private_tests.rs`,
+  `accounts_tests.rs`, `ports_tests.rs`, `component/nonce_tests.rs`;
+  `tests/oauth-accounts/`: `src/accounts.rs` (`configuration`,
+  `start`), `src/sign_in.rs`, `src/sign_in/owner.rs` (`start`, and
+  `observe`'s `Event::SignedIn` pattern takes `subject`),
+  `src/sign_in/issuer.rs`, `src/sign_in/cuts.rs`, `src/world.rs`,
+  `tests/sign_in.rs`; each `Account::SignIn` and `Request::SignIn`
+  literal there takes `origins: List::with_capacity(0)` and
+  `subject: None`, and a further one found later the same, listed in
+  the commit body (ruling 138); `tests/memory.rs` (its
   `every_listener_slot_keeps_*` test passes 100 lines with `origins`
   and the wrapped `Request::SignIn { account, subject: None }`, so
   its loop that builds the accounts moves into a helper).
@@ -162,8 +177,12 @@ Shape: `Account::SignIn` gains `origins: List<Origin>`; `Origin {
   `Request::SignIn` gains `subject: Option<Box<[u8]>>`, the subject it
   expects; a record of another keeps nothing and fails `Failed { ends:
   SignIn, failure: AnotherSubject }`, also under a shared lock (10.1).
-  `Event::SignedIn` gains `subject`, the record's. `worst_case` counts
-  each account's origins.
+  `Event::SignedIn` gains `subject`, the record's. An account has at
+  most `MAX_ORIGINS` origins (new, 3, in `limits.rs`: the design's
+  other origins are "the metadata, the key set, revocation", oauth.md
+  6.2); `admit` refuses more as `Unusable::Origin`, and `worst_case`,
+  which takes only `&Limits`, counts `MAX_ORIGINS` for each of
+  `limits.accounts` (ruling 138).
   Downstream: `origins` breaks 09.3's `Account::SignIn` literals, an
   empty `List`; `Request::SignIn`'s field, smith-local-service's
   `credentials.rs` (`subject: None`), its only builder; `SignedIn`'s,

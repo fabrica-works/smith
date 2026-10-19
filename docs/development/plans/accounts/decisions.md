@@ -1217,6 +1217,56 @@ commits is this plan's.
      moved to 8062b9f meanwhile, which only reorders rows in
      `tests/llm/tests/fake_credentials.rs`.
 
+138. **skein 10's Shapes against main** (ready check of skein-10.1).
+     skein 10's Shapes against main, from its ready check at skein 588ef5f,
+     smith f4560988, jig 75af442e, hearth 3a97a8f, temper 3624aa99. In
+     `skein/10-driver-lock.md`:
+
+     - 10.1's Files gain the referee its fuzzy rule needs (one `Unlock` per
+       `Held`, none after `Closed`): `tests/oauth-accounts/src/world.rs`'
+       `Contracts`, and `src/sign_in.rs`' where the shared world runs under
+       it, with `tests/referee.rs`' rows. Its fuzzy file imports
+       `skein_lib::Rng`.
+     - 10.2's Needs gain skein 11.1's routes at
+       `skein_fake_peers::oauth::Peer` (landed, 21ad555), which the worlds
+       reach through `src/sign_in/issuer.rs`.
+     - 10.2's Files gain every builder of `Account::SignIn` and
+       `Request::SignIn` and every match its new fields and
+       `Failure::AnotherSubject` break: `component/names.rs` (`named`),
+       `component/accounts.rs` (`Source::SignIn`), `component/private.rs`
+       (`sign_in_allowed`), `accounts_tests.rs`, `ports_tests.rs`,
+       `component/nonce_tests.rs`, `tests/oauth-accounts/src/accounts.rs`
+       (`configuration`, `start`) and `src/sign_in/owner.rs` (`start`,
+       `observe`'s `Event::SignedIn`), each literal with `origins:
+       List::with_capacity(0)` and `subject: None`; a further one the same,
+       listed in the commit body.
+     - 10.2's "`worst_case` counts each account's origins" had no input to
+       count from: `worst_case(limits: &Limits)` takes no account, and
+       `Limits` has no origins field. An account has at most `MAX_ORIGINS`
+       (new, 3, in `limits.rs`) origins, as oauth.md 6.2 names the other
+       origins an account may have: "Where the registration's terms name
+       endpoints on other origins (the metadata, the key set, revocation),
+       the account has each origin's address and transport too." `admit`
+       refuses more as `Unusable::Origin`; `worst_case` counts `MAX_ORIGINS`
+       for each of `limits.accounts`.
+
+     Checked: `git grep -n -E 'fn worst_case|pub struct Limits' origin/main --
+     crates/skein-oauth-accounts/src/limits.rs` → `:11 pub struct Limits {`,
+     `:59 pub fn worst_case(limits: &Limits) -> Option<u64> {`; Limits' fields
+     (accounts, file_stall, exchanges, listeners, server, refresh_lead,
+     client, http, tls, io) name no origins. `git grep -c -E
+     'Account::SignIn|Request::SignIn'` at skein 588ef5f: accounts_tests.rs
+     12, ports_tests.rs 12, private_tests.rs 7, tests.rs 9, nonce_tests.rs 2,
+     component.rs, component/accounts.rs, component/names.rs 1 each;
+     tests/oauth-accounts accounts.rs 2, sign_in/owner.rs 2, world.rs 1,
+     tests/memory.rs 5. `struct Contracts` at tests/oauth-accounts/src/
+     sign_in.rs:103 and world.rs:161; `tests/referee.rs` exists. The check's
+     scratch build at 588ef5f with these corrections and 10.2's interface
+     sketch: `cargo check -p skein-oauth-accounts --all-targets` failed with
+     7 lib and 33 test errors before (all at the sites above) and passed
+     after; clippy over skein-oauth-accounts and skein-oauth-accounts-world
+     `-D warnings` clean; nextest default 131 passed, fuzzy 4 passed.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
