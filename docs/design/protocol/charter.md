@@ -223,8 +223,8 @@ and a refusal names what was too large.
   - a reserve its budget cannot hold;
   - a charter in a version the agent does not read.
 - **For a host:** a writer's own tests encode every charter it writes and
-  check that smith's codec and entrance admit it, as temper's agent.md,
-  section 9, plans.
+  check that smith's codec and entrance admit it, as temper's
+  `domain/agent.md`, section 9, plans.
 
 ## 9. From temper
 

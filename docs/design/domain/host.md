@@ -547,8 +547,8 @@ budgets.
   runs are a host's, push is delivery, and the engine's tools are host
   tools.
 - **`smith-host-domain`** is temper's worker's agent child domain, as
-  temper's `worker.md` described it: one process per run, the watchdog,
-  cancel then kill.
+  temper's `domain/worker.md`, section 6, describes it: one process per
+  run, the watchdog, cancel then kill.
 - **The inline agent** follows jig's `jig-inline-agent`, the first of its
   kind, in shape, and is smith's own: typed, with a workspace and the
   drop's settlement. smith's APIs change freely for it; jig and temper

@@ -350,7 +350,7 @@ Each account has one credential source (domain/host.md, section 7):
 - **The worker's agent child's protocol half** becomes
   `smith-host-protocol`, without temper's names.
 - **The worker's push** stays temper's, as its delivery (temper's
-  `agent.md`, section 6).
+  `domain/agent.md`, section 6).
 - **The local host is new.**
 
 ## 9. Open questions

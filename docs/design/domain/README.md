@@ -249,7 +249,7 @@ first (run.md, 5.1); tools compiled in are an open question (section 8).
   `programming-model.md`, `testing-strategy.md`, `notes.md`, cited by
   section.
 - **A host's documents** are named with their project: temper's
-  `worker.md`. They are examples, never relied on.
+  `domain/worker.md`. They are examples, never relied on.
 - **Each document** says in one page what it is, then its parts, what it
   owes and is owed below the domain, its world, what it keeps from temper,
   and what is open.

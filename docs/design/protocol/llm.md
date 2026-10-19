@@ -535,7 +535,7 @@ All run in virtual time, in milliseconds each, within the focused suite.
 
 ## 11. From temper
 
-- **Kept, from temper's `llm.md`:**
+- **Kept, from temper's `protocol/llm.md`:**
   - fixed schemas for the workspace's tools;
   - total decoding with typed problems;
   - failures classified and never retried below the domain;

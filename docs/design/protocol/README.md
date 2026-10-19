@@ -451,13 +451,14 @@ it.
   - endpoints' addresses, since skein's LLM client owns transport;
   - temper's payloads;
   - a push as a request of its own, since delivery is smith's.
-- **temper's `channel.md`** keeps the channel between its engine and its
-  workers, to be rebuilt on skein's channel and codecs. Its hop to the
+- **The channel between temper's engine and its workers** is jig's,
+  on skein's channel and codecs (jig's `protocol/channel.md`), with
+  temper's parts in it (temper's `protocol/channel.md`). Its hop to the
   agent is this directory's.
 - **The agent's half of `temper-agent-protocol`** becomes this directory's
   components. temper keeps its own half: rendering the brief, mapping the
-  charter, and its tools' schemas and answers (temper's `agent.md`,
-  section 11).
+  charter, and its tools' schemas and answers (temper's `domain/agent.md`,
+  section 4; temper's `protocol/llm.md`, sections 4 and 5).
 
 ## 11. Open questions
 

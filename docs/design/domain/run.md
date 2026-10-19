@@ -935,9 +935,9 @@ timings, budgets and shares within its own (`docs/design/testing.md`).
 - **Conventions** replace `.temper/pre-pr` and `AGENTS.md` in code.
 - **Budgets** move from temper's token split to the host's unit with
   prices.
-- **New, as temper's agent.md planned them:** messages, `wait`, parking,
-  resuming from a transcript, calls asked again, delivering mid-run, and
-  merges in progress.
+- **New, as temper's `domain/agent.md` planned them:** messages, `wait`,
+  parking, resuming from a transcript, calls asked again, delivering
+  mid-run, and merges in progress.
 
 ## 15. Open questions
 
