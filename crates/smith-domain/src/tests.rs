@@ -656,7 +656,7 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
                     session::record::Kind::Ordinary
                 },
                 version: session::record::VERSION,
-                endpoint: session::llm::Endpoint(1),
+                endpoint: Some(session::llm::Endpoint(1)),
                 dialect: 1,
                 sequence,
                 usage: Usage::ZERO,
@@ -668,7 +668,7 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
     }
     let transcript = session::record::Transcript {
         version: session::record::VERSION,
-        endpoint: session::llm::Endpoint(1),
+        endpoint: Some(session::llm::Endpoint(1)),
         dialect: 1,
         turns: turns.into_boxed(),
     };
@@ -2207,18 +2207,18 @@ fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() 
     let mut harness = Harness::new();
     let transcript = session::record::Transcript {
         version: session::record::VERSION,
-        endpoint: session::llm::Endpoint(1),
+        endpoint: Some(session::llm::Endpoint(1)),
         dialect: 1,
         turns: Box::new([session::record::Turn {
             model: b"model-a".as_slice().into(),
             effort: None,
             kind: session::record::Kind::First {
                 affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
-                account: None,
+                account: Some(0),
                 backend: session::record::Backend::Direct,
             },
             version: session::record::VERSION,
-            endpoint: session::llm::Endpoint(1),
+            endpoint: Some(session::llm::Endpoint(1)),
             dialect: 1,
             sequence: 1,
             usage: Usage::ZERO,

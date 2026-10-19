@@ -474,7 +474,7 @@ pub fn scenario(seed: u64, facts: u32) -> World {
 pub fn transcript(world: &World) -> record::Transcript {
     record::Transcript {
         version: record::VERSION,
-        endpoint: llm::Endpoint(7),
+        endpoint: Some(llm::Endpoint(7)),
         dialect: 23,
         turns: world.turns.clone().into(),
     }

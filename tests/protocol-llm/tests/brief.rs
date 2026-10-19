@@ -455,7 +455,7 @@ fn native_accounting(
         assert_eq!(world.turn_metadata()[index], (spent.turns, None, spent));
         assert_eq!(turn.sequence, prior + spent.turns);
         assert_eq!(turn.version, smith_domain::session::record::VERSION);
-        assert_eq!(turn.endpoint, llm::Endpoint(0));
+        assert_eq!(turn.endpoint, Some(llm::Endpoint(0)));
         assert_eq!(turn.dialect, 1);
         assert_eq!(turn.spent, spent.units);
     }

@@ -200,8 +200,6 @@ const fn invalid(value: run::Invalid) -> host::RunInvalid {
 const fn transcript_refusal(value: run::TranscriptRefusal) -> host::TranscriptRefusal {
     match value {
         run::TranscriptRefusal::Version => host::TranscriptRefusal::Version,
-        run::TranscriptRefusal::Endpoint => host::TranscriptRefusal::Endpoint,
-        run::TranscriptRefusal::Dialect => host::TranscriptRefusal::Dialect,
         run::TranscriptRefusal::Malformed => host::TranscriptRefusal::Malformed,
         run::TranscriptRefusal::Unresolved => host::TranscriptRefusal::Unresolved,
         run::TranscriptRefusal::TooLarge => host::TranscriptRefusal::TooLarge,

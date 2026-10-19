@@ -957,8 +957,6 @@ impl Component {
     ) {
         let reason = match reason {
             record::Refusal::Version => run::TranscriptRefusal::Version,
-            record::Refusal::Endpoint => run::TranscriptRefusal::Endpoint,
-            record::Refusal::Dialect => run::TranscriptRefusal::Dialect,
             record::Refusal::Malformed => run::TranscriptRefusal::Malformed,
             record::Refusal::Unresolved => run::TranscriptRefusal::Unresolved,
             record::Refusal::TooLarge => run::TranscriptRefusal::TooLarge,

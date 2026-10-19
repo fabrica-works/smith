@@ -118,7 +118,7 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
             backend: smith_domain::session::record::Backend::Direct,
         },
         version: smith::session::record::VERSION,
-        endpoint: smith::session::llm::Endpoint(0),
+        endpoint: Some(smith::session::llm::Endpoint(0)),
         dialect: 1,
         sequence: 1,
         usage: smith::session::llm::Usage::ZERO,

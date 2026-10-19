@@ -1296,7 +1296,7 @@ impl World {
     fn recorded(&mut self, opener: u64, turn: agent::record::Turn) {
         let session = self.sessions.get_mut(&opener).expect("a Turn names its opener");
         assert!(session.ended.is_none(), "concrete history precedes terminal handoff");
-        assert_eq!((turn.version, turn.endpoint, turn.dialect), (agent::record::VERSION, Endpoint(0), 2));
+        assert_eq!((turn.version, turn.endpoint, turn.dialect), (agent::record::VERSION, Some(Endpoint(0)), 2));
         let index = session.records.len();
         assert_eq!(turn.sequence, u32::try_from(index + 1).expect("bounded sequence"));
         assert_eq!(turn.usage, session.accepted[index], "each Turn records its actual accepted provider usage");

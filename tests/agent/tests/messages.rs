@@ -315,73 +315,132 @@ fn answers_too_many_or_too_long_are_refused_before_a_completion() {
     }
 }
 
+const HISTORY_REFUSAL_SEED: u64 = 907;
+const HISTORY_REFUSAL_ITERATIONS: u32 = 2_000;
+
 #[test]
 fn every_transient_history_refusal_is_exact_and_starts_no_provider_or_tool_effect() {
-    let mut first = World::new(waiting(907));
-    first.run(2000);
-    for reason in [
-        run::TranscriptRefusal::Version,
-        run::TranscriptRefusal::Endpoint,
-        run::TranscriptRefusal::Dialect,
-        run::TranscriptRefusal::Malformed,
-        run::TranscriptRefusal::Unresolved,
-        run::TranscriptRefusal::TooLarge,
-    ] {
-        let mut saved = history(&first);
-        match reason {
-            run::TranscriptRefusal::Version => saved.version = 0,
-            run::TranscriptRefusal::Endpoint => saved.endpoint = session::llm::Endpoint(999),
-            run::TranscriptRefusal::Dialect => saved.dialect = 999,
-            run::TranscriptRefusal::Malformed => saved.turns[0].sequence = 0,
-            run::TranscriptRefusal::Unresolved => {
-                for message in &mut saved.turns[0].messages {
-                    for block in &mut message.content {
-                        match block {
-                            session::llm::Block::ToolCall { call, .. } => {
-                                *call = session::llm::Decoded::Delegated {
-                                    descriptor: Token::new(80),
-                                    source: smith_domain::session::ToolSource::Run,
-                                    ticket: Token::new(80),
-                                    effect: smith_domain::tools::Effect::Write,
-                                }
+    let mut first = World::new(waiting(HISTORY_REFUSAL_SEED));
+    first.run(HISTORY_REFUSAL_ITERATIONS);
+    for row in history_refusal_cases(&first) {
+        let mut world = World::with_history(Settings { resume: true, ..waiting(908) }, Some(row.saved));
+        world.run(HISTORY_REFUSAL_ITERATIONS);
+        let terminal = match world.answer() {
+            run::Answer::Failed { failure: run::Failure::Transcript(reason), turns, .. } => Some((*reason, *turns)),
+            run::Answer::Parked { .. }
+            | run::Answer::Refused(_)
+            | run::Answer::Accepted { .. }
+            | run::Answer::Failed { .. } => None,
+        };
+        let result = HistoryRefusal {
+            terminal,
+            prompts: world.prompts().len(),
+            turns: world.turns().len(),
+            submissions: world.host_submissions().len(),
+            checks: world.checked().len(),
+            pushes: world.pushes().len(),
+        };
+        let expected = HistoryRefusal {
+            terminal: Some((row.expected, 0)),
+            prompts: 0,
+            turns: 0,
+            submissions: 0,
+            checks: 0,
+            pushes: 0,
+        };
+        assert_eq!(result, expected, "{}", row.name);
+    }
+}
+
+struct HistoryRefusalCase {
+    name: &'static str,
+    saved: smith_domain::Transcript,
+    expected: run::TranscriptRefusal,
+}
+
+fn history_refusal_cases(first: &World) -> [HistoryRefusalCase; 4] {
+    [
+        HistoryRefusalCase {
+            name: "version",
+            saved: history_with_refusal(first, run::TranscriptRefusal::Version),
+            expected: run::TranscriptRefusal::Version,
+        },
+        HistoryRefusalCase {
+            name: "malformed",
+            saved: history_with_refusal(first, run::TranscriptRefusal::Malformed),
+            expected: run::TranscriptRefusal::Malformed,
+        },
+        HistoryRefusalCase {
+            name: "unresolved",
+            saved: history_with_refusal(first, run::TranscriptRefusal::Unresolved),
+            expected: run::TranscriptRefusal::Unresolved,
+        },
+        HistoryRefusalCase {
+            name: "too large",
+            saved: history_with_refusal(first, run::TranscriptRefusal::TooLarge),
+            expected: run::TranscriptRefusal::TooLarge,
+        },
+    ]
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct HistoryRefusal {
+    terminal: Option<(run::TranscriptRefusal, u32)>,
+    prompts: usize,
+    turns: usize,
+    submissions: usize,
+    checks: usize,
+    pushes: usize,
+}
+
+fn history_with_refusal(first: &World, reason: run::TranscriptRefusal) -> smith_domain::Transcript {
+    let mut saved = history(first);
+    match reason {
+        run::TranscriptRefusal::Version => saved.version = 0,
+        run::TranscriptRefusal::Malformed => saved.turns[0].sequence = 0,
+        run::TranscriptRefusal::Unresolved => {
+            for message in &mut saved.turns[0].messages {
+                for block in &mut message.content {
+                    match block {
+                        session::llm::Block::ToolCall { call, .. } => {
+                            *call = session::llm::Decoded::Delegated {
+                                descriptor: Token::new(80),
+                                source: smith_domain::session::ToolSource::Run,
+                                ticket: Token::new(80),
+                                effect: smith_domain::tools::Effect::Write,
                             }
-                            session::llm::Block::Text { .. }
-                            | session::llm::Block::Refusal { .. }
-                            | session::llm::Block::Opaque { .. }
-                            | session::llm::Block::ToolResult { .. } => {}
                         }
+                        session::llm::Block::Text { .. }
+                        | session::llm::Block::Refusal { .. }
+                        | session::llm::Block::Opaque { .. }
+                        | session::llm::Block::ToolResult { .. } => {}
                     }
                 }
             }
-            run::TranscriptRefusal::TooLarge => {
-                let text = saved
-                    .turns
-                    .iter_mut()
-                    .flat_map(|turn| &mut turn.messages)
-                    .flat_map(|message| &mut message.content)
-                    .find_map(|block| match block {
-                        session::llm::Block::Text { text, .. } => Some(text),
-                        session::llm::Block::Refusal { .. }
-                        | session::llm::Block::Opaque { .. }
-                        | session::llm::Block::ToolCall { .. }
-                        | session::llm::Block::ToolResult { .. } => None,
-                    })
-                    .expect("saved text");
-                *text = vec![
-                    b'x';
-                    usize::try_from(waiting(907).limits.session.history_bytes + 1).expect("bounded fixture")
-                ]
-                .into();
-            }
         }
-        let mut world = World::with_history(Settings { resume: true, ..waiting(908) }, Some(saved));
-        world.run(2000);
-        assert!(
-            matches!(world.answer(), run::Answer::Failed { failure: run::Failure::Transcript(actual), turns: 0, .. } if *actual == reason)
-        );
-        assert!(world.prompts().is_empty() && world.turns().is_empty() && world.host_submissions().is_empty());
-        assert!(world.checked().is_empty() && world.pushes().is_empty());
+        run::TranscriptRefusal::TooLarge => {
+            let text = saved
+                .turns
+                .iter_mut()
+                .flat_map(|turn| &mut turn.messages)
+                .flat_map(|message| &mut message.content)
+                .find_map(|block| match block {
+                    session::llm::Block::Text { text, .. } => Some(text),
+                    session::llm::Block::Refusal { .. }
+                    | session::llm::Block::Opaque { .. }
+                    | session::llm::Block::ToolCall { .. }
+                    | session::llm::Block::ToolResult { .. } => None,
+                })
+                .expect("saved text");
+            *text = vec![
+                b'x';
+                usize::try_from(waiting(HISTORY_REFUSAL_SEED).limits.session.history_bytes + 1)
+                    .expect("bounded fixture")
+            ]
+            .into();
+        }
     }
+    saved
 }
 
 #[test]

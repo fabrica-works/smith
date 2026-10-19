@@ -142,6 +142,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         // envelopes are separate from the whole window's shared payload.
         .checked_add(turn_cells(&limits.transcript)?.checked_mul(2)?)?
         .checked_add(List::<smith_domain_session::record::Turn>::worst_case(limits.resume_turns)?)?
+        // Retain the first endpoint name while checking later turns, including unknown names.
+        .checked_add(u64::from(limits.transcript.turn_endpoint))?
         // Body, decoded Start fields, accumulated translated fields, and
         // the one Charter/Turn currently being decoded. A saved window is
         // decoded sequentially; codec nodes are priced separately above.

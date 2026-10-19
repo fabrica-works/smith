@@ -395,8 +395,6 @@ fn render_end(text: &mut Text, end: run::End) {
             text.put(b"transcript-refused:");
             text.put(match reason {
                 run::TranscriptRefusal::Version => b"version",
-                run::TranscriptRefusal::Endpoint => b"endpoint",
-                run::TranscriptRefusal::Dialect => b"dialect",
                 run::TranscriptRefusal::Malformed => b"malformed",
                 run::TranscriptRefusal::Unresolved => b"unresolved",
                 run::TranscriptRefusal::TooLarge => b"too-large",

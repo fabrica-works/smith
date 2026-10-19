@@ -459,12 +459,6 @@ pub enum TranscriptRefusal {
     /// Unsupported durable record version.
     Version,
 
-    /// Configured endpoint differs.
-    Endpoint,
-
-    /// Opaque replay dialect differs.
-    Dialect,
-
     /// Invalid sequence, structure or call/result pairing.
     Malformed,
 

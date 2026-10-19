@@ -601,6 +601,7 @@ impl World {
         )
         .ok()
         .flatten()
+        .filter(|value| value.endpoint.is_some() && value.dialect == 0)
         .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"));
         self.host.raw_start = Some(RawStart { charter, transcript });
         let start = smith_host_domain::channel::Start {
@@ -667,6 +668,7 @@ impl World {
         )
         .ok()
         .flatten()
+        .filter(|value| value.endpoint.is_some() && value.dialect == 0)
         .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"));
         self.host.raw_start = Some(RawStart { charter, transcript });
         let start = smith_host_domain::channel::Start {
@@ -1160,7 +1162,7 @@ pub fn window_turn_fixture() -> smith_domain_session::record::Turn {
         effort: None,
         kind: record::Kind::First { affinity, account: None, backend: record::Backend::Direct },
         version: record::VERSION,
-        endpoint: llm::Endpoint(0),
+        endpoint: Some(llm::Endpoint(0)),
         dialect: 0,
         sequence: 1,
         usage: llm::Usage::ZERO,

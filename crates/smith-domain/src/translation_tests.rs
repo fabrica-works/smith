@@ -69,8 +69,6 @@ fn every_session_end_and_budget_dimension_keeps_its_class() {
 fn every_transcript_refusal_keeps_its_reason() {
     for (from, to) in [
         (session::record::Refusal::Version, run::TranscriptRefusal::Version),
-        (session::record::Refusal::Endpoint, run::TranscriptRefusal::Endpoint),
-        (session::record::Refusal::Dialect, run::TranscriptRefusal::Dialect),
         (session::record::Refusal::Malformed, run::TranscriptRefusal::Malformed),
         (session::record::Refusal::Unresolved, run::TranscriptRefusal::Unresolved),
         (session::record::Refusal::TooLarge, run::TranscriptRefusal::TooLarge),

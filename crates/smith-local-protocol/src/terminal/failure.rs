@@ -287,8 +287,6 @@ fn failed(why: &host::RunFailure) -> AnswerFailure {
         host::RunFailure::Transcript(refusal) => {
             let which: &[u8] = match refusal {
                 host::TranscriptRefusal::Version => b"version",
-                host::TranscriptRefusal::Endpoint => b"endpoint",
-                host::TranscriptRefusal::Dialect => b"dialect",
                 host::TranscriptRefusal::Malformed => b"malformed",
                 host::TranscriptRefusal::Unresolved => b"unresolved",
                 host::TranscriptRefusal::TooLarge => b"too_large",

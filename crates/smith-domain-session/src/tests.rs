@@ -190,7 +190,7 @@ impl Harness {
                 }
                 Request::Turn { turn, .. } => {
                     assert_eq!(turn.version, crate::record::VERSION);
-                    assert_eq!((turn.endpoint, turn.dialect), (spec().endpoint, 1));
+                    assert_eq!((turn.endpoint, turn.dialect), (Some(spec().endpoint), 1));
                     assert_eq!(turn.spent, 0);
                     assert!(!turn.messages.is_empty());
                     for message in &turn.messages {
@@ -3057,7 +3057,7 @@ fn a_resumed_ordinary_window_carries_the_guard() {
     let mut opening = opening(spec());
     opening.transcript = Some(crate::record::Transcript {
         version: crate::record::VERSION,
-        endpoint: Endpoint(0),
+        endpoint: Some(Endpoint(0)),
         dialect: 1,
         turns: original.turn_records.to_boxed(),
     });

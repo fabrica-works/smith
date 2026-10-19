@@ -15,13 +15,18 @@ use crate::window::{self, Admission, Stage, Tokens, Window};
 #[derive(Debug)]
 pub(super) enum Compaction {
     Idle,
-    Asking { held: List<Box<[u8]>>, announced: bool },
+    /// A restored foreign window awaits compaction on the charter's LLM.
+    CarryOver,
+    Asking {
+        held: List<Box<[u8]>>,
+        announced: bool,
+    },
 }
 
 impl Compaction {
     pub(super) const fn asking(&self) -> bool {
         match self {
-            Self::Idle => false,
+            Self::Idle | Self::CarryOver => false,
             Self::Asking { .. } => true,
         }
     }
@@ -60,11 +65,16 @@ pub(super) fn change_model(conversation: &mut Conversation, llm: crate::record::
         prices: mem::replace(&mut conversation.recording.prices, llm.prices),
     });
     conversation.window.stage = Stage::Used;
+    conversation.window.following = conversation.transcript.len().saturating_sub(1);
     None
 }
 
 pub(super) fn due(conversation: &mut Conversation, limits: &Limits) -> bool {
-    if conversation.next_llm.is_some() {
+    let carried = match conversation.compaction {
+        Compaction::CarryOver => true,
+        Compaction::Idle | Compaction::Asking { .. } => false,
+    };
+    if conversation.next_llm.is_some() || carried {
         return true;
     }
     conversation.window.appended = Tokens(appended_bytes(conversation).unwrap_or(u64::MAX));
@@ -206,7 +216,7 @@ pub(super) fn open_window(
     let asking = Compaction::Asking { held: List::with_capacity(0), announced: true };
     let held = match mem::replace(&mut conversation.compaction, asking) {
         Compaction::Asking { held, .. } => held,
-        Compaction::Idle => unreachable!("a summary answers a compaction"),
+        Compaction::Idle | Compaction::CarryOver => unreachable!("a summary answers a compaction"),
     };
     let count = held.len().checked_add(3).expect("held offer plus task, preamble and summary fits u32");
     let summary_bytes = u64::try_from(text.len()).expect("bounded summary bytes");
@@ -395,7 +405,7 @@ pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Fa
                     conversation.effort.as_deref(),
                 ));
             }
-            Compaction::Asking { .. } | Compaction::Idle => {}
+            Compaction::Asking { .. } | Compaction::Idle | Compaction::CarryOver => {}
         },
         Request::Turn { turn, .. } => match turn.kind {
             crate::record::Kind::Window { .. } => facts.push(crate::FactKind::CompactionEnded {
@@ -486,4 +496,69 @@ pub(super) fn restore(
         }
     }
     Ok(())
+}
+
+/// Carry a foreign window onto the charter's LLM, pricing only its portable history.
+pub(super) fn carry_over(
+    conversation: &mut Conversation,
+    transcript: &mut crate::record::Transcript,
+) -> Result<u64, crate::record::Refusal> {
+    use crate::record::{Backend, Kind, Refusal};
+    let first = transcript.turns.first().expect("validated nonempty history");
+    let same_opening = match &first.kind {
+        Kind::First { account, backend, .. } | Kind::Window { account, backend, .. } => {
+            *account == conversation.account && *backend == Backend::Direct
+        }
+        Kind::Ordinary => unreachable!("validated opening kind"),
+    };
+    if transcript.endpoint == Some(conversation.endpoint)
+        && transcript.dialect == conversation.recording.dialect
+        && same_opening
+    {
+        return Ok(0);
+    }
+    let mut released = 0_u64;
+    let mut messages = 0_u32;
+    for turn in &mut transcript.turns {
+        for message in &mut turn.messages {
+            messages = messages.checked_add(1).ok_or(Refusal::TooLarge)?;
+            let before = content_cost(&message.content).ok_or(Refusal::TooLarge)?;
+            let content = mem::replace(&mut message.content, Box::new([]));
+            let mut kept = List::with_capacity(super::count(content.len()));
+            for block in content {
+                if let Some(block) = portable(block) {
+                    kept.push(block).expect("one retained slot per old block");
+                }
+            }
+            message.content = kept.into_boxed();
+            let after = content_cost(&message.content).ok_or(Refusal::TooLarge)?;
+            released =
+                released.checked_add(before.checked_sub(after).ok_or(Refusal::TooLarge)?).ok_or(Refusal::TooLarge)?;
+        }
+    }
+    conversation.window.stage = Stage::Used;
+    conversation.window.following = messages;
+    conversation.compaction = Compaction::CarryOver;
+    Ok(released)
+}
+
+fn portable(block: Block) -> Option<Block> {
+    match block {
+        Block::Opaque { .. } => None,
+        Block::Text { text, .. } => Some(Block::Text { text, replay: None }),
+        Block::Refusal { text, .. } => Some(Block::Refusal { text, replay: None }),
+        Block::ToolCall { id, name, input, call, .. } => Some(Block::ToolCall { id, name, input, call, replay: None }),
+        Block::ToolResult { id, result } => {
+            let result = match result {
+                crate::llm::Returned::Text { text, error, .. } => {
+                    crate::llm::Returned::Text { text, error, replay: None }
+                }
+                value @ (crate::llm::Returned::Owned { .. }
+                | crate::llm::Returned::Invalid { .. }
+                | crate::llm::Returned::NotRun { .. }
+                | crate::llm::Returned::Withdrawn) => value,
+            };
+            Some(Block::ToolResult { id, result })
+        }
+    }
 }

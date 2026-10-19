@@ -97,7 +97,7 @@ impl Store {
     pub fn refuse_version(&mut self) {
         self.history_override = Some(agent::Transcript {
             version: agent::session::record::VERSION.saturating_add(1),
-            endpoint: agent::session::llm::Endpoint(0),
+            endpoint: Some(agent::session::llm::Endpoint(0)),
             dialect: 1,
             turns: Box::new([]),
         });

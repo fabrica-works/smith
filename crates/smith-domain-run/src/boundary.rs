@@ -1095,12 +1095,6 @@ pub enum TranscriptRefusal {
     /// Unsupported record version.
     Version,
 
-    /// Configured endpoint differs.
-    Endpoint,
-
-    /// Configured replay dialect differs.
-    Dialect,
-
     /// Invalid concrete record structure.
     Malformed,
 

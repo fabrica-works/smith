@@ -2808,7 +2808,7 @@ pub(crate) fn open(
                 return;
             }
         }
-        Some(transcript) => match restore(&mut conversation, transcript, answered, dialect, &env.limits) {
+        Some(transcript) => match restore(&mut conversation, transcript, answered, &env.limits) {
             Ok(previous) => {
                 sequence = previous;
                 told = conversation.transcript.len().saturating_sub(1);
@@ -2894,18 +2894,11 @@ fn validate_transcript(
     conversation: &Conversation,
     transcript: &crate::record::Transcript,
     answered: &[crate::record::Answered],
-    dialect: u32,
     limits: &Limits,
 ) -> Result<(u32, u64, Resumed), crate::record::Refusal> {
     use crate::record::{Refusal, VERSION};
     if transcript.version != VERSION {
         return Err(Refusal::Version);
-    }
-    if transcript.endpoint != conversation.endpoint {
-        return Err(Refusal::Endpoint);
-    }
-    if transcript.dialect != dialect {
-        return Err(Refusal::Dialect);
     }
     // Check sizes before cloning or allocating history into the bounded list.
     if transcript.turns.len() > usize::try_from(limits.history_messages).expect("u32 fits") {
@@ -2922,14 +2915,8 @@ fn validate_transcript(
         if turn.version != VERSION {
             return Err(Refusal::Version);
         }
-        if turn.endpoint != transcript.endpoint {
-            return Err(Refusal::Endpoint);
-        }
         if turn.model != transcript.turns.first().expect("a turn implies nonempty history").model {
             return Err(Refusal::Malformed);
-        }
-        if turn.dialect != dialect {
-            return Err(Refusal::Dialect);
         }
         sequence = recorded_sequence(turn, opening, sequence)?;
         opening = false;
@@ -3081,15 +3068,15 @@ fn resumed_tail(tail: &Message, withheld: Option<&[u8]>) -> Resumed {
 
 fn restore(
     conversation: &mut Conversation,
-    transcript: crate::record::Transcript,
+    mut transcript: crate::record::Transcript,
     mut answered: Box<[crate::record::Answered]>,
-    dialect: u32,
     limits: &Limits,
 ) -> Result<u32, crate::record::Refusal> {
     use crate::record::Refusal;
-    let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
+    let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, limits)?;
     conversation.jobs.highest = transcript.turns.last().expect("validated nonempty history").jobs;
     compaction::restore(conversation, &transcript, &mut bytes)?;
+    bytes = bytes.checked_sub(compaction::carry_over(conversation, &mut transcript)?).ok_or(Refusal::TooLarge)?;
     conversation.affinity = match &transcript.turns.first().expect("validated nonempty history").kind {
         crate::record::Kind::First { affinity, .. } | crate::record::Kind::Window { affinity, .. } => *affinity,
         crate::record::Kind::Ordinary => unreachable!("validated opening kind"),
@@ -3292,7 +3279,7 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
         } else {
             crate::record::Kind::Ordinary
         },
-        endpoint: conversation.endpoint,
+        endpoint: Some(conversation.endpoint),
         model: conversation.model.clone(),
         effort: conversation.effort.clone(),
         dialect,

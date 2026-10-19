@@ -14,7 +14,7 @@ fn history(input: u64) -> smith_domain::Transcript {
     let content = |text: &[u8]| Box::new([llm::Block::Text { text: text.into(), replay: None }]);
     smith_domain::Transcript {
         version: record::VERSION,
-        endpoint: llm::Endpoint(0),
+        endpoint: Some(llm::Endpoint(0)),
         dialect: 1,
         turns: Box::new([record::Turn {
             model: b"fake-1".as_slice().into(),
@@ -22,10 +22,10 @@ fn history(input: u64) -> smith_domain::Transcript {
             version: record::VERSION,
             kind: record::Kind::First {
                 affinity: llm::Affinity { key: [0; 16], thread: 0 },
-                account: None,
+                account: Some(0),
                 backend: record::Backend::Direct,
             },
-            endpoint: llm::Endpoint(0),
+            endpoint: Some(llm::Endpoint(0)),
             dialect: 1,
             sequence: 1,
             usage: llm::Usage { input_tokens: Some(input), ..llm::Usage::ZERO },
@@ -40,6 +40,10 @@ fn history(input: u64) -> smith_domain::Transcript {
 }
 
 fn world(refused: bool, immediate: bool) -> World {
+    world_with_history(refused, immediate, history(if immediate { 6_000 } else { 0 }))
+}
+
+fn world_with_history(refused: bool, immediate: bool, saved: smith_domain::Transcript) -> World {
     let mut settings = Settings::calm(4801);
     settings.window = 6_144;
     settings.job = Job::Reporting;
@@ -88,7 +92,7 @@ fn world(refused: bool, immediate: bool) -> World {
     };
     World::with_workspace_scripts_charter(
         settings,
-        Some(history(if immediate { 6_000 } else { 0 })),
+        Some(saved),
         Some(workspace),
         disk,
         Box::new([Script { cue: b"@report".as_slice().into(), turns }]),
@@ -143,4 +147,51 @@ fn a_refused_compaction_fails_the_run_as_refused_its_message_unread() {
     assert!(world.turns().is_empty(), "no summary turn is told");
     assert!(!world.messages_seen().iter().any(|(_, seen)| matches!(seen,
         smith_agent_world::messages_referee::Seen::Turn { read: Some(token), .. } if *token == Token::new(9))));
+}
+
+#[test]
+fn a_window_from_an_unnamed_endpoint_is_carried_over() {
+    let mut world = world_with_history(false, true, unnamed_window());
+    world.run(ITERATIONS);
+    let first = world.prompts().first().expect("carry-over compaction");
+    assert_eq!(first.model.as_ref(), b"fake-1");
+    assert_eq!(first.choice, skein_fake_llm_domain::api::ToolChoice::None);
+    let metadata: Vec<_> = first
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|block| match block {
+            skein_fake_llm_domain::api::Part::Opaque { bytes } => Some(bytes.as_ref()),
+            skein_fake_llm_domain::api::Part::Text { .. }
+            | skein_fake_llm_domain::api::Part::ToolCall { .. }
+            | skein_fake_llm_domain::api::Part::ToolOutput { .. } => None,
+        })
+        .collect();
+    assert_eq!(metadata, Vec::<&[u8]>::new());
+    let window = world.turns().first().expect("carried window");
+    assert_eq!(
+        window.kind,
+        record::Kind::Window {
+            affinity: llm::Affinity { key: [0; 16], thread: 0 },
+            account: Some(0),
+            backend: record::Backend::Direct,
+        }
+    );
+    assert_eq!(window.endpoint, Some(llm::Endpoint(0)));
+    assert!(matches!(world.answer(), run::Answer::Accepted { .. }));
+}
+
+fn unnamed_window() -> smith_domain::Transcript {
+    let mut saved = history(0);
+    saved.endpoint = None;
+    saved.turns[0].endpoint = None;
+    saved.turns[0].model = b"removed-model".as_slice().into();
+    saved.turns[0].messages[1].content = Box::new([
+        llm::Block::Opaque { bytes: b"foreign provider block".as_slice().into() },
+        llm::Block::Text {
+            text: b"saved answer".as_slice().into(),
+            replay: Some(llm::Replay { bytes: b"foreign provider replay".as_slice().into() }),
+        },
+    ]);
+    saved
 }

@@ -897,7 +897,7 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
         }
         None => (None, Box::default()),
     };
-    let window_llm = match resumed_model(&domain.config, &opening.llm, transcript.as_ref()) {
+    let window_llm = match resumed_model(&domain.config, &opening.llm, dialect, transcript.as_ref()) {
         Ok(llm) => llm,
         Err(reason) => {
             return run_step(
@@ -968,10 +968,26 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
 fn resumed_model(
     config: &crate::Config,
     main: &run::charter::Llm,
+    dialect: u32,
     transcript: Option<&session::record::Transcript>,
 ) -> Result<Option<session::record::Llm>, run::TranscriptRefusal> {
     let last = match transcript {
-        Some(history) => history.turns.last(),
+        Some(history) => {
+            let Some(first) = history.turns.first() else { return Ok(None) };
+            if history.endpoint != Some(session::llm::Endpoint(main.endpoint.0)) || history.dialect != dialect {
+                return Ok(None);
+            }
+            match &first.kind {
+                session::record::Kind::First { account, backend, .. }
+                | session::record::Kind::Window { account, backend, .. } => {
+                    if *account != main.account || *backend != session::record::Backend::Direct {
+                        return Ok(None);
+                    }
+                }
+                session::record::Kind::Ordinary => return Ok(None),
+            }
+            history.turns.last()
+        }
         None => None,
     };
     match last {

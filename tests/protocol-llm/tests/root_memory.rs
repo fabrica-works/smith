@@ -1228,7 +1228,7 @@ fn assert_generated(history: &root::Transcript, messages: u32) {
     for (index, turn) in history.turns.iter().enumerate() {
         assert_eq!(turn.sequence, u32::try_from(index).expect("bounded sequence") + 1);
         assert_eq!(turn.version, session::record::VERSION);
-        assert_eq!(turn.endpoint, session::llm::Endpoint(0));
+        assert_eq!(turn.endpoint, Some(session::llm::Endpoint(0)));
         assert_eq!(turn.dialect, 2);
         assert_eq!(turn.messages.len(), if index % 2 == 0 { 3 } else { 2 });
         assert_eq!(turn.messages.iter().filter(|message| message.role == session::llm::Role::Assistant).count(), 1);
@@ -1323,7 +1323,7 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
     copy_meter.start();
     let prefix = root::Transcript {
         version: session::record::VERSION,
-        endpoint: session::llm::Endpoint(0),
+        endpoint: Some(session::llm::Endpoint(0)),
         dialect: 2,
         turns: counted.records.clone().into(),
     };

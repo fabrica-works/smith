@@ -495,7 +495,7 @@ fn saved_outside_choice(choice: Option<Box<[Box<[u8]>]>>) -> llm::NotRun {
             account: None,
             backend: record::Backend::Direct,
         },
-        endpoint: session::Endpoint(1),
+        endpoint: Some(session::Endpoint(1)),
         model: b"model".as_slice().into(),
         effort: None,
         dialect: 0,

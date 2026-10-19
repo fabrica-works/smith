@@ -29,61 +29,80 @@ fn concrete_turns_resume_verbatim_without_local_tickets() {
 
 #[test]
 fn transcript_refusals_precede_tools_and_completions() {
-    type Change = Box<dyn Fn(&mut record::Transcript)>;
-    let old = scenario(2, 256);
-    let changes: Vec<(record::Refusal, Change)> = vec![
-        (record::Refusal::Version, Box::new(|t| t.version = 99)),
-        (record::Refusal::Endpoint, Box::new(|t| t.endpoint = llm::Endpoint(8))),
-        (record::Refusal::Dialect, Box::new(|t| t.dialect = 24)),
-        (record::Refusal::Version, Box::new(|t| t.turns[0].version = 99)),
-        (record::Refusal::Endpoint, Box::new(|t| t.turns[0].endpoint = llm::Endpoint(8))),
-        (record::Refusal::Dialect, Box::new(|t| t.turns[0].dialect = 24)),
-        (record::Refusal::Malformed, Box::new(|t| t.turns[1].sequence = 9)),
-        (
-            record::Refusal::Malformed,
-            Box::new(|t| {
-                t.turns[0].messages[2].content[0] = llm::Block::ToolResult {
-                    id: b"unmatched".as_slice().into(),
-                    result: llm::Returned::NotRun { why: llm::NotRun::Stopped },
-                }
-            }),
-        ),
-        (record::Refusal::Unresolved, Box::new(|t| t.turns[0].messages[1].content = recorded::called())),
-        (
-            record::Refusal::Unresolved,
-            Box::new(|t| {
-                let llm::Block::ToolCall { call, .. } = &mut t.turns[0].messages[1].content[1] else {
-                    panic!("the saved scenario contains the provider call");
-                };
-                *call = llm::Decoded::Invalid { descriptor: None, problem: llm::Problem::UnknownTool };
-            }),
-        ),
-        (
-            record::Refusal::Unresolved,
-            Box::new(|t| {
-                let llm::Block::ToolCall { call, .. } = &mut t.turns[0].messages[1].content[1] else {
-                    panic!("the saved scenario contains the provider call");
-                };
-                *call = llm::Decoded::Owned {
-                    call: smith_domain_tools::Call::List {
-                        path: smith_domain_tools::Path { absolute: true, parts: Box::default() },
-                        depth: smith_domain_tools::Depth::Whole,
-                        glob: None,
-                    },
-                };
-            }),
-        ),
-    ];
-    for (reason, change) in changes {
-        let mut history = transcript(&old);
-        change(&mut history);
+    for row in refusal_cases() {
         let mut world = World::new(2, 256);
-        world.open(opening(Some(history), 100));
-        assert_eq!(world.end, Some(session::End::TranscriptRefused { reason }));
-        assert!(world.prompts.is_empty());
+        world.open(opening(Some(row.history), 100));
         world.domain.reclaim();
-        assert_eq!(world.domain.kits(), 0);
+        let result = Refused { end: world.end, prompts: world.prompts.len(), kits: world.domain.kits() };
+        assert_eq!(result, row.expected, "{}", row.name);
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Refused {
+    end: Option<session::End>,
+    prompts: usize,
+    kits: u32,
+}
+
+struct RefusalCase {
+    name: &'static str,
+    history: record::Transcript,
+    expected: Refused,
+}
+
+fn refusal_case(name: &'static str, history: record::Transcript, reason: record::Refusal) -> RefusalCase {
+    RefusalCase {
+        name,
+        history,
+        expected: Refused { end: Some(session::End::TranscriptRefused { reason }), prompts: 0, kits: 0 },
+    }
+}
+
+fn refusal_cases() -> Vec<RefusalCase> {
+    let base = transcript(&scenario(2, 256));
+    let mut header = base.clone();
+    header.version = 99;
+    let mut version = base.clone();
+    version.turns[0].version = 99;
+    let mut sequence = base.clone();
+    sequence.turns[1].sequence = 9;
+    let mut result = base.clone();
+    result.turns[0].messages[2].content[0] = llm::Block::ToolResult {
+        id: b"unmatched".as_slice().into(),
+        result: llm::Returned::NotRun { why: llm::NotRun::Stopped },
+    };
+    let mut delegated = base.clone();
+    delegated.turns[0].messages[1].content = recorded::called();
+    let mut invalid = base.clone();
+    historical_call(&mut invalid, llm::Decoded::Invalid { descriptor: None, problem: llm::Problem::UnknownTool });
+    let mut owned = base;
+    historical_call(
+        &mut owned,
+        llm::Decoded::Owned {
+            call: smith_domain_tools::Call::List {
+                path: smith_domain_tools::Path { absolute: true, parts: Box::default() },
+                depth: smith_domain_tools::Depth::Whole,
+                glob: None,
+            },
+        },
+    );
+    vec![
+        refusal_case("header version", header, record::Refusal::Version),
+        refusal_case("turn version", version, record::Refusal::Version),
+        refusal_case("gap", sequence, record::Refusal::Malformed),
+        refusal_case("unmatched", result, record::Refusal::Malformed),
+        refusal_case("delegated", delegated, record::Refusal::Unresolved),
+        refusal_case("invalid", invalid, record::Refusal::Unresolved),
+        refusal_case("owned", owned, record::Refusal::Unresolved),
+    ]
+}
+
+fn historical_call(history: &mut record::Transcript, decoded: llm::Decoded) {
+    let llm::Block::ToolCall { call, .. } = &mut history.turns[0].messages[1].content[1] else {
+        panic!("the saved scenario contains the provider call");
+    };
+    *call = decoded;
 }
 
 #[test]
@@ -1215,8 +1234,8 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
         model: b"model".as_slice().into(),
         effort: None,
         version: record::VERSION,
-        kind: record::Kind::Window { affinity, account: None, backend: record::Backend::Direct },
-        endpoint: llm::Endpoint(7),
+        kind: record::Kind::Window { affinity, account: Some(0), backend: record::Backend::Direct },
+        endpoint: Some(llm::Endpoint(7)),
         dialect: 23,
         sequence: 19,
         usage: llm::Usage::ZERO,

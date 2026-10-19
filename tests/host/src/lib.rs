@@ -487,7 +487,7 @@ pub fn turn_value(bytes: u64) -> host::TurnValue {
                 backend: smith_domain::session::record::Backend::Direct,
             },
             version: record::VERSION,
-            endpoint: llm::Endpoint(0),
+            endpoint: Some(llm::Endpoint(0)),
             dialect: 0,
             sequence: 1,
             usage: llm::Usage::ZERO,
@@ -511,7 +511,7 @@ pub fn transcript_value(bytes: u64) -> host::Transcript {
         Box::<[record::Turn]>::default()
     };
     host::Transcript::new(
-        record::Transcript { version: record::VERSION, endpoint: llm::Endpoint(0), dialect: 0, turns },
+        record::Transcript { version: record::VERSION, endpoint: Some(llm::Endpoint(0)), dialect: 0, turns },
         bytes,
     )
     .expect("bounded history fixture")

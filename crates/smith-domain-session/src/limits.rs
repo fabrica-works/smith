@@ -168,10 +168,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Count the node throughout input validation and transfer, independently
     // of its release timing and all payload/record cells.
     let opening = u64::try_from(size_of::<Opening>()).ok()?;
+    // Restore and completion are separate entrances; only one needs its scratch at a time.
+    let scratch =
+        limits.completion_bytes.max(limits.history_bytes.min(List::<Block>::worst_case(limits.history_blocks)?));
     let staging = List::<Turn>::worst_case(limits.history_messages)?
         .checked_add(List::<Message>::worst_case(limits.history_messages)?)?
         .checked_add(opening)?
-        .checked_add(limits.completion_bytes)?;
+        .checked_add(scratch)?;
     sessions
         .checked_add(runs)?
         .checked_add(metadata)?

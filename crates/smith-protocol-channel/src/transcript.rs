@@ -40,7 +40,7 @@ pub fn decode_transcript(
     }
     let mut reader = Reader::new(piece);
     let mut turns = List::with_capacity(count);
-    let mut first_endpoint: Option<llm::Endpoint> = None;
+    let mut first_endpoint: Option<Box<[u8]>> = None;
     let mut first_dialect: Option<u32> = None;
     let mut previous: Option<u32> = None;
     for _ in 0..count {
@@ -53,7 +53,15 @@ pub fn decode_transcript(
             Some(place) => Some(place.checked_add(1).ok_or(record::Refusal::Malformed)?),
             None => None,
         };
-        let turn = saved_turn(body, place, limits, endpoints, search_hits)?;
+        let source = saved_turn(body, place, limits)?;
+        match &first_endpoint {
+            Some(first) if first.as_ref() != source.endpoint() => return Err(record::Refusal::Malformed),
+            Some(_) => {}
+            None => first_endpoint = Some(Box::from(source.endpoint())),
+        }
+        let endpoint = saved_endpoint(endpoints, source.endpoint());
+        let dialect = source.dialect();
+        let turn = translate_turn(source, endpoint, dialect, limits, search_hits)?;
         if turns.is_empty() {
             match turn.kind {
                 record::Kind::First { .. } | record::Kind::Window { .. } => {}
@@ -66,13 +74,8 @@ pub fn decode_transcript(
             }
         }
         previous = Some(turn.sequence);
-        match first_endpoint {
-            Some(first) if first != turn.endpoint => return Err(record::Refusal::Endpoint),
-            Some(_) => {}
-            None => first_endpoint = Some(turn.endpoint),
-        }
         match first_dialect {
-            Some(first) if first != turn.dialect => return Err(record::Refusal::Dialect),
+            Some(first) if first != turn.dialect => return Err(record::Refusal::Malformed),
             Some(_) => {}
             None => first_dialect = Some(turn.dialect),
         }
@@ -82,7 +85,7 @@ pub fn decode_transcript(
     }
     Ok(Some(record::Transcript {
         version: record::VERSION,
-        endpoint: first_endpoint.ok_or(record::Refusal::Malformed)?,
+        endpoint: turns.get(0).ok_or(record::Refusal::Malformed)?.endpoint,
         dialect: first_dialect.ok_or(record::Refusal::Malformed)?,
         turns: turns.into_boxed(),
     }))
@@ -115,16 +118,18 @@ pub fn decode_turn(
     if number == 0 {
         return Err(record::Refusal::Malformed);
     }
-    saved_turn(bytes, Some(number), limits, endpoints, u32::MAX)
+    let source = saved_turn(bytes, Some(number), limits)?;
+    let endpoint = saved_endpoint(endpoints, source.endpoint());
+    let dialect = source.dialect();
+    translate_turn(source, endpoint, dialect, limits, u32::MAX)
 }
 
-fn saved_turn(
-    bytes: &[u8],
-    number: Option<u32>,
-    limits: &wire::v6::Limits,
-    endpoints: &Endpoints,
-    search_hits: u32,
-) -> Result<record::Turn, record::Refusal> {
+fn saved_endpoint(endpoints: &Endpoints, name: &[u8]) -> Option<llm::Endpoint> {
+    let endpoint = endpoints.resolve(name)?;
+    Some(llm::Endpoint(endpoint.number))
+}
+
+fn saved_turn(bytes: &[u8], number: Option<u32>, limits: &wire::v6::Limits) -> Result<wire::Turn, record::Refusal> {
     if bytes.get(..2) != Some(&[0, 6][..]) {
         return Err(record::Refusal::Version);
     }
@@ -138,16 +143,12 @@ fn saved_turn(
         Some(number) if source.place() != number => return Err(record::Refusal::Malformed),
         Some(_) | None => {}
     }
-    let endpoint = endpoints.resolve(source.endpoint()).ok_or(record::Refusal::Endpoint)?;
-    if source.dialect() != endpoint.dialect {
-        return Err(record::Refusal::Dialect);
-    }
-    translate_turn(source, endpoint.number, endpoint.dialect, limits, search_hits)
+    Ok(source)
 }
 
 fn translate_turn(
     source: wire::Turn,
-    endpoint: u32,
+    endpoint: Option<llm::Endpoint>,
     dialect: u32,
     limits: &wire::v6::Limits,
     search_hits: u32,
@@ -196,7 +197,7 @@ fn translate_turn(
     Ok(record::Turn {
         version: record::VERSION,
         kind,
-        endpoint: llm::Endpoint(endpoint),
+        endpoint,
         model: Box::from(source.model()),
         effort: source.effort().clone(),
         dialect,
@@ -240,7 +241,7 @@ fn decode_block(
         },
         wire::Block::Opaque(opaque) => {
             if opaque.dialect() != dialect {
-                return Err(record::Refusal::Dialect);
+                return Err(record::Refusal::Malformed);
             }
             llm::Block::Opaque { bytes: Box::from(opaque.bytes()) }
         }
@@ -252,7 +253,7 @@ fn replay(source: Option<&wire::Replay>, dialect: u32) -> Result<Option<llm::Rep
     match source {
         Some(value) => {
             if value.dialect() != dialect {
-                return Err(record::Refusal::Dialect);
+                return Err(record::Refusal::Malformed);
             }
             Ok(Some(llm::Replay { bytes: Box::from(value.bytes()) }))
         }

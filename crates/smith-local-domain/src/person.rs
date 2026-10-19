@@ -327,7 +327,7 @@ mod tests {
                 backend: session::record::Backend::Direct,
             },
             version: 1,
-            endpoint: session::llm::Endpoint(1),
+            endpoint: Some(session::llm::Endpoint(1)),
             dialect: 1,
             sequence: 1,
             usage: session::llm::Usage::ZERO,

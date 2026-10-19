@@ -95,7 +95,7 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         names
             .push(smith_protocol_channel::Endpoint {
                 name: b"model-endpoint".as_slice().into(),
-                number: turn.endpoint.0,
+                number: turn.endpoint.expect("named endpoint").0,
                 dialect: turn.dialect,
             })
             .expect("one declared endpoint");

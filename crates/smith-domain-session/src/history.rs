@@ -88,7 +88,9 @@ pub(super) fn hold_note(conversation: &mut Conversation, text: Box<[u8]>, limits
     }
     match &mut conversation.compaction {
         compaction::Compaction::Asking { held, .. } => held.push(text).expect("one held offer beyond old history"),
-        compaction::Compaction::Idle => unreachable!("successful history trigger asks for a summary"),
+        compaction::Compaction::Idle | compaction::Compaction::CarryOver => {
+            unreachable!("successful history trigger asks for a summary")
+        }
     }
     None
 }

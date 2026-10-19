@@ -555,7 +555,7 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
     assert_eq!(first.prompts().len(), 1);
     let saved = smith_domain::Transcript {
         version: smith_domain::session::record::VERSION,
-        endpoint: llm::Endpoint(0),
+        endpoint: Some(llm::Endpoint(0)),
         dialect: 1,
         turns: first.turns().to_vec().into(),
     };

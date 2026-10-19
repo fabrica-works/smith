@@ -219,8 +219,6 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
     }
     for (reason, label) in [
         (run::TranscriptRefusal::Version, "version"),
-        (run::TranscriptRefusal::Endpoint, "endpoint"),
-        (run::TranscriptRefusal::Dialect, "dialect"),
         (run::TranscriptRefusal::Malformed, "malformed"),
         (run::TranscriptRefusal::Unresolved, "unresolved"),
         (run::TranscriptRefusal::TooLarge, "too-large"),

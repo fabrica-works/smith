@@ -181,7 +181,7 @@ mod tests {
             effort: None,
             version: smith_domain::session::record::VERSION,
             kind: Kind::Ordinary,
-            endpoint: llm::Endpoint(0),
+            endpoint: Some(llm::Endpoint(0)),
             dialect: 0,
             sequence: 1,
             usage: llm::Usage::ZERO,

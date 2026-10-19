@@ -659,7 +659,7 @@ fn positive_history_controls(query: &Query, expected: &[Message]) {
 fn saved(world: &World) -> Transcript {
     Transcript {
         version: smith_domain::session::record::VERSION,
-        endpoint: llm::Endpoint(0),
+        endpoint: Some(llm::Endpoint(0)),
         dialect: 1,
         turns: world.turns().to_vec().into(),
     }

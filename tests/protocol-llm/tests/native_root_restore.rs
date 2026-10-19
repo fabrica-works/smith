@@ -425,7 +425,7 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
             (total.turns, if sequence == 0 && index == 1 { Some(Token::new(0)) } else { None }, total)
         );
         assert_eq!(turn.version, smith_domain::session::record::VERSION);
-        assert_eq!(turn.endpoint, llm::Endpoint(0));
+        assert_eq!(turn.endpoint, Some(llm::Endpoint(0)));
         assert_eq!(turn.dialect, 1);
         assert_eq!(turn.sequence, sequence + total.turns);
         assert_eq!(turn.spent, total.units, "each short completion adds one notional unit");
@@ -496,30 +496,20 @@ fn resume(first: &World, fixture: &Fixture, index: usize, tail: bool) {
 }
 
 fn header_refusals(first: &World, fixture: &Fixture, index: usize) {
-    for reason in [run::TranscriptRefusal::Version, run::TranscriptRefusal::Endpoint, run::TranscriptRefusal::Dialect] {
-        let mut saved = history(first);
-        match reason {
-            run::TranscriptRefusal::Version => saved.version = 0,
-            run::TranscriptRefusal::Endpoint => saved.endpoint = llm::Endpoint(999),
-            run::TranscriptRefusal::Dialect => saved.dialect = 999,
-            run::TranscriptRefusal::Malformed
-            | run::TranscriptRefusal::Unresolved
-            | run::TranscriptRefusal::TooLarge => {
-                panic!("only independent header refusals in this native story")
-            }
-        }
-        let bounds = bounds();
-        let settings = settings(921, true, &bounds);
-        let mut world = World::with_wire(settings, Some(saved), configuration(index), bounds, scripts(fixture, false));
-        world.run(100_000);
-        assert!(
-            matches!(world.answer(), run::Answer::Failed { failure: run::Failure::Transcript(actual), spent, turns: 0 }
-            if *actual == reason && *spent == run::Spend::ZERO)
-        );
-        assert!(world.wire_bindings().is_empty() && world.prompts().is_empty() && world.turns().is_empty());
-        assert!(world.host_submissions().is_empty() && world.host_terminals().is_empty());
-        assert!(world.checked().is_empty() && world.pushes().is_empty());
-    }
+    let reason = run::TranscriptRefusal::Version;
+    let mut saved = history(first);
+    saved.version = 0;
+    let bounds = bounds();
+    let settings = settings(921, true, &bounds);
+    let mut world = World::with_wire(settings, Some(saved), configuration(index), bounds, scripts(fixture, false));
+    world.run(100_000);
+    assert_eq!(
+        world.answer(),
+        &run::Answer::Failed { failure: run::Failure::Transcript(reason), spent: run::Spend::ZERO, turns: 0 }
+    );
+    assert!(world.wire_bindings().is_empty() && world.prompts().is_empty() && world.turns().is_empty());
+    assert!(world.host_submissions().is_empty() && world.host_terminals().is_empty());
+    assert!(world.checked().is_empty() && world.pushes().is_empty());
 }
 
 #[test]

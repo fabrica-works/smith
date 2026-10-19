@@ -579,10 +579,7 @@ fn failure_record(
         run::Failure::Transcript(refusal) => {
             let value = match refusal {
                 run::TranscriptRefusal::Version => channel::TranscriptRefusal::Version,
-                // smith 03.3 removes the domain refusals.
-                run::TranscriptRefusal::Endpoint
-                | run::TranscriptRefusal::Dialect
-                | run::TranscriptRefusal::Malformed => channel::TranscriptRefusal::Malformed,
+                run::TranscriptRefusal::Malformed => channel::TranscriptRefusal::Malformed,
                 run::TranscriptRefusal::Unresolved => channel::TranscriptRefusal::Unresolved,
                 run::TranscriptRefusal::TooLarge => channel::TranscriptRefusal::TooLarge,
             };

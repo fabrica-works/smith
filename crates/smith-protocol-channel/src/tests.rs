@@ -140,7 +140,7 @@ fn transcript_decodes_history_with_one_invalid_call_problem() {
         .expect("valid transcript")
         .expect("saved history");
     assert_eq!(transcript.version, record::VERSION);
-    assert_eq!(transcript.endpoint, llm::Endpoint(3));
+    assert_eq!(transcript.endpoint, Some(llm::Endpoint(3)));
     assert_eq!(transcript.turns[0].sequence, 1);
     assert_eq!(transcript.turns[0].spent, 7);
     assert_eq!(transcript.turns[0].usage.cache_read_tokens, Some(4));
@@ -157,17 +157,27 @@ fn transcript_decodes_history_with_one_invalid_call_problem() {
 #[test]
 fn transcript_refuses_a_gap_and_a_different_dialect() {
     use smith_domain_session::record;
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("one endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    assert_eq!(
-        decode_saved_transcript(&[saved_turn(2, 0)], &smith_transcript::CEILINGS, &endpoints),
-        Err(record::Refusal::Malformed)
-    );
-    assert_eq!(
-        decode_saved_transcript(&[saved_turn(1, 99)], &smith_transcript::CEILINGS, &endpoints),
-        Err(record::Refusal::Dialect)
-    );
+    struct Case {
+        name: &'static str,
+        turns: Box<[Box<[u8]>]>,
+        expected: record::Refusal,
+    }
+    let cases = [
+        Case { name: "gap", turns: Box::new([saved_turn(2, 0)]), expected: record::Refusal::Malformed },
+        Case {
+            name: "dialect",
+            turns: Box::new([saved_turn(1, 0), saved_turn(2, 99)]),
+            expected: record::Refusal::Malformed,
+        },
+    ];
+    for row in cases {
+        assert_eq!(
+            decode_saved_transcript(&row.turns, &smith_transcript::CEILINGS, &saved_endpoints()),
+            Err(row.expected),
+            "{}",
+            row.name
+        );
+    }
 }
 
 #[test]
@@ -320,10 +330,7 @@ fn with_recorded_affinity(bytes: &[u8], opening: Option<smith_transcript::Openin
     let mut parts =
         smith_transcript::Turn::decode(&limits, &mut skein_lib::Reader::new(bytes)).expect("fixture turn").into_parts();
     parts.opening = opening;
-    let turn = smith_transcript::Turn::new(&limits, parts).expect("bounded fixture turn");
-    let mut writer = skein_lib::Writer::new(usize::try_from(turn.measure()).expect("fixture length"));
-    turn.encode(&mut writer).expect("fixture room");
-    writer.finish()
+    encode_saved_parts(parts)
 }
 
 #[test]
@@ -388,7 +395,7 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
             account: None,
             backend: record::Backend::Direct,
         },
-        endpoint: llm::Endpoint(3),
+        endpoint: Some(llm::Endpoint(3)),
         dialect: 0,
         sequence: 8,
         usage: llm::Usage::ZERO,
@@ -671,4 +678,41 @@ fn saved_endpoints() -> crate::Endpoints {
     let mut configured = skein_lib::List::with_capacity(1);
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
     crate::Endpoints::new(configured)
+}
+
+#[test]
+fn another_dialects_opaque_block_in_a_window_is_malformed() {
+    use smith_transcript as wire;
+    let limits = wire::CEILINGS;
+    let mut parts =
+        wire::Turn::decode(&limits, &mut skein_lib::Reader::new(&saved_turn(1, 0))).expect("fixture turn").into_parts();
+    parts.kind = wire::TurnKind::Window;
+    parts.place = 7;
+    let mut blocks = skein_lib::List::with_capacity(1);
+    blocks
+        .push(wire::Block::Opaque(
+            wire::Opaque::new(&limits, wire::OpaqueParts { dialect: 99, bytes: b"another dialect".as_slice().into() })
+                .expect("opaque fixture"),
+        ))
+        .expect("one block");
+    let mut messages = skein_lib::List::with_capacity(1);
+    messages
+        .push(
+            wire::Message::new(&limits, wire::MessageParts { role: wire::Role::Assistant, blocks })
+                .expect("fixture message"),
+        )
+        .expect("one message");
+    parts.messages = messages;
+    let bytes = encode_saved_parts(parts);
+    assert_eq!(
+        decode_saved_transcript(&[bytes], &limits, &saved_endpoints()),
+        Err(smith_domain_session::record::Refusal::Malformed)
+    );
+}
+
+fn encode_saved_parts(parts: smith_transcript::TurnParts) -> Box<[u8]> {
+    let turn = smith_transcript::Turn::new(&smith_transcript::CEILINGS, parts).expect("bounded fixture turn");
+    let mut writer = skein_lib::Writer::new(usize::try_from(turn.measure()).expect("fixture length"));
+    turn.encode(&mut writer).expect("fixture room");
+    writer.finish()
 }

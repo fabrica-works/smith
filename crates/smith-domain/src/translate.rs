@@ -320,8 +320,6 @@ fn completion_evidence(evidence: llm::Evidence) -> run::CompletionEvidence {
 const fn transcript_refusal(reason: session::record::Refusal) -> run::TranscriptRefusal {
     match reason {
         session::record::Refusal::Version => run::TranscriptRefusal::Version,
-        session::record::Refusal::Endpoint => run::TranscriptRefusal::Endpoint,
-        session::record::Refusal::Dialect => run::TranscriptRefusal::Dialect,
         session::record::Refusal::Malformed => run::TranscriptRefusal::Malformed,
         session::record::Refusal::Unresolved => run::TranscriptRefusal::Unresolved,
         session::record::Refusal::TooLarge => run::TranscriptRefusal::TooLarge,

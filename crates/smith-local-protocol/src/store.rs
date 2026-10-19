@@ -244,7 +244,7 @@ pub(crate) mod tests {
                 backend: smith_domain::session::record::Backend::Direct,
             },
             version: smith_domain::session::record::VERSION,
-            endpoint: smith_domain::session::llm::Endpoint(2),
+            endpoint: Some(smith_domain::session::llm::Endpoint(2)),
             dialect: 1,
             sequence: 1,
             usage: smith_domain::session::llm::Usage::ZERO,

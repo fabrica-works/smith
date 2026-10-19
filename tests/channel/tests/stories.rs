@@ -457,9 +457,10 @@ fn a_saved_turn_from_another_dialect_fails_as_transcript() {
         Some(Box::from([saved_turn(1, 99)])),
     );
     world.settle();
-    assert!(world.observations().contains(&Observation::HostAdmitted));
-    assert!(world.observations().contains(&Observation::TranscriptFailed(smith_channel::TranscriptRefusal::Malformed)));
-    assert!(!world.observations().contains(&Observation::AgentStart));
+    let start = world.take_agent_start().expect("foreign history reaches the agent");
+    assert_eq!(start.transcript.as_ref().expect("saved history").dialect, 99);
+    assert!(world.observations().contains(&Observation::AgentHistory { turns: 1, place: 1 }));
+    assert!(world.observations().contains(&Observation::AgentStart));
 }
 
 #[test]
@@ -501,7 +502,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
             backend: smith_domain_session::record::Backend::Direct,
         },
         version: record::VERSION,
-        endpoint: llm::Endpoint(0),
+        endpoint: Some(llm::Endpoint(0)),
         dialect: 0,
         sequence: 1,
         usage: llm::Usage {
@@ -665,7 +666,7 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
             backend: smith_domain_session::record::Backend::Direct,
         },
         version: record::VERSION,
-        endpoint: llm::Endpoint(0),
+        endpoint: Some(llm::Endpoint(0)),
         dialect: 0,
         sequence: 1,
         usage: llm::Usage {

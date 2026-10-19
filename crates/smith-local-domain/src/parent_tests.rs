@@ -210,7 +210,7 @@ fn a_parent_turn_moves_its_concrete_value_to_the_durable_store() {
             backend: session::record::Backend::Direct,
         },
         version: session::record::VERSION,
-        endpoint: session::llm::Endpoint(4),
+        endpoint: Some(session::llm::Endpoint(4)),
         dialect: 1,
         sequence: 1,
         usage: session::llm::Usage::NONE,

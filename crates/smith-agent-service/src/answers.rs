@@ -260,8 +260,6 @@ fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
         run::Failure::Transcript(refusal) => {
             let which: &[u8] = match refusal {
                 run::TranscriptRefusal::Version => b"version",
-                run::TranscriptRefusal::Endpoint => b"endpoint",
-                run::TranscriptRefusal::Dialect => b"dialect",
                 run::TranscriptRefusal::Malformed => b"malformed",
                 run::TranscriptRefusal::Unresolved => b"unresolved",
                 run::TranscriptRefusal::TooLarge => b"too_large",

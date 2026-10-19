@@ -89,7 +89,7 @@ pub struct Opening {
     pub prices: Prices,
     /// Allowance supplied at admission, checked before starting more work.
     pub budget: u64,
-    /// Optional concrete history whose version, endpoint and dialect must match.
+    /// Optional concrete history admitted before any provider work.
     pub transcript: Option<Transcript>,
     /// Results the host supplied for calls in the last saved turn.
     pub answered: Box<[Answered]>,
@@ -153,7 +153,7 @@ pub struct Turn {
     /// Concrete transcript encoding version; unsupported versions are refused.
     pub version: u16,
     pub kind: Kind,
-    pub endpoint: Endpoint,
+    pub endpoint: Option<Endpoint>,
     pub model: Box<[u8]>,
     pub effort: Option<Box<[u8]>>,
     /// Configured provider dialect identity; replay requires an exact match.
@@ -190,12 +190,12 @@ impl Turn {
     }
 }
 
-/// Concrete versioned session history, with provider endpoint and dialect identity checked before replay.
+/// Concrete versioned session history; a different provider window is carried over.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Transcript {
     /// Concrete transcript encoding version; unsupported versions are refused.
     pub version: u16,
-    pub endpoint: Endpoint,
+    pub endpoint: Option<Endpoint>,
     /// Configured provider dialect identity; replay requires an exact match.
     pub dialect: u32,
     /// Settled concrete turns, oldest first, validated within the transcript byte cap.
@@ -207,10 +207,6 @@ pub struct Transcript {
 pub enum Refusal {
     /// The durable format version is unsupported.
     Version,
-    /// History names a different configured provider endpoint.
-    Endpoint,
-    /// History names a different configured provider dialect.
-    Dialect,
     /// Input has invalid syntax or violates the codec's structural contract.
     Malformed,
     /// History contains a live ticket rather than concrete replay data.

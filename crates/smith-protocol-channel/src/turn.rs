@@ -22,9 +22,10 @@ pub fn encode_turn(
     if source.version != record::VERSION || source.sequence == 0 {
         return Err(Error::Transcript(record::Refusal::Version));
     }
-    let endpoint = match endpoints.name_of(source.endpoint.0, source.dialect) {
+    let number = source.endpoint.ok_or(Error::Transcript(record::Refusal::Malformed))?.0;
+    let endpoint = match endpoints.name_of(number, source.dialect) {
         Some(name) => Box::from(name),
-        None => return Err(Error::Transcript(record::Refusal::Endpoint)),
+        None => return Err(Error::Transcript(record::Refusal::Malformed)),
     };
     let dialect = source.dialect;
     let mut messages = List::with_capacity(count(source.messages.len())?);

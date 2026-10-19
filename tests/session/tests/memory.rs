@@ -177,7 +177,7 @@ fn observe_fill(out: &mut Queue<Request>, observed: &mut [(bool, u32, u32, u32, 
                 row.2 += 1;
                 assert_eq!(
                     (turn.version, turn.endpoint, turn.dialect, turn.sequence),
-                    (smith_domain_session::record::VERSION, Endpoint(0), 2, row.2)
+                    (smith_domain_session::record::VERSION, Some(Endpoint(0)), 2, row.2)
                 );
                 assert_eq!((turn.usage, turn.spent), (Usage::ZERO, 0));
                 assert_eq!(row.1, row.2, "every actual accepted completion emits concrete history");
@@ -622,7 +622,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     };
     let history = record::Transcript {
         version: record::VERSION,
-        endpoint: Endpoint(7),
+        endpoint: Some(Endpoint(7)),
         dialect: 2,
         turns: Box::new([restored_tail_turn(Box::new([
             smith_domain_session::llm::Message {
@@ -699,7 +699,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     }
     let history = record::Transcript {
         version: record::VERSION,
-        endpoint: Endpoint(7),
+        endpoint: Some(Endpoint(7)),
         dialect: 2,
         turns: Box::new([restored_tail_turn(Box::new([
             Message { role: Role::User, content: Box::new([Block::Text { text: bytes(1), replay: None }]) },
@@ -774,7 +774,7 @@ fn restored_tail_turn(messages: Box<[smith_domain_session::llm::Message]>) -> sm
             backend: smith_domain_session::record::Backend::Direct,
         },
         version: smith_domain_session::record::VERSION,
-        endpoint: Endpoint(7),
+        endpoint: Some(Endpoint(7)),
         dialect: 2,
         sequence: 1,
         usage: Usage::ZERO,
@@ -841,7 +841,7 @@ fn memory_seen(out: &mut Queue<Request>) -> MemorySeen {
             Request::Turn { turn, .. } => {
                 assert_eq!(
                     (turn.version, turn.endpoint, turn.dialect),
-                    (smith_domain_session::record::VERSION, Endpoint(0), 2)
+                    (smith_domain_session::record::VERSION, Some(Endpoint(0)), 2)
                 );
                 assert_eq!((turn.usage, turn.spent), (Usage::ZERO, 0));
                 for message in &turn.messages {
