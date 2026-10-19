@@ -316,6 +316,9 @@ plan's run.
 
      The one production change: `Service::lost_live_bytes()` in `smith-agent-service/src/service.rs`, beside `lost_channel_facts()` and as it does, forwarding the channel component's `lost_live_bytes()`. 02.2's Files gain `service.rs` for that accessor alone, and `tests/agent-process/src/tracing.rs` if the world keeps the observation there, as it keeps `channel_loss` (ruling 105). A further user the accessor or the rename needs gets the same treatment, listed in the commit body.
 
+106. **Done when item 8: smith's focused aim, measured with the logs outside the tree** (done when run of 2026-10-19T11:33:25Z).
+     Done when item 8, smith's focused suite, as written, measured nothing: the command writes `focused-N.log` and `fuzzy-N.log` into the worktree, and `smith-bench`'s `probe_command a_replay_arm_runs_through_the_probe_command_and_prints_one_line` refuses the dirty tree ("source repository is dirty; commit or isolate changes before building an arm", `benchmarks/src/arm.rs:97`), so each run aborted after about 15 of 2388 tests. Measured once more with the logs outside the tree, in a clean detached worktree of smith `ff623361` (code as at cd76fb64; the commits between are plan documents): 2388 of 2388 passed in each of three runs, sums 11.38, 11.62 and 12.67 s, median 11.62 s against the aim of 12 s: the aim holds. The run is done on it. The miss is the command's, not the code's: a Done when command that writes into the worktree it measures meets a test that wants a clean tree; for the retrospective, the aims command of later plans writes its logs outside the worktree.
+
 ## For the user
 
 Each is a choice that outlasts the run; a `Decision:` line under it
