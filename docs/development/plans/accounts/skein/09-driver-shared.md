@@ -243,10 +243,14 @@ Needs: 09.1's sign-out (its revocation is a write).
 Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
   `component/lock.rs` (new), `component/private.rs`,
   `component/names.rs` (`named` maps `Locked`'s account as `Kept`'s
-  is mapped), `exchange.rs`,
+  is mapped), `exchange.rs`, `component/nonce_tests.rs` and
+  `sign_out_tests.rs` (their `skein_oauth::Terms` literals onto one
+  `terms()` in `tests.rs`, ruling 142),
   `accounts.rs`, `boundary.rs`, `limits.rs`, `lib.rs`,
   `shared_tests.rs` (new), `tests.rs`, `private_tests.rs`;
-  `tests/oauth-accounts/`: `src/shared.rs` (new), `src/lib.rs`,
+  `tests/oauth-accounts/`: `src/private.rs` and `src/sign_out.rs`
+  (their `oauth::Terms` literals onto one `terms()` in `src/world.rs`,
+  ruling 142), `src/shared.rs` (new), `src/lib.rs`,
   `src/world.rs`, `src/sign_in.rs` (`Lock` and `Unlock` join the panic
   arms of `observe`, which 09.1's `keep` helper holds under 100 lines),
   `tests/shared.rs` (new), `tests/memory.rs`.

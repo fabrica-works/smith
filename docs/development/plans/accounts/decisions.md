@@ -1357,6 +1357,11 @@ commits is this plan's.
         sum gives that test's `PRODUCT_COMPLETE` line in its report, and a
         margin below the floor is a question, never a lower floor.
 
+142. **skein 09.3 writes Terms once** (steer of 2026-10-19T20:07:10Z).
+     `oauth::Terms`, an eight-field record, is written whole seven times in skein-oauth-accounts' tests (`git -C skein grep -n -E 'Terms \{' origin/main -- crates/skein-oauth-accounts tests/oauth-accounts` at 7bc6eb3: `component/nonce_tests.rs`, `sign_out_tests.rs`, `tests.rs`; `tests/oauth-accounts/src/private.rs`, `sign_in.rs` twice, `sign_out.rs`), three of them added by 09.1 and 09.2, against the README's "A test helper is written once" (rulings 110, 134).
+
+     skein 09.3's first commit is a pure move: one `terms()` returning the all-default `oauth::Terms` in the crate's `src/tests.rs`, and one in the world's `src/world.rs`; each copy becomes `oauth::Terms { <its differing fields>, ..terms() }`; the scope string `b"read write"`, where written more than once in a file, becomes one `const`. The move is reported apart from 09.3's size. 09.3's Files gain the files it touches. A further copy found is moved the same way and named in the commit body. The fake issuer's `fake::Terms` is another type and stays.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
