@@ -111,6 +111,27 @@ their `workflow.md` do not already say.
    `OpenEvent` (A29), each destructure of `Policy` (A18), and at the
    repin each match on the fake LLM's `Event` and `Request` in smith's
    tests (A30).
+7. **Test shape: testing-strategy.md section 10 before a reference
+   test.** From smith 01.3's next increment to the run's end, a test
+   keeps section 10's rules where a session file's reference test breaks
+   them; the reference keeps its name, except one named with "or":
+   - One behaviour per test: 01.3's held-bytes reference is three tests
+     (the drop and its count, pieces of 4096, the gap after the drop);
+     02.2's retry reference is two (pieces again from offset zero; no
+     piece after its turn).
+   - Rows carry data: `ending_a_turn_sends_or_drops_the_held_bytes_first`
+     becomes one table test, a row for room taken and one for no room,
+     under a name with no "or"; a run of pieces is compared as one list,
+     never as `first`, `get(1)`, `get(2)`.
+   - A setup written once: admit-and-settle, and the count of
+     `Observation::HostLive`, are helpers once two tests open with them.
+   - Named fixtures and sizes: the held bound (16 KiB), the piece bound
+     (4096), the frame kinds (`0x0112`, `0x0109`) and each count are
+     named constants, the code's own where it has one.
+   - A bound's two sides: the queue is tested at its room and one past
+     it, from the named bound, never as `sent > 0 && sent < 8`.
+
+   Landed tests stay as they are.
 
 ## Live services
 

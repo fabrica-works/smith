@@ -290,6 +290,9 @@ plan's run.
      - `release_after`: the agent-process referee's `next_deadline` returns the release's instant, its `act` reads `now` (`_now` today), and `World::maximum_queries` (1 for this case today) is at least the call's `queries`, so 02.2's retry (2 queries) passes the referee's `fake::queries(peer).count() <= self.maximum_queries`.
      A further copy of any of these (another `Time` sum in a sketch, another `Event::Call` built in a world): correct it the same way, and list it in the commit body.
 
+102. **Test shape before a reference test, README rule 7** (steer of 2026-10-19T10:26:53Z).
+     The README gains rule 7, "Test shape: testing-strategy.md section 10 before a reference test", from the check of 2026-10-19T10:14:18Z: from smith 01.3's next increment to the run's end, a test keeps section 10's rules (one behaviour per test, rows carry data, a setup written once, named fixtures and sizes, a bound's two sides) where a session file's reference test breaks them, with the splits, the table and the named constants it lists. Landed tests stay as they are. Checked: `git -C smith grep -n 'sent > 0 && sent < 8\|first()\|get(1)' origin/main -- tests/channel/tests/live.rs` prints lines 61, 72 and 127; `Observation::HostLive` appears there 5 times.
+
 ## For the user
 
 Each is a choice that outlasts the run; a `Decision:` line under it
