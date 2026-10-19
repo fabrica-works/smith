@@ -31,6 +31,12 @@ A branch that changes only Markdown files (the documents under `docs/`,
 tested, and lands with `land --docs`. Doc comments in `.rs` files are not
 documentation in this sense: they are code, and clippy checks them.
 
+Dependencies on skein use `https://github.com/forgetic/skein.git` without
+`rev`, `branch` or `tag`; `Cargo.lock` pins the revision. smith, jig and
+temper must resolve the same skein revision when composed. Changes to
+shared mechanisms land in skein first; smith and its consumers then take
+that revision through their own gates.
+
 ## 2. The two test suites
 
 The suites are those of skein's `docs/foundation/testing-strategy.md`

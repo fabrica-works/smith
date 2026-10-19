@@ -1,49 +1,54 @@
 # smith
 
-smith is a kit for flexible LLM agents and a standard agent built from
-it. A host supplies a charter, tools, messages, result contracts and a
-budget; smith supplies the conversation and run mechanics. Its design
-starts at [domain/README.md](docs/design/domain/README.md).
+*Protocol-driven agent loop for AI applications.*
 
-## Layout
+A Rust kit for LLM agents that a host drives over a protocol, sending
+each run its instructions, tools, budget and what counts as done.
 
-- `src/`: the `smith` binary.
-- `crates/`: the domain, protocol, service and shell libraries.
-- `tests/`: worlds and their focused and `fuzzy_*.rs` test binaries; the
-  binary's end-to-end and live tests are in `tests/end-to-end/`.
-- `docs/design/domain/`: the run, session, tools and host contracts.
-- `docs/design/protocol/`: the protocol layer: channel, charter,
-  transcripts, LLM calls, the agent process and hosts.
-- `docs/development/workflow.md`: the checks before merging, the suites'
-  budgets and the live suite.
-- `docs/development/local-host.md`: running `smith local`.
+## The idea
 
-smith follows skein's foundation documents: programming-model.md for the
-Rust subset and ownership, testing-strategy.md for independent worlds,
-and notes.md for the memory strategy. Step crates inherit the workspace
-lints and use `no_std` with `alloc`; test harnesses are ordinary Rust
-whose clocks, seeds and ordered observations make runs reproducible.
+- **Policy is data.** A host shapes a run entirely by its charter and its
+  answers: instructions, a brief, the tools the agent may call and those
+  the host serves, what counts as done, a budget. smith knows no workflow
+  vocabulary: no roles, task kinds, forges or pull requests.
+- **Not only a coding agent.** A chat assistant, a researcher, a
+  reviewer, an operator acting through its host's tools, a coordinator of
+  other agents and a producer of code changes are runs of the same loop,
+  told apart by their charters. A workspace is optional.
+- **One vocabulary, in a process or inline.** An agent runs as a process
+  its host spawns, over one channel, or as smith's domains inside the
+  host's own process. The host speaks the same vocabulary either way.
+- **Any model, any provider.** The conversation is provider-neutral, and
+  a run may give its sub-agents other models than its own.
+- **Failures are visible.** The LLM sees what went wrong, bounded in
+  size, and so does the person running it, in words, never replaced by a
+  fixed message.
+- **Built on skein, tested whole.** Every part is a domain, a protocol
+  layer and io, so a host imports the layer it needs; a world of domains
+  and fakes runs everything an agent does, with no io at all.
 
-## Development
+## Start here
 
-Read [AGENTS.md](AGENTS.md) and the
-[workflow](docs/development/workflow.md) before changing code. The gate is:
+- [`docs/design/domain/README.md`](docs/design/domain/README.md): the
+  run, the session, tools and the host's contract.
+- [`docs/design/protocol/README.md`](docs/design/protocol/README.md):
+  the channel, the charter, transcripts, LLM calls and hosts, in bytes.
+- [`docs/design/STATUS.md`](docs/design/STATUS.md): how far the code is
+  from the design.
+- skein's foundation, which smith follows: `programming-model.md`,
+  `testing-strategy.md` and `notes.md`.
 
-```sh
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo nextest run --workspace
-cargo nextest run --workspace --profile fuzzy
-```
+Before changing code, read [`AGENTS.md`](AGENTS.md) and
+[`docs/development/workflow.md`](docs/development/workflow.md). `main`
+moves only through skein's `land`, which runs the gate,
+`scripts/check.sh`.
 
-Focused tests have a 15-second workspace budget; fuzzy tests have 60
-seconds. `--profile measure -j 1` measures a suite serially without the
-gate's timeout. Each world keeps its own fakes and independent
-expectations; generic harness mechanisms are reused from `skein_world`
-and tested in skein.
+## The family
 
-Dependencies on skein use `https://github.com/forgetic/skein.git` without
-`rev`, `branch` or `tag`; `Cargo.lock` pins the revision. smith, jig and
-temper must resolve the same skein revision when composed. Changes to
-shared mechanisms land in skein first; smith and its consumers then take
-that revision through their own gates.
+| Repository | | Builds on |
+|---|---|---|
+| [skein](https://github.com/forgetic/skein) | One thread, one loop, no async | |
+| [smith](https://github.com/forgetic/smith) | Protocol-driven agent loop for AI applications | skein |
+| [jig](https://github.com/forgetic/jig) | Engine for agentic applications | skein, smith |
+| [temper](https://github.com/forgetic/temper) | Agent-driven software development on a forge | skein, smith, jig |
+| [hearth](https://github.com/forgetic/hearth) | Immutable machines, built from a revision | skein |
