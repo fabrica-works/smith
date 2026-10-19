@@ -1056,6 +1056,31 @@ commits is this plan's.
      file the workspace check finds broken by these types is fixed the same
      way, and listed in the commit body.
 
+133. **smith 03.1's grant bindings** (plan defect, smith 03's block of 2026-10-19T18:01:10Z).
+     The component keeps the bindings; `grant` gains no charter argument and
+     the service keeps no charter. A plan defect: ruling 131 named where the
+     install check lives and what it reads, not how a refresh, which carries
+     no charter, reads it.
+
+     At each admitted start the service hands the LLM component, from the
+     charter's `llm` and `models`, each account with the endpoints its LLMs
+     name, bounded by the charter's LLMs and replacing the last start's
+     bindings. `Component::grant(name, credential, lapses)` keeps its
+     signature and judges a value by those endpoints' `options.provider`, as
+     its loop over `self.options` judges today, for the start's grants and
+     for later refreshes alike, from the channel or colocated. An account no
+     LLM names is judged by none, as today when no endpoint names it. A held
+     grant is not judged again at a later start: channel.md 6 judges a value
+     when it comes ("A start that carries one is refused, and a later grant
+     of one fails as any credential the agent cannot install").
+
+     The design asks only that the scheme be judged by "the endpoint's
+     dialect" of the account's LLM (channel.md 6; llm.md 7), so where the
+     binding lives is the plan's to say. Kept in the component, it is a small
+     bounded map beside `options`, and the three callers in `service.rs` and
+     the colocated path stay as they are; a retained charter would hold the
+     whole start, prompts and tools included, for one lookup.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

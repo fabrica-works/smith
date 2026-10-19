@@ -126,7 +126,14 @@ Shape: the schema's `record Llm` gains `account: option u32`;
   that matches `options.account == name.account` and judges the scheme
   by `options.provider`, else `GrantError::Scheme`), reads the dialect
   of the charter's LLM naming the grant's account, not the endpoint's
-  (ruling 131). `Peer.account` and `Spec.account` (new, from the
+  (ruling 131). The component keeps the bindings: at each admitted
+  start the service hands it, from the charter's `llm` and `models`,
+  each account with the endpoints its LLMs name, bounded by the
+  charter's LLMs and replacing the last start's; `grant` keeps its
+  signature and judges a value by those endpoints' `options.provider`,
+  for the start's grants and for later refreshes alike, by the channel
+  or colocated; an account no LLM names is judged by none, as today.
+  The service keeps no charter for it (ruling 133). `Peer.account` and `Spec.account` (new, from the
   charter's LLM in `route.rs`) are `Option<u32>`; with none,
   `Request::Complete` and `FromDomain::Complete` carry `grant: None`
   and the component calls `Grants::credential(None, now)` (new):
