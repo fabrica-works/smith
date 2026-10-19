@@ -54,7 +54,7 @@ pub enum Seen {
         spent: smith_domain::run::Spend,
 
         /// Actual settled record body. Contract: domain/run.md, section 13.
-        turn: Turn,
+        turn: Box<Turn>,
     },
 
     /// Actual settled waiting notice. Contract: domain/run.md, section 6.

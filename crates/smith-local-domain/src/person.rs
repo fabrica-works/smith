@@ -321,7 +321,11 @@ mod tests {
         let turn = agent::Turn {
             model: b"model".as_slice().into(),
             effort: None,
-            kind: session::record::Kind::First { affinity: session::llm::Affinity { key: [0; 16], thread: 0 } },
+            kind: session::record::Kind::First {
+                affinity: session::llm::Affinity { key: [0; 16], thread: 0 },
+                account: None,
+                backend: session::record::Backend::Direct,
+            },
             version: 1,
             endpoint: session::llm::Endpoint(1),
             dialect: 1,

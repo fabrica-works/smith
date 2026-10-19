@@ -8,7 +8,7 @@ use crate::{
 use alloc::boxed::Box;
 
 /// Concrete session transcript version emitted and accepted at the domain boundary.
-pub const VERSION: u16 = 5;
+pub const VERSION: u16 = 6;
 
 /// Session-issued position of an opener call in its concrete logical transcript.
 /// This fixed name survives ticket translation; provider ids and callback tokens
@@ -114,22 +114,31 @@ pub struct Answered {
     pub result: crate::llm::Returned,
 }
 
+/// The transport that wrote an opening, preserved by the parent in saved history.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Backend {
+    /// The provider connection served the session directly.
+    Direct,
+    /// The named program served the session's provider traffic.
+    Program { name: Box<[u8]> },
+}
+
 /// The session's turn kind, including the affinity of each window opener
 /// (protocol/transcript.md, sections 2 and 3).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
     /// The conversation's first settled completion, opening its first window.
-    First { affinity: Affinity },
+    First { affinity: Affinity, account: Option<u32>, backend: Backend },
     /// A settled ordinary completion after the window's opener.
     Ordinary,
     /// A settled compaction, opening another window with the same affinity.
-    Window { affinity: Affinity },
+    Window { affinity: Affinity, account: Option<u32>, backend: Backend },
 }
 
 impl Kind {
     /// Whether the host may begin a saved transcript at this turn.
     #[must_use]
-    pub const fn opens_window(self) -> bool {
+    pub const fn opens_window(&self) -> bool {
         match self {
             Kind::First { .. } | Kind::Window { .. } => true,
             Kind::Ordinary => false,
@@ -164,12 +173,20 @@ impl Turn {
     /// Checked ownership of this turn's message envelopes and their payloads.
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {
-        messages_bytes(&self.messages)?.checked_add(u64::try_from(self.model.len()).ok()?)?.checked_add(
-            match &self.effort {
+        let backend = match &self.kind {
+            Kind::First { backend, .. } | Kind::Window { backend, .. } => match backend {
+                Backend::Direct => 0,
+                Backend::Program { name } => u64::try_from(name.len()).ok()?,
+            },
+            Kind::Ordinary => 0,
+        };
+        messages_bytes(&self.messages)?
+            .checked_add(backend)?
+            .checked_add(u64::try_from(self.model.len()).ok()?)?
+            .checked_add(match &self.effort {
                 Some(effort) => u64::try_from(effort.len()).ok()?,
                 None => 0,
-            },
-        )
+            })
     }
 }
 

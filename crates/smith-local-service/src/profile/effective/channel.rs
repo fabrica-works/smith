@@ -6,12 +6,11 @@ use smith_agent_service::profile::{Layer, Limit, Value};
 
 use super::entry;
 
-pub(super) fn transcript(limits: &smith_transcript::v5::Limits) -> Box<[Limit]> {
-    let smith_transcript::v5::Limits {
-        replay_dialect,
+pub(super) fn transcript(limits: &smith_transcript::v6::Limits) -> Box<[Limit]> {
+    let smith_transcript::v6::Limits {
+        program_name,
         replay_bytes,
         text_text,
-        opaque_dialect,
         opaque_bytes,
         call_id,
         call_name,
@@ -42,14 +41,12 @@ pub(super) fn transcript(limits: &smith_transcript::v5::Limits) -> Box<[Limit]> 
         turn_endpoint,
         turn_model,
         turn_effort_some,
-        turn_dialect,
         turn_messages,
     } = *limits;
     Box::new([
-        entry(Layer::Host, "process.channel.transcript.replay_dialect", Value::Bytes(u64::from(replay_dialect))),
+        entry(Layer::Host, "process.channel.transcript.program_name", Value::Bytes(u64::from(program_name))),
         entry(Layer::Host, "process.channel.transcript.replay_bytes", Value::Bytes(u64::from(replay_bytes))),
         entry(Layer::Host, "process.channel.transcript.text_text", Value::Bytes(u64::from(text_text))),
-        entry(Layer::Host, "process.channel.transcript.opaque_dialect", Value::Bytes(u64::from(opaque_dialect))),
         entry(Layer::Host, "process.channel.transcript.opaque_bytes", Value::Bytes(u64::from(opaque_bytes))),
         entry(Layer::Host, "process.channel.transcript.call_id", Value::Bytes(u64::from(call_id))),
         entry(Layer::Host, "process.channel.transcript.call_name", Value::Bytes(u64::from(call_name))),
@@ -100,7 +97,6 @@ pub(super) fn transcript(limits: &smith_transcript::v5::Limits) -> Box<[Limit]> 
         entry(Layer::Host, "process.channel.transcript.turn_endpoint", Value::Bytes(u64::from(turn_endpoint))),
         entry(Layer::Host, "process.channel.transcript.turn_model", Value::Bytes(u64::from(turn_model))),
         entry(Layer::Host, "process.channel.transcript.turn_effort_some", Value::Bytes(u64::from(turn_effort_some))),
-        entry(Layer::Host, "process.channel.transcript.turn_dialect", Value::Bytes(u64::from(turn_dialect))),
         entry(Layer::Host, "process.channel.transcript.turn_messages", Value::Count(u64::from(turn_messages))),
     ])
 }

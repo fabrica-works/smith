@@ -2,11 +2,11 @@
 
 use skein_codec::Reason;
 use skein_lib::Reader;
-use smith_transcript::v5::{CEILINGS, Path, Turn};
+use smith_transcript::v6::{CEILINGS, Path, Turn};
 
 #[test]
 fn turn_goldens_decode_at_their_measured_length() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v5");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v6");
     for name in ["record_turn_smallest.bin", "record_turn_full.bin"] {
         let bytes = std::fs::read(root.join(name)).expect("turn golden");
         let value = Turn::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("turn decodes");
@@ -22,10 +22,10 @@ fn turn_rejects_an_unsupported_version_before_fields() {
 
 #[test]
 fn nesting_problem_goldens_have_their_own_wire_tag() {
-    use smith_transcript::v5::CallProblem;
+    use smith_transcript::v6::CallProblem;
     for bytes in [
-        include_bytes!("../../../crates/smith-transcript/golden/v5/enum_call_problem_nesting_full.bin").as_slice(),
-        include_bytes!("../../../crates/smith-transcript/golden/v5/enum_call_problem_nesting_smallest.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v6/enum_call_problem_nesting_full.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v6/enum_call_problem_nesting_smallest.bin").as_slice(),
     ] {
         let mut reader = Reader::new(bytes);
         assert_eq!(CallProblem::decode(&CEILINGS, &mut reader).expect("nesting problem"), CallProblem::Nesting);
@@ -45,7 +45,7 @@ fn failure_goldens_keep_their_tags_and_now_require_a_resolved_path_payload() {
         },
     )
     .expect("bounded failure");
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v5");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript/golden/v6");
     for (name, tag, expected) in [
         ("outside", 7, Outcome::Outside(failure.clone())),
         ("read_only", 8, Outcome::ReadOnly(failure.clone())),
@@ -92,7 +92,7 @@ fn indexed_edit_failure_goldens_keep_the_first_failure_and_matching_reason() {
 #[test]
 fn a_turn_round_trips_its_highest_job_number() {
     use skein_lib::Writer;
-    let smallest = include_bytes!("../../../crates/smith-transcript/golden/v5/record_turn_smallest.bin");
+    let smallest = include_bytes!("../../../crates/smith-transcript/golden/v6/record_turn_smallest.bin");
     let mut parts = Turn::decode(&CEILINGS, &mut Reader::new(smallest)).expect("smallest turn").into_parts();
     parts.jobs = 37;
     let turn = Turn::new(&CEILINGS, parts).expect("turn with jobs");
@@ -197,4 +197,53 @@ fn a_not_run_why_survives_a_round_trip() {
 fn a_version_four_transcript_is_refused() {
     let problem = Turn::decode(&CEILINGS, &mut Reader::new(&[0, 4])).expect_err("version four");
     assert_eq!((problem.path, problem.reason), (Path::TurnVersion, Reason::Version));
+}
+
+#[test]
+fn a_version_five_transcript_is_refused() {
+    let problem = Turn::decode(&CEILINGS, &mut Reader::new(&[0, 5])).expect_err("version five");
+    assert_eq!((problem.path, problem.reason), (Path::TurnVersion, Reason::Version));
+}
+
+#[test]
+fn a_turn_carries_its_dialects_number() {
+    let smallest = include_bytes!("../../../crates/smith-transcript/golden/v6/record_turn_smallest.bin");
+    for (name, dialect) in [("openai", 3), ("anthropic", 2)] {
+        let mut parts = Turn::decode(&CEILINGS, &mut Reader::new(smallest)).expect("turn").into_parts();
+        parts.dialect = dialect;
+        let turn = Turn::new(&CEILINGS, parts).expect("dialect number");
+        let mut writer = skein_lib::Writer::new(usize::try_from(turn.measure()).expect("length"));
+        turn.encode(&mut writer).expect("encoding");
+        let bytes = writer.finish();
+        let decoded = Turn::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("decode number");
+        assert_eq!(decoded.dialect(), dialect, "{name}");
+    }
+}
+
+#[test]
+fn an_opening_round_trips_each_account_and_backend() {
+    use smith_transcript::{Affinity, AffinityParts, Backend, Opening, OpeningParts, Program, ProgramParts};
+    for (account, backend) in [
+        (None, Backend::Direct),
+        (Some(7), Backend::Direct),
+        (
+            None,
+            Backend::Program(
+                Program::new(&CEILINGS, ProgramParts { name: b"claude_code".as_slice().into() }).expect("program"),
+            ),
+        ),
+        (
+            Some(7),
+            Backend::Program(
+                Program::new(&CEILINGS, ProgramParts { name: b"claude_code".as_slice().into() }).expect("program"),
+            ),
+        ),
+    ] {
+        let affinity = Affinity::new(&CEILINGS, AffinityParts { key: [0x42; 16], thread: 7 }).expect("affinity");
+        let opening = Opening::new(&CEILINGS, OpeningParts { affinity, account, backend }).expect("opening");
+        let mut writer = skein_lib::Writer::new(usize::try_from(opening.measure()).expect("length"));
+        opening.encode(&mut writer).expect("encoding");
+        let bytes = writer.finish();
+        assert_eq!(Opening::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("opening"), opening, "{account:?}");
+    }
 }

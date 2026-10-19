@@ -21,6 +21,7 @@ skein-fake-llm-domain.workspace = true
 skein-world.workspace = true
 
 [dev-dependencies]
+smith-transcript.workspace = true
 smith-agent-service.workspace = true
 smith-protocol-channel.workspace = true
 

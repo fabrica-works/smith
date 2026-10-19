@@ -1205,7 +1205,7 @@ impl World {
                 assert_eq!(usize::try_from(number).expect("bounded output number"), self.turns.len() + 1);
                 assert_eq!(position, turn.sequence);
                 self.observe(Seen::Turn { number });
-                if let smith_domain::session::record::Kind::Window { affinity } = turn.kind {
+                if let smith_domain::session::record::Kind::Window { affinity, .. } = turn.kind {
                     self.observe(Seen::Window {
                         caching: skein_fake_llm_domain::api::Caching::Scope(affinity.key),
                         messages: turn
@@ -1220,7 +1220,13 @@ impl World {
                 }
                 self.messages_seen.push((
                     self.now,
-                    crate::messages_referee::Seen::Turn { number, read, spent, opens_window, turn: turn.clone() },
+                    crate::messages_referee::Seen::Turn {
+                        number,
+                        read,
+                        spent,
+                        opens_window,
+                        turn: Box::new(turn.clone()),
+                    },
                 ));
                 self.turn_metadata.push((number, read, spent));
                 self.turns.push(turn);

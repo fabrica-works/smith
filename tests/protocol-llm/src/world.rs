@@ -1042,8 +1042,10 @@ impl World {
                 assert_eq!(host_run, Token::new(1));
                 assert_eq!(usize::try_from(number).expect("bounded output number"), self.turns.len() + 1);
                 self.observe(Seen::Turn { number });
-                self.messages_seen
-                    .push((self.now, crate::messages_referee::Seen::Turn { number, read, spent, turn: turn.clone() }));
+                self.messages_seen.push((
+                    self.now,
+                    crate::messages_referee::Seen::Turn { number, read, spent, turn: Box::new(turn.clone()) },
+                ));
                 self.turn_metadata.push((number, read, spent));
                 self.turns.push(turn);
             }

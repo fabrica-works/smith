@@ -483,6 +483,8 @@ pub fn turn_value(bytes: u64) -> host::TurnValue {
             effort: None,
             kind: smith_domain::session::record::Kind::First {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+                account: None,
+                backend: smith_domain::session::record::Backend::Direct,
             },
             version: record::VERSION,
             endpoint: llm::Endpoint(0),

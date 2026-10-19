@@ -3090,8 +3090,8 @@ fn restore(
     let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
     conversation.jobs.highest = transcript.turns.last().expect("validated nonempty history").jobs;
     compaction::restore(conversation, &transcript, &mut bytes)?;
-    conversation.affinity = match transcript.turns.first().expect("validated nonempty history").kind {
-        crate::record::Kind::First { affinity } | crate::record::Kind::Window { affinity } => affinity,
+    conversation.affinity = match &transcript.turns.first().expect("validated nonempty history").kind {
+        crate::record::Kind::First { affinity, .. } | crate::record::Kind::Window { affinity, .. } => *affinity,
         crate::record::Kind::Ordinary => unreachable!("validated opening kind"),
     };
     let prompt = conversation.transcript.get(0).expect("admission held the initial prompt");
@@ -3278,9 +3278,17 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
         version: crate::record::VERSION,
         kind: if conversation.window_turn {
             conversation.window_turn = false;
-            crate::record::Kind::Window { affinity: conversation.affinity }
+            crate::record::Kind::Window {
+                affinity: conversation.affinity,
+                account: conversation.account,
+                backend: crate::record::Backend::Direct,
+            }
         } else if next == 1 {
-            crate::record::Kind::First { affinity: conversation.affinity }
+            crate::record::Kind::First {
+                affinity: conversation.affinity,
+                account: conversation.account,
+                backend: crate::record::Backend::Direct,
+            }
         } else {
             crate::record::Kind::Ordinary
         },

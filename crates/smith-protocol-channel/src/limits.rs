@@ -14,7 +14,7 @@ pub struct Limits {
     /// This agent's bounded charter decoder allowances.
     pub charter: smith_charter::v3::Limits,
     /// This agent's bounded saved-turn decoder allowances.
-    pub transcript: smith_transcript::v5::Limits,
+    pub transcript: smith_transcript::v6::Limits,
     /// Saved turns admitted on resume, from one window's message capacity.
     pub resume_turns: u32,
     /// Hits admitted within one search outcome on resume.
@@ -54,7 +54,7 @@ pub enum Error {
     /// A concrete turn cannot be written to the durable transcript format.
     Transcript(smith_domain_session::record::Refusal),
     /// A concrete turn exceeds the transcript codec bounds.
-    TranscriptBody(smith_transcript::v5::Problem),
+    TranscriptBody(smith_transcript::v6::Problem),
     /// The service sent admission or an answer out of order.
     Order,
     /// A live host operation name is repeated, unknown, or beyond capacity.
@@ -77,8 +77,8 @@ impl From<smith_channel::v4::Problem> for Error {
     }
 }
 
-impl From<smith_transcript::v5::Problem> for Error {
-    fn from(problem: smith_transcript::v5::Problem) -> Error {
+impl From<smith_transcript::v6::Problem> for Error {
+    fn from(problem: smith_transcript::v6::Problem) -> Error {
         Error::TranscriptBody(problem)
     }
 }
@@ -251,12 +251,10 @@ fn charter_cells(limits: &smith_charter::v3::Limits) -> Option<u64> {
     smith_charter::Charter::worst_case_heap(&cells)
 }
 
-fn turn_cells(limits: &smith_transcript::v5::Limits) -> Option<u64> {
-    let cells = smith_transcript::v5::Limits {
-        replay_dialect: 0,
+fn turn_cells(limits: &smith_transcript::v6::Limits) -> Option<u64> {
+    let cells = smith_transcript::v6::Limits {
         replay_bytes: 0,
         text_text: 0,
-        opaque_dialect: 0,
         opaque_bytes: 0,
         call_id: 0,
         call_name: 0,
@@ -280,7 +278,7 @@ fn turn_cells(limits: &smith_transcript::v5::Limits) -> Option<u64> {
         said_text: 0,
         tool_result_id: 0,
         turn_endpoint: 0,
-        turn_dialect: 0,
+        program_name: 0,
         ..*limits
     };
     smith_transcript::Turn::worst_case_heap(&cells)

@@ -5,7 +5,7 @@ use skein_heap::{Counting, Meter};
 use skein_lib::{List, Reader, Writer};
 
 use smith_charter::v3 as charter;
-use smith_transcript::v5 as transcript;
+use smith_transcript::v6 as transcript;
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -48,10 +48,8 @@ fn charter_limits() -> charter::Limits {
 
 fn transcript_limits() -> transcript::Limits {
     transcript::Limits {
-        replay_dialect: 0,
         replay_bytes: 0,
         text_text: transcript::CEILINGS.text_text,
-        opaque_dialect: 0,
         opaque_bytes: 0,
         call_id: 0,
         call_name: 0,
@@ -82,7 +80,7 @@ fn transcript_limits() -> transcript::Limits {
         turn_model: 128,
         turn_effort_some: 32,
         turn_endpoint: 0,
-        turn_dialect: 0,
+        program_name: 32,
         turn_messages: 1,
     }
 }
@@ -150,16 +148,27 @@ fn turn_at_its_largest_text_payload_stays_within_the_configured_heap_bound() {
             model: b"model".as_slice().into(),
             effort: None,
             kind: transcript::TurnKind::Ordinary,
-            affinity: if 1 == 1 {
+            opening: if 1 == 1 {
                 Some(
-                    transcript::Affinity::new(&limits, transcript::AffinityParts { key: [0; 16], thread: 0 })
-                        .expect("fixture affinity"),
+                    transcript::Opening::new(
+                        &limits,
+                        transcript::OpeningParts {
+                            affinity: transcript::Affinity::new(
+                                &limits,
+                                transcript::AffinityParts { key: [0; 16], thread: 0 },
+                            )
+                            .expect("fixture affinity"),
+                            account: None,
+                            backend: transcript::Backend::Direct,
+                        },
+                    )
+                    .expect("fixture opening"),
                 )
             } else {
                 None
             },
             endpoint: Box::from(&b""[..]),
-            dialect: Box::from(&b""[..]),
+            dialect: 0,
             place: 1,
             usage,
             spent: 0,

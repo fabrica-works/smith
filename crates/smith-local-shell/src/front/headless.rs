@@ -179,7 +179,7 @@ mod tests {
         smith_domain::Turn {
             model: b"model".as_slice().into(),
             effort: None,
-            version: 5,
+            version: smith_domain::session::record::VERSION,
             kind: Kind::Ordinary,
             endpoint: llm::Endpoint(0),
             dialect: 0,

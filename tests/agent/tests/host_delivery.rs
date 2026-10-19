@@ -84,7 +84,7 @@ fn forward(agent: &Agent, host: &mut Host, next: &mut usize) {
         match seen {
             Seen::Admitted => host.up(Up::Admitted),
             Seen::Turn { number, read, spent, opens_window, turn } => {
-                let body = host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn");
+                let body = host::TurnValue::new(turn.as_ref().clone(), u64::MAX).expect("bounded turn");
                 assert!(body.owned_bytes() <= 65_536);
                 host.up(Up::Turn {
                     turn: host::Turn {

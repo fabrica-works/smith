@@ -3090,3 +3090,26 @@ fn an_unauthorized_call_is_retried_only_for_an_account() {
         assert_eq!(request, expected, "account {account:?}");
     }
 }
+
+#[test]
+fn opens_window_is_true_of_first_and_window_turns_only() {
+    use crate::{
+        llm::Affinity,
+        record::{Backend, Kind},
+    };
+    let affinity = Affinity { key: [0; 16], thread: 0 };
+    for (kind, expected) in [
+        (Kind::First { affinity, account: None, backend: Backend::Direct }, true),
+        (
+            Kind::Window {
+                affinity,
+                account: Some(7),
+                backend: Backend::Program { name: b"claude_code".as_slice().into() },
+            },
+            true,
+        ),
+        (Kind::Ordinary, false),
+    ] {
+        assert_eq!(kind.opens_window(), expected, "{kind:?}");
+    }
+}

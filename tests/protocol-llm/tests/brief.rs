@@ -865,7 +865,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         assert_eq!(first.turns().len(), 1);
         assert!(matches!(first.answer(), run::Answer::Parked { .. }));
         let affinity = match first.turns()[0].kind {
-            smith_domain::session::record::Kind::First { affinity } => affinity,
+            smith_domain::session::record::Kind::First { affinity, .. } => affinity,
             smith_domain::session::record::Kind::Ordinary | smith_domain::session::record::Kind::Window { .. } => {
                 panic!("fresh opening requires a first turn")
             }
@@ -893,7 +893,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         resumed.run(100_000);
         assert!(matches!(resumed.answer(), run::Answer::Parked { .. }));
         assert_eq!(
-            resumed.turns().iter().map(|turn| (turn.sequence, turn.kind)).collect::<Vec<_>>(),
+            resumed.turns().iter().map(|turn| (turn.sequence, turn.kind.clone())).collect::<Vec<_>>(),
             [(2, smith_domain::session::record::Kind::Ordinary), (3, smith_domain::session::record::Kind::Ordinary),]
         );
         assert_eq!(resumed.prompts().len(), 3, "two main requests and one actual child request");

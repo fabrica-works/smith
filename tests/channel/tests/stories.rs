@@ -384,7 +384,7 @@ fn a_saved_oversized_answer_reaches_the_agent_as_a_settled_decision() {
     assert!(world.observations().contains(&Observation::AgentSavedTooLarge));
 }
 
-fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
+fn saved_turn(place: u32, dialect: u32) -> Box<[u8]> {
     let limits = smith_transcript::CEILINGS;
     let turn = smith_transcript::Turn::new(
         &limits,
@@ -392,19 +392,27 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
             model: b"fake-1".as_slice().into(),
             effort: None,
             kind: smith_transcript::TurnKind::Ordinary,
-            affinity: if place == 1 {
+            opening: if place == 1 {
                 Some(
-                    smith_transcript::Affinity::new(
+                    smith_transcript::Opening::new(
                         &limits,
-                        smith_transcript::AffinityParts { key: [0; 16], thread: 0 },
+                        smith_transcript::OpeningParts {
+                            affinity: smith_transcript::Affinity::new(
+                                &limits,
+                                smith_transcript::AffinityParts { key: [0; 16], thread: 0 },
+                            )
+                            .expect("fixture affinity"),
+                            account: None,
+                            backend: smith_transcript::Backend::Direct,
+                        },
                     )
-                    .expect("fixture affinity"),
+                    .expect("fixture opening"),
                 )
             } else {
                 None
             },
             endpoint: Box::default(),
-            dialect: Box::from(dialect),
+            dialect,
             place,
             usage: smith_transcript::Usage::new(
                 &limits,
@@ -434,7 +442,7 @@ fn a_saved_turn_reaches_the_agent_as_concrete_history() {
     world.settle();
     world.send_start_with_turns(
         Box::from(&include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin")[..]),
-        Some(Box::from([saved_turn(1, b"00000000")])),
+        Some(Box::from([saved_turn(1, 0)])),
     );
     world.settle();
     assert!(world.observations().contains(&Observation::AgentHistory { turns: 1, place: 1 }));
@@ -446,7 +454,7 @@ fn a_saved_turn_from_another_dialect_fails_as_transcript() {
     world.settle();
     world.send_start_with_turns(
         Box::from(&include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin")[..]),
-        Some(Box::from([saved_turn(1, b"other")])),
+        Some(Box::from([saved_turn(1, 99)])),
     );
     world.settle();
     assert!(world.observations().contains(&Observation::HostAdmitted));
@@ -461,7 +469,7 @@ fn a_run_resumed_from_a_transcript_restores_the_calls_answered_after_its_last_tu
     world.send_start_with_context_and_turns(
         Box::from(&include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin")[..]),
         smith_host_domain::SavedReply::Host { error: true, body: Box::from(*b"retry") },
-        Some(Box::from([saved_turn(1, b"00000000")])),
+        Some(Box::from([saved_turn(1, 0)])),
     );
     world.settle();
     assert!(world.observations().contains(&Observation::AgentHistory { turns: 1, place: 1 }));
@@ -489,6 +497,8 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
         effort: None,
         kind: smith_domain_session::record::Kind::First {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: smith_domain_session::record::Backend::Direct,
         },
         version: record::VERSION,
         endpoint: llm::Endpoint(0),
@@ -651,6 +661,8 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
         effort: None,
         kind: smith_domain_session::record::Kind::First {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: smith_domain_session::record::Backend::Direct,
         },
         version: record::VERSION,
         endpoint: llm::Endpoint(0),
@@ -1257,8 +1269,8 @@ fn a_host_resumes_from_its_last_window_turn_alone() {
     for place in 1..=5 {
         turn.sequence = place;
         turn.kind = match place {
-            1 => record::Kind::First { affinity },
-            3 | 5 => record::Kind::Window { affinity },
+            1 => record::Kind::First { affinity, account: None, backend: record::Backend::Direct },
+            3 | 5 => record::Kind::Window { affinity, account: None, backend: record::Backend::Direct },
             _ => record::Kind::Ordinary,
         };
         world.agent_tells_turn(place, None, &turn);

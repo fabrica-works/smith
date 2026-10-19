@@ -21,13 +21,13 @@ fn charter_schema_matches_generated_code_and_all_goldens() {
 #[test]
 fn transcript_schema_matches_generated_code_and_all_goldens() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-transcript");
-    let source = fs::read_to_string(root.join("schema/transcript-v5.schema")).expect("transcript schema");
+    let source = fs::read_to_string(root.join("schema/transcript-v6.schema")).expect("transcript schema");
     let schema = parse(&source).expect("schema valid");
     let output = generate(&schema);
-    let committed = fs::read_to_string(root.join("src/generated/v5.rs")).expect("generated code");
+    let committed = fs::read_to_string(root.join("src/generated/v6.rs")).expect("generated code");
     assert_eq!(committed, output.rust, "regenerate transcript codec with skein-codegen");
     for golden in output.goldens {
-        let committed = fs::read(root.join("golden/v5").join(&golden.name)).expect("golden bytes");
+        let committed = fs::read(root.join("golden/v6").join(&golden.name)).expect("golden bytes");
         assert_eq!(committed, golden.bytes, "golden {} drifted", golden.name);
     }
 }

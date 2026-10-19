@@ -770,6 +770,8 @@ fn restored_tail_turn(messages: Box<[smith_domain_session::llm::Message]>) -> sm
         effort: None,
         kind: smith_domain_session::record::Kind::First {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: smith_domain_session::record::Backend::Direct,
         },
         version: smith_domain_session::record::VERSION,
         endpoint: Endpoint(7),

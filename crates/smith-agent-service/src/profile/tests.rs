@@ -59,13 +59,13 @@ fn a_turn_holds_a_reasoning_block_at_the_completions_share() {
     let envelope = share + skein_llm::REPLAY_HEADER_BYTES;
     assert_eq!(transcript.opaque_bytes, envelope);
     let bytes = skein_lib::bytes::zeroed(usize::try_from(envelope).expect("envelope fits"));
-    let block = Opaque::new(&transcript, OpaqueParts { dialect: Box::from(b"codex".as_slice()), bytes })
+    let block = Opaque::new(&transcript, OpaqueParts { dialect: 1, bytes })
         .expect("one block holds consecutive reasoning items");
     assert_eq!(block.bytes().len(), usize::try_from(envelope).expect("envelope fits"));
     let mut smaller = transcript;
     smaller.opaque_bytes -= 1;
     let problem = Opaque::new(&smaller, block.into_parts()).expect_err("one byte beyond the bound");
-    assert_eq!(problem.path, smith_transcript::v5::Path::OpaqueBytes);
+    assert_eq!(problem.path, smith_transcript::v6::Path::OpaqueBytes);
 }
 
 #[test]

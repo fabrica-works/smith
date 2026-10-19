@@ -1,12 +1,12 @@
-family smith-transcript 5
+family smith-transcript 6
 
 # The aggregate turn is limited again by the receiving session's
 # Limits.session_bytes. These member ceilings cover its default fixtures and
 # the tools' configurable read, list, search and command response limits.
 record Usage { input: option u64 output: option u64 cache_read: option u64 cache_write: option u64 reasoning: option u64 }
-record Replay { dialect: text 32 bytes: bytes 1048576 }
+record Replay { dialect: u32 bytes: bytes 1048576 }
 record Text { text: text 1048576 replay: option Replay }
-record Opaque { dialect: text 32 bytes: bytes 3145728 }
+record Opaque { dialect: u32 bytes: bytes 3145728 }
 record Call {
     id: text 256
     name: text 64
@@ -91,14 +91,17 @@ record Message { role: Role blocks: list 64 Block }
 # Transcript admission also checks common version, endpoint, dialect and
 # consecutive place, and its aggregate byte and message limits.
 record Affinity { key: fixed 16 thread: u32 }
+record Program { name: text 32 }
+enum Backend { direct, program: Program }
+record Opening { affinity: Affinity account: option u32 backend: Backend }
 enum TurnKind { ordinary, window }
 versioned record Turn {
     kind: TurnKind
-    affinity: option Affinity
+    opening: option Opening
     endpoint: text 64
     model: text 128
     effort: option text 32
-    dialect: text 32
+    dialect: u32
     place: u32
     usage: Usage
     spent: u64

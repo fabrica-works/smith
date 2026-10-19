@@ -329,7 +329,7 @@ fn start(
         None => match transcript.as_ref() {
             Some(history) => match history.turns.first() {
                 Some(turn) => match turn.kind {
-                    session::record::Kind::First { affinity } | session::record::Kind::Window { affinity } => {
+                    session::record::Kind::First { affinity, .. } | session::record::Kind::Window { affinity, .. } => {
                         Some(run::Identity::new(affinity.key))
                     }
                     session::record::Kind::Ordinary => None,

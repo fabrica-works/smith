@@ -8,7 +8,7 @@ fn round_trip(outcome: Outcome) -> Result<Outcome, record::Refusal> {
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).unwrap();
     let endpoints = crate::Endpoints::new(configured);
     let limits = smith_transcript::CEILINGS;
-    let mut turn = crate::decode_turn(&super::saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();
+    let mut turn = crate::decode_turn(&super::saved_turn(1, 0), 1, &limits, &endpoints).unwrap();
     turn.messages = Box::new([llm::Message {
         role: llm::Role::User,
         content: Box::new([llm::Block::ToolResult {
@@ -232,7 +232,7 @@ fn round_trip_problem(problem: llm::Problem) -> llm::Problem {
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).unwrap();
     let endpoints = crate::Endpoints::new(configured);
     let limits = smith_transcript::CEILINGS;
-    let mut turn = crate::decode_turn(&super::saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();
+    let mut turn = crate::decode_turn(&super::saved_turn(1, 0), 1, &limits, &endpoints).unwrap();
     turn.messages = Box::new([llm::Message {
         role: llm::Role::User,
         content: Box::new([llm::Block::ToolResult {

@@ -1179,7 +1179,10 @@ fn opening_affinity_is_fixed_and_the_recorded_window_overrides_a_fresh_spec() {
         llm::Stop::EndTurn,
         llm::Usage::ZERO,
     );
-    assert_eq!(first.turns[0].kind, record::Kind::First { affinity });
+    assert_eq!(
+        first.turns[0].kind,
+        record::Kind::First { affinity, account: Some(0), backend: record::Backend::Direct }
+    );
     assert!(first.turns[0].kind.opens_window());
     first.close();
     let mut resumed = World::new(18, 256);
@@ -1212,7 +1215,7 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
         model: b"model".as_slice().into(),
         effort: None,
         version: record::VERSION,
-        kind: record::Kind::Window { affinity },
+        kind: record::Kind::Window { affinity, account: None, backend: record::Backend::Direct },
         endpoint: llm::Endpoint(7),
         dialect: 23,
         sequence: 19,
@@ -1240,3 +1243,6 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
     assert_eq!(world.turns[0].kind, record::Kind::Ordinary);
     world.close();
 }
+
+#[path = "recorded/openings.rs"]
+mod openings;

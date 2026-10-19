@@ -647,7 +647,11 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
                 model: b"model-a".as_slice().into(),
                 effort: None,
                 kind: if sequence == 1 {
-                    session::record::Kind::First { affinity: session::llm::Affinity { key: [0; 16], thread: 0 } }
+                    session::record::Kind::First {
+                        affinity: session::llm::Affinity { key: [0; 16], thread: 0 },
+                        account: None,
+                        backend: session::record::Backend::Direct,
+                    }
                 } else {
                     session::record::Kind::Ordinary
                 },
@@ -2208,7 +2212,11 @@ fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() 
         turns: Box::new([session::record::Turn {
             model: b"model-a".as_slice().into(),
             effort: None,
-            kind: session::record::Kind::First { affinity: crate::llm::Affinity { key: [0; 16], thread: 0 } },
+            kind: session::record::Kind::First {
+                affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
+                account: None,
+                backend: session::record::Backend::Direct,
+            },
             version: session::record::VERSION,
             endpoint: session::llm::Endpoint(1),
             dialect: 1,

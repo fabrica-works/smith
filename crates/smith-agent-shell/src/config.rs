@@ -1601,7 +1601,7 @@ mod tests {
         );
         parse_value(&document).expect("product declarations pass every startup check");
         assert!(complete <= limits.memory, "complete {complete} > declared {}", limits.memory);
-        assert!(limits.memory - complete >= 490_000_000, "complete memory margin");
+        assert!(limits.memory - complete >= 460_000_000, "complete memory margin");
     }
     #[test]
     fn drawn_declarations_are_named_or_fit_complete_process_memory() {

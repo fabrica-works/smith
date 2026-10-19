@@ -104,7 +104,7 @@ pub struct Component {
     cancelled: bool,
     endpoints: smith_protocol_channel::Endpoints,
     charter: smith_charter::v3::Limits,
-    transcript: smith_transcript::v5::Limits,
+    transcript: smith_transcript::v6::Limits,
     sequence: u32,
     long_open: u32,
     live: crate::live::Streams,

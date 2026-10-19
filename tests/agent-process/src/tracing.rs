@@ -149,7 +149,7 @@ impl Host for Tracing {
                         events: 3,
                         channel: 4,
                         charter: 3,
-                        transcript: 5,
+                        transcript: 6,
                         chat_store: None,
                     },
                     limits: self.header.take().expect("one startup header"),

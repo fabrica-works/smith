@@ -118,7 +118,7 @@ pub fn save_turn(
     read: Option<Token>,
     opens_window: bool,
     turn: &smith_domain::Turn,
-    limits: &transcript::v5::Limits,
+    limits: &transcript::v6::Limits,
     endpoints: &Endpoints,
 ) -> Result<File, StoreError> {
     if place == 0 || place != turn.sequence {
@@ -158,7 +158,7 @@ pub fn turn_opens_window(bytes: &[u8]) -> Result<bool, StoreError> {
 /// Decode only the last window's ordered files before returning Loaded.
 pub fn decode_turns(
     files: &[Box<[u8]>],
-    limits: &transcript::v5::Limits,
+    limits: &transcript::v6::Limits,
     endpoints: &Endpoints,
 ) -> Result<(Option<Transcript>, Option<Token>), StoreError> {
     let mut start = None;
@@ -240,6 +240,8 @@ pub(crate) mod tests {
             effort: None,
             kind: smith_domain::session::record::Kind::First {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+                account: None,
+                backend: smith_domain::session::record::Backend::Direct,
             },
             version: smith_domain::session::record::VERSION,
             endpoint: smith_domain::session::llm::Endpoint(2),
@@ -273,6 +275,8 @@ pub(crate) mod tests {
             effort: None,
             kind: smith_domain::session::record::Kind::Window {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+                account: None,
+                backend: smith_domain::session::record::Backend::Direct,
             },
             sequence: 3,
             ..first.clone()

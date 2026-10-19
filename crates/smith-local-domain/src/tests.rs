@@ -342,6 +342,8 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
         effort: None,
         kind: smith_domain::session::record::Kind::First {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: smith_domain::session::record::Backend::Direct,
         },
         version: smith_domain::session::record::VERSION,
         endpoint: smith_domain::session::llm::Endpoint(4),
@@ -618,6 +620,8 @@ fn saved_window_turn() -> smith_domain::Turn {
         effort: None,
         kind: smith_domain::session::record::Kind::First {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: smith_domain::session::record::Backend::Direct,
         },
         version: smith_domain::session::record::VERSION,
         endpoint: smith_domain::session::llm::Endpoint(4),

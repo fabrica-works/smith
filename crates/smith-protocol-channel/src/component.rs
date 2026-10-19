@@ -95,7 +95,7 @@ pub struct Component {
     ended: bool,
     bodies: smith_channel::Limits,
     charter: smith_charter::v3::Limits,
-    transcript: smith_transcript::v5::Limits,
+    transcript: smith_transcript::v6::Limits,
     endpoints: Endpoints,
     calls: Map<CallKey, CallRoute>,
     window: Option<smith_domain::Window>,

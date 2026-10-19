@@ -44,7 +44,7 @@ fn the_agent_demands_the_open_before_the_domain_hears_anything() {
     }
 }
 
-fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
+fn saved_turn(place: u32, dialect: u32) -> Box<[u8]> {
     use smith_transcript as wire;
     let limits = wire::CEILINGS;
     let result = wire::ToolResult::new(
@@ -87,16 +87,24 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
             model: b"model".as_slice().into(),
             effort: None,
             kind: wire::TurnKind::Ordinary,
-            affinity: if place == 1 {
+            opening: if place == 1 {
                 Some(
-                    wire::Affinity::new(&limits, wire::AffinityParts { key: [0; 16], thread: 0 })
-                        .expect("fixture affinity"),
+                    wire::Opening::new(
+                        &limits,
+                        wire::OpeningParts {
+                            affinity: wire::Affinity::new(&limits, wire::AffinityParts { key: [0; 16], thread: 0 })
+                                .expect("fixture affinity"),
+                            account: None,
+                            backend: wire::Backend::Direct,
+                        },
+                    )
+                    .expect("fixture opening"),
                 )
             } else {
                 None
             },
             endpoint: Box::default(),
-            dialect: Box::from(dialect),
+            dialect,
             place,
             usage: wire::Usage::new(
                 &limits,
@@ -127,7 +135,7 @@ fn transcript_decodes_history_with_one_invalid_call_problem() {
     let mut configured = skein_lib::List::with_capacity(1);
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("one endpoint");
     let endpoints = crate::Endpoints::new(configured);
-    let bytes = Box::from([saved_turn(1, b"00000000")]);
+    let bytes = Box::from([saved_turn(1, 0)]);
     let transcript = decode_saved_transcript(&bytes, &smith_transcript::CEILINGS, &endpoints)
         .expect("valid transcript")
         .expect("saved history");
@@ -153,11 +161,11 @@ fn transcript_refuses_a_gap_and_a_different_dialect() {
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("one endpoint");
     let endpoints = crate::Endpoints::new(configured);
     assert_eq!(
-        decode_saved_transcript(&[saved_turn(2, b"00000000")], &smith_transcript::CEILINGS, &endpoints),
+        decode_saved_transcript(&[saved_turn(2, 0)], &smith_transcript::CEILINGS, &endpoints),
         Err(record::Refusal::Malformed)
     );
     assert_eq!(
-        decode_saved_transcript(&[saved_turn(1, b"other")], &smith_transcript::CEILINGS, &endpoints),
+        decode_saved_transcript(&[saved_turn(1, 99)], &smith_transcript::CEILINGS, &endpoints),
         Err(record::Refusal::Dialect)
     );
 }
@@ -165,10 +173,8 @@ fn transcript_refuses_a_gap_and_a_different_dialect() {
 #[test]
 fn a_live_turn_decodes_at_its_number_without_the_saved_prefix() {
     use smith_domain_session::record;
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let bytes = saved_turn(4, b"00000000");
+    let endpoints = saved_endpoints();
+    let bytes = saved_turn(4, 0);
     let turn = crate::decode_turn(&bytes, 4, &smith_transcript::CEILINGS, &endpoints).expect("live turn");
     assert_eq!(turn.sequence, 4);
     assert_eq!(turn.spent, 7);
@@ -178,10 +184,8 @@ fn a_live_turn_decodes_at_its_number_without_the_saved_prefix() {
 #[test]
 fn optional_usage_round_trips_without_turning_absence_into_zero() {
     use smith_domain_session::llm;
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let bytes = saved_turn(1, b"00000000");
+    let endpoints = saved_endpoints();
+    let bytes = saved_turn(1, 0);
     let mut turn = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
     for usage in [
         llm::Usage::NONE,
@@ -205,11 +209,9 @@ fn optional_usage_round_trips_without_turning_absence_into_zero() {
 fn size_refusal_subject_size_and_bound_survive_version_three_resume() {
     use smith_domain_session::llm;
     use smith_domain_tools::{Outcome, SizePart};
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
-        .expect("saved turn");
+    let endpoints = saved_endpoints();
+    let mut turn =
+        crate::decode_turn(&saved_turn(1, 0), 1, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
     for what in [
         SizePart::File,
         SizePart::WriteContent,
@@ -237,11 +239,9 @@ fn size_refusal_subject_size_and_bound_survive_version_three_resume() {
 fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths() {
     use smith_domain_session::{llm, record};
     use smith_domain_tools::{Name, Outcome, Resolved};
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
-        .expect("saved turn");
+    let endpoints = saved_endpoints();
+    let mut turn =
+        crate::decode_turn(&saved_turn(1, 0), 1, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
     let cases = [
         Outcome::NotFound { path: Resolved::Working { path: "src/café.rs".as_bytes().into() } },
         Outcome::NotDirectory { path: Resolved::Working { path: Box::new([]) } },
@@ -262,7 +262,7 @@ fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths()
             }]),
         }]);
         let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded turn");
-        assert_eq!(&bytes[..2], &[0, 5]);
+        assert_eq!(&bytes[..2], &[0, 6]);
         let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("saved failure");
         assert_eq!(decoded.messages, turn.messages, "typed descriptors survive durable translation");
     }
@@ -289,11 +289,9 @@ fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths()
 fn listed_tree_paths_survive_replay_and_refuse_unnormalized_entries() {
     use smith_domain_session::{llm, record};
     use smith_domain_tools::{Entry, Kind, Outcome};
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
-        .expect("saved turn");
+    let endpoints = saved_endpoints();
+    let mut turn =
+        crate::decode_turn(&saved_turn(1, 0), 1, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
     for path in ["src/café.rs".as_bytes(), b"../file", b"a/./b", b"a//b", b"/file", b"file/", b"a\0b", b""] {
         turn.messages = Box::new([llm::Message {
             role: llm::Role::User,
@@ -317,11 +315,11 @@ fn listed_tree_paths_survive_replay_and_refuse_unnormalized_entries() {
     }
 }
 
-fn with_recorded_affinity(bytes: &[u8], affinity: Option<smith_transcript::Affinity>) -> Box<[u8]> {
+fn with_recorded_affinity(bytes: &[u8], opening: Option<smith_transcript::Opening>) -> Box<[u8]> {
     let limits = smith_transcript::CEILINGS;
     let mut parts =
         smith_transcript::Turn::decode(&limits, &mut skein_lib::Reader::new(bytes)).expect("fixture turn").into_parts();
-    parts.affinity = affinity;
+    parts.opening = opening;
     let turn = smith_transcript::Turn::new(&limits, parts).expect("bounded fixture turn");
     let mut writer = skein_lib::Writer::new(usize::try_from(turn.measure()).expect("fixture length"));
     turn.encode(&mut writer).expect("fixture room");
@@ -332,20 +330,25 @@ fn with_recorded_affinity(bytes: &[u8], affinity: Option<smith_transcript::Affin
 fn a_transcript_records_affinity_only_in_its_opening_turn() {
     use smith_domain_session::record;
     let limits = smith_transcript::CEILINGS;
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
+    let endpoints = saved_endpoints();
     let affinity =
         smith_transcript::Affinity::new(&limits, smith_transcript::AffinityParts { key: [0x42; 16], thread: 7 })
             .expect("fixed affinity");
-    let first = with_recorded_affinity(&saved_turn(1, b"00000000"), Some(affinity));
-    let ordinary = saved_turn(2, b"00000000");
+    let first = with_recorded_affinity(
+        &saved_turn(1, 0),
+        Some(recorded_opening(affinity, None, smith_transcript::Backend::Direct)),
+    );
+    let ordinary = saved_turn(2, 0);
     let decoded = decode_saved_transcript(&[first.clone(), ordinary.clone()], &limits, &endpoints)
         .expect("opening and ordinary")
         .expect("transcript");
     assert_eq!(
         decoded.turns[0].kind,
-        record::Kind::First { affinity: smith_domain_session::llm::Affinity { key: [0x42; 16], thread: 7 } }
+        record::Kind::First {
+            affinity: smith_domain_session::llm::Affinity { key: [0x42; 16], thread: 7 },
+            account: None,
+            backend: record::Backend::Direct
+        }
     );
     assert_eq!(decoded.turns[1].kind, record::Kind::Ordinary);
     assert_eq!(
@@ -356,7 +359,17 @@ fn a_transcript_records_affinity_only_in_its_opening_turn() {
         smith_transcript::Affinity::new(&limits, smith_transcript::AffinityParts { key: [0x42; 16], thread: 7 })
             .expect("fixed affinity");
     assert_eq!(
-        decode_saved_transcript(&[first, with_recorded_affinity(&ordinary, Some(extra))], &limits, &endpoints),
+        decode_saved_transcript(
+            &[
+                first,
+                with_recorded_affinity(
+                    &ordinary,
+                    Some(recorded_opening(extra, None, smith_transcript::Backend::Direct))
+                )
+            ],
+            &limits,
+            &endpoints
+        ),
         Err(record::Refusal::Malformed)
     );
 }
@@ -365,14 +378,16 @@ fn a_transcript_records_affinity_only_in_its_opening_turn() {
 fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window() {
     use smith_domain_session::{llm, record};
     let limits = smith_transcript::CEILINGS;
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
+    let endpoints = saved_endpoints();
     let window = record::Turn {
         model: b"model".as_slice().into(),
         effort: None,
         version: record::VERSION,
-        kind: record::Kind::Window { affinity: llm::Affinity { key: [0x25; 16], thread: 0 } },
+        kind: record::Kind::Window {
+            affinity: llm::Affinity { key: [0x25; 16], thread: 0 },
+            account: None,
+            backend: record::Backend::Direct,
+        },
         endpoint: llm::Endpoint(3),
         dialect: 0,
         sequence: 8,
@@ -385,7 +400,7 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
         }]),
     };
     let first = crate::encode_turn(&window, &limits, &endpoints).expect("window turn");
-    let decoded = decode_saved_transcript(&[first.clone(), saved_turn(9, b"00000000")], &limits, &endpoints)
+    let decoded = decode_saved_transcript(&[first.clone(), saved_turn(9, 0)], &limits, &endpoints)
         .expect("window suffix")
         .expect("transcript");
     assert_eq!(decoded.turns[0], window);
@@ -411,11 +426,9 @@ fn attached_host_paths_are_normalized_before_copying_and_stay_bounded() {
 fn read_window_metadata_round_trips_and_invalid_one_based_values_are_refused() {
     use smith_domain_session::{llm, record};
     use smith_domain_tools::{BytesClamp, Cut, Next, Outcome};
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
-        .expect("saved turn");
+    let endpoints = saved_endpoints();
+    let mut turn =
+        crate::decode_turn(&saved_turn(1, 0), 1, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
     for (first, next, window, valid) in [
         (1, Next::Line(2), BytesClamp::Within, true),
         (1, Next::End, BytesClamp::Clamped { asked: 99, ceiling: 8 }, true),
@@ -455,11 +468,9 @@ fn command_clamps_round_trip_losslessly_and_invalid_relationships_are_refused() 
     use skein_lib::Duration;
     use smith_domain_session::{llm, record};
     use smith_domain_tools::{BytesClamp, Exit, Outcome, TimeoutClamp};
-    let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
-    let endpoints = crate::Endpoints::new(configured);
-    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
-        .expect("saved turn");
+    let endpoints = saved_endpoints();
+    let mut turn =
+        crate::decode_turn(&saved_turn(1, 0), 1, &smith_transcript::CEILINGS, &endpoints).expect("saved turn");
     for (timeout, output, valid) in [
         (TimeoutClamp::Within, BytesClamp::Within, true),
         (
@@ -514,7 +525,7 @@ fn an_endpoint_number_resolves_its_name_or_is_absent() {
 
 fn decode_saved_transcript(
     bodies: &[Box<[u8]>],
-    limits: &smith_transcript::v5::Limits,
+    limits: &smith_transcript::v6::Limits,
     endpoints: &crate::Endpoints,
 ) -> Result<Option<smith_domain_session::record::Transcript>, smith_domain_session::record::Refusal> {
     crate::decode_transcript(
@@ -550,7 +561,7 @@ fn a_search_hit_holding_all_of_search_bytes_is_told_and_resumed() {
     let mut names = skein_lib::List::with_capacity(1);
     names.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
     let endpoints = crate::Endpoints::new(names);
-    let original = decode_saved_transcript(&[saved_turn(1, b"00000000")], &smith_transcript::CEILINGS, &endpoints)
+    let original = decode_saved_transcript(&[saved_turn(1, 0)], &smith_transcript::CEILINGS, &endpoints)
         .expect("saved fixture")
         .expect("history");
     let mut turn = original.turns[0].clone();
@@ -582,7 +593,7 @@ fn a_turns_model_and_effort_round_trip_in_its_transcript() {
     let mut configured = skein_lib::List::with_capacity(1);
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).unwrap();
     let endpoints = crate::Endpoints::new(configured);
-    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();
+    let mut turn = crate::decode_turn(&saved_turn(1, 0), 1, &limits, &endpoints).unwrap();
     turn.model = b"another-model".as_slice().into();
     for effort in [None, Some(b"high".as_slice())] {
         turn.effort = None;
@@ -598,3 +609,66 @@ fn a_turns_model_and_effort_round_trip_in_its_transcript() {
 }
 
 mod jobs;
+
+fn recorded_opening(
+    affinity: smith_transcript::Affinity,
+    account: Option<u32>,
+    backend: smith_transcript::Backend,
+) -> smith_transcript::Opening {
+    smith_transcript::Opening::new(
+        &smith_transcript::CEILINGS,
+        smith_transcript::OpeningParts { affinity, account, backend },
+    )
+    .expect("fixture opening")
+}
+
+#[test]
+fn an_opening_on_a_later_turn_is_malformed() {
+    use smith_transcript as wire;
+    let limits = wire::CEILINGS;
+    let endpoints = saved_endpoints();
+    for (account, backend) in [
+        (Some(7), wire::Backend::Direct),
+        (
+            None,
+            wire::Backend::Program(
+                wire::Program::new(&limits, wire::ProgramParts { name: b"claude_code".as_slice().into() })
+                    .expect("program"),
+            ),
+        ),
+    ] {
+        let affinity = wire::Affinity::new(&limits, wire::AffinityParts { key: [0; 16], thread: 0 }).expect("affinity");
+        let bytes = with_recorded_affinity(&saved_turn(2, 0), Some(recorded_opening(affinity, account, backend)));
+        assert_eq!(
+            crate::decode_turn(&bytes, 2, &limits, &endpoints),
+            Err(smith_domain_session::record::Refusal::Malformed),
+            "account {account:?}"
+        );
+    }
+}
+
+#[test]
+fn a_first_turn_without_its_opening_is_malformed() {
+    use smith_transcript as wire;
+    let limits = wire::CEILINGS;
+    let endpoints = saved_endpoints();
+    for kind in [wire::TurnKind::Ordinary, wire::TurnKind::Window] {
+        let bytes = with_recorded_affinity(&saved_turn(1, 0), None);
+        let mut parts = wire::Turn::decode(&limits, &mut skein_lib::Reader::new(&bytes)).expect("turn").into_parts();
+        parts.kind = kind.clone();
+        let turn = wire::Turn::new(&limits, parts).expect("turn without opening");
+        let mut writer = skein_lib::Writer::new(usize::try_from(turn.measure()).expect("length"));
+        turn.encode(&mut writer).expect("encoding");
+        assert_eq!(
+            crate::decode_turn(&writer.finish(), 1, &limits, &endpoints),
+            Err(smith_domain_session::record::Refusal::Malformed),
+            "{kind:?}"
+        );
+    }
+}
+
+fn saved_endpoints() -> crate::Endpoints {
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).expect("endpoint");
+    crate::Endpoints::new(configured)
+}

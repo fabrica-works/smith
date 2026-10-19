@@ -4,12 +4,11 @@
 use super::list::Inventory;
 use super::{Layer, Value};
 
-pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v5::Limits) -> Option<()> {
-    let smith_transcript::v5::Limits {
-        replay_dialect,
+pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v6::Limits) -> Option<()> {
+    let smith_transcript::v6::Limits {
+        program_name,
         replay_bytes,
         text_text,
-        opaque_dialect,
         opaque_bytes,
         call_id,
         call_name,
@@ -40,14 +39,12 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
         turn_endpoint,
         turn_model,
         turn_effort_some,
-        turn_dialect,
         turn_messages,
     } = *limits;
     inventory.layer = Layer::Transcript;
-    inventory.value("replay_dialect", Value::Bytes(u64::from(replay_dialect)))?;
+    inventory.value("program_name", Value::Bytes(u64::from(program_name)))?;
     inventory.value("replay_bytes", Value::Bytes(u64::from(replay_bytes)))?;
     inventory.value("text_text", Value::Bytes(u64::from(text_text)))?;
-    inventory.value("opaque_dialect", Value::Bytes(u64::from(opaque_dialect)))?;
     inventory.value("opaque_bytes", Value::Bytes(u64::from(opaque_bytes)))?;
     inventory.value("call_id", Value::Bytes(u64::from(call_id)))?;
     inventory.value("call_name", Value::Bytes(u64::from(call_name)))?;
@@ -78,7 +75,6 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
     inventory.value("turn_endpoint", Value::Bytes(u64::from(turn_endpoint)))?;
     inventory.value("turn_model", Value::Bytes(u64::from(turn_model)))?;
     inventory.value("turn_effort_some", Value::Bytes(u64::from(turn_effort_some)))?;
-    inventory.value("turn_dialect", Value::Bytes(u64::from(turn_dialect)))?;
     inventory.value("turn_messages", Value::Count(u64::from(turn_messages)))?;
     Some(())
 }

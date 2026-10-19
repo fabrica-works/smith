@@ -1356,6 +1356,7 @@ dependencies = [
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-tools-world",
+ "smith-transcript",
 ]
 
 [[package]]

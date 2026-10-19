@@ -114,6 +114,8 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
         effort: None,
         kind: smith_domain::session::record::Kind::First {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: smith_domain::session::record::Backend::Direct,
         },
         version: smith::session::record::VERSION,
         endpoint: smith::session::llm::Endpoint(0),

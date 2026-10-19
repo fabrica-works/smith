@@ -30,7 +30,7 @@ pub fn encode_start(
     values: Values,
     limits: &wire::Limits,
     charter_limits: &smith_charter::v3::Limits,
-    transcript_limits: &smith_transcript::v5::Limits,
+    transcript_limits: &smith_transcript::v6::Limits,
     endpoints: &smith_protocol_channel::Endpoints,
 ) -> Result<Frame, Error> {
     let mut messages = List::with_capacity(limits.start_messages);

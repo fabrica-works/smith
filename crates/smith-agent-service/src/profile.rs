@@ -164,7 +164,7 @@ pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools:
 fn transcript(
     domain: &domain::Limits,
     client: &shared::client::Limits,
-) -> Result<smith_transcript::v5::Limits, Refusal> {
+) -> Result<smith_transcript::v6::Limits, Refusal> {
     let session = domain.session;
     let tools = session.tools;
     let run = domain.run;
@@ -358,7 +358,7 @@ fn channel_limits(
     policy: &Policy,
     bodies: smith_channel::Limits,
     charter: smith_charter::v3::Limits,
-    transcript: smith_transcript::v5::Limits,
+    transcript: smith_transcript::v6::Limits,
     io: &io::Limits,
 ) -> Result<channel::Limits, Refusal> {
     let refusal = derived(Layer::Channel, "output_frames");

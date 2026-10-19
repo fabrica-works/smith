@@ -19,7 +19,7 @@ pub fn decode_transcript(
     piece: &[u8],
     resume_turns: u32,
     search_hits: u32,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     endpoints: &Endpoints,
 ) -> Result<Option<record::Transcript>, record::Refusal> {
     if piece.is_empty() {
@@ -46,7 +46,7 @@ pub fn decode_transcript(
     for _ in 0..count {
         let length = reader.u32().ok_or(record::Refusal::Malformed)?;
         let body = reader.bytes(length).ok_or(record::Refusal::Malformed)?;
-        if body.get(..2) != Some(&[0, 5][..]) {
+        if body.get(..2) != Some(&[0, 6][..]) {
             return Err(record::Refusal::Version);
         }
         let place = match previous {
@@ -109,7 +109,7 @@ pub fn transcript_piece(bodies: &[Box<[u8]>]) -> Option<Box<[u8]>> {
 pub fn decode_turn(
     bytes: &[u8],
     number: u32,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     endpoints: &Endpoints,
 ) -> Result<record::Turn, record::Refusal> {
     if number == 0 {
@@ -121,11 +121,11 @@ pub fn decode_turn(
 fn saved_turn(
     bytes: &[u8],
     number: Option<u32>,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     endpoints: &Endpoints,
     search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
-    if bytes.get(..2) != Some(&[0, 5][..]) {
+    if bytes.get(..2) != Some(&[0, 6][..]) {
         return Err(record::Refusal::Version);
     }
     let Ok(source) = wire::Turn::decode(limits, &mut Reader::new(bytes)) else {
@@ -139,32 +139,40 @@ fn saved_turn(
         Some(_) | None => {}
     }
     let endpoint = endpoints.resolve(source.endpoint()).ok_or(record::Refusal::Endpoint)?;
-    if source.dialect() != dialect_name(endpoint.dialect).as_ref() {
+    if source.dialect() != endpoint.dialect {
         return Err(record::Refusal::Dialect);
     }
     translate_turn(source, endpoint.number, endpoint.dialect, limits, search_hits)
 }
 
-#[expect(clippy::manual_map, reason = "step code translates optional affinity through an exhaustive match")]
 fn translate_turn(
     source: wire::Turn,
     endpoint: u32,
     dialect: u32,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
-    let affinity = match source.affinity() {
-        Some(value) => Some(llm::Affinity { key: *value.key(), thread: value.thread() }),
+    let opening = match source.opening() {
+        Some(value) => {
+            let affinity = llm::Affinity { key: *value.affinity().key(), thread: value.affinity().thread() };
+            let backend = match value.backend() {
+                wire::Backend::Direct => record::Backend::Direct,
+                wire::Backend::Program(program) => record::Backend::Program { name: Box::from(program.name()) },
+            };
+            Some((affinity, *value.account(), backend))
+        }
         None => None,
     };
     let kind = match source.kind() {
-        wire::TurnKind::Ordinary => match affinity {
-            Some(affinity) if source.place() == 1 => record::Kind::First { affinity },
+        wire::TurnKind::Ordinary => match opening {
+            Some((affinity, account, backend)) if source.place() == 1 => {
+                record::Kind::First { affinity, account, backend }
+            }
             None if source.place() > 1 => record::Kind::Ordinary,
             Some(_) | None => return Err(record::Refusal::Malformed),
         },
-        wire::TurnKind::Window => match affinity {
-            Some(affinity) => record::Kind::Window { affinity },
+        wire::TurnKind::Window => match opening {
+            Some((affinity, account, backend)) => record::Kind::Window { affinity, account, backend },
             None => return Err(record::Refusal::Malformed),
         },
     };
@@ -209,7 +217,7 @@ fn translate_turn(
 fn decode_block(
     source: &wire::Block,
     dialect: u32,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     search_hits: u32,
 ) -> Result<llm::Block, record::Refusal> {
     let value = match source {
@@ -231,7 +239,7 @@ fn decode_block(
             result: returned(result.returned(), limits, search_hits)?,
         },
         wire::Block::Opaque(opaque) => {
-            if opaque.dialect() != dialect_name(dialect).as_ref() {
+            if opaque.dialect() != dialect {
                 return Err(record::Refusal::Dialect);
             }
             llm::Block::Opaque { bytes: Box::from(opaque.bytes()) }
@@ -243,7 +251,7 @@ fn decode_block(
 fn replay(source: Option<&wire::Replay>, dialect: u32) -> Result<Option<llm::Replay>, record::Refusal> {
     match source {
         Some(value) => {
-            if value.dialect() != dialect_name(dialect).as_ref() {
+            if value.dialect() != dialect {
                 return Err(record::Refusal::Dialect);
             }
             Ok(Some(llm::Replay { bytes: Box::from(value.bytes()) }))
@@ -254,7 +262,7 @@ fn replay(source: Option<&wire::Replay>, dialect: u32) -> Result<Option<llm::Rep
 
 fn returned(
     source: &wire::Returned,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     search_hits: u32,
 ) -> Result<llm::Returned, record::Refusal> {
     let value = match source {
@@ -311,7 +319,7 @@ fn problem(source: &wire::CallProblem) -> llm::Problem {
 
 fn outcome(
     source: &wire::Outcome,
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     search_hits: u32,
 ) -> Result<tools::Outcome, record::Refusal> {
     let value = match source {
@@ -416,19 +424,6 @@ fn outcome(
     Ok(value)
 }
 
-fn dialect_name(dialect: u32) -> [u8; 8] {
-    let [a, b, c, d] = dialect.to_be_bytes();
-    [hex(a >> 4), hex(a & 15), hex(b >> 4), hex(b & 15), hex(c >> 4), hex(c & 15), hex(d >> 4), hex(d & 15)]
-}
-
-fn hex(value: u8) -> u8 {
-    if value < 10 {
-        b'0'.checked_add(value).expect("hex digit")
-    } else {
-        b'a'.checked_add(value.checked_sub(10).expect("hex letter")).expect("hex digit")
-    }
-}
-
 /// Restore a normalized descriptor, refusing a malformed directory name or path.
 fn resolved(source: &wire::Resolved) -> Result<tools::Resolved, record::Refusal> {
     let value = match source {
@@ -516,7 +511,7 @@ fn hit_length(bytes: &[u8]) -> Result<u32, record::Refusal> {
 
 fn found_piece(
     piece: &[u8],
-    limits: &wire::v5::Limits,
+    limits: &wire::v6::Limits,
     search_hits: u32,
 ) -> Result<Box<[tools::Hit]>, record::Refusal> {
     let mut reader = Reader::new(piece);

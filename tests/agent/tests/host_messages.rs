@@ -24,7 +24,7 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut u3
                     opens_window: *opens_window,
                     read: *read,
                     spent: spent.units,
-                    body: host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn"),
+                    body: host::TurnValue::new(turn.as_ref().clone(), u64::MAX).expect("bounded turn"),
                 },
             });
             if *number == 2 {
@@ -228,7 +228,7 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
                         opens_window: *opens_window,
                         read: *read,
                         spent: spent.units,
-                        body: host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn"),
+                        body: host::TurnValue::new(turn.as_ref().clone(), u64::MAX).expect("bounded turn"),
                     },
                 });
                 host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: *number }));
