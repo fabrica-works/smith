@@ -46,10 +46,12 @@ provider, and smith 01.2's grant value union on the wire, on
 - No value in a `Debug`, fact, turn, trace or test output; tests
   compare tags, schemes, accounts and lengths.
 - Files over 800 lines grow by at most ~100 per increment:
-  `smith-agent-service/src/service.rs` (2920), `config.rs` (1658),
-  smith-local-service's `process.rs` (1420) and `service.rs` (1340),
-  smith-protocol-channel's `component.rs` (1002),
-  `tests/channel/tests/stories.rs` (1255).
+  `smith-agent-service/src/service.rs` (2968), `config.rs` (1659),
+  smith-local-service's `process.rs` (1423) and `service.rs` (1340),
+  smith-protocol-channel's `component.rs` (1083),
+  `tests/channel/tests/stories.rs` (1236),
+  `tests/agent-process/src/world.rs` (1586), `tests/channel/src/lib.rs`
+  (1131) and `tests/end-to-end/end_to_end.rs` (1000).
 
 ## Increments
 
@@ -58,7 +60,7 @@ Scope: channel.md 6, 10; hosts.md 2; host.md 2, 7; run.md 4; llm.md 7,
   10; decisions 2, 7; questions 6, 14.
 Needs: what the session needs.
 Files: `crates/smith-protocol-channel/src/`:
-  `{credentials,component,lib}.rs`; `crates/smith-host-protocol/src/`:
+  `{credentials,component,lib,limits}.rs`; `crates/smith-host-protocol/src/`:
   `{translate,component,process,tests}.rs`;
   `crates/smith-agent-service/src/{service,profile}.rs`;
   `crates/smith-protocol-llm/src/{grants,endpoints,component}.rs`;
@@ -71,7 +73,9 @@ Files: `crates/smith-protocol-channel/src/`:
   `tests/hosts/src/lib.rs`.
 Shape: `smith_protocol_channel::GrantValue` (new) replaces `Secret` and
   the raw bytes beside it in `Credentials`: `Bearer`, `Key`, `Program`
-  and `Withdrawn { account_id, bearer }`, its `Debug` redacted.
+  and `Withdrawn { account_id, bearer }`, its `Debug` redacted;
+  `limits.rs`'s worst case takes `Map<(u32, u64), GrantValue>` where
+  it took `credentials::Secret`.
   `program_name` in `credentials.rs` takes 1 to 32 of `a-z`, `0-9`, `-`
   and refuses the rest as `Error::Grants`; the host's encode and the
   agent's decode both call it. `grant_value` returns
@@ -81,13 +85,15 @@ Shape: `smith_protocol_channel::GrantValue` (new) replaces `Secret` and
   gives `Credential::bearer`, `Key` `Credential::key`, `Withdrawn` with
   an empty id a bearer and with an id `Credential::codex(value, id)`;
   `Program` is not installable. `Effects::grant` takes `&GrantValue`.
-  The install check reads the dialect of the endpoint configured with
-  the grant's account (smith 03.1 reads the charter's LLM instead):
+  The install check reads the dialect of each endpoint configured with
+  the grant's account, and each must take the value (smith 03.1 reads the charter's LLM instead):
   `codex` takes `Withdrawn` with an id; `openai` and `anthropic` a
   bearer, a key or `Withdrawn` with an empty id; anything else, an
   empty value included, is `GrantError::Scheme` (new). `component.rs`'s
   exhaustive match on `grants.read` gains `Scheme` beside `Bounds`,
-  `Stale` and `Full`: an `Invalid` failure.
+  `Stale` and `Full`: an `Invalid` failure; a further exhaustive match
+  on `GrantError` (`tests/protocol-llm/src/adapter.rs` imports it) takes
+  `Scheme` the same way, listed in the commit body.
   `refuse_start(reason)` answers `Invalid::Grants` for an
   uninstallable value and `Workspace` as before otherwise; a later
   grant fails the run as `Failure::Credential`. Question 14: `Grants`
@@ -133,7 +139,7 @@ Test shape: agent-process world, `grants.rs` (each under 0.5 s: a real
   `EndpointError::Account`);
   `duplicate_names_and_out_of_range_accounts_fail_at_startup` becomes
   `duplicate_names_fail_at_startup`, its account row moved to the
-  fifth-account test. Channel world, `stories.rs` (under 0.1 s):
+  fifth-account test and its `TooMany` row kept. Channel world, `stories.rs` (under 0.1 s):
   `each_grant_form_reaches_the_table_by_its_tag`. Unit,
   protocol-channel (each under 20 ms):
   `a_grant_values_debug_shows_no_bytes`, a row per arm;
@@ -179,7 +185,7 @@ Files: `crates/smith-agent-shell/src/config.rs`;
   `crates/smith-local-shell/src/settings/resolve/{models,document}.rs`,
   `src/settings/tests.rs`;
   `tests/local-process/src/process/configuration.rs`;
-  `tests/agent-process/tests/stories.rs`,
+  `tests/agent-process/src/lib.rs`, `tests/agent-process/tests/stories.rs`,
   `tests/agent-process/fixtures/read-past-payload.json`;
   `tests/end-to-end/end_to_end.rs`.
 Shape: `config.rs` fixes each dialect's number, `openai` 3,
@@ -188,18 +194,29 @@ Shape: `config.rs` fixes each dialect's number, `openai` 3,
   `"dialect":0` take their dialect's number: `config.rs`'s own test,
   `configuration.rs`, `stories.rs`, `read-past-payload.json` and
   `end_to_end.rs` (three configurations) each name the `codex`
-  provider, so each takes 1. The settings take `openai`: `models.rs`
+  provider, so each takes 1. A charter's `Llm.dialect` moves with its
+  configuration's endpoint, for smith-protocol-channel's
+  `Endpoints::name_of(number, dialect)` (`translate.rs`) finds no name
+  on a mismatch: `configuration.rs`'s `run::charter::Llm` takes 1 with
+  its JSON; `tests/agent-process/src/lib.rs`'s `charter()` and
+  `configuration_with_limits` move together if either does; a further
+  pair moves the same way, listed in the commit body. The settings take `openai`: `models.rs`
   gives it `codex`'s idle bound, 300 s, and `document.rs` writes it
   with 3. `codex` stays in settings, withdrawn, so `built-in.golden`
   is unchanged; the presets' move is `accounts-sources`'. Downstream:
   `"dialect":0` is refused from here. jig's
-  `testing/jig-test/tests/support/mod.rs` and
-  `tests/channel/src/fixtures.rs` take their dialect's number (about 8
-  lines), `jig-repin.s1`'s. In the repository downstream of jig,
+  `testing/jig-test/tests/support/mod.rs`,
+  `tests/channel/src/fixtures.rs` and
+  `testing/jig-test-service/src/tests/fixtures.rs` take their dialect's
+  number (about 10 lines), with the charters beside them, `jig-repin.s1`'s. In the repository downstream of jig,
   `crates/temper/tests/support/{configuration,sign_in}.rs` (`sign_in.rs`
   sets `anthropic`: 2), `docs/examples/owned/agent.json` and
-  `docs/examples/owned.json` (about 12 lines) are its own repin's
-  (decision 16).
+  `docs/examples/owned.json`, and
+  `crates/temper-service/src/tests/fixtures.rs`, with the charters that
+  meet them (`crates/temper-service/src/tests/fixtures/agent.rs`,
+  `crates/temper-worker-domain/src/tests/fixtures.rs`,
+  `tests/system/src/world.rs`, `tests/worker/domain/src/protocol.rs`)
+  (about 20 lines), are its own repin's (decision 16).
 Test shape: unit, `config.rs` (each under 20 ms):
   `a_dialect_name_and_number_must_match`, rows `openai` 3, `anthropic`
   2, `codex` 1 taken, `openai` 1 and `anthropic` 3 refused naming

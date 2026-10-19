@@ -336,6 +336,13 @@ commits is this plan's.
      - 02.4: `account_failures_keep_their_own_words` exists and gains rows; the new arms append `run failed: ` themselves; smith-events publishes `clock(at: Wall) -> [u8; 5]`, appended through `Shown`, since `put` into a `List` panics past its room.
      Not run: the suites and the sketch, the build lane being held by gates; the re-check at 02's start runs them.
 
+105. **smith 04's Shapes against main** (ready check of smith-04.1).
+     smith 04's ready check, against smith `7bd4b6a6`, jig `83a00a2f` and temper `2bc7d825`, corrected `smith/04-values.md`:
+     - 04.1 Files and Shape: `crates/smith-protocol-channel/src/limits.rs`, whose worst case names `credentials::Secret`, takes `GrantValue`; a further exhaustive match on `GrantError` takes `Scheme`; the install check reads each endpoint configured with the grant's account, two endpoints sharing one; `duplicate_names_fail_at_startup` keeps its `TooMany` row.
+     - 04.2: a charter's `Llm.dialect` moves with its configuration's endpoint, since `Endpoints::name_of(number, dialect)` finds no name on a mismatch: `tests/local-process/src/process/configuration.rs`'s `run::charter::Llm` takes 1 with its JSON, and `tests/agent-process/src/lib.rs`'s pair moves together if either does. Downstream adds jig's `testing/jig-test-service/src/tests/fixtures.rs` and temper's `crates/temper-service/src/tests/fixtures.rs`, with the charters that meet them.
+     - The 800-line list adds `tests/agent-process/src/world.rs` (1586), `tests/channel/src/lib.rs` (1131) and `tests/end-to-end/end_to_end.rs` (1000), and refreshes `service.rs` 2968, `config.rs` 1659, protocol-channel `component.rs` 1083 and `stories.rs` 1236.
+     Not run: the suites and the sketch, the build lane being held by gates; the re-check at 04's start runs them.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
