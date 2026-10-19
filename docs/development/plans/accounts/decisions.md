@@ -750,6 +750,46 @@ commits is this plan's.
      A further user of what 02 changes is refreshed the same way and listed
      in the commit body.
 
+123. **smith 04's Shapes against main** (re-check of smith-04.1).
+     The re-check of smith-04.1 against smith 09be081e and temper e307ddea5,
+     on what moved since its ready check, found `smith/04-values.md` short of
+     the code; it now says, checked by `git grep` on smith origin/main
+     f4b38800 and temper origin/main 9c01f3636:
+     - 04.1's reference fails as written (the check ran it: 13 of 14 passed
+       before it): `tests/agent-process/src/world.rs`' `World::observe` skips
+       its admission and reply assertions only for `TraceCase::Refused`
+       (`if matches!(self.tracing, Some((TraceCase::Refused, _)))`), and the
+       referee's `Terminal` wants `answers == 1 && parent.status ==
+       Some(kernel::Exit::Code(0))` unless hung up. `World::granting` of an
+       uninstallable value expects the entrance refusal: those assertions
+       yield to it, `Terminal` takes the refused start's settlement, and the
+       reference's `world.exit()` states its exit.
+     - `tests/agent-process/src/lib.rs` has no `grant_bytes`: its Start
+       builds `smith_channel::GrantValue::Withdrawn(` inline, and `fn
+       scenario_credential(anthropic: bool, private_grant: bool) ->
+       skein_llm::Credential` builds only the fake LLM's: the helpers replace
+       the inline value, and there is no `scenario_grant`.
+     - The byte paths 04.1 ends are named: `pub(crate) fn keep_wire(`
+       (protocol-channel `credentials.rs`), `fn grant_bytes(limits:
+       &smith_channel::Limits) -> Option<u64>` (`limits.rs`), `pub(crate) fn
+       withdrawn(credential: &[u8], limits: &wire::Limits)` (host-protocol
+       `translate.rs`), local-service's `pub fn credential(&mut self, grant:
+       agent::Grant, envelope: Box<[u8]>)` and `pub envelope_bytes: u64`
+       (`service.rs`), and the byte fixtures: `pub const INITIAL_GRANT:
+       &[u8] = b"\0\0secret";` and its two siblings and `agent_grant_value`
+       (`tests/channel/src/lib.rs`), `const SYNTHETIC_GRANT` (`composed.rs`),
+       `b"\0\x03acctoken"` (`tests/hosts/src/lib.rs`).
+     - 04.2 Files take `tests/local-process/src/process.rs`: `fn
+       configure_choices` pushes `Endpoint { name: b"main".as_slice().into(),
+       number: 0, dialect: 0, account: 0 }`, which moves to 1 with
+       `configuration.rs`' charter. temper's `tests/real-loop/src/fixtures.rs`
+       (`"dialect":0,"account":1,"provider":"codex"`) joins temper's repin.
+     - The Rules' sizes are main's (`wc -l`): service.rs 2980, config.rs
+       1676, process.rs 1431, service.rs 1340, component.rs 1029, stories.rs
+       1256, world.rs 1595, lib.rs 1165, end_to_end.rs 1000.
+     A further user of what 04 changes is refreshed the same way and listed
+     in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

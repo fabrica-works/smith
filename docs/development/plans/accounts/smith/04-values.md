@@ -46,12 +46,12 @@ provider, and smith 01.2's grant value union on the wire, on
 - No value in a `Debug`, fact, turn, trace or test output; tests
   compare tags, schemes, accounts and lengths.
 - Files over 800 lines grow by at most ~100 per increment:
-  `smith-agent-service/src/service.rs` (2968), `config.rs` (1659),
-  smith-local-service's `process.rs` (1423) and `service.rs` (1340),
-  smith-protocol-channel's `component.rs` (1083),
-  `tests/channel/tests/stories.rs` (1236),
-  `tests/agent-process/src/world.rs` (1586), `tests/channel/src/lib.rs`
-  (1131) and `tests/end-to-end/end_to_end.rs` (1000).
+  `smith-agent-service/src/service.rs` (2980), `config.rs` (1676),
+  smith-local-service's `process.rs` (1431) and `service.rs` (1340),
+  smith-protocol-channel's `component.rs` (1029),
+  `tests/channel/tests/stories.rs` (1256),
+  `tests/agent-process/src/world.rs` (1595), `tests/channel/src/lib.rs`
+  (1165) and `tests/end-to-end/end_to_end.rs` (1000).
 
 ## Increments
 
@@ -106,12 +106,32 @@ Shape: `smith_protocol_channel::GrantValue` (new) replaces `Secret` and
   envelope: an empty identifier lends `Bearer`, a sign-in's id
   `Withdrawn`, until `accounts-sources` moves the presets;
   `StartValues.credentials` and the service's `values` hold
-  `GrantValue`. The agent-process world sends wire values: `bearer(..)`,
-  `key(..)`, `withdrawn(id, ..)` and `program(..)` in `lib.rs` replace
-  `grant_bytes`; `scenario_grant` replaces the packing in
-  `scenario_credential`, which keeps building the fake LLM's
-  credential; `World::granting(value)` sets the Start's value and
-  `World::openai()` the endpoint (`configuration_for` takes a dialect,
+  `GrantValue`. The bytes' transitional paths go (ruling 123):
+  protocol-channel's `Credentials::keep_wire`, `limits.rs`'
+  `grant_bytes` (the worst case prices a `GrantValue`), host-protocol
+  `translate.rs`' `withdrawn(credential: &[u8], ..)`, agent-service's
+  byte-slice `credential` and `Effects::grant`; local-service's
+  `Service::credential(grant, envelope: Box<[u8]>)` takes a
+  `GrantValue`, and `Limits.envelope_bytes`, with its `memory_parts`
+  term, bounds the value in the envelope's place. The byte fixtures
+  take the arm their packing meant (`\0\0` and a bearer a `Bearer`,
+  `\0\x03acctoken` a `Withdrawn` of id `acc`): `tests/channel/src/lib.rs`'
+  `INITIAL_GRANT`, `REFRESHED_GRANT`, `LATEST_GRANT` and
+  `agent_grant_value`, `composed.rs`' `SYNTHETIC_GRANT`,
+  `tests/hosts/src/lib.rs`' credentials, host-protocol `tests.rs`'
+  `*b"\0\0secret"`. The agent-process world sends wire values:
+  `bearer(..)`, `key(..)`, `withdrawn(id, ..)` and `program(..)` in
+  `lib.rs` replace the `smith_channel::GrantValue::Withdrawn(..)` that
+  `start_workspace_message` builds inline (`grant_bytes` is gone there,
+  and `scenario_credential` builds only the fake LLM's credential: no
+  `scenario_grant`). `World::granting(value)` sets the Start's value,
+  and for an uninstallable one expects the entrance refusal:
+  `World::observe`'s admission and provider-reply assertions, and its
+  one admission frame where `tracing` is `None`, yield to it as they
+  yield to `TraceCase::Refused`, and the referee's `Terminal` (one
+  Answer and exit 0, or, hung up, none and exit 1) takes the refused
+  start's settlement, whose exit the reference's `world.exit()` states.
+  `World::openai()` sets the endpoint (`configuration_for` takes a dialect,
   not a bool); `World::refreshing(value)` plays a `GrantRefresh` of
   generation 2 once the host has seen `Admitted`, as `acknowledge`
   plays after a turn, with the fake LLM's reply held back one second
@@ -175,8 +195,9 @@ Proof: world, `an_uninstallable_grant_refuses_the_start_as_grants`: the
 Don't: pack id and bearer bytes by hand; install a program grant;
   bound an account's number; keep `Secret` beside the union.
 Size: about 260 lines.
-Removes: `Secret`; the hand-packed envelope; `config.rs`'s account
-  bound; `Grants`' and `Endpoints`' number checks.
+Removes: `Secret`; the hand-packed envelope, with `keep_wire`,
+  host-protocol's `withdrawn` and the byte fixtures; `config.rs`'s
+  account bound; `Grants`' and `Endpoints`' number checks.
 
 ### 04.2 The dialects by name and number
 Scope: agent.md 4; shell.md 6.2; question 13.
@@ -184,7 +205,10 @@ Needs: what the session needs.
 Files: `crates/smith-agent-shell/src/config.rs`;
   `crates/smith-local-shell/src/settings/resolve/{models,document}.rs`,
   `src/settings/tests.rs`;
-  `tests/local-process/src/process/configuration.rs`;
+  `tests/local-process/src/process/configuration.rs`,
+  `tests/local-process/src/process.rs` (`configure_choices`' `Endpoint
+  { name: b"main", number: 0, dialect: 0, .. }` takes 1, with
+  `configuration.rs`' `charter::Llm`: the further pair below);
   `tests/agent-process/src/lib.rs`, `tests/agent-process/tests/stories.rs`,
   `tests/agent-process/fixtures/read-past-payload.json`;
   `tests/end-to-end/end_to_end.rs`.
@@ -211,7 +235,8 @@ Shape: `config.rs` fixes each dialect's number, `openai` 3,
   number (about 10 lines), with the charters beside them, `jig-repin.s1`'s. In the repository downstream of jig,
   `crates/temper/tests/support/{configuration,sign_in}.rs` (`sign_in.rs`
   sets `anthropic`: 2), `docs/examples/owned/agent.json` and
-  `docs/examples/owned.json`, and
+  `docs/examples/owned.json`, `tests/real-loop/src/fixtures.rs` (its
+  `codex` endpoint takes 1), and
   `crates/temper-service/src/tests/fixtures.rs`, with the charters that
   meet them (`crates/temper-service/src/tests/fixtures/agent.rs`,
   `crates/temper-worker-domain/src/tests/fixtures.rs`,
