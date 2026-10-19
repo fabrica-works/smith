@@ -1,7 +1,7 @@
 //! Channel opening stories (protocol/channel.md, sections 2 and 10).
 use skein_channel::{Closed, StreamMode};
 use smith_channel::CEILINGS;
-use smith_channel_world::{Observation, World};
+use smith_channel_world::{Observation, World, window_turn_fixture};
 
 #[test]
 fn the_halves_open_on_the_highest_version_both_speak() {
@@ -1177,27 +1177,6 @@ fn overlapping_kinds_have_exactly_one_terminal_per_begin() {
     }
     assert!(!world.agent_try_ends_long(), "the two begun operations are exhausted");
     assert_eq!(world.observations().iter().filter(|seen| **seen == Observation::HostLongDone).count(), 2);
-}
-
-fn window_turn_fixture() -> smith_domain_session::record::Turn {
-    use smith_domain_session::{llm, record};
-    let affinity = llm::Affinity { key: [0; 16], thread: 0 };
-    record::Turn {
-        model: b"model".as_slice().into(),
-        effort: None,
-        kind: record::Kind::First { affinity },
-        version: record::VERSION,
-        endpoint: llm::Endpoint(0),
-        dialect: 0,
-        sequence: 1,
-        usage: llm::Usage::ZERO,
-        spent: 0,
-        jobs: 0,
-        messages: Box::new([llm::Message {
-            role: llm::Role::User,
-            content: Box::new([llm::Block::Text { text: b"the task and summary".as_slice().into(), replay: None }]),
-        }]),
-    }
 }
 
 fn last_window_turns(world: &World) -> Box<[Box<[u8]>]> {

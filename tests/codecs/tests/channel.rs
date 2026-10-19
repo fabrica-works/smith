@@ -25,7 +25,7 @@ fn every_required_kind_has_its_direction_and_bound_in_the_schema() {
     assert_eq!(table.magic, *b"smth");
     assert_eq!(table.versions.len(), 1);
     let version = table.version(3).expect("version three");
-    assert_eq!(version.kinds.len(), 18);
+    assert_eq!(version.kinds.len(), 19);
     for (index, rule) in V3.iter().enumerate() {
         assert!(rule.required, "all initial kinds are required");
         let kind = version.kind(rule.kind).expect("required kind is listed");
@@ -85,4 +85,14 @@ fn channel_turn_goldens_keep_the_declared_window_flag() {
     )
     .expect("ordinary flag golden");
     assert!(!ordinary.opens_window());
+}
+
+#[test]
+fn live_goldens_decode_at_their_measured_length() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v3");
+    for name in ["record_live_smallest.bin", "record_live_full.bin"] {
+        let bytes = std::fs::read(root.join(name)).expect("live golden");
+        let value = smith_channel::Live::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("live decodes");
+        assert_eq!(u32::try_from(bytes.len()).expect("golden length fits"), value.measure());
+    }
 }

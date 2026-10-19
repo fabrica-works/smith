@@ -134,6 +134,9 @@ pub(super) fn bodies(limits: &smith_channel::Limits) -> Box<[Limit]> {
         deliver_ask_fields,
         turn_body,
         accepted_result,
+        live_call_id,
+        live_call_tool,
+        live_bytes,
     } = *limits;
     Box::new([
         entry(Layer::Host, "process.channel.bodies.directory_name", Value::Bytes(u64::from(directory_name))),
@@ -183,5 +186,8 @@ pub(super) fn bodies(limits: &smith_channel::Limits) -> Box<[Limit]> {
         entry(Layer::Host, "process.channel.bodies.deliver_ask_fields", Value::Count(u64::from(deliver_ask_fields))),
         entry(Layer::Host, "process.channel.bodies.turn_body", Value::Bytes(u64::from(turn_body))),
         entry(Layer::Host, "process.channel.bodies.accepted_result", Value::Bytes(u64::from(accepted_result))),
+        entry(Layer::Host, "process.channel.bodies.live_call_id", Value::Bytes(u64::from(live_call_id))),
+        entry(Layer::Host, "process.channel.bodies.live_call_tool", Value::Bytes(u64::from(live_call_tool))),
+        entry(Layer::Host, "process.channel.bodies.live_bytes", Value::Bytes(u64::from(live_bytes))),
     ])
 }

@@ -313,7 +313,10 @@ impl World {
             Input::Process(process::Event::Spawned { .. } | process::Event::Unspawned { .. }) => Some(Lower::Spawn),
             Input::Process(process::Event::Sent { .. } | process::Event::Unsent { .. }) => Some(Lower::Send),
             Input::Process(
-                process::Event::Received { .. } | process::Event::Malformed { .. } | process::Event::Hangup { .. },
+                process::Event::Received { .. }
+                | process::Event::Progress { .. }
+                | process::Event::Malformed { .. }
+                | process::Event::Hangup { .. },
             ) => Some(Lower::Read),
             Input::Process(process::Event::Exited { .. }) => {
                 self.seen.exited = true;
@@ -370,6 +373,7 @@ impl World {
                 | process::Event::Sent { .. }
                 | process::Event::Unsent { .. }
                 | process::Event::Received { .. }
+                | process::Event::Progress { .. }
                 | process::Event::Signalled { .. }
                 | process::Event::Exited { .. }
                 | process::Event::Reaped { .. },

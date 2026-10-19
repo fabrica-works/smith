@@ -463,6 +463,7 @@ impl Process {
                 | OpenEvent::LongDone
                 | OpenEvent::Turn { .. }
                 | OpenEvent::Fact { .. }
+                | OpenEvent::Live { .. }
                 | OpenEvent::Rejected { .. }
                 | OpenEvent::Exhausted { .. }
                 | OpenEvent::WriteFailed

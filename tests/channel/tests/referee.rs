@@ -49,6 +49,9 @@ fn rejected(seen: &[Seen]) {
     for event in seen {
         let event = match event {
             Seen::Started => Seen::Started,
+            Seen::Asked { text, reasoning, input } => Seen::Asked { text: *text, reasoning: *reasoning, input: *input },
+            Seen::Admitted => Seen::Admitted,
+            Seen::Live { turn, kind } => Seen::Live { turn: *turn, kind: kind.clone() },
             Seen::Issued { name } => Seen::Issued { name: *name },
             Seen::Called { call, name } => Seen::Called { call: *call, name: *name },
             Seen::Settled { call } => Seen::Settled { call: *call },
@@ -77,4 +80,21 @@ fn the_referee_rejects_a_duplicate_answer_and_a_missing_call_terminal() {
 fn the_referee_rejects_a_turn_gap_and_credential_in_turn_bytes() {
     rejected(&[Seen::Started, Seen::Turn { number: 2, spent: 0, body: Box::default() }]);
     rejected(&[Seen::Started, Seen::Turn { number: 1, spent: 0, body: Box::from(*b"a-secret-z") }]);
+}
+
+#[test]
+fn the_referee_rejects_a_piece_outside_admission_its_ask_or_before_a_turn() {
+    rejected(&[
+        Seen::Started,
+        Seen::Asked { text: true, reasoning: false, input: false },
+        Seen::Live { turn: 1, kind: smith_channel::LiveKind::Text },
+    ]);
+    rejected(&[Seen::Started, Seen::Admitted, Seen::Live { turn: 1, kind: smith_channel::LiveKind::Text }]);
+    rejected(&[
+        Seen::Started,
+        Seen::Admitted,
+        Seen::Asked { text: true, reasoning: false, input: false },
+        Seen::Turn { number: 1, spent: 0, body: Box::default() },
+        Seen::Live { turn: 1, kind: smith_channel::LiveKind::Text },
+    ]);
 }

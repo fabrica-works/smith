@@ -17,6 +17,8 @@ pub mod referee;
 pub enum Observation {
     /// The scripted host domain submitted this run's one Start.
     HostStarted,
+    /// The kinds the host asked to receive.
+    HostLiveAsked { text: bool, reasoning: bool, input: bool },
     /// The scripted agent domain issued one durable operation name.
     AgentIssuedCall { name: smith_host_domain::channel::CallName },
     /// The scripted host domain supplied one terminal for a live call.
@@ -55,6 +57,15 @@ pub enum Observation {
     HostMessageRefused { name: Token, reason: smith_host_domain::MessageRefusal },
     /// The host received a numbered durable transcript body.
     HostTurn { number: u32, spent: u64, read: Option<skein_lib::Token>, opens_window: bool, body: Box<[u8]> },
+    /// A checked live piece reached the host owner.
+    HostLive {
+        turn: u32,
+        retry: u32,
+        kind: smith_channel::LiveKind,
+        offset: u64,
+        bytes: Box<[u8]>,
+        call: Option<smith_channel::LiveCall>,
+    },
     /// A best-effort content-free fact reached the host.
     HostFact { kind: smith_channel::FactKind, elapsed: skein_lib::Duration, count: u64 },
     /// The host received a credential rejection notice.
@@ -287,6 +298,9 @@ impl Peer {
                     body: agent::encode_turn(turn.body.value(), &smith_transcript::CEILINGS, &test_endpoints())
                         .expect("store codec"),
                 }),
+                host::OpenEvent::Live { turn, retry, kind, offset, bytes, call } => {
+                    output.push(Observation::HostLive { turn, retry, kind, offset, bytes, call });
+                }
                 host::OpenEvent::Fact { body } => {
                     let fact =
                         smith_channel::Fact::decode(&smith_channel::CEILINGS, &mut skein_lib::Reader::new(&body))
@@ -408,7 +422,7 @@ fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
         skip: 4096,
         output_bytes: largest.checked_add(8).expect("frame fits"),
         output_frames: 4,
-        kinds: 18,
+        kinds: 19,
     }
 }
 
@@ -549,6 +563,13 @@ impl World {
         identity: Option<smith_domain::run::Identity>,
         live: Option<smith_host_domain::channel::LiveAsk>,
     ) {
+        if let Some(ask) = live {
+            self.observed.push(Observation::HostLiveAsked {
+                text: ask.text,
+                reasoning: ask.reasoning,
+                input: ask.input,
+            });
+        }
         let typed_charter = typed_charter(&charter);
         let typed_transcript = agent::decode_transcript(
             &agent::transcript_piece(transcript.as_deref().unwrap_or(&[])).expect("fixture piece"),
@@ -812,6 +833,30 @@ impl World {
         false
     }
 
+    /// Offer one live piece through the real agent half.
+    pub fn agent_sends_live(&mut self, turn: u32, retry: u32, offset: u64, bytes: &[u8]) -> bool {
+        if let Half::Agent(agent) = &mut self.agent.half {
+            return agent
+                .send_live(
+                    agent::Piece { turn, retry, offset, bytes },
+                    Token::new(33),
+                    &mut self.agent.agent_events,
+                    &mut self.agent.below,
+                )
+                .expect("bounded piece");
+        }
+        false
+    }
+
+    /// Live bytes dropped at the channel boundary.
+    #[must_use]
+    pub fn lost_live_bytes(&self) -> u64 {
+        if let Half::Agent(agent) = &self.agent.half {
+            return agent.lost_live_bytes();
+        }
+        0
+    }
+
     /// Projectable facts omitted by phase or reserved output room.
     #[must_use]
     pub fn lost_facts(&self) -> u64 {
@@ -1060,4 +1105,27 @@ pub fn typed_transcript(bytes: &[Box<[u8]>]) -> Option<smith_host_domain::Transc
     )
     .expect("typed fixture history")
     .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"))
+}
+
+/// One concrete first turn shared by channel stories.
+#[must_use]
+pub fn window_turn_fixture() -> smith_domain_session::record::Turn {
+    use smith_domain_session::{llm, record};
+    let affinity = llm::Affinity { key: [0; 16], thread: 0 };
+    record::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
+        kind: record::Kind::First { affinity },
+        version: record::VERSION,
+        endpoint: llm::Endpoint(0),
+        dialect: 0,
+        sequence: 1,
+        usage: llm::Usage::ZERO,
+        spent: 0,
+        jobs: 0,
+        messages: Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::Text { text: b"the task and summary".as_slice().into(), replay: None }]),
+        }]),
+    }
 }

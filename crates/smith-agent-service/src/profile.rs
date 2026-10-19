@@ -376,14 +376,22 @@ fn channel_limits(
         .ok_or(refusal)?
         .checked_add(long.checked_mul(2).ok_or(refusal)?)
         .ok_or(refusal)?
-        .checked_add(2)
+        .checked_add(3)
         .ok_or(refusal)?;
     let authority = channel_output(&bodies)?;
     let fact = u32::try_from(smith_channel::Fact::worst_case_bytes(&bodies).ok_or(refusal)?)
         .or(Err(refusal))?
         .checked_add(8)
         .ok_or(refusal)?;
-    let output_bytes = authority.checked_add(fact).ok_or(derived(Layer::Channel, "output_bytes"))?;
+    let live = u32::try_from(smith_channel::Live::worst_case_bytes(&bodies).ok_or(refusal)?)
+        .or(Err(refusal))?
+        .checked_add(8)
+        .ok_or(refusal)?;
+    let output_bytes = authority
+        .checked_add(fact)
+        .ok_or(derived(Layer::Channel, "output_bytes"))?
+        .checked_add(live)
+        .ok_or(derived(Layer::Channel, "output_bytes"))?;
     Ok(channel::Limits {
         bodies,
         start_bytes: channel_start_bytes(&bodies)?,

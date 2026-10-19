@@ -16,6 +16,12 @@ use crate::Observation;
 pub enum Seen {
     /// Host submitted one Start.
     Started,
+    /// Host asked for these live kinds.
+    Asked { text: bool, reasoning: bool, input: bool },
+    /// Host admitted the run.
+    Admitted,
+    /// Host received a piece before its turn.
+    Live { turn: u32, kind: smith_channel::LiveKind },
     /// Agent submitted one named operation.
     Issued { name: (u64, u32, u32) },
     /// Host received one named operation with its live callback.
@@ -32,10 +38,18 @@ pub enum Seen {
     Ended,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum Admission {
+    Pending,
+    Admitted,
+}
+
 /// Expected pairing, ordering and secrecy of one run's channel boundary.
 #[derive(Debug)]
 pub struct Meeting {
     started: bool,
+    admission: Admission,
+    ask: [bool; 3],
     answered: bool,
     ended: bool,
     issued: BTreeSet<(u64, u32, u32)>,
@@ -53,6 +67,8 @@ impl Meeting {
     pub fn new(credential: Box<[u8]>) -> Meeting {
         Meeting {
             started: false,
+            admission: Admission::Pending,
+            ask: [false; 3],
             answered: false,
             ended: false,
             issued: BTreeSet::new(),
@@ -80,6 +96,21 @@ impl Expectations for Meeting {
                 }
                 self.started = true;
                 judge.expect("answer", Duration::from_secs(3600));
+            }
+            Seen::Asked { text, reasoning, input } => self.ask = [text, reasoning, input],
+            Seen::Admitted => self.admission = Admission::Admitted,
+            Seen::Live { turn, kind } => {
+                let index = match kind {
+                    smith_channel::LiveKind::Text => 0,
+                    smith_channel::LiveKind::Reasoning => 1,
+                    smith_channel::LiveKind::Input => 2,
+                };
+                judge.check(
+                    self.admission == Admission::Admitted && !self.answered,
+                    "pieces belong to an admitted unanswered run",
+                );
+                judge.check(turn == self.turns.saturating_add(1), "piece precedes its turn");
+                judge.check(*self.ask.get(index).expect("one slot per live kind"), "piece kind was asked for");
             }
             Seen::Issued { name } => {
                 judge.check(self.started && !self.answered, "calls belong to a live Start");
@@ -149,6 +180,11 @@ pub fn review(observations: &[Observation], credential: Box<[u8]>) -> Referee<Me
     for observation in observations {
         let seen = match observation {
             Observation::HostStarted => Some(Seen::Started),
+            Observation::HostLiveAsked { text, reasoning, input } => {
+                Some(Seen::Asked { text: *text, reasoning: *reasoning, input: *input })
+            }
+            Observation::HostAdmitted => Some(Seen::Admitted),
+            Observation::HostLive { turn, kind, .. } => Some(Seen::Live { turn: *turn, kind: kind.clone() }),
             Observation::AgentIssuedCall { name } => {
                 Some(Seen::Issued { name: (name.activation, name.completion, name.position) })
             }
@@ -187,7 +223,6 @@ pub fn review(observations: &[Observation], credential: Box<[u8]>) -> Referee<Me
             | Observation::HostWithdraw { .. }
             | Observation::AgentDeliveryUnsent { .. }
             | Observation::InvalidStart { .. }
-            | Observation::HostAdmitted
             | Observation::HostParked { .. }
             | Observation::AgentHistory { .. }
             | Observation::TranscriptFailed(_)

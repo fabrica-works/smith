@@ -350,6 +350,7 @@ impl HostService {
             OpenEvent::Turn { turn } => {
                 host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Turn { turn } })
             }
+            OpenEvent::Live { .. } => host::Input::Process(host::process::Event::Progress { owner: agent }),
             OpenEvent::Fact { body } => {
                 host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Fact { body } })
             }

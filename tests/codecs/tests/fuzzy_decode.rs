@@ -35,6 +35,7 @@ fn check_all(bytes: &[u8]) {
     check!(bytes, smith_channel, Rejected);
     check!(bytes, smith_channel, Exhausted);
     check!(bytes, smith_channel, Fact);
+    check!(bytes, smith_channel, Live);
     check!(bytes, smith_channel, Answer);
 }
 
@@ -72,6 +73,7 @@ fn arbitrary_and_mutated_wires_never_panic_and_round_trip_when_valid() {
         ("smith-channel", "v3", "rejected"),
         ("smith-channel", "v3", "exhausted"),
         ("smith-channel", "v3", "fact"),
+        ("smith-channel", "v3", "live"),
         ("smith-channel", "v3", "answer"),
     ] {
         let name = format!("record_{record}_full.bin");

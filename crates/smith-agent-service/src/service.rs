@@ -2485,7 +2485,7 @@ mod tests {
                     skip: 4096,
                     output_bytes: largest.checked_add(8).expect("largest frame"),
                     output_frames: 4,
-                    kinds: 18,
+                    kinds: 19,
                 },
                 endpoints: 1,
                 calls: 8,

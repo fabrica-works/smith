@@ -510,3 +510,14 @@ fn exit_grace_not_above_teardown_is_refused_as_grace_over_teardown() {
     limits.exit_grace = Duration::from_secs(45);
     assert_eq!(crate::check(&limits), Ok(()));
 }
+
+#[test]
+fn a_piece_counts_as_progress_for_the_watchdog() {
+    let (mut domain, mut env, mut out, owner) = admitted();
+    assert_eq!(domain.next_deadline(), Some(Time::from_nanos(10_000_000_000)));
+    env.now = Time::from_nanos(5_000_000_000);
+    crate::step(&mut domain, &env, Input::Process(process::Event::Progress { owner }), &mut out);
+    assert_eq!(domain.next_deadline(), Some(Time::from_nanos(15_000_000_000)));
+    assert_eq!(out.pop(), Some(Output::Process(process::Request::Read { owner, process: Token::new(2) })));
+    assert_eq!(out.len(), 0);
+}

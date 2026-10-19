@@ -213,7 +213,17 @@ impl Parent {
             }
             Op::PipeWrite { bytes, from, .. } => {
                 self.writing = false;
-                let Ok(Done::Count(count)) = complete.result else { panic!("agent write failed") };
+                let count = match complete.result {
+                    Ok(Done::Count(count)) => count,
+                    Err(kernel::Error::BrokenPipe) if self.acknowledge_turns && bytes.get(..2) == Some(&[1, 3]) => {
+                        // The final turn's ACK can meet input close before the answer is read.
+                        if let Some(fd) = self.input.take() {
+                            self.close(fd);
+                        }
+                        return;
+                    }
+                    _ => panic!("agent write failed"),
+                };
                 let offset = from.checked_add(count).expect("bounded frame offset");
                 self.pending =
                     if usize::try_from(offset).expect("offset") == bytes.len() { None } else { Some((bytes, offset)) };

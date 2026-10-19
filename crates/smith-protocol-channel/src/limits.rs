@@ -26,9 +26,9 @@ pub struct Limits {
     pub calls: u32,
     /// Maximum turns retained while durable host acknowledgement is pending.
     pub turns: u32,
-    /// Output frame slots kept free when a best-effort fact is considered.
+    /// Authoritative frame slots kept free by best-effort senders.
     pub fact_reserve_frames: u32,
-    /// Output bytes kept free when a best-effort fact is considered.
+    /// Authoritative bytes kept free by best-effort senders.
     pub fact_reserve_bytes: u32,
     /// Credential generations retained below the domain; budget two per account.
     pub grants: u32,

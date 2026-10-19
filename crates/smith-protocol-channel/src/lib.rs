@@ -26,6 +26,7 @@ mod component;
 mod credentials;
 mod facts;
 mod limits;
+mod live;
 mod result;
 mod transcript;
 mod translate;
@@ -37,6 +38,7 @@ mod tests;
 pub use charter::encode_charter;
 pub use component::{Component, OpenEvent};
 pub use limits::{Error, Limits, MaxOut, max_out, schema, schema_for_start, worst_case};
+pub use live::Piece;
 pub use result::decode_declared;
 pub use transcript::{decode_transcript, decode_turn, transcript_piece};
 pub use translate::{

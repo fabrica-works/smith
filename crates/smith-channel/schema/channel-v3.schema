@@ -168,3 +168,7 @@ record Failed { reason: RunFailure }
 record Refused { reason: StartRefusal }
 enum RunResult { accepted: Accepted, parked, failed: Failed, refused: Refused }
 record Answer { turns: u32 spent: u64 last_read: option u64 result: RunResult }
+
+enum LiveKind { text, reasoning, input }
+record LiveCall { id: text 256 tool: text 64 }
+record Live { turn: u32 retry: u32 kind: LiveKind offset: u64 bytes: bytes 4096 call: option LiveCall }

@@ -33,6 +33,9 @@ pub struct Limits {
     pub deliver_ask_fields: u32,
     pub turn_body: u32,
     pub accepted_result: u32,
+    pub live_call_id: u32,
+    pub live_call_tool: u32,
+    pub live_bytes: u32,
 }
 
 /// The schema's maximum limits.
@@ -64,6 +67,9 @@ pub const CEILINGS: Limits = Limits {
     deliver_ask_fields: 32,
     turn_body: 16_777_216,
     accepted_result: 67_108_864,
+    live_call_id: 256,
+    live_call_tool: 64,
+    live_bytes: 4_096,
 };
 
 /// A field or tag that caused a codec problem.
@@ -489,6 +495,28 @@ pub enum Path {
     AnswerResult,
     /// Bytes after `Answer`.
     AnswerTail,
+    /// The tag of `LiveKind`.
+    LiveKindTag,
+    /// The `id` field of `LiveCall`.
+    LiveCallId,
+    /// The `tool` field of `LiveCall`.
+    LiveCallTool,
+    /// Bytes after `LiveCall`.
+    LiveCallTail,
+    /// The `turn` field of `Live`.
+    LiveTurn,
+    /// The `retry` field of `Live`.
+    LiveRetry,
+    /// The `kind` field of `Live`.
+    LiveKind,
+    /// The `offset` field of `Live`.
+    LiveOffset,
+    /// The `bytes` field of `Live`.
+    LiveBytes,
+    /// The `call` field of `Live`.
+    LiveCall,
+    /// Bytes after `Live`.
+    LiveTail,
 }
 
 /// A decoding or bound failure at a schema path.
@@ -532,6 +560,9 @@ fn check_limits_0(limits: &Limits) -> Result<(), Problem> {
     if limits.deliver_ask_fields > CEILINGS.deliver_ask_fields { return Err(Problem { path: Path::DeliverAskFields, reason: skein_codec::Reason::Bound }); }
     if limits.turn_body > CEILINGS.turn_body { return Err(Problem { path: Path::TurnBody, reason: skein_codec::Reason::Bound }); }
     if limits.accepted_result > CEILINGS.accepted_result { return Err(Problem { path: Path::AcceptedResult, reason: skein_codec::Reason::Bound }); }
+    if limits.live_call_id > CEILINGS.live_call_id { return Err(Problem { path: Path::LiveCallId, reason: skein_codec::Reason::Bound }); }
+    if limits.live_call_tool > CEILINGS.live_call_tool { return Err(Problem { path: Path::LiveCallTool, reason: skein_codec::Reason::Bound }); }
+    if limits.live_bytes > CEILINGS.live_bytes { return Err(Problem { path: Path::LiveBytes, reason: skein_codec::Reason::Bound }); }
     Ok(())
 }
 
@@ -3745,6 +3776,145 @@ impl Answer {
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         self.result.check(limits)?;
+        Ok(())
+    }
+}
+
+/// `LiveKind` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum LiveKind {
+    /// `text` without a payload.
+    Text,
+    /// `reasoning` without a payload.
+    Reasoning,
+    /// `input` without a payload.
+    Input,
+}
+
+impl LiveKind {
+    /// Checks the payload against the given limits.
+    pub fn new(_limits: &Limits, value: Self) -> Result<Self, Problem> {
+        Ok(value)
+    }
+
+}
+
+/// Movable fields of `LiveCall`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LiveCallParts {
+    /// The `id` field.
+    pub id: Box<[u8]>,
+    /// The `tool` field.
+    pub tool: Box<[u8]>,
+}
+
+/// `LiveCall` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LiveCall {
+    id: Box<[u8]>,
+    tool: Box<[u8]>,
+}
+
+impl LiveCall {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: LiveCallParts) -> Result<Self, Problem> {
+        let LiveCallParts { id, tool } = parts;
+        let value = Self { id, tool };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `id` field.
+    #[must_use]
+    pub fn id(&self) -> &[u8] { &self.id }
+
+    /// Reads the `tool` field.
+    #[must_use]
+    pub fn tool(&self) -> &[u8] { &self.tool }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> LiveCallParts { LiveCallParts { id: self.id, tool: self.tool } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if self.id.len() > usize::try_from(limits.live_call_id.min(CEILINGS.live_call_id)).expect("u32 fits usize") { return Err(Problem { path: Path::LiveCallId, reason: skein_codec::Reason::Bound }); }
+        if !skein_codec::text_is_valid(self.id.as_ref()) { return Err(Problem { path: Path::LiveCallId, reason: skein_codec::Reason::Utf8 }); }
+        if self.tool.len() > usize::try_from(limits.live_call_tool.min(CEILINGS.live_call_tool)).expect("u32 fits usize") { return Err(Problem { path: Path::LiveCallTool, reason: skein_codec::Reason::Bound }); }
+        if !skein_codec::text_is_valid(self.tool.as_ref()) { return Err(Problem { path: Path::LiveCallTool, reason: skein_codec::Reason::Utf8 }); }
+        Ok(())
+    }
+}
+
+/// Movable fields of `Live`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LiveParts {
+    /// The `turn` field.
+    pub turn: u32,
+    /// The `retry` field.
+    pub retry: u32,
+    /// The `kind` field.
+    pub kind: LiveKind,
+    /// The `offset` field.
+    pub offset: u64,
+    /// The `bytes` field.
+    pub bytes: Box<[u8]>,
+    /// The `call` field.
+    pub call: Option<LiveCall>,
+}
+
+/// `Live` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Live {
+    turn: u32,
+    retry: u32,
+    kind: LiveKind,
+    offset: u64,
+    bytes: Box<[u8]>,
+    call: Option<LiveCall>,
+}
+
+impl Live {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: LiveParts) -> Result<Self, Problem> {
+        let LiveParts { turn, retry, kind, offset, bytes, call } = parts;
+        let value = Self { turn, retry, kind, offset, bytes, call };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `turn` field.
+    #[must_use]
+    pub fn turn(&self) -> u32 { self.turn }
+
+    /// Reads the `retry` field.
+    #[must_use]
+    pub fn retry(&self) -> u32 { self.retry }
+
+    /// Reads the `kind` field.
+    #[must_use]
+    pub fn kind(&self) -> &LiveKind { &self.kind }
+
+    /// Reads the `offset` field.
+    #[must_use]
+    pub fn offset(&self) -> u64 { self.offset }
+
+    /// Reads the `bytes` field.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] { &self.bytes }
+
+    /// Reads the `call` field.
+    #[must_use]
+    pub fn call(&self) -> &Option<LiveCall> { &self.call }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> LiveParts { LiveParts { turn: self.turn, retry: self.retry, kind: self.kind, offset: self.offset, bytes: self.bytes, call: self.call } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if self.bytes.len() > usize::try_from(limits.live_bytes.min(CEILINGS.live_bytes)).expect("u32 fits usize") { return Err(Problem { path: Path::LiveBytes, reason: skein_codec::Reason::Bound }); }
+        if let Some(some_0) = self.call.as_ref() {
+        some_0.check(limits)?;
+        }
         Ok(())
     }
 }
@@ -7262,6 +7432,146 @@ impl Answer {
     }
 }
 
+impl LiveKind {
+    /// Measures this variant's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        match self {
+            Self::Text | Self::Reasoning | Self::Input => 1,
+        }
+    }
+
+    /// Writes this variant's tag and payload.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        match self {
+            Self::Text => writer.put(&[0_u8])?,
+            Self::Reasoning => writer.put(&[1_u8])?,
+            Self::Input => writer.put(&[2_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole variant and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::LiveKindTag, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let tag = reader.u8().ok_or(Problem { path: Path::LiveKindTag, reason: skein_codec::Reason::Short })?;
+        let value = match tag {
+            0 => Self::Text,
+            1 => Self::Reasoning,
+            2 => Self::Input,
+            _ => return Err(Problem { path: Path::LiveKindTag, reason: skein_codec::Reason::Tag }),
+        };
+        Ok(value)
+    }
+}
+
+impl LiveCall {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        let field_id = &self.id;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(u32::try_from(field_id.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        let field_tool = &self.tool;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(u32::try_from(field_tool.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_id = &self.id;
+        writer.put(&u32::try_from(field_id.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(field_id.as_ref())?;
+        let field_tool = &self.tool;
+        writer.put(&u32::try_from(field_tool.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(field_tool.as_ref())?;
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::LiveCallTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_id = match skein_codec::read_text(reader, limits.live_call_id.min(CEILINGS.live_call_id)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::LiveCallId, reason }), };
+        let decoded_tool = match skein_codec::read_text(reader, limits.live_call_tool.min(CEILINGS.live_call_tool)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::LiveCallTool, reason }), };
+        Ok(Self { id: decoded_id, tool: decoded_tool })
+    }
+}
+
+impl Live {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        let field_kind = &self.kind;
+        size = size.checked_add(field_kind.measure()).expect("schema ceilings fit u32");
+        size = size.checked_add(8).expect("schema ceilings fit u32");
+        let field_bytes = &self.bytes;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(u32::try_from(field_bytes.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        let field_call = &self.call;
+        size = size.checked_add(1).expect("schema ceilings fit u32");
+        if let Some(some_0) = field_call {
+        size = size.checked_add(some_0.measure()).expect("schema ceilings fit u32");
+        }
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_turn = &self.turn;
+        writer.put(&field_turn.to_be_bytes())?;
+        let field_retry = &self.retry;
+        writer.put(&field_retry.to_be_bytes())?;
+        let field_kind = &self.kind;
+        field_kind.encode(writer)?;
+        let field_offset = &self.offset;
+        writer.put(&field_offset.to_be_bytes())?;
+        let field_bytes = &self.bytes;
+        writer.put(&u32::try_from(field_bytes.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(field_bytes.as_ref())?;
+        let field_call = &self.call;
+        match field_call {
+            Some(some_0) => {
+                writer.put(&[1_u8])?;
+        some_0.encode(writer)?;
+            }
+            None => writer.put(&[0_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::LiveTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_turn = reader.u32().ok_or(Problem { path: Path::LiveTurn, reason: skein_codec::Reason::Short })?;
+        let decoded_retry = reader.u32().ok_or(Problem { path: Path::LiveRetry, reason: skein_codec::Reason::Short })?;
+        let decoded_kind = LiveKind::decode_from(limits, reader)?;
+        let decoded_offset = reader.u64().ok_or(Problem { path: Path::LiveOffset, reason: skein_codec::Reason::Short })?;
+        let decoded_bytes = { let length = match skein_codec::read_len(reader, limits.live_bytes.min(CEILINGS.live_bytes)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::LiveBytes, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::LiveBytes, reason: skein_codec::Reason::Short })?) };
+        let decoded_call = match reader.u8().ok_or(Problem { path: Path::LiveCall, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(LiveCall::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::LiveCall, reason: skein_codec::Reason::Tag }) };
+        Ok(Self { turn: decoded_turn, retry: decoded_retry, kind: decoded_kind, offset: decoded_offset, bytes: decoded_bytes, call: decoded_call })
+    }
+}
+
 impl CallName {
     /// Maximum encoded bytes under these limits.
     #[must_use]
@@ -9780,6 +10090,92 @@ impl Answer {
     }
 }
 
+impl LiveKind {
+    /// Maximum encoded bytes among variants.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(_limits: &Limits) -> Option<u64> {
+        let biggest = 0_u64;
+        1_u64.checked_add(biggest)
+    }
+
+    /// Maximum heap held by any decoded variant.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(_limits: &Limits) -> Option<u64> {
+        let biggest = 0_u64;
+        biggest.checked_add(0)
+    }
+}
+
+impl LiveCall {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
+        let mut size = 0_u64;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.live_call_id))?)?.checked_add(4_u64.checked_add(u64::from(limits.live_call_tool))?)?;
+        size.checked_add(0)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
+        let mut heap = 0_u64;
+        heap = heap.checked_add(u64::from(limits.live_call_id))?.checked_add(u64::from(limits.live_call_tool))?;
+        heap.checked_add(0)
+    }
+}
+
+impl Live {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
+        let mut size = 0_u64;
+        size = size.checked_add(4_u64)?.checked_add(4_u64)?;
+        size = size.checked_add(LiveKind::worst_case_bytes_within(limits)?)?.checked_add(8_u64)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.live_bytes))?)?.checked_add(1_u64.checked_add(LiveCall::worst_case_bytes_within(limits)?)?)?;
+        size.checked_add(0)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
+        let mut heap = 0_u64;
+        heap = heap.checked_add(0_u64)?.checked_add(0_u64)?;
+        heap = heap.checked_add(LiveKind::worst_case_heap_within(limits)?)?.checked_add(0_u64)?;
+        heap = heap.checked_add(u64::from(limits.live_bytes))?.checked_add(LiveCall::worst_case_heap_within(limits)?)?;
+        heap.checked_add(0)
+    }
+}
+
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
@@ -9874,6 +10270,9 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(Refused::worst_case_bytes_within(limits)?);
     biggest = biggest.max(RunResult::worst_case_bytes_within(limits)?);
     biggest = biggest.max(Answer::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(LiveKind::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(LiveCall::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(Live::worst_case_bytes_within(limits)?);
     Some(biggest)
 }
 
@@ -9971,12 +10370,15 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(Refused::worst_case_heap_within(limits)?);
     biggest = biggest.max(RunResult::worst_case_heap_within(limits)?);
     biggest = biggest.max(Answer::worst_case_heap_within(limits)?);
+    biggest = biggest.max(LiveKind::worst_case_heap_within(limits)?);
+    biggest = biggest.max(LiveCall::worst_case_heap_within(limits)?);
+    biggest = biggest.max(Live::worst_case_heap_within(limits)?);
     Some(biggest)
 }
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, CallName, CallNameParts, Window, WindowParts, Directory, DirectoryParts, Workspace, WorkspaceParts, GrantValue, GrantValueParts, Grant, GrantParts, Receipt, ReceiptParts, Delivered, DeliveredParts, Marker, MarkerParts, DeliveryRefusal, DeliveryRefusalParts, DeliveryReason, DeliveryFailure, DeliveryFailureParts, Delivery, HostReply, HostReplyParts, DeliveryReply, DeliveryReplyParts, Reply, SavedReply, AnsweredCall, AnsweredCallParts, Message, MessageParts, LiveAsk, LiveAskParts, Start, StartParts, HostAnswer, HostAnswerParts, Acknowledge, AcknowledgeParts, GrantRefresh, GrantRefreshParts, Cancel, CancelParts, Admitted, AdmittedParts, MessageRefusal, MessageRefused, MessageRefusedParts, Effect, HostAsk, HostAskParts, Field, FieldParts, DeliverAsk, DeliverAskParts, Ask, Call, CallParts, Withdraw, WithdrawParts, Turn, TurnParts, Waiting, WaitingParts, Operation, Long, LongParts, LongDone, LongDoneParts, Rejected, RejectedParts, Exhausted, ExhaustedParts, FactKind, Fact, FactParts, ReceivingLimit, Overflow, ReceivingLimitValue, ReceivingLimitValueParts, OverflowValue, OverflowValueParts, BudgetFailure, Cap, PathCap, PathCapParts, PoolLimit, PoolLimitParts, CompletionLimit, LimitFailure, LimitFailureParts, CompletionPhase, TimeoutFailure, TimeoutFailureParts, CompletionFailure, ResponseEvidence, ResponseEvidenceParts, CompletionEvidence, CompletionFault, CompletionFaultParts, ModelFault, TranscriptRefusal, TranscriptRefusalValue, TranscriptRefusalValueParts, ModelFaultValue, ModelFaultValueParts, BudgetFailureValue, BudgetFailureValueParts, PolicyFailure, PolicyFailureParts, RunFailure, PriceRate, PriceRateValue, PriceRateValueParts, BudgetPart, BudgetPartValue, BudgetPartValueParts, BudgetTurns, BudgetTurnsParts, BudgetSpend, BudgetSpendParts, BudgetTime, BudgetTimeParts, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetCompletion, BudgetCompletionParts, BudgetChecks, BudgetChecksParts, BudgetRefusal, BudgetRefusalValue, BudgetRefusalValueParts, WindowBound, WindowBoundParts, InvalidStart, InvalidStartValue, InvalidStartValueParts, StartRefusal, Accepted, AcceptedParts, Failed, FailedParts, Refused, RefusedParts, RunResult, Answer, AnswerParts, Path};
+    use super::{CEILINGS, CallName, CallNameParts, Window, WindowParts, Directory, DirectoryParts, Workspace, WorkspaceParts, GrantValue, GrantValueParts, Grant, GrantParts, Receipt, ReceiptParts, Delivered, DeliveredParts, Marker, MarkerParts, DeliveryRefusal, DeliveryRefusalParts, DeliveryReason, DeliveryFailure, DeliveryFailureParts, Delivery, HostReply, HostReplyParts, DeliveryReply, DeliveryReplyParts, Reply, SavedReply, AnsweredCall, AnsweredCallParts, Message, MessageParts, LiveAsk, LiveAskParts, Start, StartParts, HostAnswer, HostAnswerParts, Acknowledge, AcknowledgeParts, GrantRefresh, GrantRefreshParts, Cancel, CancelParts, Admitted, AdmittedParts, MessageRefusal, MessageRefused, MessageRefusedParts, Effect, HostAsk, HostAskParts, Field, FieldParts, DeliverAsk, DeliverAskParts, Ask, Call, CallParts, Withdraw, WithdrawParts, Turn, TurnParts, Waiting, WaitingParts, Operation, Long, LongParts, LongDone, LongDoneParts, Rejected, RejectedParts, Exhausted, ExhaustedParts, FactKind, Fact, FactParts, ReceivingLimit, Overflow, ReceivingLimitValue, ReceivingLimitValueParts, OverflowValue, OverflowValueParts, BudgetFailure, Cap, PathCap, PathCapParts, PoolLimit, PoolLimitParts, CompletionLimit, LimitFailure, LimitFailureParts, CompletionPhase, TimeoutFailure, TimeoutFailureParts, CompletionFailure, ResponseEvidence, ResponseEvidenceParts, CompletionEvidence, CompletionFault, CompletionFaultParts, ModelFault, TranscriptRefusal, TranscriptRefusalValue, TranscriptRefusalValueParts, ModelFaultValue, ModelFaultValueParts, BudgetFailureValue, BudgetFailureValueParts, PolicyFailure, PolicyFailureParts, RunFailure, PriceRate, PriceRateValue, PriceRateValueParts, BudgetPart, BudgetPartValue, BudgetPartValueParts, BudgetTurns, BudgetTurnsParts, BudgetSpend, BudgetSpendParts, BudgetTime, BudgetTimeParts, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetCompletion, BudgetCompletionParts, BudgetChecks, BudgetChecksParts, BudgetRefusal, BudgetRefusalValue, BudgetRefusalValueParts, WindowBound, WindowBoundParts, InvalidStart, InvalidStartValue, InvalidStartValueParts, StartRefusal, Accepted, AcceptedParts, Failed, FailedParts, Refused, RefusedParts, RunResult, Answer, AnswerParts, LiveKind, LiveCall, LiveCallParts, Live, LiveParts, Path};
     use super::Limits;
 
     use alloc::boxed::Box;
@@ -10029,7 +10431,7 @@ mod golden_tests {
         };
         at && past
     }
-    static GOLDEN_0: [Case; 444] = [
+    static GOLDEN_0: [Case; 454] = [
         ("record_call_name_smallest", || { let value = CallName::new(&CEILINGS, CallNameParts { activation: 0_u64, completion: 0_u32, position: 0_u32 }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, CallName::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_call_name_full", || { let value = CallName::new(&CEILINGS, CallNameParts { activation: u64::MAX, completion: u32::MAX, position: u32::MAX }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, CallName::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_window_smallest", || { let value = Window::new(&CEILINGS, WindowParts { turns: 0_u32, bytes: 0_u64 }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Window::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -10474,6 +10876,16 @@ mod golden_tests {
         ("enum_run_result_refused_full", || { let value = RunResult::Refused(Refused::new(&CEILINGS, RefusedParts { reason: StartRefusal::Busy }).expect("golden within ceilings")); let bytes: &[u8] = &[3, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_answer_smallest", || { let value = Answer::new(&CEILINGS, AnswerParts { turns: 0_u32, spent: 0_u64, last_read: None, result: RunResult::Accepted(Accepted::new(&CEILINGS, AcceptedParts { result: Box::from([].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Answer::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_answer_full", || { let value = Answer::new(&CEILINGS, AnswerParts { turns: u32::MAX, spent: u64::MAX, last_read: Some(u64::MAX), result: RunResult::Accepted(Accepted::new(&CEILINGS, AcceptedParts { result: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Answer::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_live_kind_text_smallest", || { let value = LiveKind::Text; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_live_kind_text_full", || { let value = LiveKind::Text; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_live_kind_reasoning_smallest", || { let value = LiveKind::Reasoning; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_live_kind_reasoning_full", || { let value = LiveKind::Reasoning; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_live_kind_input_smallest", || { let value = LiveKind::Input; let bytes: &[u8] = &[2]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_live_kind_input_full", || { let value = LiveKind::Input; let bytes: &[u8] = &[2]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_live_call_smallest", || { let value = LiveCall::new(&CEILINGS, LiveCallParts { id: Box::from([].as_slice()), tool: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveCall::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_live_call_full", || { let value = LiveCall::new(&CEILINGS, LiveCallParts { id: Box::from([97_u8, 98_u8, 99_u8].as_slice()), tool: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, LiveCall::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_live_smallest", || { let value = Live::new(&CEILINGS, LiveParts { turn: 0_u32, retry: 0_u32, kind: LiveKind::Text, offset: 0_u64, bytes: Box::from([].as_slice()), call: None }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Live::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_live_full", || { let value = Live::new(&CEILINGS, LiveParts { turn: u32::MAX, retry: u32::MAX, kind: LiveKind::Text, offset: u64::MAX, bytes: Box::from([0_u8, 127_u8, 255_u8].as_slice()), call: Some(LiveCall::new(&CEILINGS, LiveCallParts { id: Box::from([97_u8, 98_u8, 99_u8].as_slice()), tool: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Live::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
     ];
 
     #[test]
@@ -10481,7 +10893,7 @@ mod golden_tests {
         table(&GOLDEN_0);
     }
 
-    static BOUNDS_0: [Case; 27] = [
+    static BOUNDS_0: [Case; 30] = [
         ("bound_directory_name", || bound((Path::DirectoryName, skein_codec::Reason::Bound), &Limits { directory_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Directory::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_directory_path", || bound((Path::DirectoryPath, skein_codec::Reason::Bound), &Limits { directory_path: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Directory::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_directory_conflicts", || bound((Path::DirectoryConflicts, skein_codec::Reason::Bound), &Limits { directory_conflicts: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Directory::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
@@ -10509,6 +10921,9 @@ mod golden_tests {
         ("bound_deliver_ask_fields", || bound((Path::DeliverAskFields, skein_codec::Reason::Bound), &Limits { deliver_ask_fields: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match DeliverAsk::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_turn_body", || bound((Path::TurnBody, skein_codec::Reason::Bound), &Limits { turn_body: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_accepted_result", || bound((Path::AcceptedResult, skein_codec::Reason::Bound), &Limits { accepted_result: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Accepted::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_live_call_id", || bound((Path::LiveCallId, skein_codec::Reason::Bound), &Limits { live_call_id: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match LiveCall::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_live_call_tool", || bound((Path::LiveCallTool, skein_codec::Reason::Bound), &Limits { live_call_tool: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match LiveCall::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_live_bytes", || bound((Path::LiveBytes, skein_codec::Reason::Bound), &Limits { live_bytes: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0], |limits, bytes| match Live::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
     ];
 
     #[test]

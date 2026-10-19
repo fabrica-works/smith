@@ -106,6 +106,8 @@ pub struct Component {
     fact_reserve_frames: u32,
     fact_reserve_bytes: u32,
     lost_facts: u64,
+    live: Option<smith_channel::LiveAsk>,
+    lost_live_bytes: u64,
     credentials: Credentials,
     cancelled: bool,
 }
@@ -145,6 +147,8 @@ impl Component {
             fact_reserve_frames: limits.fact_reserve_frames,
             fact_reserve_bytes: limits.fact_reserve_bytes,
             lost_facts: 0,
+            live: None,
+            lost_live_bytes: 0,
             credentials: Credentials::new(limits.grants),
             cancelled: false,
         })
@@ -443,6 +447,76 @@ impl Component {
         self.lost_facts
     }
 
+    /// Whether one text piece fits without spending authoritative or fact room.
+    #[must_use]
+    pub fn takes_live(&self, bytes: u32) -> bool {
+        if self.phase != Phase::Admitted || self.ended {
+            return false;
+        }
+        let Some(ask) = &self.live else {
+            return false;
+        };
+        if !ask.text() {
+            return false;
+        }
+        let Some(frame) = crate::live::frame_bytes(&self.bodies, bytes) else {
+            return false;
+        };
+        let Some(fact) = smith_channel::Fact::worst_case_bytes(&self.bodies) else {
+            return false;
+        };
+        let needed = u64::from(self.fact_reserve_bytes).checked_add(fact);
+        let needed = match needed {
+            Some(n) => n.checked_add(8),
+            None => None,
+        };
+        let needed = match needed {
+            Some(n) => n.checked_add(u64::from(frame)),
+            None => None,
+        };
+        let Some(needed) = needed else {
+            return false;
+        };
+        let room = self.machine.room();
+        u64::from(room.frames) > u64::from(self.fact_reserve_frames).saturating_add(1)
+            && u64::from(room.bytes) >= needed
+    }
+
+    /// Send a piece, counting its bytes when admission, order or room prevents it.
+    pub fn send_live(
+        &mut self,
+        piece: crate::Piece<'_>,
+        token: Token,
+        to_service: &mut Queue<OpenEvent>,
+        below: &mut Queue<Lower>,
+    ) -> Result<bool, Error> {
+        let length = u64::try_from(piece.bytes.len()).expect("piece length fits u64");
+        if self.last_sent_turn.checked_add(1) != Some(piece.turn)
+            || !self.takes_live(u32::try_from(length).unwrap_or(u32::MAX))
+            || to_service.room() < crate::limits::MAX_OUT.to_domain
+            || below.room() < crate::limits::MAX_OUT.below
+        {
+            self.lose_live(length);
+            return Ok(false);
+        }
+        let frame = crate::live::frame(piece, &self.bodies)?;
+        self.machine.down(Request::Send { token, frame }, &mut self.events, below);
+        self.drain(to_service, below);
+        self.fire(to_service, below);
+        Ok(true)
+    }
+
+    /// Count bytes dropped above the channel boundary.
+    pub fn lose_live(&mut self, bytes: u64) {
+        self.lost_live_bytes = self.lost_live_bytes.saturating_add(bytes);
+    }
+
+    /// Live bytes omitted from the host channel.
+    #[must_use]
+    pub fn lost_live_bytes(&self) -> u64 {
+        self.lost_live_bytes
+    }
+
     /// Read a retained credential only below the domain when preparing its LLM call.
     #[must_use]
     pub fn grant_value(&self, name: smith_domain::GrantName) -> Option<&[u8]> {
@@ -531,12 +605,18 @@ impl Component {
         frame.put(&body.finish())?;
         let frame = frame.finish()?;
         let room = self.machine.room();
-        let reserve = self.fact_reserve_bytes.checked_add(frame.wire_len());
+        let reserve = match crate::live::frame_bytes(&self.bodies, self.bodies.live_bytes) {
+            Some(live) => match self.fact_reserve_bytes.checked_add(live) {
+                Some(n) => n.checked_add(frame.wire_len()),
+                None => None,
+            },
+            None => None,
+        };
         let bytes_fit = match reserve {
             Some(needed) => room.bytes >= needed,
             None => false,
         };
-        if room.frames <= self.fact_reserve_frames || !bytes_fit {
+        if u64::from(room.frames) <= u64::from(self.fact_reserve_frames).saturating_add(1) || !bytes_fit {
             self.lost_facts = self.lost_facts.saturating_add(1);
             return Ok(false);
         }
@@ -822,6 +902,7 @@ impl Component {
                                                         start.window.turns =
                                                             start.window.turns.min(self.turns.capacity());
                                                         self.window = Some(start.window);
+                                                        self.live.clone_from(&start.live);
                                                         to_service.push(OpenEvent::Start { start: Box::new(start) });
                                                         self.machine.down(Request::Read, &mut self.events, below);
                                                     }

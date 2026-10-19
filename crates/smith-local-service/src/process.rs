@@ -953,6 +953,7 @@ impl ProcessAdapter {
                     | protocol::OpenEvent::LongDone
                     | protocol::OpenEvent::Turn { .. }
                     | protocol::OpenEvent::Fact { .. }
+                    | protocol::OpenEvent::Live { .. }
                     | protocol::OpenEvent::Rejected { .. }
                     | protocol::OpenEvent::Exhausted { .. }
                     | protocol::OpenEvent::Call { .. }
@@ -1213,6 +1214,7 @@ fn read_terminal(event: &protocol::ProcessEvent) -> bool {
             | protocol::OpenEvent::LongDone
             | protocol::OpenEvent::Turn { .. }
             | protocol::OpenEvent::Fact { .. }
+            | protocol::OpenEvent::Live { .. }
             | protocol::OpenEvent::Rejected { .. }
             | protocol::OpenEvent::Exhausted { .. }
             | protocol::OpenEvent::Call { .. }
@@ -1283,6 +1285,7 @@ fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
         OpenEvent::Turn { turn } => {
             host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Turn { turn } })
         }
+        OpenEvent::Live { .. } => host::Input::Process(host::process::Event::Progress { owner: agent }),
         OpenEvent::Fact { body } => {
             host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Fact { body } })
         }

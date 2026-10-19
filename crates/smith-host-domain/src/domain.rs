@@ -224,6 +224,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
             | process::Event::Sent { owner }
             | process::Event::Unsent { owner }
             | process::Event::Received { owner, .. }
+            | process::Event::Progress { owner }
             | process::Event::Malformed { owner }
             | process::Event::Hangup { owner }
             | process::Event::Signalled { owner }
@@ -309,6 +310,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
                     process::Event::Spawned { .. }
                     | process::Event::Unspawned { .. }
                     | process::Event::Received { .. }
+                    | process::Event::Progress { .. }
                     | process::Event::Malformed { .. }
                     | process::Event::Hangup { .. }
                     | process::Event::Signalled { .. }
@@ -326,6 +328,19 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
             assert!(agent.reading, "record ends one requested read");
             agent.reading = false;
             receive(agent, token, message, env, out);
+        }
+        Input::Process(process::Event::Progress { .. }) => {
+            assert!(agent.reading, "piece ends one requested read");
+            agent.reading = false;
+            if agent.last_word {
+                fail(agent, token, Fault::Rules, env, out);
+            } else if !agent.told && agent.phase != Phase::Terminating && agent.phase != Phase::Killing {
+                if agent.admitted {
+                    agent.progress = env.now;
+                } else {
+                    fail(agent, token, Fault::Rules, env, out);
+                }
+            }
         }
         Input::Process(process::Event::Malformed { .. }) => {
             assert!(agent.reading, "malformed terminal ends read");
@@ -424,6 +439,7 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
             | process::Event::Sent { .. }
             | process::Event::Unsent { .. }
             | process::Event::Received { .. }
+            | process::Event::Progress { .. }
             | process::Event::Malformed { .. }
             | process::Event::Hangup { .. }
             | process::Event::Signalled { .. }

@@ -40,6 +40,7 @@ enum Body {
     Exhausted,
     Fact,
     Answer,
+    Live,
 }
 
 /// Why a body maximum cannot be represented in the channel's frame length.
@@ -51,7 +52,7 @@ pub enum Overflow {
     Frame,
 }
 
-/// The 18 kinds required by channel version three, in wire number order.
+/// The 19 kinds required by channel version three, in wire number order.
 pub const V3: &[KindRule] = &[
     KindRule { kind: 0x0100, direction: Direction::FromInitiator, required: true, body: Body::Start },
     KindRule { kind: 0x0101, direction: Direction::FromInitiator, required: true, body: Body::Message },
@@ -71,12 +72,13 @@ pub const V3: &[KindRule] = &[
     KindRule { kind: 0x010f, direction: Direction::FromResponder, required: true, body: Body::Fact },
     KindRule { kind: 0x0110, direction: Direction::FromResponder, required: true, body: Body::Answer },
     KindRule { kind: 0x0111, direction: Direction::FromResponder, required: true, body: Body::MessageRefused },
+    KindRule { kind: 0x0112, direction: Direction::FromResponder, required: true, body: Body::Live },
 ];
 
 /// Build the version-three channel schema from receiving codec limits.
 #[expect(clippy::manual_let_else, reason = "the strict step subset uses exhaustive matches")]
 pub fn schema(limits: &v3::Limits) -> Result<Schema, Overflow> {
-    let mut kinds = List::with_capacity(18);
+    let mut kinds = List::with_capacity(19);
     for rule in V3 {
         let largest = match rule.body {
             Body::Start => v3::Start::worst_case_bytes(limits),
@@ -97,13 +99,14 @@ pub fn schema(limits: &v3::Limits) -> Result<Schema, Overflow> {
             Body::Exhausted => v3::Exhausted::worst_case_bytes(limits),
             Body::Fact => v3::Fact::worst_case_bytes(limits),
             Body::Answer => v3::Answer::worst_case_bytes(limits),
+            Body::Live => v3::Live::worst_case_bytes(limits),
         };
         let largest = largest.ok_or(Overflow::Body)?;
         let largest = match u32::try_from(largest) {
             Ok(largest) => largest,
             Err(_) => return Err(Overflow::Frame),
         };
-        kinds.push(Kind { kind: rule.kind, direction: rule.direction, largest }).expect("V3 has exactly 18 kinds");
+        kinds.push(Kind { kind: rule.kind, direction: rule.direction, largest }).expect("V3 has exactly 19 kinds");
     }
     let mut versions = List::with_capacity(1);
     versions.push(Version { version: 3, kinds }).expect("one version has one slot");

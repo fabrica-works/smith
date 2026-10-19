@@ -112,6 +112,9 @@ pub(super) fn bodies(inventory: &mut Inventory, limits: &smith_channel::Limits) 
         deliver_ask_fields,
         turn_body,
         accepted_result,
+        live_call_id,
+        live_call_tool,
+        live_bytes,
     } = *limits;
     inventory.layer = Layer::Channel;
     inventory.value("directory_name", Value::Bytes(u64::from(directory_name)))?;
@@ -141,6 +144,9 @@ pub(super) fn bodies(inventory: &mut Inventory, limits: &smith_channel::Limits) 
     inventory.value("deliver_ask_fields", Value::Count(u64::from(deliver_ask_fields)))?;
     inventory.value("turn_body", Value::Bytes(u64::from(turn_body)))?;
     inventory.value("accepted_result", Value::Bytes(u64::from(accepted_result)))?;
+    inventory.value("live_call_id", Value::Bytes(u64::from(live_call_id)))?;
+    inventory.value("live_call_tool", Value::Bytes(u64::from(live_call_tool)))?;
+    inventory.value("live_bytes", Value::Bytes(u64::from(live_bytes)))?;
     Some(())
 }
 

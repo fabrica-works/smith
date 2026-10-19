@@ -29,6 +29,8 @@ pub enum Event {
         /// Bounded agent metadata and payload.
         message: Up,
     },
+    /// A checked piece ended a read; only its progress reaches the domain.
+    Progress { owner: Token },
     /// Terminal of Read; undecodable/version-mismatched or oversized channel frame.
     Malformed { owner: Token },
     /// Terminal of Read; channel EOF.

@@ -63,6 +63,15 @@ pub enum OpenEvent {
     Turn { turn: channel::Turn },
     /// One content-free, best-effort fact kept in its bounded wire body.
     Fact { body: Box<[u8]> },
+    /// One live piece checked against the start and stream order, for the owner.
+    Live {
+        turn: u32,
+        retry: u32,
+        kind: smith_channel::LiveKind,
+        offset: u64,
+        bytes: Box<[u8]>,
+        call: Option<smith_channel::LiveCall>,
+    },
     /// A provider rejected this known account and credential generation.
     Rejected { account: u32, generation: u64 },
     /// A provider exhausted this known account for a relative cooldown.
@@ -94,6 +103,7 @@ pub struct Component {
     transcript: smith_transcript::v5::Limits,
     sequence: u32,
     long_open: u32,
+    live: crate::live::Streams,
 }
 
 impl Component {
@@ -131,6 +141,7 @@ impl Component {
             transcript: limits.transcript,
             sequence: 0,
             long_open: 0,
+            live: crate::live::Streams::new(None, 0),
         })
     }
 
@@ -162,11 +173,13 @@ impl Component {
             },
             None => 0,
         };
+        let live = start.live;
         let frame =
             encode_start(start, window, values, &self.bodies, &self.charter, &self.transcript, &self.endpoints)?;
         if self.phase != Phase::Opened {
             return Err(Error::MissingValue);
         }
+        self.live = crate::live::Streams::new(live, 0);
         self.sequence = sequence;
         self.phase = Phase::Started;
         self.machine.down(Request::Send { token, frame }, &mut self.events, below);
@@ -379,7 +392,7 @@ impl Component {
                                 to_service.push(OpenEvent::MessageRefused { name: Token::new(record.name()), reason });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x0107 if self.phase == Phase::Admitted => {
@@ -389,7 +402,7 @@ impl Component {
                                 if self.calls_by_name.contains_key(&key)
                                     || self.calls_by_name.len() >= self.calls_by_name.capacity()
                                 {
-                                    self.refuse_rules(below);
+                                    self.refuse_rules(b"invalid answer", below);
                                 } else {
                                     match decode_ask(&record) {
                                         Ok(Some(ask)) => {
@@ -400,7 +413,7 @@ impl Component {
                                                     if self.calls_by_name.insert(key, call).is_err()
                                                         || self.calls_by_token.insert(call, key).is_err()
                                                     {
-                                                        self.refuse_rules(below);
+                                                        self.refuse_rules(b"invalid answer", below);
                                                     } else {
                                                         to_service.push(OpenEvent::Call {
                                                             call,
@@ -411,14 +424,14 @@ impl Component {
                                                         self.machine.down(Request::Read, &mut self.events, below);
                                                     }
                                                 }
-                                                None => self.refuse_rules(below),
+                                                None => self.refuse_rules(b"invalid answer", below),
                                             }
                                         }
-                                        Ok(None) | Err(_) => self.refuse_rules(below),
+                                        Ok(None) | Err(_) => self.refuse_rules(b"invalid answer", below),
                                     }
                                 }
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x0108 if self.phase == Phase::Admitted => {
@@ -430,10 +443,10 @@ impl Component {
                                         to_service.push(OpenEvent::Withdraw { call: *call });
                                         self.machine.down(Request::Read, &mut self.events, below);
                                     }
-                                    None => self.refuse_rules(below),
+                                    None => self.refuse_rules(b"invalid answer", below),
                                 }
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x010a if self.phase == Phase::Admitted => {
@@ -446,7 +459,7 @@ impl Component {
                                 to_service.push(OpenEvent::Waiting { read });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x0109 if self.phase == Phase::Admitted => {
@@ -465,6 +478,7 @@ impl Component {
                                 match decoded {
                                     Some(value) => {
                                         self.sequence = value.sequence;
+                                        self.live.turn(turn.number());
                                         let body = smith_host_domain::TurnValue::new(value, u64::MAX)
                                             .expect("codec bounds ensure representable ownership");
                                         to_service.push(OpenEvent::Turn {
@@ -481,10 +495,33 @@ impl Component {
                                         });
                                         self.machine.down(Request::Read, &mut self.events, below);
                                     }
-                                    None => self.refuse_rules(below),
+                                    None => self.refuse_rules(b"invalid answer", below),
                                 }
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
+                        }
+                    }
+                    0x0112 => {
+                        if self.phase != Phase::Admitted {
+                            self.refuse_rules(b"live admission", below);
+                            continue;
+                        }
+                        match smith_channel::Live::decode(&self.bodies, &mut Reader::new(&body)) {
+                            Ok(piece) => match self.live.check(&piece) {
+                                Ok(()) => {
+                                    to_service.push(OpenEvent::Live {
+                                        turn: piece.turn(),
+                                        retry: piece.retry(),
+                                        kind: piece.kind().clone(),
+                                        offset: piece.offset(),
+                                        bytes: Box::from(piece.bytes()),
+                                        call: piece.call().clone(),
+                                    });
+                                    self.machine.down(Request::Read, &mut self.events, below);
+                                }
+                                Err(rule) => self.refuse_rules(rule.reason(), below),
+                            },
+                            Err(_) => self.refuse_rules(b"live body", below),
                         }
                     }
                     0x010f if self.phase == Phase::Admitted => {
@@ -493,7 +530,7 @@ impl Component {
                                 to_service.push(OpenEvent::Fact { body });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x010d if self.phase == Phase::Admitted => {
@@ -505,7 +542,7 @@ impl Component {
                                 });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x010e if self.phase == Phase::Admitted => {
@@ -517,7 +554,7 @@ impl Component {
                                 });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x010b if self.phase == Phase::Admitted && self.long_open < u32::MAX => {
@@ -532,7 +569,7 @@ impl Component {
                                 to_service.push(OpenEvent::Long { operation, span: long.span() });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x010c if self.phase == Phase::Admitted && self.long_open > 0 => {
@@ -542,7 +579,7 @@ impl Component {
                                 to_service.push(OpenEvent::LongDone);
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x0106 if self.phase == Phase::Started => {
@@ -552,7 +589,7 @@ impl Component {
                                 to_service.push(OpenEvent::Admitted);
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
-                            Err(_) => self.refuse_rules(below),
+                            Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
                     0x0110 => match smith_channel::Answer::decode(&self.bodies, &mut Reader::new(&body)) {
@@ -570,15 +607,15 @@ impl Component {
                                         to_service.push(OpenEvent::Answer { answer, record });
                                         self.machine.down(Request::Read, &mut self.events, below);
                                     }
-                                    Err(_) => self.refuse_rules(below),
+                                    Err(_) => self.refuse_rules(b"invalid answer", below),
                                 }
                             } else {
-                                self.refuse_rules(below);
+                                self.refuse_rules(b"invalid answer", below);
                             }
                         }
-                        Err(_) => self.refuse_rules(below),
+                        Err(_) => self.refuse_rules(b"invalid answer", below),
                     },
-                    _ => self.refuse_rules(below),
+                    _ => self.refuse_rules(b"invalid answer", below),
                 },
                 Some(Event::Closed { why }) => {
                     if !self.ended {
@@ -604,12 +641,8 @@ impl Component {
         }
     }
 
-    fn refuse_rules(&mut self, below: &mut Queue<Lower>) {
-        self.machine.down(
-            Request::Refuse { reason: RULES, text: Box::from(*b"invalid answer") },
-            &mut self.events,
-            below,
-        );
+    fn refuse_rules(&mut self, reason: &[u8], below: &mut Queue<Lower>) {
+        self.machine.down(Request::Refuse { reason: RULES, text: Box::from(reason) }, &mut self.events, below);
     }
 }
 
@@ -666,7 +699,7 @@ mod tests {
                 skip: 8,
                 output_bytes: u32::MAX,
                 output_frames: 2,
-                kinds: 18,
+                kinds: 19,
             },
         };
         let mut component =
