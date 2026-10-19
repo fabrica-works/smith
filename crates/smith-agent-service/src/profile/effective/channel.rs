@@ -90,7 +90,18 @@ pub(super) fn bodies(inventory: &mut Inventory, limits: &smith_channel::Limits) 
         directory_conflicts,
         directory_conflicts_item,
         workspace_directories,
-        grant_value_credential,
+        credential_value_bytes,
+        program_value_name,
+        withdrawn_value_id,
+        withdrawn_value_bearer,
+        account_refused_code,
+        account_refused_reason,
+        completion_fault_code,
+        completion_fault_request_id,
+        completion_fault_field,
+        refused_fault_code,
+        program_fault_name,
+        program_fault_detail,
         receipt_text,
         delivered_receipts,
         marker_path,
@@ -122,7 +133,18 @@ pub(super) fn bodies(inventory: &mut Inventory, limits: &smith_channel::Limits) 
     inventory.value("directory_conflicts", Value::Count(u64::from(directory_conflicts)))?;
     inventory.value("directory_conflicts_item", Value::Bytes(u64::from(directory_conflicts_item)))?;
     inventory.value("workspace_directories", Value::Count(u64::from(workspace_directories)))?;
-    inventory.value("grant_value_credential", Value::Bytes(u64::from(grant_value_credential)))?;
+    inventory.value("credential_value_bytes", Value::Bytes(u64::from(credential_value_bytes)))?;
+    inventory.value("program_value_name", Value::Bytes(u64::from(program_value_name)))?;
+    inventory.value("withdrawn_value_id", Value::Bytes(u64::from(withdrawn_value_id)))?;
+    inventory.value("withdrawn_value_bearer", Value::Bytes(u64::from(withdrawn_value_bearer)))?;
+    inventory.value("account_refused_code", Value::Bytes(u64::from(account_refused_code)))?;
+    inventory.value("account_refused_reason", Value::Bytes(u64::from(account_refused_reason)))?;
+    inventory.value("completion_fault_code", Value::Bytes(u64::from(completion_fault_code)))?;
+    inventory.value("completion_fault_request_id", Value::Bytes(u64::from(completion_fault_request_id)))?;
+    inventory.value("completion_fault_field", Value::Bytes(u64::from(completion_fault_field)))?;
+    inventory.value("refused_fault_code", Value::Bytes(u64::from(refused_fault_code)))?;
+    inventory.value("program_fault_name", Value::Bytes(u64::from(program_fault_name)))?;
+    inventory.value("program_fault_detail", Value::Bytes(u64::from(program_fault_detail)))?;
     inventory.value("receipt_text", Value::Bytes(u64::from(receipt_text)))?;
     inventory.value("delivered_receipts", Value::Count(u64::from(delivered_receipts)))?;
     inventory.value("marker_path", Value::Bytes(u64::from(marker_path)))?;

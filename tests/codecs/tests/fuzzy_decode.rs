@@ -32,8 +32,9 @@ fn check_all(bytes: &[u8]) {
     check!(bytes, smith_channel, Waiting);
     check!(bytes, smith_channel, Long);
     check!(bytes, smith_channel, LongDone);
-    check!(bytes, smith_channel, Rejected);
-    check!(bytes, smith_channel, Exhausted);
+    check!(bytes, smith_channel, Unauthorized);
+    check!(bytes, smith_channel, Limited);
+    check!(bytes, smith_channel, AccountRefused);
     check!(bytes, smith_channel, Fact);
     check!(bytes, smith_channel, Live);
     check!(bytes, smith_channel, Answer);
@@ -56,25 +57,26 @@ fn arbitrary_and_mutated_wires_never_panic_and_round_trip_when_valid() {
         ("smith-charter", "v2", "charter"),
         ("smith-charter", "v2", "run_result"),
         ("smith-transcript", "v5", "turn"),
-        ("smith-channel", "v3", "start"),
-        ("smith-channel", "v3", "message"),
-        ("smith-channel", "v3", "message_refused"),
-        ("smith-channel", "v3", "host_answer"),
-        ("smith-channel", "v3", "acknowledge"),
-        ("smith-channel", "v3", "grant_refresh"),
-        ("smith-channel", "v3", "cancel"),
-        ("smith-channel", "v3", "admitted"),
-        ("smith-channel", "v3", "call"),
-        ("smith-channel", "v3", "withdraw"),
-        ("smith-channel", "v3", "turn"),
-        ("smith-channel", "v3", "waiting"),
-        ("smith-channel", "v3", "long"),
-        ("smith-channel", "v3", "long_done"),
-        ("smith-channel", "v3", "rejected"),
-        ("smith-channel", "v3", "exhausted"),
-        ("smith-channel", "v3", "fact"),
-        ("smith-channel", "v3", "live"),
-        ("smith-channel", "v3", "answer"),
+        ("smith-channel", "v4", "start"),
+        ("smith-channel", "v4", "message"),
+        ("smith-channel", "v4", "message_refused"),
+        ("smith-channel", "v4", "host_answer"),
+        ("smith-channel", "v4", "acknowledge"),
+        ("smith-channel", "v4", "grant_refresh"),
+        ("smith-channel", "v4", "cancel"),
+        ("smith-channel", "v4", "admitted"),
+        ("smith-channel", "v4", "call"),
+        ("smith-channel", "v4", "withdraw"),
+        ("smith-channel", "v4", "turn"),
+        ("smith-channel", "v4", "waiting"),
+        ("smith-channel", "v4", "long"),
+        ("smith-channel", "v4", "long_done"),
+        ("smith-channel", "v4", "unauthorized"),
+        ("smith-channel", "v4", "limited"),
+        ("smith-channel", "v4", "account_refused"),
+        ("smith-channel", "v4", "fact"),
+        ("smith-channel", "v4", "live"),
+        ("smith-channel", "v4", "answer"),
     ] {
         let name = format!("record_{record}_full.bin");
         let golden = std::fs::read(root.join(family).join("golden").join(version).join(name)).expect("golden readable");

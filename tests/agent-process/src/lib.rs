@@ -293,7 +293,7 @@ fn host_with_limits(mut limits: channel::Limits) -> ScriptedPeer {
         }
     }
     limits.channel.output_bytes = largest.checked_add(8).expect("host frame");
-    ScriptedPeer::new(schema, Role::Initiator, limits.channel, 3, Box::new([])).expect("scripted host")
+    ScriptedPeer::new(schema, Role::Initiator, limits.channel, 4, Box::new([])).expect("scripted host")
 }
 
 /// One activation Start sent by the scripted host, ending with an Answer.
@@ -331,11 +331,16 @@ pub(crate) fn start_workspace_message(
                     account: 0,
                     generation: 1,
                     valid: Duration::from_secs(7200),
-                    value: smith_channel::GrantValue::new(
-                        &limits,
-                        smith_channel::GrantValueParts { credential: grant_bytes(credential) },
-                    )
-                    .expect("credential envelope"),
+                    value: smith_channel::GrantValue::Withdrawn(
+                        smith_channel::WithdrawnValue::new(
+                            &limits,
+                            smith_channel::WithdrawnValueParts {
+                                id: credential.account_id.clone(),
+                                bearer: skein_lib::Secret::new(credential.access_token.clone()),
+                            },
+                        )
+                        .expect("credential envelope"),
+                    ),
                 },
             )
             .expect("grant"),
@@ -410,13 +415,6 @@ fn scenario_credential(anthropic: bool, private_grant: bool) -> skein_llm::Crede
             Box::from(if private_grant { b"native-private-account-02.6".as_slice() } else { b"acc".as_slice() })
         },
     }
-}
-
-fn grant_bytes(credential: &skein_llm::Credential) -> Box<[u8]> {
-    let mut bytes = u16::try_from(credential.account_id.len()).expect("fixture credential").to_be_bytes().to_vec();
-    bytes.extend_from_slice(&credential.account_id);
-    bytes.extend_from_slice(&credential.access_token);
-    bytes.into_boxed_slice()
 }
 
 /// A concrete charter within the process limits, with one report contract.

@@ -8,6 +8,8 @@ use crate::answer::decode_answer;
 use crate::limits::{Error, Limits};
 use crate::translate::{Values, decode_ask, encode_reply, encode_start};
 
+mod notices;
+
 const RULES: u16 = 256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,9 +75,11 @@ pub enum OpenEvent {
         call: Option<smith_channel::LiveCall>,
     },
     /// A provider rejected this known account and credential generation.
-    Rejected { account: u32, generation: u64 },
+    Unauthorized { account: u32, generation: u64 },
     /// A provider exhausted this known account for a relative cooldown.
-    Exhausted { account: u32, retry_after: Duration },
+    Limited { account: u32, reset: Option<Duration> },
+    /// A provider refused an account request, with bounded code and reason.
+    Refused { account: u32, code: Box<[u8]>, reason: Box<[u8]> },
     /// The independent write stream failed while reads may still settle.
     WriteFailed,
     /// A named operation whose one host terminal remains owed.
@@ -275,7 +279,7 @@ impl Component {
         if self.phase != Phase::Admitted {
             return Err(Error::Order);
         }
-        let value = smith_channel::GrantValue::new(&self.bodies, smith_channel::GrantValueParts { credential })?;
+        let value = crate::translate::withdrawn(&credential, &self.bodies)?;
         let grant = smith_channel::Grant::new(
             &self.bodies,
             smith_channel::GrantParts {
@@ -533,25 +537,10 @@ impl Component {
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
                     }
-                    0x010d if self.phase == Phase::Admitted => {
-                        match smith_channel::Rejected::decode(&self.bodies, &mut Reader::new(&body)) {
-                            Ok(rejected) => {
-                                to_service.push(OpenEvent::Rejected {
-                                    account: rejected.account(),
-                                    generation: rejected.generation(),
-                                });
-                                self.machine.down(Request::Read, &mut self.events, below);
-                            }
-                            Err(_) => self.refuse_rules(b"invalid answer", below),
-                        }
-                    }
-                    0x010e if self.phase == Phase::Admitted => {
-                        match smith_channel::Exhausted::decode(&self.bodies, &mut Reader::new(&body)) {
-                            Ok(exhausted) => {
-                                to_service.push(OpenEvent::Exhausted {
-                                    account: exhausted.account(),
-                                    retry_after: exhausted.retry_after(),
-                                });
+                    0x010d | 0x010e | 0x0113 if self.phase == Phase::Admitted => {
+                        match notices::decode(&self.bodies, kind, &body) {
+                            Ok(notice) => {
+                                to_service.push(notice);
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
@@ -690,7 +679,7 @@ mod tests {
             endpoints: 1,
             calls: 1,
             start_bytes: u32::try_from(
-                smith_channel::v3::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+                smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
             )
             .expect("Start frame range"),
             channel: skein_channel::Limits {
@@ -699,7 +688,7 @@ mod tests {
                 skip: 8,
                 output_bytes: u32::MAX,
                 output_frames: 2,
-                kinds: 19,
+                kinds: 20,
             },
         };
         let mut component =

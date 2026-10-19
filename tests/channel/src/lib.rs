@@ -12,6 +12,13 @@ use smith_protocol_channel as agent;
 
 pub mod referee;
 
+/// The current withdrawn grant fixture, including its empty-id envelope.
+pub const INITIAL_GRANT: &[u8] = b"\0\0secret";
+/// The first refreshed grant fixture.
+pub const REFRESHED_GRANT: &[u8] = b"\0\0new-secret";
+/// The second refreshed grant fixture.
+pub const LATEST_GRANT: &[u8] = b"\0\0latest";
+
 /// An opening observation independent of which half emitted it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Observation {
@@ -69,9 +76,11 @@ pub enum Observation {
     /// A best-effort content-free fact reached the host.
     HostFact { kind: smith_channel::FactKind, elapsed: skein_lib::Duration, count: u64 },
     /// The host received a credential rejection notice.
-    HostRejected { account: u32, generation: u64 },
+    HostUnauthorized { account: u32, generation: u64 },
     /// The host received an account exhaustion notice.
-    HostExhausted { account: u32, retry_after: skein_lib::Duration },
+    HostLimited { account: u32, reset: Option<skein_lib::Duration> },
+    /// The host received an account refusal without any credential.
+    HostRefused { account: u32, code: Box<[u8]>, reason: Box<[u8]> },
     /// The agent received the host's one polite cancellation.
     AgentCancel,
     /// The agent's write stream failed while its read side may continue.
@@ -311,11 +320,14 @@ impl Peer {
                         count: fact.count(),
                     });
                 }
-                host::OpenEvent::Rejected { account, generation } => {
-                    output.push(Observation::HostRejected { account, generation });
+                host::OpenEvent::Unauthorized { account, generation } => {
+                    output.push(Observation::HostUnauthorized { account, generation });
                 }
-                host::OpenEvent::Exhausted { account, retry_after } => {
-                    output.push(Observation::HostExhausted { account, retry_after });
+                host::OpenEvent::Limited { account, reset } => {
+                    output.push(Observation::HostLimited { account, reset });
+                }
+                host::OpenEvent::Refused { account, code, reason } => {
+                    output.push(Observation::HostRefused { account, code, reason });
                 }
                 host::OpenEvent::WriteFailed => output.push(Observation::HostWriteFailed),
                 host::OpenEvent::Call { call, name, deadline, ask } => {
@@ -414,7 +426,7 @@ pub fn test_endpoints() -> agent::Endpoints {
 
 fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
     let schema = smith_channel::schema(&bodies).expect("bounded bodies");
-    let version = schema.version(3).expect("v3");
+    let version = schema.version(4).expect("v4");
     let largest = version.kinds.iter().map(|kind| kind.largest).max().expect("kinds");
     skein_channel::Limits {
         chunk: 4096,
@@ -422,7 +434,7 @@ fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
         skip: 4096,
         output_bytes: largest.checked_add(8).expect("frame fits"),
         output_frames: 4,
-        kinds: 19,
+        kinds: 20,
     }
 }
 
@@ -682,7 +694,7 @@ impl World {
                 smith_host_domain::channel::Window { turns: 2, bytes: 1_000_000_000 },
                 smith_host_protocol::Values {
                     paths: Box::from([Box::from(*b"/tmp/src")]),
-                    credentials: Box::from([Box::from(*b"secret")]),
+                    credentials: Box::from([Box::from(INITIAL_GRANT)]),
                 },
                 skein_lib::Token::new(2),
                 &mut self.host.host_events,
@@ -936,10 +948,10 @@ impl World {
     }
 
     /// Forward one provider rejection from the scripted agent domain.
-    pub fn agent_rejects_grant(&mut self, account: u32, generation: u64) {
+    pub fn agent_reports_unauthorized(&mut self, account: u32, generation: u64) {
         if let Half::Agent(agent) = &mut self.agent.half {
             agent
-                .send_rejected(
+                .send_unauthorized(
                     smith_domain::GrantName { account, generation },
                     skein_lib::Token::new(34),
                     &mut self.agent.agent_events,
@@ -950,17 +962,33 @@ impl World {
     }
 
     /// Forward one account cooldown from the scripted agent domain.
-    pub fn agent_exhausts_account(&mut self, account: u32, retry_after: skein_lib::Duration) {
+    pub fn agent_reports_limited(&mut self, account: u32, reset: Option<skein_lib::Duration>) {
         if let Half::Agent(agent) = &mut self.agent.half {
             agent
-                .send_exhausted(
+                .send_limited(
                     account,
-                    retry_after,
+                    reset,
                     skein_lib::Token::new(35),
                     &mut self.agent.agent_events,
                     &mut self.agent.below,
                 )
                 .expect("bounded exhaustion notice");
+        }
+    }
+
+    /// Forward one bounded account refusal from the scripted agent.
+    pub fn agent_reports_refused(&mut self, account: u32, code: &[u8], reason: &[u8]) {
+        if let Half::Agent(agent) = &mut self.agent.half {
+            agent
+                .send_refused(
+                    account,
+                    code,
+                    reason,
+                    Token::new(37),
+                    &mut self.agent.agent_events,
+                    &mut self.agent.below,
+                )
+                .expect("bounded refused notice");
         }
     }
 
@@ -1053,9 +1081,15 @@ impl World {
     }
 
     /// Inject a version-one Open to exercise version refusal.
-    pub fn agent_hears_foreign_version(&mut self) {
+    pub fn agent_hears_foreign_version(&mut self, version: u16) {
         let frame = control_frame(
-            &Control::Open { magic: *b"smth", lowest: 1, highest: 1, features: 0, credential: Box::default() },
+            &Control::Open {
+                magic: *b"smth",
+                lowest: version,
+                highest: version,
+                features: 0,
+                credential: Box::default(),
+            },
             &self.channel,
         )
         .expect("bounded foreign opening");

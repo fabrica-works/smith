@@ -17,6 +17,8 @@ use crate::turn::encode_turn;
 use smith_domain::run;
 use smith_domain_session::record;
 
+mod notices;
+
 const RULES: u16 = 256;
 const UNAUTHORIZED: u16 = 258;
 
@@ -523,61 +525,6 @@ impl Component {
         self.credentials.value(name.account, name.generation)
     }
 
-    /// Tell the host a provider rejected one named credential generation.
-    pub fn send_rejected(
-        &mut self,
-        name: smith_domain::GrantName,
-        token: Token,
-        to_service: &mut Queue<OpenEvent>,
-        below: &mut Queue<Lower>,
-    ) -> Result<(), Error> {
-        if self.phase != Phase::Admitted {
-            return Err(Error::Order);
-        }
-        let record = smith_channel::Rejected::new(
-            &self.bodies,
-            smith_channel::RejectedParts { account: name.account, generation: name.generation },
-        )?;
-        let Ok(length) = usize::try_from(record.measure()) else {
-            return Err(Error::ResultCapacity);
-        };
-        let mut body = Writer::new(length);
-        record.encode(&mut body)?;
-        let mut frame = frame_writer(0x010d, record.measure())?;
-        frame.put(&body.finish())?;
-        self.machine.down(Request::Send { token, frame: frame.finish()? }, &mut self.events, below);
-        self.drain(to_service, below);
-        self.fire(to_service, below);
-        Ok(())
-    }
-
-    /// Tell the host one account is exhausted for a relative cooldown.
-    pub fn send_exhausted(
-        &mut self,
-        account: u32,
-        retry_after: Duration,
-        token: Token,
-        to_service: &mut Queue<OpenEvent>,
-        below: &mut Queue<Lower>,
-    ) -> Result<(), Error> {
-        if self.phase != Phase::Admitted {
-            return Err(Error::Order);
-        }
-        let record =
-            smith_channel::Exhausted::new(&self.bodies, smith_channel::ExhaustedParts { account, retry_after })?;
-        let Ok(length) = usize::try_from(record.measure()) else {
-            return Err(Error::ResultCapacity);
-        };
-        let mut body = Writer::new(length);
-        record.encode(&mut body)?;
-        let mut frame = frame_writer(0x010e, record.measure())?;
-        frame.put(&body.finish())?;
-        self.machine.down(Request::Send { token, frame: frame.finish()? }, &mut self.events, below);
-        self.drain(to_service, below);
-        self.fire(to_service, below);
-        Ok(())
-    }
-
     fn offer_fact(
         &mut self,
         kind: smith_channel::FactKind,
@@ -727,7 +674,7 @@ impl Component {
             match event {
                 Some(Event::Opening { credential, lowest: _, highest }) => {
                     if credential.is_empty() {
-                        self.machine.down(Request::Accept { version: highest.min(3) }, &mut self.events, below);
+                        self.machine.down(Request::Accept { version: highest.min(4) }, &mut self.events, below);
                     } else {
                         self.machine.down(
                             Request::Refuse { reason: UNAUTHORIZED, text: Box::from(*b"credential on pipe") },
@@ -850,8 +797,7 @@ impl Component {
                             let grant = refresh.grant();
                             let name =
                                 smith_domain::GrantName { account: grant.account(), generation: grant.generation() };
-                            let value = Box::from(grant.value().credential());
-                            match self.credentials.keep(name.account, name.generation, value) {
+                            match self.credentials.keep_wire(name.account, name.generation, grant.value()) {
                                 Ok(()) => {
                                     to_service.push(OpenEvent::Grant {
                                         grant: smith_domain::Grant { name, valid: grant.valid() },
@@ -983,7 +929,7 @@ impl Component {
 
     fn stash_initial_grants(&mut self, start: &smith_channel::Start) -> Result<(), Error> {
         for grant in start.grants() {
-            self.credentials.keep(grant.account(), grant.generation(), Box::from(grant.value().credential()))?;
+            self.credentials.keep_wire(grant.account(), grant.generation(), grant.value())?;
         }
         Ok(())
     }

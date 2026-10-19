@@ -17,7 +17,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
         endpoints: 1,
         calls: 8,
         start_bytes: u32::try_from(
-            smith_channel::v3::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
         )
         .expect("Start frame range"),
         channel: skein_channel::Limits {
@@ -26,7 +26,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
             skip: 8,
             output_bytes: u32::MAX,
             output_frames: 2,
-            kinds: 19,
+            kinds: 20,
         },
     };
     let start = channel::Start {
@@ -53,8 +53,10 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
         }]),
         grants: Box::from([channel::Grant { account: 5, generation: 6, valid: Duration::from_nanos(7) }]),
     };
-    let values =
-        crate::Values { paths: Box::from([Box::from(*b"/tmp/src")]), credentials: Box::from([Box::from(*b"secret")]) };
+    let values = crate::Values {
+        paths: Box::from([Box::from(*b"/tmp/src")]),
+        credentials: Box::from([Box::from(*b"\0\0secret")]),
+    };
     let frame = crate::encode_start(
         start,
         channel::Window { turns: 1, bytes: 4096 },
@@ -85,7 +87,12 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
         start.workspace().as_ref().expect("workspace").directories().get(0).expect("directory").path(),
         b"/tmp/src"
     );
-    assert_eq!(start.grants().get(0).expect("grant").value().credential(), b"secret");
+    let grant = start.grants().get(0).expect("grant");
+    let smith_channel::GrantValue::Withdrawn(value) = grant.value() else {
+        panic!("withdrawn grant");
+    };
+    assert_eq!(value.id().len(), 0);
+    assert!(value.bearer().expose() == b"secret");
 }
 
 #[test]
@@ -97,7 +104,7 @@ fn the_host_sends_open_before_the_domain_hears_anything() {
         endpoints: 1,
         calls: 8,
         start_bytes: u32::try_from(
-            smith_channel::v3::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
         )
         .expect("Start frame range"),
         channel: skein_channel::Limits {
@@ -106,7 +113,7 @@ fn the_host_sends_open_before_the_domain_hears_anything() {
             skip: 8,
             output_bytes: u32::MAX,
             output_frames: 2,
-            kinds: 19,
+            kinds: 20,
         },
     };
     let mut component = Component::new(&limits, StreamMode::Two, endpoints()).expect("checked schema");
@@ -132,7 +139,7 @@ fn process_limits() -> Limits {
         endpoints: 1,
         calls: 8,
         start_bytes: u32::try_from(
-            smith_channel::v3::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
         )
         .expect("Start frame range"),
         channel: skein_channel::Limits {
@@ -141,7 +148,7 @@ fn process_limits() -> Limits {
             skip: 8,
             output_bytes: u32::MAX,
             output_frames: 2,
-            kinds: 19,
+            kinds: 20,
         },
     }
 }

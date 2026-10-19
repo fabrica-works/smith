@@ -572,7 +572,6 @@ pub(crate) fn invalid_start(invalid: run::Invalid, limits: &channel::Limits) -> 
     })
 }
 
-#[expect(clippy::manual_map, reason = "the protocol subset projects the optional cooldown without a closure")]
 fn failure_record(
     failure: run::Failure,
     limits: &channel::Limits,
@@ -582,9 +581,10 @@ fn failure_record(
         run::Failure::Transcript(refusal) => {
             let value = match refusal {
                 run::TranscriptRefusal::Version => channel::TranscriptRefusal::Version,
-                run::TranscriptRefusal::Endpoint => channel::TranscriptRefusal::Endpoint,
-                run::TranscriptRefusal::Dialect => channel::TranscriptRefusal::Dialect,
-                run::TranscriptRefusal::Malformed => channel::TranscriptRefusal::Malformed,
+                // smith 03.3 removes the domain refusals.
+                run::TranscriptRefusal::Endpoint
+                | run::TranscriptRefusal::Dialect
+                | run::TranscriptRefusal::Malformed => channel::TranscriptRefusal::Malformed,
                 run::TranscriptRefusal::Unresolved => channel::TranscriptRefusal::Unresolved,
                 run::TranscriptRefusal::TooLarge => channel::TranscriptRefusal::TooLarge,
             };
@@ -594,25 +594,8 @@ fn failure_record(
             )?)
         }
         run::Failure::Model(fault) => {
-            let value = model_fault(fault, limits)?;
-            let (account, retry_after_ms) = match fault {
-                run::Fault::Exhausted { account, retry_at } => (
-                    Some(account),
-                    match retry_at {
-                        Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
-                        None => None,
-                    },
-                ),
-                run::Fault::Completion { .. }
-                | run::Fault::Provider
-                | run::Fault::Refused
-                | run::Fault::Truncated
-                | run::Fault::Malformed => (None, None),
-            };
-            channel::RunFailure::Model(channel::ModelFaultValue::new(
-                limits,
-                channel::ModelFaultValueParts { value, account, retry_after_ms },
-            )?)
+            let value = model_fault(fault, now, limits)?;
+            channel::RunFailure::Model(channel::ModelFaultValue::new(limits, channel::ModelFaultValueParts { value })?)
         }
         run::Failure::Budget { exhausted, used, bound } => {
             let value = budget_failure(exhausted, limits)?;
@@ -630,7 +613,12 @@ fn failure_record(
     Ok(record)
 }
 
-fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::ModelFault, Error> {
+#[expect(clippy::manual_map, reason = "the protocol subset projects the optional cooldown without a closure")]
+fn model_fault(
+    fault: run::Fault,
+    now: skein_lib::Time,
+    limits: &channel::Limits,
+) -> Result<channel::ModelFault, Error> {
     let value = match fault {
         run::Fault::Completion { failure, evidence, model, attempts } => {
             let (failure, retry_after) = match failure {
@@ -672,12 +660,31 @@ fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::M
             };
             channel::ModelFault::Completion(channel::CompletionFault::new(
                 limits,
-                channel::CompletionFaultParts { failure, evidence, retry_after, model, attempts },
+                // smith 02.1 fills the provider report fields.
+                channel::CompletionFaultParts {
+                    failure,
+                    evidence,
+                    retry_after,
+                    model,
+                    attempts,
+                    code: Box::default(),
+                    request_id: Box::default(),
+                    field: Box::default(),
+                },
             )?)
         }
-        run::Fault::Exhausted { .. } => channel::ModelFault::Exhausted,
+        run::Fault::Exhausted { account, retry_at } => channel::ModelFault::Limited(channel::LimitedFault::new(
+            limits,
+            channel::LimitedFaultParts {
+                account,
+                reset: match retry_at {
+                    Some(at) => Some(at.saturating_since(now)),
+                    None => None,
+                },
+            },
+        )?),
         run::Fault::Provider => channel::ModelFault::Provider,
-        run::Fault::Refused => channel::ModelFault::Refused,
+        run::Fault::Refused => channel::ModelFault::Declined,
         run::Fault::Truncated => channel::ModelFault::Truncated,
         run::Fault::Malformed => channel::ModelFault::Malformed,
     };

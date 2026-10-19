@@ -37,6 +37,29 @@ impl Credentials {
         }
     }
 
+    // smith 04.1 replaces the withdrawn envelope with tagged values.
+    pub(crate) fn keep_wire(
+        &mut self,
+        account: u32,
+        generation: u64,
+        value: &smith_channel::GrantValue,
+    ) -> Result<(), Error> {
+        let value = match value {
+            smith_channel::GrantValue::Withdrawn(value) => value,
+            smith_channel::GrantValue::Credential(_) | smith_channel::GrantValue::Program(_) => {
+                return Err(Error::Grants);
+            }
+        };
+        let payload = value.id().len().checked_add(value.bearer().expose().len()).ok_or(Error::Grants)?;
+        let size = payload.checked_add(2).ok_or(Error::Grants)?;
+        let mut bytes = skein_lib::Writer::new(size);
+        let id_len = u16::try_from(value.id().len()).or(Err(Error::Grants))?;
+        bytes.put(&id_len.to_be_bytes())?;
+        bytes.put(value.id())?;
+        bytes.put(value.bearer().expose())?;
+        self.keep(account, generation, bytes.finish())
+    }
+
     pub(crate) fn keep(&mut self, account: u32, generation: u64, value: Box<[u8]>) -> Result<(), Error> {
         if generation == 0 {
             return Err(Error::Grants);

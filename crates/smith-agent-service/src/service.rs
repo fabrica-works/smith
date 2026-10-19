@@ -2050,7 +2050,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_rejected(grant, token, &mut service.channel_events, &mut service.channel_below)
+                .send_unauthorized(grant, token, &mut service.channel_events, &mut service.channel_below)
                 .is_err()
             {
                 service.mark_failed(Failure::Send);
@@ -2062,7 +2062,14 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_exhausted(account, retry_after, token, &mut service.channel_events, &mut service.channel_below)
+                .send_limited(
+                    account,
+                    // smith 02.1 gives an unsaid reset its own domain representation.
+                    if retry_after == Duration::ZERO { None } else { Some(retry_after) },
+                    token,
+                    &mut service.channel_events,
+                    &mut service.channel_below,
+                )
                 .is_err()
             {
                 service.mark_failed(Failure::Send);
@@ -2495,7 +2502,7 @@ mod tests {
         let decoded_call_bytes = 4096;
         let channel_bodies = smith_channel::CEILINGS;
         let schema = smith_channel::schema(&channel_bodies).expect("bounded channel schema");
-        let version = schema.version(3).expect("v3");
+        let version = schema.version(4).expect("v4");
         let mut largest = 0;
         for kind in &version.kinds {
             largest = largest.max(kind.largest);
@@ -2532,7 +2539,7 @@ mod tests {
                     skip: 4096,
                     output_bytes: largest.checked_add(8).expect("largest frame"),
                     output_frames: 4,
-                    kinds: 19,
+                    kinds: 20,
                 },
                 endpoints: 1,
                 calls: 8,
@@ -2924,7 +2931,7 @@ mod tests {
                 profile: b"test".as_slice().into(),
                 capture: smith_events::Capture::Calls,
                 delivery: smith_events::Delivery::Complete,
-                versions: smith_events::Versions { events: 3, channel: 3, charter: 2, transcript: 5, chat_store: None },
+                versions: smith_events::Versions { events: 3, channel: 4, charter: 2, transcript: 5, chat_store: None },
                 limits: List::with_capacity(0),
             },
         );

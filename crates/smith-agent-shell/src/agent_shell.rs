@@ -220,7 +220,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         delivery: trace.delivery.encoded(),
         versions: smith_events::Versions {
             events: smith_events::VERSION,
-            channel: 3,
+            channel: 4,
             charter: 2,
             transcript: 5,
             chat_store: None,

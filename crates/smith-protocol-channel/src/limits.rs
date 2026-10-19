@@ -66,13 +66,13 @@ pub enum Error {
     /// The measured result did not fit its output writer.
     ResultWrite(skein_lib::Overflow),
     /// A domain answer exceeds the configured channel body limits.
-    Answer(smith_channel::v3::Problem),
+    Answer(smith_channel::v4::Problem),
     /// A measured application frame could not be built.
     Frame(skein_channel::FrameError),
 }
 
-impl From<smith_channel::v3::Problem> for Error {
-    fn from(problem: smith_channel::v3::Problem) -> Error {
+impl From<smith_channel::v4::Problem> for Error {
+    fn from(problem: smith_channel::v4::Problem) -> Error {
         Error::Answer(problem)
     }
 }
@@ -152,7 +152,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(skein_lib::Map::<u32, u64>::worst_case(limits.turns)?)?
         .checked_add(List::<u32>::worst_case(limits.turns)?)?
         .checked_add(skein_lib::Map::<(u32, u64), crate::credentials::Secret>::worst_case(limits.grants)?)?
-        .checked_add(u64::from(limits.grants).checked_mul(u64::from(limits.bodies.grant_value_credential))?)?
+        .checked_add(u64::from(limits.grants).checked_mul(grant_bytes(&limits.bodies)?)?)?
         .checked_add(u64::try_from(size_of::<Component>()).ok()?)
 }
 
@@ -189,7 +189,18 @@ fn start_cells(limits: &smith_channel::Limits) -> Option<u64> {
         directory_name: 0,
         directory_path: 0,
         directory_conflicts_item: 0,
-        grant_value_credential: 0,
+        credential_value_bytes: 0,
+        program_value_name: 0,
+        withdrawn_value_id: 0,
+        withdrawn_value_bearer: 0,
+        account_refused_code: 0,
+        account_refused_reason: 0,
+        completion_fault_code: 0,
+        completion_fault_request_id: 0,
+        completion_fault_field: 0,
+        refused_fault_code: 0,
+        program_fault_name: 0,
+        program_fault_detail: 0,
         receipt_text: 0,
         marker_path: 0,
         delivery_refusal_explanation: 0,
@@ -269,4 +280,11 @@ fn turn_cells(limits: &smith_transcript::v5::Limits) -> Option<u64> {
         ..*limits
     };
     smith_transcript::Turn::worst_case_heap(&cells)
+}
+
+// Until smith 04.1, retained withdrawn values use the table's two-byte envelope.
+fn grant_bytes(limits: &smith_channel::Limits) -> Option<u64> {
+    let withdrawn =
+        u64::from(limits.withdrawn_value_id).checked_add(u64::from(limits.withdrawn_value_bearer))?.checked_add(2)?;
+    Some(withdrawn.max(u64::from(limits.credential_value_bytes)).max(u64::from(limits.program_value_name)))
 }

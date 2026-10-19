@@ -954,8 +954,9 @@ impl ProcessAdapter {
                     | protocol::OpenEvent::Turn { .. }
                     | protocol::OpenEvent::Fact { .. }
                     | protocol::OpenEvent::Live { .. }
-                    | protocol::OpenEvent::Rejected { .. }
-                    | protocol::OpenEvent::Exhausted { .. }
+                    | protocol::OpenEvent::Unauthorized { .. }
+                    | protocol::OpenEvent::Limited { .. }
+                    | protocol::OpenEvent::Refused { .. }
                     | protocol::OpenEvent::Call { .. }
                     | protocol::OpenEvent::Withdraw { .. } => {}
                 },
@@ -1215,8 +1216,9 @@ fn read_terminal(event: &protocol::ProcessEvent) -> bool {
             | protocol::OpenEvent::Turn { .. }
             | protocol::OpenEvent::Fact { .. }
             | protocol::OpenEvent::Live { .. }
-            | protocol::OpenEvent::Rejected { .. }
-            | protocol::OpenEvent::Exhausted { .. }
+            | protocol::OpenEvent::Unauthorized { .. }
+            | protocol::OpenEvent::Limited { .. }
+            | protocol::OpenEvent::Refused { .. }
             | protocol::OpenEvent::Call { .. }
             | protocol::OpenEvent::Withdraw { .. } => true,
         },
@@ -1289,13 +1291,19 @@ fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
         OpenEvent::Fact { body } => {
             host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Fact { body } })
         }
-        OpenEvent::Rejected { account, generation } => host::Input::Process(host::process::Event::Received {
+        OpenEvent::Unauthorized { account, generation } => host::Input::Process(host::process::Event::Received {
             owner: agent,
             message: host::Up::Rejected { account, generation },
         }),
-        OpenEvent::Exhausted { account, retry_after } => host::Input::Process(host::process::Event::Received {
+        OpenEvent::Limited { account, reset } => host::Input::Process(host::process::Event::Received {
             owner: agent,
-            message: host::Up::Exhausted { account, retry_after },
+            // smith 02.2 gives the optional reset its domain form.
+            message: host::Up::Exhausted { account, retry_after: reset.unwrap_or(skein_lib::Duration::ZERO) },
+        }),
+        // smith 02.2 gives refused notices their domain form.
+        OpenEvent::Refused { account, .. } => host::Input::Process(host::process::Event::Received {
+            owner: agent,
+            message: host::Up::Rejected { account, generation: 0 },
         }),
         OpenEvent::WriteFailed => unreachable!("write failure does not end a host read"),
         OpenEvent::Call { call, name, deadline, ask } => host::Input::Process(host::process::Event::Received {

@@ -370,13 +370,17 @@ impl HostService {
             OpenEvent::Fact { body } => {
                 host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Fact { body } })
             }
-            OpenEvent::Rejected { account, generation } => host::Input::Process(host::process::Event::Received {
+            OpenEvent::Unauthorized { account, generation } => host::Input::Process(host::process::Event::Received {
                 owner: agent,
                 message: host::Up::Rejected { account, generation },
             }),
-            OpenEvent::Exhausted { account, retry_after } => host::Input::Process(host::process::Event::Received {
+            OpenEvent::Limited { account, reset } => host::Input::Process(host::process::Event::Received {
                 owner: agent,
-                message: host::Up::Exhausted { account, retry_after },
+                message: host::Up::Exhausted { account, retry_after: reset.unwrap_or(Duration::ZERO) },
+            }),
+            OpenEvent::Refused { account, .. } => host::Input::Process(host::process::Event::Received {
+                owner: agent,
+                message: host::Up::Rejected { account, generation: 0 },
             }),
             OpenEvent::Call { call, name, deadline, ask } => host::Input::Process(host::process::Event::Received {
                 owner: agent,

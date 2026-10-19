@@ -28,7 +28,7 @@ fn the_agent_demands_the_open_before_the_domain_hears_anything() {
             skip: 8,
             output_bytes: u32::MAX,
             output_frames: 2,
-            kinds: 19,
+            kinds: 20,
         },
     };
     let mut component =

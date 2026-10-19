@@ -1,25 +1,27 @@
 //! Channel opening stories (protocol/channel.md, sections 2 and 10).
 use skein_channel::{Closed, StreamMode};
 use smith_channel::CEILINGS;
-use smith_channel_world::{Observation, World, window_turn_fixture};
+use smith_channel_world::{INITIAL_GRANT, LATEST_GRANT, Observation, REFRESHED_GRANT, World, window_turn_fixture};
 
 #[test]
 fn the_halves_open_on_the_highest_version_both_speak() {
     for mode in [StreamMode::One, StreamMode::Two] {
         let mut world = World::new(CEILINGS, CEILINGS, mode);
         world.settle();
-        assert!(world.observations().contains(&Observation::HostOpened(3)));
-        assert!(world.observations().contains(&Observation::AgentOpened(3)));
+        assert!(world.observations().contains(&Observation::HostOpened(4)));
+        assert!(world.observations().contains(&Observation::AgentOpened(4)));
     }
 }
 
 #[test]
 fn no_version_in_common_ends_the_channel_before_a_start() {
-    let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
-    world.agent_hears_foreign_version();
-    world.settle();
-    assert!(world.observations().contains(&Observation::AgentEnded(Closed::RefusedHere(1))));
-    assert!(!world.observations().contains(&Observation::AgentOpened(3)));
+    for version in [1, 2, 3] {
+        let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+        world.agent_hears_foreign_version(version);
+        world.settle();
+        assert!(world.observations().contains(&Observation::AgentEnded(Closed::RefusedHere(1))), "version {version}");
+        assert!(!world.observations().contains(&Observation::AgentOpened(4)), "version {version}");
+    }
 }
 
 #[test]
@@ -317,7 +319,7 @@ fn the_start_keeps_workspace_paths_saved_answers_and_grant_values_below_the_doma
         answered: 1,
         window: 2,
     }));
-    assert_eq!(world.agent_grant_value(3, 4), Some(Box::from(*b"secret")));
+    assert!(world.agent_grant_value(3, 4).as_deref() == Some(INITIAL_GRANT));
     assert!(world.observations().contains(&Observation::AgentSavedHost {
         activation: 6,
         tool: Box::from(*b"check"),
@@ -404,7 +406,7 @@ fn a_saved_turn_from_another_dialect_fails_as_transcript() {
     );
     world.settle();
     assert!(world.observations().contains(&Observation::HostAdmitted));
-    assert!(world.observations().contains(&Observation::TranscriptFailed(smith_channel::TranscriptRefusal::Dialect)));
+    assert!(world.observations().contains(&Observation::TranscriptFailed(smith_channel::TranscriptRefusal::Malformed)));
     assert!(!world.observations().contains(&Observation::AgentStart));
 }
 
@@ -747,24 +749,50 @@ fn grants_refreshed_while_a_call_is_in_flight_reach_the_table() {
         smith_domain::run::RelayName { owner: skein_lib::Token::new(10), attempt: 1 },
     );
     world.settle();
-    world.host_refreshes_grant(3, 5, Box::from(*b"new-secret"));
+    world.host_refreshes_grant(3, 5, Box::from(REFRESHED_GRANT));
     world.settle();
-    assert_eq!(world.agent_grant_value(3, 4), Some(Box::from(*b"secret")));
-    assert_eq!(world.agent_grant_value(3, 5), Some(Box::from(*b"new-secret")));
+    assert!(world.agent_grant_value(3, 4).as_deref() == Some(INITIAL_GRANT));
+    assert!(world.agent_grant_value(3, 5).as_deref() == Some(REFRESHED_GRANT));
     assert!(world.observations().contains(&Observation::AgentGrant {
         account: 3,
         generation: 5,
         valid: skein_lib::Duration::from_nanos(50),
     }));
-    world.host_refreshes_grant(3, 6, Box::from(*b"latest"));
+    world.host_refreshes_grant(3, 6, Box::from(LATEST_GRANT));
     world.settle();
-    assert_eq!(world.agent_grant_value(3, 4), None);
-    assert_eq!(world.agent_grant_value(3, 5), Some(Box::from(*b"new-secret")));
-    assert_eq!(world.agent_grant_value(3, 6), Some(Box::from(*b"latest")));
+    assert!(world.agent_grant_value(3, 4).is_none());
+    assert!(world.agent_grant_value(3, 5).as_deref() == Some(REFRESHED_GRANT));
+    assert!(world.agent_grant_value(3, 6).as_deref() == Some(LATEST_GRANT));
 }
 
 #[test]
-fn rejected_and_exhausted_notices_reach_the_host_without_values() {
+fn account_notices_reach_the_host_without_values() {
+    type Report = fn(&mut World);
+    let rows: [(Report, Observation); 4] = [
+        (|world| world.agent_reports_unauthorized(3, 4), Observation::HostUnauthorized { account: 3, generation: 4 }),
+        (
+            |world| world.agent_reports_limited(3, Some(skein_lib::Duration::ZERO)),
+            Observation::HostLimited { account: 3, reset: Some(skein_lib::Duration::ZERO) },
+        ),
+        (|world| world.agent_reports_limited(3, None), Observation::HostLimited { account: 3, reset: None }),
+        (
+            |world| world.agent_reports_refused(3, b"model_refused", b"plan does not serve it"),
+            Observation::HostRefused {
+                account: 3,
+                code: Box::from(*b"model_refused"),
+                reason: Box::from(*b"plan does not serve it"),
+            },
+        ),
+    ];
+    for (report, expected) in rows {
+        let mut world = admitted_notice_world();
+        report(&mut world);
+        world.settle();
+        assert!(world.observations().contains(&expected), "{expected:?}");
+    }
+}
+
+fn admitted_notice_world() -> World {
     let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     world.settle();
     world.send_start(Box::from(
@@ -773,15 +801,7 @@ fn rejected_and_exhausted_notices_reach_the_host_without_values() {
     world.settle();
     world.agent_admits();
     world.settle();
-    world.agent_rejects_grant(3, 4);
-    world.agent_exhausts_account(3, skein_lib::Duration::from_nanos(42));
-    world.settle();
-    assert!(world.observations().contains(&Observation::HostRejected { account: 3, generation: 4 }));
-    assert!(
-        world
-            .observations()
-            .contains(&Observation::HostExhausted { account: 3, retry_after: skein_lib::Duration::from_nanos(42) })
-    );
+    world
 }
 
 #[test]

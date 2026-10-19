@@ -85,7 +85,7 @@ pub fn encode_start(
     }
     let mut grants = List::with_capacity(limits.start_grants);
     for (grant, credential) in start.grants.into_iter().zip(values.credentials) {
-        let value = wire::GrantValue::new(limits, wire::GrantValueParts { credential })?;
+        let value = withdrawn(&credential, limits)?;
         let item = wire::Grant::new(
             limits,
             wire::GrantParts { account: grant.account, generation: grant.generation, valid: grant.valid, value },
@@ -298,4 +298,29 @@ pub(crate) fn encode_reply(
     let mut frame = frame_writer(0x0102, record.measure())?;
     frame.put(&body.finish())?;
     Ok(frame.finish()?)
+}
+
+// smith 04.1 replaces the lent envelope with tagged grant values.
+pub(crate) fn withdrawn(credential: &[u8], limits: &wire::Limits) -> Result<wire::GrantValue, Error> {
+    if credential.len() < 2 {
+        return Err(Error::Grants);
+    }
+    let length = usize::from(u16::from_be_bytes([
+        *credential.first().ok_or(Error::Grants)?,
+        *credential.get(1).ok_or(Error::Grants)?,
+    ]));
+    let end = length.checked_add(2).ok_or(Error::Grants)?;
+    if length > 1024 {
+        return Err(Error::Grants);
+    }
+    let id = credential.get(2..end).ok_or(Error::Grants)?;
+    let value = wire::WithdrawnValue::new(
+        limits,
+        wire::WithdrawnValueParts {
+            id: Box::from(id),
+            bearer: skein_lib::Secret::new(Box::from(credential.get(end..).ok_or(Error::Grants)?)),
+        },
+    )
+    .or(Err(Error::Grants))?;
+    Ok(wire::GrantValue::Withdrawn(value))
 }

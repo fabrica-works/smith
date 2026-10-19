@@ -464,8 +464,9 @@ impl Process {
                 | OpenEvent::Turn { .. }
                 | OpenEvent::Fact { .. }
                 | OpenEvent::Live { .. }
-                | OpenEvent::Rejected { .. }
-                | OpenEvent::Exhausted { .. }
+                | OpenEvent::Unauthorized { .. }
+                | OpenEvent::Limited { .. }
+                | OpenEvent::Refused { .. }
                 | OpenEvent::WriteFailed
                 | OpenEvent::Call { .. }
                 | OpenEvent::Withdraw { .. }) => {

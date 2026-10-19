@@ -214,8 +214,9 @@ pub fn review(observations: &[Observation], credential: Box<[u8]>) -> Referee<Me
             | Observation::HostLong { .. }
             | Observation::HostLongDone
             | Observation::HostFact { .. }
-            | Observation::HostRejected { .. }
-            | Observation::HostExhausted { .. }
+            | Observation::HostUnauthorized { .. }
+            | Observation::HostLimited { .. }
+            | Observation::HostRefused { .. }
             | Observation::AgentCancel
             | Observation::AgentWriteFailed
             | Observation::HostWriteFailed

@@ -147,7 +147,7 @@ impl Host for Tracing {
                     delivery: smith_events::Delivery::Complete,
                     versions: smith_events::Versions {
                         events: 3,
-                        channel: 3,
+                        channel: 4,
                         charter: 2,
                         transcript: 5,
                         chat_store: None,
