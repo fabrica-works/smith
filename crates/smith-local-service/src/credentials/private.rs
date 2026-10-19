@@ -80,6 +80,7 @@ impl Accounts {
                     }
                     self.file_requests.push(oauth::FileLower::Request { request, deadline });
                 }
+                oauth::FileLower::Remove { .. } => unreachable!("local accounts do not sign out"),
                 oauth::FileLower::Cancel { owner: cancelled } => {
                     file_layer::cancel(&mut self.files, cancelled, &mut self.submissions);
                     for _ in 0..self.file_requests.len() {
@@ -91,6 +92,7 @@ impl Accounts {
                                     self.file_requests.push(oauth::FileLower::Request { request, deadline });
                                 }
                             }
+                            oauth::FileLower::Remove { .. } => unreachable!("local accounts do not sign out"),
                             oauth::FileLower::Cancel { owner } => {
                                 self.file_requests.push(oauth::FileLower::Cancel { owner });
                             }

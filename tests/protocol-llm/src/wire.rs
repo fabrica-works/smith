@@ -423,7 +423,7 @@ impl Wire {
         let peer = Exchange::prepared_with_options(
             client,
             peer_endpoint,
-            peer_credential,
+            Some(peer_credential),
             limits.client,
             scripts,
             skein_fake_llm_protocol::documents::Options {

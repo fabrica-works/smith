@@ -379,8 +379,13 @@ fn actual(
     let observations = observation_limits(limits);
     let retained_bound = sum([
         skein_llm::client::worst_case(&limits.client).expect("one retained actual Client independent bound"),
-        extra_worst_case(&limits.client, &observations, &configuration.endpoint, &configuration.credential)
-            .expect("one retained peer independent bound excludes Client"),
+        extra_worst_case(
+            &limits.client,
+            &observations,
+            &configuration.endpoint,
+            core::slice::from_ref(&configuration.credential),
+        )
+        .expect("one retained peer independent bound excludes Client"),
         cells::<Observed>(4),
     ]);
     let before = meter.held();
@@ -1137,8 +1142,13 @@ impl Counted {
             incoming,
             adapter::worst_case(&limits, &complete.receiving).expect("one actual context/translation bound"),
             skein_llm::client::worst_case(&limits.client).expect("one actual retained Client bound"),
-            extra_worst_case(&limits.client, &observations, &configuration.endpoint, &configuration.credential)
-                .expect("independent peer price excludes Client"),
+            extra_worst_case(
+                &limits.client,
+                &observations,
+                &configuration.endpoint,
+                core::slice::from_ref(&configuration.credential),
+            )
+            .expect("independent peer price excludes Client"),
             caller_native_bytes(configuration, cycles, schema_constructor),
             complete.receiving.max_completion_bytes,
         ]);

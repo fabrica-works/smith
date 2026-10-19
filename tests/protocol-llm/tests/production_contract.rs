@@ -171,11 +171,11 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
         let mut peer = skein_llm_world::fake::Exchange::prepared(
             prepared.client,
             configuration.endpoint.clone(),
-            skein_llm::Credential {
+            Some(skein_llm::Credential {
                 value: configuration.credential.value.clone(),
                 account_id: configuration.credential.account_id.clone(),
                 scheme: skein_llm::Scheme::Bearer,
-            },
+            }),
             bounds.client,
             scripts,
         );

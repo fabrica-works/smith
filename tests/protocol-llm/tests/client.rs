@@ -395,7 +395,7 @@ fn two_calls(
             tokens: 8,
         }]),
     }]);
-    let peer = skein_llm_world::fake::Exchange::prepared(client, endpoint, credential, bounds.client, scripts);
+    let peer = skein_llm_world::fake::Exchange::prepared(client, endpoint, Some(credential), bounds.client, scripts);
     (context, peer)
 }
 

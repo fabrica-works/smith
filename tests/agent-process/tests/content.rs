@@ -319,11 +319,10 @@ fn native_provider_failure_keeps_status_and_capture_selected_detail_in_every_ter
 
 #[test]
 fn no_grant_value_reaches_a_turn_fact_or_trace() {
-    use smith_agent_process_world::{PRIVATE_GRANT, bearer};
+    use smith_agent_process_world::{PRIVATE_GRANT, bearer, key};
     let charter = charter();
     let secret = PRIVATE_GRANT;
-    // Ruling 124: smith-repin adds the key row with the fake that accepts x-api-key.
-    let rows = [(bearer(secret), (true, false))];
+    let rows = [(bearer(secret), (true, false)), (key(secret), (true, false))];
     for (index, (value, expected)) in rows.into_iter().enumerate() {
         let mut world = World::new(39, &charter);
         world.private_grant();

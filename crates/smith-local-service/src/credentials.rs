@@ -254,6 +254,8 @@ impl Accounts {
                         oauth::Account::SignIn {
                             registration,
                             endpoint,
+                            origins: List::with_capacity(0),
+                            shared: false,
                             keeper: oauth::Keeper::Private { root, directory, file },
                         },
                     )
@@ -362,7 +364,7 @@ impl Accounts {
                 let request = if *sign_in {
                     *sign_in = false;
                     *signing = true;
-                    oauth::Request::SignIn { account: index }
+                    oauth::Request::SignIn { account: index, subject: None }
                 } else if account.wanted {
                     oauth::Request::Grant { account: index }
                 } else {
@@ -508,6 +510,7 @@ impl Accounts {
                     });
                 }
                 oauth::FileLower::Cancel { .. } => {}
+                oauth::FileLower::Remove { .. } => unreachable!("local accounts do not sign out"),
             }
         }
         deadline
@@ -737,6 +740,12 @@ impl Accounts {
                     out.push(CredentialRequest::SignedIn { account: account.number });
                 }
                 Some(oauth::Event::Closed) => self.closed = true,
+                Some(
+                    oauth::Event::Removed { .. }
+                    | oauth::Event::SignedOut { .. }
+                    | oauth::Event::Lock { .. }
+                    | oauth::Event::Unlock { .. },
+                ) => unreachable!("local accounts are private and not removed"),
                 Some(oauth::Event::Keep { .. }) => {
                     unreachable!("private keepers own their durable records")
                 }

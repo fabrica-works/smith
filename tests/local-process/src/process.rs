@@ -120,9 +120,12 @@ fn issuer_with_token(transport: skein_fake_peers::Transport, port: u16, access_t
         uri_bytes: 8192,
         request_bytes: 16_384,
         codes: 4,
+        carried: 0,
         rotations: 4,
         plans: 4,
     };
+    // The issuer bounds redirects with an issued client id and token replies.
+    let response_bytes = limits.uri_bytes + 6 * limits.document.string_bytes + 267;
     let host = smith_agent_process_world::fake::loopback();
     let redirect = smith_agent_process_world::fake::redirect_port();
     let mut issuer = Issuer::new(
@@ -134,11 +137,19 @@ fn issuer_with_token(transport: skein_fake_peers::Transport, port: u16, access_t
             token_endpoint: format!("{scheme}://{host}:{port}/token").into_bytes().into(),
             client_id: b"client".as_slice().into(),
             client_secret: None,
+            terms: None,
             redirect_uri: format!("http://127.0.0.1:{redirect}/callback").into_bytes().into(),
             refresh_token: b"refresh-old".as_slice().into(),
         },
         limits,
-        skein_http::server::Limits { head: 8192, headers: 32, body: 16_384, read: 1024, response: 49_152, send: 1024 },
+        skein_http::server::Limits {
+            head: 8192,
+            headers: 32,
+            body: 16_384,
+            read: 1024,
+            response: response_bytes,
+            send: 1024,
+        },
     )
     .expect("issuer fixture");
     issuer

@@ -11,6 +11,7 @@ fn limits() -> oauth::Limits {
     oauth::Limits {
         accounts: 2,
         file_stall: Duration::from_secs(30),
+        lock_wait: Duration::from_secs(1),
         exchanges: 1,
         listeners: 0,
         server: skein_http::server::Limits { head: 1024, headers: 8, body: 1024, read: 256, response: 1024, send: 256 },
@@ -34,6 +35,11 @@ fn limits() -> oauth::Limits {
             parameter_bytes: 0,
             resource_bytes: 0,
             nonce_bytes: 0,
+            metadata_bytes: 0,
+            key_set_bytes: 0,
+            keys: 0,
+            modulus_bits: 2048,
+            skew: Duration::ZERO,
             document: skein_oauth::Limits {
                 issued_client_bytes: 0,
                 granted_bytes: 64,

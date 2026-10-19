@@ -82,14 +82,14 @@ pub fn peer_for(anthropic: bool) -> llm::Peer {
         tokens: 1,
     }]);
     let scripts = Box::new([api::Script { cue: Box::new([]), turns }]);
-    let credential = standard_credential();
+    let credential = standard_credential(anthropic);
     if anthropic { configured_anthropic(scripts, credential) } else { configured(scripts, credential, Duration::ZERO) }
 }
 
-fn standard_credential() -> skein_llm::Credential {
+fn standard_credential(anthropic: bool) -> skein_llm::Credential {
     skein_llm::Credential {
         value: b"token".as_slice().into(),
-        account_id: b"acc".as_slice().into(),
+        account_id: if anthropic { Box::new([]) } else { b"acc".as_slice().into() },
         scheme: skein_llm::Scheme::Bearer,
     }
 }
@@ -97,7 +97,7 @@ fn standard_credential() -> skein_llm::Credential {
 /// Script a reply with the shared scenario's standard credential.
 #[must_use]
 pub fn scripted_reply(turns: Box<[api::Turn]>, anthropic: bool) -> llm::Peer {
-    scripted(turns, standard_credential(), anthropic)
+    scripted(turns, standard_credential(anthropic), anthropic)
 }
 
 /// Write the supplied turns through the scenario's provider dialect.
@@ -201,6 +201,7 @@ fn configured_bounds(
                 skein_llm_world::call(1).endpoint.target
             },
             headers: Box::new([]),
+            without_credential: false,
         },
         credential,
         protocol,
@@ -217,7 +218,8 @@ pub fn queries(peer: &llm::Peer) -> impl Iterator<Item = &api::Query> {
         llm::Observation::Head { .. }
         | llm::Observation::Accepted { .. }
         | llm::Observation::Answered { .. }
-        | llm::Observation::Closed { .. } => None,
+        | llm::Observation::Closed { .. }
+        | llm::Observation::Credential { .. } => None,
     })
 }
 

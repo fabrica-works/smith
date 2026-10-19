@@ -109,7 +109,7 @@ fn adopt(input: Input, calls: bool) -> (Context, Exchange) {
         scheme: skein_llm::Scheme::Bearer,
     };
     let adapter::Prepared { client, context } = adapter::prepare(input, &limits()).expect("positive admission");
-    let peer = Exchange::prepared(client, endpoint, credential, limits().client, scripts(calls));
+    let peer = Exchange::prepared(client, endpoint, Some(credential), limits().client, scripts(calls));
     assert!(peer.queries.is_empty(), "preparation starts no wire request");
     assert!(peer.requests.is_empty());
     (context, peer)
@@ -201,6 +201,13 @@ fn completed_owner_is_preserved_and_a_different_owner_is_refused() {
     }
 }
 
+fn overloaded_status(configuration: &Configuration) -> u16 {
+    match configuration.endpoint.provider {
+        shared::Provider::OpenAi | shared::Provider::OpenAiCodex => 503,
+        shared::Provider::Anthropic => 529,
+    }
+}
+
 fn failed(configuration: &Configuration) -> (Context, Exchange, client::Event) {
     let (context, mut peer) = adopt(input(configuration), false);
     peer.manual_replies = true;
@@ -226,10 +233,10 @@ fn failed(configuration: &Configuration) -> (Context, Exchange, client::Event) {
         client::Event::Failed {
             owner,
             failure: shared::Failure::Overloaded,
-            evidence: client::Evidence::Response { status: 503 },
+            evidence: client::Evidence::Response { status },
             report: _,
             detail
-        } if *owner == OWNER && detail.as_ref() == b"overloaded_error"
+        } if *owner == OWNER && *status == overloaded_status(configuration) && detail.as_ref() == b"overloaded_error"
     ));
     (context, peer, terminal)
 }
@@ -252,7 +259,7 @@ fn failed_owner_class_evidence_and_detail_survive_only_the_matching_context() {
                 };
                 assert_eq!(owner, OWNER);
                 assert_eq!(failure, llm::Failure::Overloaded);
-                assert_eq!(evidence, llm::Evidence::Response { status: Some(503) });
+                assert_eq!(evidence, llm::Evidence::Response { status: Some(overloaded_status(configuration)) });
                 assert_eq!(detail.as_ref(), b"overloaded_error");
             }
             close_won(&mut peer);
@@ -548,7 +555,7 @@ fn child_completed(configuration: &Configuration, arguments: &[u8]) -> (Context,
             tokens: 7,
         }]),
     }]);
-    let mut peer = Exchange::prepared(client, endpoint, credential, limits().client, script);
+    let mut peer = Exchange::prepared(client, endpoint, Some(credential), limits().client, script);
     peer.start();
     peer.run();
     let [query] = peer.queries.as_slice() else { panic!("one actual provider query") };

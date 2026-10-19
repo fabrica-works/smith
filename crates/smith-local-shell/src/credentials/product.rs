@@ -147,6 +147,7 @@ pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::
     skein_oauth_accounts::Limits {
         accounts,
         file_stall: Duration::from_secs(30),
+        lock_wait: Duration::from_secs(1),
         exchanges: 1,
         listeners: 1,
         server: skein_http::server::Limits {
@@ -172,6 +173,11 @@ pub fn client_limits() -> skein_oauth::ClientLimits {
         parameter_bytes: 0,
         resource_bytes: 0,
         nonce_bytes: 0,
+        metadata_bytes: 0,
+        key_set_bytes: 0,
+        keys: 0,
+        modulus_bits: 2048,
+        skew: Duration::ZERO,
         document: crate::local_host::token_limits(),
         uri_bytes: 4096,
         scope_bytes: 1024,

@@ -99,6 +99,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             provider: provider_kind,
             path: call.endpoint.target.clone(),
             headers: Box::new([]),
+            without_credential: false,
         },
         &peer_limits,
     )
@@ -172,7 +173,14 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
     let mut close_terminals = 0;
     let mut completed = 0_u32;
     let mut captured = Vec::new();
-    provider::start(&mut peer, &mut service, &peer_credential, &peer_env, &mut peer_up, &mut peer_down);
+    provider::start(
+        &mut peer,
+        &mut service,
+        core::slice::from_ref(&peer_credential),
+        &peer_env,
+        &mut peer_up,
+        &mut peer_down,
+    );
     component.from_domain(
         &env,
         FromDomain::Complete {
@@ -313,7 +321,15 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             }
         }
         if let Some(reply) = replies.pop() {
-            provider::down(&mut peer, &mut service, &peer_credential, &peer_env, reply, &mut peer_up, &mut peer_down);
+            provider::down(
+                &mut peer,
+                &mut service,
+                core::slice::from_ref(&peer_credential),
+                &peer_env,
+                reply,
+                &mut peer_up,
+                &mut peer_down,
+            );
             domain.reclaim();
             service.reclaim();
         }
@@ -346,7 +362,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 provider::up(
                     &mut peer,
                     &mut service,
-                    &peer_credential,
+                    core::slice::from_ref(&peer_credential),
                     &peer_env,
                     answer,
                     &mut peer_up,
@@ -355,7 +371,14 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             }
         }
         if peer.has_work() {
-            provider::resume(&mut peer, &mut service, &peer_credential, &peer_env, &mut peer_up, &mut peer_down);
+            provider::resume(
+                &mut peer,
+                &mut service,
+                core::slice::from_ref(&peer_credential),
+                &peer_env,
+                &mut peer_up,
+                &mut peer_down,
+            );
         }
         if domain.is_due(fake_env.now) {
             fake::fire(&mut domain, &fake_env, &mut replies);

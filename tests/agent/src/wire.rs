@@ -352,7 +352,7 @@ impl Wire {
             },
             limits,
         )?;
-        let peer = Exchange::prepared(client, peer_endpoint, peer_credential, limits.client, scripts);
+        let peer = Exchange::prepared(client, peer_endpoint, Some(peer_credential), limits.client, scripts);
         Ok(Self { peer, context: Some(context), observed: Vec::new(), accepted_usage: None })
     }
 
