@@ -90,7 +90,7 @@ pub enum Request {
     /// One prior long operation ended.
     LongDone { client: Token },
     /// Known-account credential rejection notice.
-    Rejected {
+    Unauthorized {
         client: Token,
         /// Credential account.
         account: u32,
@@ -98,13 +98,15 @@ pub enum Request {
         generation: u64,
     },
     /// Known-account quota notice.
-    Exhausted {
+    Limited {
         client: Token,
         /// Credential account.
         account: u32,
         /// Retry hint.
-        retry_after: skein_lib::Duration,
+        reset: Option<skein_lib::Duration>,
     },
+    /// The provider refused a known account, retaining its diagnostic fields.
+    Refused { client: Token, account: u32, code: Box<[u8]>, reason: Box<[u8]> },
     /// Best-effort fact moved to parent.
     Told {
         client: Token,

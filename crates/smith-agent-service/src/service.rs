@@ -279,8 +279,9 @@ impl Effects {
             | domain::Request::Long { .. }
             | domain::Request::LongDone { .. }
             | domain::Request::Deliver { .. }
-            | domain::Request::Rejected { .. }
-            | domain::Request::Exhausted { .. } => unreachable!("local domain owns host requests"),
+            | domain::Request::Unauthorized { .. }
+            | domain::Request::Refused { .. }
+            | domain::Request::Limited { .. } => unreachable!("local domain owns host requests"),
         }
     }
 
@@ -2050,7 +2051,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             };
             service.llm.from_domain(&service.llm_env, request, &mut service.llm_events, &mut service.llm_below);
         }
-        domain::Request::Rejected { grant } => {
+        domain::Request::Unauthorized { grant } => {
             let token = service.next_send();
             if service
                 .channel
@@ -2062,13 +2063,25 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 service.mark_failed(Failure::Send);
             }
         }
-        domain::Request::Exhausted { account, retry_after } => {
+        domain::Request::Limited { account, reset } => {
             let token = service.next_send();
             if service
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_limited(account, retry_after, token, &mut service.channel_events, &mut service.channel_below)
+                .send_limited(account, reset, token, &mut service.channel_events, &mut service.channel_below)
+                .is_err()
+            {
+                service.mark_failed(Failure::Send);
+            }
+        }
+        domain::Request::Refused { account, code, reason } => {
+            let token = service.next_send();
+            if service
+                .channel
+                .as_mut()
+                .expect("framed agent owns its channel")
+                .send_refused(account, &code, &reason, token, &mut service.channel_events, &mut service.channel_below)
                 .is_err()
             {
                 service.mark_failed(Failure::Send);

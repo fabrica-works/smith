@@ -597,8 +597,9 @@ fn parent_client(request: &parent::Request) -> Token {
         | parent::Request::Long { client, .. }
         | parent::Request::LongDone { client }
         | parent::Request::Unread { client, .. }
-        | parent::Request::Rejected { client, .. }
-        | parent::Request::Exhausted { client, .. }
+        | parent::Request::Unauthorized { client, .. }
+        | parent::Request::Refused { client, .. }
+        | parent::Request::Limited { client, .. }
         | parent::Request::Told { client, .. }
         | parent::Request::Answered { client, .. }
         | parent::Request::Faulted { client, .. }

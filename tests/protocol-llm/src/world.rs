@@ -1398,7 +1398,10 @@ impl World {
                 self.host_history.withdraw(relay).expect("withdraw retains actual terminal");
                 assert!(self.host_pending.contains_key(&(relay.owner.raw(), relay.attempt)));
             }
-            Request::MessageRefused { .. } | Request::Rejected { .. } | Request::Exhausted { .. } => {}
+            Request::MessageRefused { .. }
+            | Request::Unauthorized { .. }
+            | Request::Refused { .. }
+            | Request::Limited { .. } => {}
         }
     }
 

@@ -1164,8 +1164,9 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 out.push(Request::Notice { notice: Notice::Checking(Checks::Ended) });
             }
         }
-        parent::Request::Rejected { account, .. } => out.push(Request::Credential { account }),
-        parent::Request::Exhausted { .. } => {
+        parent::Request::Unauthorized { account, .. } => out.push(Request::Credential { account }),
+        // smith 02.4 gives both account notices their own presentation.
+        parent::Request::Refused { .. } | parent::Request::Limited { .. } => {
             out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::Exhausted)) });
         }
         parent::Request::Called { call, name, deadline, ask, .. } => match ask {

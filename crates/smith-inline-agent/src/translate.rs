@@ -471,18 +471,16 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                     }
                 }
             }
-            smith::Request::Rejected { grant } => out.push(Output::Parent(parent::Request::Rejected {
+            smith::Request::Unauthorized { grant } => out.push(Output::Parent(parent::Request::Unauthorized {
                 client,
                 account: grant.account,
                 generation: grant.generation,
             })),
-            // smith 02.2 carries the optional reset through the host notice.
-            smith::Request::Exhausted { account, retry_after } => {
-                out.push(Output::Parent(parent::Request::Exhausted {
-                    client,
-                    account,
-                    retry_after: retry_after.unwrap_or(skein_lib::Duration::ZERO),
-                }));
+            smith::Request::Limited { account, reset } => {
+                out.push(Output::Parent(parent::Request::Limited { client, account, reset }));
+            }
+            smith::Request::Refused { account, code, reason } => {
+                out.push(Output::Parent(parent::Request::Refused { client, account, code, reason }));
             }
             smith::Request::Long { host_run, operation, until } => {
                 assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");

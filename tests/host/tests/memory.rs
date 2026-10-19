@@ -139,8 +139,9 @@ impl Measured {
                     | parent::Request::Long { .. }
                     | parent::Request::LongDone { .. }
                     | parent::Request::Unread { .. }
-                    | parent::Request::Rejected { .. }
-                    | parent::Request::Exhausted { .. }
+                    | parent::Request::Unauthorized { .. }
+                    | parent::Request::Refused { .. }
+                    | parent::Request::Limited { .. }
                     | parent::Request::Told { .. }
                     | parent::Request::Answered { .. }
                     | parent::Request::Faulted { .. }

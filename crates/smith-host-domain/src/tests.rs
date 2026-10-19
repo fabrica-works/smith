@@ -102,8 +102,9 @@ fn answer_count(out: &Queue<Output>, expected: &crate::Answer) -> u32 {
                 | parent::Request::Long { .. }
                 | parent::Request::LongDone { .. }
                 | parent::Request::Unread { .. }
-                | parent::Request::Rejected { .. }
-                | parent::Request::Exhausted { .. }
+                | parent::Request::Unauthorized { .. }
+                | parent::Request::Refused { .. }
+                | parent::Request::Limited { .. }
                 | parent::Request::Told { .. }
                 | parent::Request::Faulted { .. }
                 | parent::Request::MessageRefused { .. }
@@ -182,8 +183,9 @@ fn a_spawn_beyond_the_slots_is_refused_as_busy_without_displacing_the_active_own
             | parent::Request::Long { .. }
             | parent::Request::LongDone { .. }
             | parent::Request::Unread { .. }
-            | parent::Request::Rejected { .. }
-            | parent::Request::Exhausted { .. }
+            | parent::Request::Unauthorized { .. }
+            | parent::Request::Refused { .. }
+            | parent::Request::Limited { .. }
             | parent::Request::Told { .. }
             | parent::Request::Answered { .. }
             | parent::Request::Faulted { .. }
@@ -228,8 +230,9 @@ fn a_spawn_beyond_the_slots_is_refused_as_busy_without_displacing_the_active_own
             | parent::Request::Long { .. }
             | parent::Request::LongDone { .. }
             | parent::Request::Unread { .. }
-            | parent::Request::Rejected { .. }
-            | parent::Request::Exhausted { .. }
+            | parent::Request::Unauthorized { .. }
+            | parent::Request::Refused { .. }
+            | parent::Request::Limited { .. }
             | parent::Request::Told { .. }
             | parent::Request::Answered { .. }
             | parent::Request::Faulted { .. }
@@ -290,8 +293,9 @@ fn host_mount_metadata_admission_agrees_with_optional_workspace_and_git_kind() {
             | parent::Request::Long { .. }
             | parent::Request::LongDone { .. }
             | parent::Request::Unread { .. }
-            | parent::Request::Rejected { .. }
-            | parent::Request::Exhausted { .. }
+            | parent::Request::Unauthorized { .. }
+            | parent::Request::Refused { .. }
+            | parent::Request::Limited { .. }
             | parent::Request::Told { .. }
             | parent::Request::Answered { .. }
             | parent::Request::Faulted { .. }
@@ -349,8 +353,9 @@ fn host_mount_metadata_admission_agrees_with_optional_workspace_and_git_kind() {
                 | parent::Request::Long { .. }
                 | parent::Request::LongDone { .. }
                 | parent::Request::Unread { .. }
-                | parent::Request::Rejected { .. }
-                | parent::Request::Exhausted { .. }
+                | parent::Request::Unauthorized { .. }
+                | parent::Request::Refused { .. }
+                | parent::Request::Limited { .. }
                 | parent::Request::Told { .. }
                 | parent::Request::Answered { .. }
                 | parent::Request::Faulted { .. }
@@ -520,4 +525,46 @@ fn a_piece_counts_as_progress_for_the_watchdog() {
     assert_eq!(domain.next_deadline(), Some(Time::from_nanos(15_000_000_000)));
     assert_eq!(out.pop(), Some(Output::Process(process::Request::Read { owner, process: Token::new(2) })));
     assert_eq!(out.len(), 0);
+}
+
+#[test]
+fn a_notice_for_an_account_not_lent_is_refused_as_rules() {
+    for (message, admitted) in [
+        (crate::Up::Unauthorized { account: 8, generation: 1 }, true),
+        (crate::Up::Limited { account: 8, reset: None }, true),
+        (crate::Up::Refused { account: 8, code: Box::default(), reason: Box::default() }, true),
+        (crate::Up::Refused { account: 7, code: Box::default(), reason: Box::default() }, false),
+    ] {
+        let fault = notice_fault(message, admitted);
+        assert_eq!(fault, Some(crate::Fault::Rules), "admitted: {admitted}");
+    }
+}
+
+fn notice_fault(message: crate::Up, admit: bool) -> Option<crate::Fault> {
+    let limits = crate::Limits { accounts: 1, ..limits() };
+    let mut start = start();
+    start.grants = Box::new([crate::Grant { account: 7, generation: 1, valid: Duration::from_secs(60) }]);
+    let mut domain = Domain::new(&limits);
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    crate::step(&mut domain, &env, Input::Parent(parent::Event::Spawn { client: Token::new(1), start }), &mut out);
+    let Some(Output::Process(process::Request::Spawn { owner, .. })) = out.pop() else { panic!("spawn admitted") };
+    crate::step(&mut domain, &env, Input::Process(process::Event::Spawned { owner, process: Token::new(2) }), &mut out);
+    while out.pop().is_some() {}
+    if admit {
+        crate::step(
+            &mut domain,
+            &env,
+            Input::Process(process::Event::Received { owner, message: crate::Up::Admitted }),
+            &mut out,
+        );
+        while out.pop().is_some() {}
+    }
+    crate::step(&mut domain, &env, Input::Process(process::Event::Received { owner, message }), &mut out);
+    while let Some(request) = out.pop() {
+        if let Output::Parent(parent::Request::Faulted { fault, .. }) = request {
+            return Some(fault);
+        }
+    }
+    None
 }

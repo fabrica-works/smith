@@ -662,19 +662,21 @@ pub enum Up {
         read: Option<Token>,
     },
     /// Protocol rejected a named grant.
-    Rejected {
+    Unauthorized {
         /// Known credential account.
         account: u32,
         /// Known positive generation.
         generation: u64,
     },
     /// Protocol exhausted a known account.
-    Exhausted {
+    Limited {
         /// Known credential account.
         account: u32,
         /// Parent refresh/retry hint.
-        retry_after: Duration,
+        reset: Option<Duration>,
     },
+    /// The provider refused a known account, retaining its diagnostic fields.
+    Refused { account: u32, code: Box<[u8]>, reason: Box<[u8]> },
     /// Agent last word; no further records may follow before EOF.
     Answer {
         /// Checked final counts and concrete result.

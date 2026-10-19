@@ -405,8 +405,9 @@ impl Harness {
                 | Request::Admitted { .. }
                 | Request::Deliver { .. }
                 | Request::Complete { .. }
-                | Request::Rejected { .. }
-                | Request::Exhausted { .. }
+                | Request::Unauthorized { .. }
+                | Request::Refused { .. }
+                | Request::Limited { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
                 | Request::Job { .. }
@@ -823,7 +824,7 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
             detail: Box::default(),
             report: crate::llm::Report::none(),
         }),
-        &[Request::Rejected { grant: crate::GrantName { account: 0, generation: 0 } }]
+        &[Request::Unauthorized { grant: crate::GrantName { account: 0, generation: 0 } }]
     );
     h.env.now = h.domain.next_deadline().expect("unauthorized retry backoff");
     let emitted = h.fire();
@@ -837,7 +838,7 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
             detail: Box::default(),
             report: crate::llm::Report::none(),
         }),
-        &[Request::Rejected { grant: next.name }]
+        &[Request::Unauthorized { grant: next.name }]
     );
     h.env.now = h.domain.next_deadline().expect("second retry");
     drop(h.fire());
@@ -886,9 +887,7 @@ fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
         detail: Box::default(),
         report: crate::llm::Report::none(),
     });
-    let Some(Request::Exhausted { account: 0, retry_after: span }) = emitted.first() else {
-        panic!("exhaustion notice")
-    };
+    let Some(Request::Limited { account: 0, reset: span }) = emitted.first() else { panic!("exhaustion notice") };
     assert_eq!(*span, Some(retry_after));
     let mut failed = false;
     for request in &emitted {
@@ -1250,8 +1249,9 @@ fn assert_no_provider_completion(emitted: &[Request]) {
             | Request::Long { .. }
             | Request::LongDone { .. }
             | Request::Deliver { .. }
-            | Request::Rejected { .. }
-            | Request::Exhausted { .. }
+            | Request::Unauthorized { .. }
+            | Request::Refused { .. }
+            | Request::Limited { .. }
             | Request::Cancel { .. }
             | Request::Io { .. }
             | Request::Job { .. }
@@ -2402,4 +2402,47 @@ fn an_unchecked_charter_effort_is_refused_before_any_run_work() {
     let [Request::Answer { answer, .. }] = emitted.as_ref() else { panic!("one refusal") };
     assert_eq!(answer, &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Effort)));
     assert!(harness.turns.is_empty());
+}
+
+#[test]
+fn a_refused_account_raises_one_notice_with_its_reason() {
+    let mut harness = Harness::new();
+    let (_, owner, _) = harness.admit(7, charter());
+    let emitted = harness.step(Event::Failed {
+        owner,
+        failure: crate::llm::Failure::Refused,
+        evidence: crate::llm::Evidence::Unknown,
+        detail: bytes(b"provider reason"),
+        report: crate::llm::Report { code: bytes(b"not-eligible"), request: Box::default(), field: Box::default() },
+    });
+    let notices = account_notices(&emitted).into_boxed();
+    assert_eq!(
+        &*notices,
+        [&Request::Refused { account: 0, code: bytes(b"not-eligible"), reason: bytes(b"provider reason") }]
+    );
+    assert!(harness.domain.next_deadline().is_none());
+}
+
+#[test]
+fn an_unsupported_request_raises_no_notice() {
+    let mut harness = Harness::new();
+    let (_, owner, _) = harness.admit(7, charter());
+    let emitted = harness.step(Event::Failed {
+        owner,
+        failure: crate::llm::Failure::Unsupported,
+        evidence: crate::llm::Evidence::Unknown,
+        detail: bytes(b"unsupported field"),
+        report: crate::llm::Report::none(),
+    });
+    assert_eq!(account_notices(&emitted).len(), 0);
+}
+
+fn account_notices(requests: &[Request]) -> List<&Request> {
+    let mut notices = List::with_capacity(3);
+    for request in requests {
+        if let Request::Unauthorized { .. } | Request::Limited { .. } | Request::Refused { .. } = request {
+            notices.push(request).expect("bounded notices");
+        }
+    }
+    notices
 }

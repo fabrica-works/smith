@@ -359,17 +359,19 @@ pub enum Request {
     },
     /// Provider authentication rejected this exact credential generation; a notice
     /// to the host, with no terminal owed. Repeated rejection of that generation is suppressed.
-    Rejected {
+    Unauthorized {
         /// Credential name or refresh notice; its secret value stays below the domain.
         grant: GrantName,
     },
     /// The provider reports its account allowance spent.
-    Exhausted {
+    Limited {
         /// Configured credential account, compared as an opaque numeric name.
         account: u32,
         /// The reset, absent when the provider did not say.
-        retry_after: Option<Duration>,
+        reset: Option<Duration>,
     },
+    /// The provider refused an account; its diagnostic reason is not conversation content.
+    Refused { account: u32, code: Box<[u8]>, reason: Box<[u8]> },
     /// Abandon the `Complete` in flight for `owner`. Its terminal event still
     /// comes: `Cancelled`, or whichever outcome won the race.
     Cancel { owner: Token },

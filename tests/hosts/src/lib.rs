@@ -372,15 +372,15 @@ impl HostService {
             }
             OpenEvent::Unauthorized { account, generation } => host::Input::Process(host::process::Event::Received {
                 owner: agent,
-                message: host::Up::Rejected { account, generation },
+                message: host::Up::Unauthorized { account, generation },
             }),
             OpenEvent::Limited { account, reset } => host::Input::Process(host::process::Event::Received {
                 owner: agent,
-                message: host::Up::Exhausted { account, retry_after: reset.unwrap_or(Duration::ZERO) },
+                message: host::Up::Limited { account, reset },
             }),
-            OpenEvent::Refused { account, .. } => host::Input::Process(host::process::Event::Received {
+            OpenEvent::Refused { account, code, reason } => host::Input::Process(host::process::Event::Received {
                 owner: agent,
-                message: host::Up::Rejected { account, generation: 0 },
+                message: host::Up::Refused { account, code, reason },
             }),
             OpenEvent::Call { call, name, deadline, ask } => host::Input::Process(host::process::Event::Received {
                 owner: agent,
@@ -474,8 +474,9 @@ impl HostService {
                 | host::parent::Request::LongDone { .. }
                 | host::parent::Request::Unread { .. }
                 | host::parent::Request::Withdrawn { .. }
-                | host::parent::Request::Rejected { .. }
-                | host::parent::Request::Exhausted { .. }
+                | host::parent::Request::Unauthorized { .. }
+                | host::parent::Request::Refused { .. }
+                | host::parent::Request::Limited { .. }
                 | host::parent::Request::Told { .. }
                 | host::parent::Request::Faulted { .. }
                 | host::parent::Request::MessageRefused { .. },

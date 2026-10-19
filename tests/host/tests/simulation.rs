@@ -1026,7 +1026,7 @@ fn grant_generation_races_are_fenced_by_emission_not_queued_refresh() {
     world.up(Up::Admitted);
     grant(&mut world, 2);
     grant(&mut world, 3);
-    world.up(Up::Rejected { account: 1, generation: 1 });
+    world.up(Up::Unauthorized { account: 1, generation: 1 });
     assert_eq!(world.seen.rejected, [(1, 1)]);
     world.sent();
     match world.seen.down.last().expect("coalesced refresh") {
@@ -1035,8 +1035,8 @@ fn grant_generation_races_are_fenced_by_emission_not_queued_refresh() {
             panic!("latest refresh")
         }
     }
-    world.up(Up::Rejected { account: 1, generation: 1 });
-    world.up(Up::Rejected { account: 1, generation: 3 });
+    world.up(Up::Unauthorized { account: 1, generation: 1 });
+    world.up(Up::Unauthorized { account: 1, generation: 3 });
     world.sent();
     finish(&mut world);
     for (account, generation) in [(1, 2), (1, 3), (2, 1), (1, 0)] {
@@ -1045,7 +1045,7 @@ fn grant_generation_races_are_fenced_by_emission_not_queued_refresh() {
         world.spawned();
         world.up(Up::Admitted);
         grant(&mut world, 2);
-        world.up(Up::Rejected { account, generation });
+        world.up(Up::Unauthorized { account, generation });
         faulted(&mut world, Fault::Rules);
     }
 }

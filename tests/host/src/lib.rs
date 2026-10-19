@@ -84,6 +84,8 @@ pub struct Seen {
     pub bounces: Vec<host::MessageRefusal>,
     /// Notices the parent actually heard.
     pub rejected: Vec<(u32, u64)>,
+    /// Typed account notices accepted by the host domain.
+    pub account_notices: Vec<host::Up>,
     /// Generic facts forwarded without interpretation.
     pub told: u32,
     /// One-way process signals, in actual order.
@@ -627,12 +629,19 @@ impl Seen {
                 self.refused_messages.push((name, reason));
                 self.bounces.push(reason);
             }
-            parent::Request::Rejected { account, generation, .. } => {
+            parent::Request::Unauthorized { account, generation, .. } => {
                 self.rejected.push((account, generation));
+                self.account_notices.push(host::Up::Unauthorized { account, generation });
             }
             parent::Request::Told { .. } => self.told += 1,
             parent::Request::Waiting { read, .. } => self.fence(read),
-            parent::Request::Long { .. } | parent::Request::LongDone { .. } | parent::Request::Exhausted { .. } => {}
+            parent::Request::Limited { account, reset, .. } => {
+                self.account_notices.push(host::Up::Limited { account, reset });
+            }
+            parent::Request::Refused { account, code, reason, .. } => {
+                self.account_notices.push(host::Up::Refused { account, code, reason });
+            }
+            parent::Request::Long { .. } | parent::Request::LongDone { .. } => {}
         }
     }
 }

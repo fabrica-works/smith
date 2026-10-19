@@ -22,58 +22,7 @@ mod long;
 )]
 #[expect(clippy::wildcard_enum_match_arm, reason = "the story rejects every request outside its scripted path")]
 fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_domain() {
-    let charter = composed_charter();
-    let mut limits = smith_agent_world::LIMITS;
-    limits.run.message_bytes = 12;
-    limits.run.messages = 1;
-    let largest_turn = agent::max_turn_bytes(&limits).expect("bounded concrete turn");
-    let mut host_limits = smith_host_world::limits();
-    host_limits.charter_bytes = charter.owned_bytes();
-    host_limits.turn_bytes = largest_turn;
-    host_limits.unacknowledged_bytes = largest_turn;
-    let mut host_world = smith_host_world::World::new(1, host_limits);
-    let mut start = smith_host_world::start();
-    start.charter = charter;
-    start.transcript = None;
-    start.answered = Box::default();
-    start.grants = Box::from([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]);
-    host_world.spawn(start);
-    host_world.spawned();
-    let first = host_world.seen.down.pop().expect("host domain first Send");
-    let Down::Start { start, window } = first else { panic!("host first word must be Start") };
-    let mut wire = World::new(CEILINGS, CEILINGS, StreamMode::Two);
-    wire.settle();
-    wire.send_domain_start(
-        start,
-        window,
-        smith_host_protocol::Values { paths: Box::default(), credentials: Box::from([initial_grant()]) },
-    );
-    wire.settle();
-    assert!(wire.observations().contains(&Observation::HostSent(Token::new(2))));
-    host_world.sent();
-    let decoded = wire.take_agent_start().expect("translated Start reached agent side");
-    let mut domain = agent::Domain::new(&limits, configuration(), 7);
-    let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
-    let mut out = Queue::with_capacity(agent::max_out(&limits));
-    while domain.pop_fact().is_some() {}
-    agent::step(
-        &mut domain,
-        &env,
-        AgentEvent::Start {
-            messages: decoded.messages,
-            reply_to: ReplyTo::new(Token::new(1)),
-            host_run: Token::new(7),
-            identity: decoded.identity,
-            activation: decoded.activation,
-            window: decoded.window,
-            charter: decoded.charter,
-            workspace: None,
-            transcript: decoded.transcript,
-            answered: decoded.answered,
-            grants: decoded.grants.iter().map(|grant| agent::Grant { name: grant.name, valid: grant.valid }).collect(),
-        },
-        &mut out,
-    );
+    let Composed { mut host_world, mut wire, mut domain, mut env, mut out } = composed_start();
     let mut run = None;
     let mut completion = None;
     let mut completion_span = None;
@@ -431,4 +380,177 @@ fn an_empty_start_waits_without_a_fence_and_the_first_wire_message_opens_main() 
     };
     assert!(matches!(out.pop(), Some(AgentRequest::Complete { .. })), "first wire work opens the provider");
     assert!(out.pop().is_none());
+}
+
+fn composed_host() -> (smith_host_world::World, agent::Limits) {
+    let charter = composed_charter();
+    let mut limits = smith_agent_world::LIMITS;
+    limits.run.message_bytes = 12;
+    limits.run.messages = 1;
+    let largest_turn = agent::max_turn_bytes(&limits).expect("bounded concrete turn");
+    let mut host_limits = smith_host_world::limits();
+    host_limits.charter_bytes = charter.owned_bytes();
+    host_limits.turn_bytes = largest_turn;
+    host_limits.unacknowledged_bytes = largest_turn;
+    let mut host_world = smith_host_world::World::new(1, host_limits);
+    let mut start = smith_host_world::start();
+    start.charter = charter;
+    start.transcript = None;
+    start.answered = Box::default();
+    start.grants = Box::from([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]);
+    host_world.spawn(start);
+    host_world.spawned();
+    (host_world, limits)
+}
+
+struct Composed {
+    host_world: smith_host_world::World,
+    wire: World,
+    domain: agent::Domain,
+    env: Env<agent::Limits>,
+    out: Queue<AgentRequest>,
+}
+
+fn composed_start() -> Composed {
+    let (mut host_world, limits) = composed_host();
+    let first = host_world.seen.down.pop().expect("host domain first Send");
+    let Down::Start { start, window } = first else { panic!("host first word must be Start") };
+    let mut wire = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+    wire.settle();
+    wire.send_domain_start(
+        start,
+        window,
+        smith_host_protocol::Values { paths: Box::default(), credentials: Box::from([initial_grant()]) },
+    );
+    wire.settle();
+    host_world.sent();
+    let decoded = wire.take_agent_start().expect("translated Start reached agent side");
+    let mut domain = agent::Domain::new(&limits, configuration(), 7);
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut out = Queue::with_capacity(agent::max_out(&limits));
+    while domain.pop_fact().is_some() {}
+    agent::step(
+        &mut domain,
+        &env,
+        AgentEvent::Start {
+            messages: decoded.messages,
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(7),
+            identity: decoded.identity,
+            activation: decoded.activation,
+            window: decoded.window,
+            charter: decoded.charter,
+            workspace: None,
+            transcript: decoded.transcript,
+            answered: decoded.answered,
+            grants: decoded.grants.iter().map(|grant| agent::Grant { name: grant.name, valid: grant.valid }).collect(),
+        },
+        &mut out,
+    );
+    Composed { host_world, wire, domain, env, out }
+}
+
+#[test]
+fn account_notices_reach_the_host_domain_without_values() {
+    for NoticeCase { failure, report, detail, expected } in notice_cases() {
+        let Composed { mut host_world, mut wire, mut domain, env, mut out } = composed_start();
+        let owner = admit_composed(&mut wire, &mut host_world, &mut out);
+        while domain.pop_fact().is_some() {}
+        agent::step(
+            &mut domain,
+            &env,
+            AgentEvent::Failed { owner, failure, evidence: agent::llm::Evidence::Unknown, detail, report },
+            &mut out,
+        );
+        while let Some(request) = out.pop() {
+            send_account_notice(&mut wire, request);
+        }
+        wire.settle();
+        let decoded = decoded_notice(&wire);
+        host_world.up(decoded);
+        assert_eq!(host_world.seen.account_notices, [expected]);
+    }
+}
+
+fn admit_composed(wire: &mut World, host_world: &mut smith_host_world::World, out: &mut Queue<AgentRequest>) -> Token {
+    let mut owner = None;
+    while let Some(request) = out.pop() {
+        if matches!(request, AgentRequest::Admitted { .. }) {
+            wire.agent_admits();
+        } else if let AgentRequest::Complete { owner: issued, .. } = request {
+            owner = Some(issued);
+        } else if !matches!(request, AgentRequest::Long { .. }) {
+            panic!("unexpected initial request: {request:?}");
+        }
+    }
+    wire.settle();
+    host_world.up(Up::Admitted);
+    owner.expect("provider request issued")
+}
+
+fn send_account_notice(wire: &mut World, request: AgentRequest) {
+    if let AgentRequest::Unauthorized { grant } = request {
+        wire.agent_reports_unauthorized(grant.account, grant.generation);
+    } else if let AgentRequest::Limited { account, reset } = request {
+        wire.agent_reports_limited(account, reset);
+    } else if let AgentRequest::Refused { account, code, reason } = request {
+        wire.agent_reports_refused(account, &code, &reason);
+    } else if !matches!(request, AgentRequest::Answer { .. } | AgentRequest::LongDone { .. }) {
+        panic!("unexpected failure request: {request:?}");
+    }
+}
+
+fn decoded_notice(wire: &World) -> Up {
+    wire.observations()
+        .iter()
+        .find_map(|notice| {
+            if let Observation::HostUnauthorized { account, generation } = notice {
+                Some(Up::Unauthorized { account: *account, generation: *generation })
+            } else if let Observation::HostLimited { account, reset } = notice {
+                Some(Up::Limited { account: *account, reset: *reset })
+            } else if let Observation::HostRefused { account, code, reason } = notice {
+                Some(Up::Refused { account: *account, code: code.clone(), reason: reason.clone() })
+            } else {
+                None
+            }
+        })
+        .expect("real host protocol decoded the account notice")
+}
+
+struct NoticeCase {
+    failure: agent::llm::Failure,
+    report: agent::llm::Report,
+    detail: Box<[u8]>,
+    expected: Up,
+}
+
+fn notice_cases() -> [NoticeCase; 3] {
+    [
+        NoticeCase {
+            failure: agent::llm::Failure::Unauthorized,
+            report: agent::llm::Report::none(),
+            detail: Box::default(),
+            expected: Up::Unauthorized { account: 0, generation: 1 },
+        },
+        NoticeCase {
+            failure: agent::llm::Failure::Exhausted { retry_after: Some(Duration::from_secs(30)) },
+            report: agent::llm::Report::none(),
+            detail: Box::default(),
+            expected: Up::Limited { account: 0, reset: Some(Duration::from_secs(30)) },
+        },
+        NoticeCase {
+            failure: agent::llm::Failure::Refused,
+            report: agent::llm::Report {
+                code: Box::from(b"not-eligible".as_slice()),
+                request: Box::default(),
+                field: Box::default(),
+            },
+            detail: Box::from(b"provider reason".as_slice()),
+            expected: Up::Refused {
+                account: 0,
+                code: Box::from(b"not-eligible".as_slice()),
+                reason: Box::from(b"provider reason".as_slice()),
+            },
+        },
+    ]
 }

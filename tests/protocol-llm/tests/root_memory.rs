@@ -981,8 +981,9 @@ impl Counted {
                 Request::HostCall { .. }
                 | Request::WithdrawHost { .. }
                 | Request::Deliver { .. }
-                | Request::Rejected { .. }
-                | Request::Exhausted { .. }
+                | Request::Unauthorized { .. }
+                | Request::Refused { .. }
+                | Request::Limited { .. }
                 | Request::MessageRefused { .. }
                 | Request::Io { .. }
                 | Request::Job { .. }

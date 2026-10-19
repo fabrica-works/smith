@@ -132,7 +132,7 @@ fn failed(
                 && !was_rejected(held, grant.generation)
             {
                 held.rejected = Some(grant.generation);
-                domain.notices.push(Request::Rejected { grant });
+                domain.notices.push(Request::Unauthorized { grant });
             }
         }
         crate::llm::Failure::Exhausted { retry_after } => {
@@ -141,7 +141,11 @@ fn failed(
             if let Some(reset) = retry_after {
                 peer.retry_at = Some(env.now.saturating_add(reset));
             }
-            domain.notices.push(Request::Exhausted { account: grant.account, retry_after });
+            domain.notices.push(Request::Limited { account: grant.account, reset: retry_after });
+        }
+        crate::llm::Failure::Refused => {
+            let code = domain.peers.get(id).expect("failed completion retains its peer").report.code.clone();
+            domain.notices.push(Request::Refused { account: grant.account, code, reason: detail.clone() });
         }
         crate::llm::Failure::Overloaded
         | crate::llm::Failure::RateLimited { .. }
@@ -149,7 +153,6 @@ fn failed(
         | crate::llm::Failure::TimedOut { .. }
         | crate::llm::Failure::ContextTooLong
         | crate::llm::Failure::Invalid
-        | crate::llm::Failure::Refused
         | crate::llm::Failure::Unsupported
         | crate::llm::Failure::Limit { .. }
         | crate::llm::Failure::ApplicationLimit

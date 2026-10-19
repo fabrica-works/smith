@@ -1293,17 +1293,15 @@ fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
         }
         OpenEvent::Unauthorized { account, generation } => host::Input::Process(host::process::Event::Received {
             owner: agent,
-            message: host::Up::Rejected { account, generation },
+            message: host::Up::Unauthorized { account, generation },
         }),
         OpenEvent::Limited { account, reset } => host::Input::Process(host::process::Event::Received {
             owner: agent,
-            // smith 02.2 gives the optional reset its domain form.
-            message: host::Up::Exhausted { account, retry_after: reset.unwrap_or(skein_lib::Duration::ZERO) },
+            message: host::Up::Limited { account, reset },
         }),
-        // smith 02.2 gives refused notices their domain form.
-        OpenEvent::Refused { account, .. } => host::Input::Process(host::process::Event::Received {
+        OpenEvent::Refused { account, code, reason } => host::Input::Process(host::process::Event::Received {
             owner: agent,
-            message: host::Up::Rejected { account, generation: 0 },
+            message: host::Up::Refused { account, code, reason },
         }),
         OpenEvent::WriteFailed => unreachable!("write failure does not end a host read"),
         OpenEvent::Call { call, name, deadline, ask } => host::Input::Process(host::process::Event::Received {

@@ -133,14 +133,14 @@ fn rejection_keeps_the_account_and_exhaustion_keeps_its_notice() {
     parent_request(
         &mut domain,
         &env,
-        parent::Request::Rejected { client: Token::new(1), account: 7, generation: 4 },
+        parent::Request::Unauthorized { client: Token::new(1), account: 7, generation: 4 },
         &mut out,
     );
     let Some(Request::Credential { account: 7 }) = out.pop() else { panic!("refresh the named account") };
     parent_request(
         &mut domain,
         &env,
-        parent::Request::Exhausted { client: Token::new(1), account: 7, retry_after: Duration::from_secs(2) },
+        parent::Request::Limited { client: Token::new(1), account: 7, reset: Some(Duration::from_secs(2)) },
         &mut out,
     );
     let Some(Request::Notice { notice }) = out.pop() else { panic!("quota notice") };

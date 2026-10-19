@@ -906,11 +906,14 @@ fn receive(agent: &mut Agent, owner: Token, message: Up, env: &Env<Limits>, out:
             out.push(Output::Parent(parent::Request::LongDone { client: agent.client }));
         }
         Up::Fact { body } => out.push(Output::Parent(parent::Request::Told { client: agent.client, body })),
-        Up::Rejected { account, generation } => {
-            out.push(Output::Parent(parent::Request::Rejected { client: agent.client, account, generation }));
+        Up::Unauthorized { account, generation } => {
+            out.push(Output::Parent(parent::Request::Unauthorized { client: agent.client, account, generation }));
         }
-        Up::Exhausted { account, retry_after } => {
-            out.push(Output::Parent(parent::Request::Exhausted { client: agent.client, account, retry_after }));
+        Up::Limited { account, reset } => {
+            out.push(Output::Parent(parent::Request::Limited { client: agent.client, account, reset }));
+        }
+        Up::Refused { account, code, reason } => {
+            out.push(Output::Parent(parent::Request::Refused { client: agent.client, account, code, reason }));
         }
         Up::Answer { answer } => heard_answer(agent, answer, env, out),
     }
@@ -929,8 +932,9 @@ fn discarded_work(agent: &Agent, message: &Up) -> bool {
             | Up::Long { .. }
             | Up::LongDone
             | Up::Waiting { .. }
-            | Up::Rejected { .. }
-            | Up::Exhausted { .. } => true,
+            | Up::Unauthorized { .. }
+            | Up::Refused { .. }
+            | Up::Limited { .. } => true,
         },
         Phase::Spawning
         | Phase::Starting
@@ -990,8 +994,9 @@ fn too_large(message: &Up, limits: &Limits) -> bool {
         | Up::Long { .. }
         | Up::LongDone
         | Up::Waiting { .. }
-        | Up::Rejected { .. }
-        | Up::Exhausted { .. } => false,
+        | Up::Unauthorized { .. }
+        | Up::Refused { .. }
+        | Up::Limited { .. } => false,
     }
 }
 
@@ -1080,11 +1085,13 @@ fn valid_record(agent: &Agent, message: &Up, env: &Env<Limits>) -> bool {
         }
         Up::LongDone => agent.admitted && agent.long.open > 0,
         Up::Waiting { read } => agent.admitted && known_read(agent, *read),
-        Up::Rejected { account, generation } => match agent.accounts.get(account) {
+        Up::Unauthorized { account, generation } => match agent.accounts.get(account) {
             Some(account) => agent.admitted && *generation > 0 && *generation <= account.emitted,
             None => false,
         },
-        Up::Exhausted { account, .. } => agent.admitted && agent.accounts.contains_key(account),
+        Up::Refused { account, .. } | Up::Limited { account, .. } => {
+            agent.admitted && agent.accounts.contains_key(account)
+        }
     }
 }
 
@@ -1472,8 +1479,9 @@ fn observations(domain: &mut Domain, out: &Queue<Output>, before: u32) {
                     | parent::Request::Waiting { .. }
                     | parent::Request::Long { .. }
                     | parent::Request::LongDone { .. }
-                    | parent::Request::Rejected { .. }
-                    | parent::Request::Exhausted { .. }
+                    | parent::Request::Unauthorized { .. }
+                    | parent::Request::Refused { .. }
+                    | parent::Request::Limited { .. }
                     | parent::Request::Told { .. }
                     | parent::Request::MessageRefused { .. }
                     | parent::Request::Unread { .. },
