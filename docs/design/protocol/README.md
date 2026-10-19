@@ -352,10 +352,10 @@ to an older reader or writer. Each has one version at a time.
     legacy run (domain/README.md, section 7);
   - **the events' first** (events.md).
 - **Then, with accounts and programs,** in one release:
-  - **the channel's third:** grants as a credential with its scheme or
-    a program source's name, beside the withdrawn id-and-bearer form,
-    and the notices unauthorized, limited and refused (channel.md,
-    section 5);
+  - **the channel's fourth,** after live text's third: grants as a
+    credential with its scheme or a program source's name, beside the
+    withdrawn id-and-bearer form, and the notices unauthorized, limited
+    and refused (channel.md, section 5);
   - **the charter's third:** each LLM's account (charter.md, section 5);
   - **transcripts' sixth:** an opening turn's account and backend
     (transcript.md, section 6);

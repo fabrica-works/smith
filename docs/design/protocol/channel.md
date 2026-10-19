@@ -193,8 +193,8 @@ of domain/host.md, section 2.
 | long | what it is (`check`, `completion` or `command`) and how long, at most, as a duration | when the checks, an LLM completion or a command start |
 | long done | nothing | when one ends |
 | unauthorized | an account and a generation | when a provider refused that credential, or a program source's login was lost (programs.md, 5.6) |
-| limited | an account, and how long until it may be used again, only when its provider said | when its account reached a usage limit |
-| refused | an account, and the provider's code and reason, as text | when its provider refused the account what the run asked, such as a model its plan does not serve |
+| limited | an account, and its reset (below) | when its account reached a usage limit |
+| refused | an account, and the provider's code and reason (below) | when its provider refused the account what the run asked, such as a model its plan does not serve |
 | fact | one fact (section 8) | while the run is admitted and has not answered, with room to spare; any other is not projected, and counted (section 7) |
 | live | a piece of live content (below) | while the run is admitted and has not answered, only for a kind the start asked for, with room to spare; any other is dropped, and counted (section 7) |
 | answer | the turns it took; what it spent; the last message read, if any; how it ended (below) | the last word |
@@ -254,22 +254,41 @@ last one with `opens_window` (domain/host.md, section 6).
 - **a delivery:** the result's fields, each a name and text, which the host
   reads to do what delivering means to it.
 
+**The account notices' fields:**
+
+- **the account,** in each, the number its charter's LLM names it by
+  (charter.md, section 2);
+- **the reset,** in limited: how long until the account may be used
+  again, an optional `duration`. It is absent when its provider did not
+  say, and zero when it said zero (skein's `llm.md`, 2.5);
+- **the code,** in refused: the provider's error code, else its error
+  type, as text within its bound. It is empty when the provider gave
+  none, or one past the bound, which is left out, never clipped (skein's
+  `llm.md`, 2.5 and 7);
+- **the reason,** in refused: the failure's detail, the provider's text,
+  within its bound, cut at a character's boundary.
+
+The code and the reason are each text within its bound, which
+limits.md, 2.4, gives.
+
 **How a run ended** (domain/run.md, section 10):
 
 - **accepted,** with its result, as bytes (charter.md);
 - **parked;**
 - **failed,** typed, so the host can act without reading prose:
   - the model, with its provider's failure class; a limited account,
-    with the account and, when its provider said, how long until it may
-    be used again, measured when the run answers; a refused account, with
-    the account and the provider's code; an unauthorized account, whose
-    program source's login was lost; or a program that could not run,
-    naming it, with its detail (programs.md, 5.6);
+    with the account and its reset as the limited notice has them
+    (above), the reset measured when the run answers; a refused account,
+    with the account and the provider's code as the refused notice has
+    it; an unauthorized account, whose program source's login was lost;
+    or a program that could not run, naming it, with its detail
+    (programs.md, 5.6);
   - the budget, naming what ran out, with what was used and its bound;
   - policy;
   - cancelled;
   - stale;
-  - a transcript it could not resume, saying why;
+  - a transcript it could not resume, saying which refusal
+    (transcript.md, section 4);
 - **refused at the entrance:** busy, or invalid, saying what, such as a
   start's messages beyond the run's bounds. A refused start is answered
   with no admitted before it, no turns and no spend, and its messages are
@@ -345,14 +364,18 @@ last one with `opens_window` (domain/host.md, section 6).
   - the notices unauthorized, limited and refused, in place of rejected
     and exhausted (section 4);
   - a failed run's limited or refused account, and a program that could
-    not run (section 4).
+    not run (section 4);
+  - the transcript refusals `endpoint` and `dialect` go: a window on
+    another endpoint or dialect is carried over, never refused
+    (transcript.md, section 4).
 
   Both halves move to it together, as to version 3.
 
 ## 6. Grants
 
 - **Down as values:**
-  - an account;
+  - an account, the `u32` its charter's LLMs name it by (charter.md,
+    section 2). It is a name, sparse, never an index;
   - a generation;
   - how long it is valid;
   - its value.
@@ -371,16 +394,20 @@ last one with `opens_window` (domain/host.md, section 6).
     agent accepts it from a host that still sends it; smith's own host
     never does, and no new host may. It goes when its last host has
     moved.
+- **An LLM with no account has no grant.** Its charter names it no
+  account, so the start carries no grant for it, and its calls carry no
+  credential (charter.md, section 2; llm.md, section 7). No value stands
+  for no credential: an empty one is a value the agent cannot install.
 - **A value the agent cannot install:** one that does not read so, a
   scheme the endpoint's dialect does not take, or a program source for
   an endpoint that names no program. A start that carries one is
   refused, and a later grant of one fails as any credential the agent
   cannot install.
-- **The agent's half keeps the values** in a table holding two generations
-  per account, so a refresh does not cut a call in flight. It hands the
-  domain only the account, the generation and when the grant lapses. The
-  LLM component reads the value from the table when it starts a call
-  (llm.md).
+- **The agent's half keeps the values** in a table keyed by account,
+  holding two generations of each, so a refresh does not cut a call in
+  flight. It hands the domain only the account, the generation and when
+  the grant lapses. The LLM component reads the value from the table
+  when it starts a call (llm.md).
 - **The host's half fills the values in** from its host's credentials,
   or with the program source's name, so the host's domain also names
   only accounts and generations (domain/host.md, section 7).
@@ -513,6 +540,13 @@ a trace is kept is the agent's configuration (agent.md).
     agent cannot install, refused;
   - each notice: unauthorized, limited with a reset and without one, and
     refused, and a failed run naming its limited or refused account;
+  - a limited notice with a zero reset, and one with none, each read as
+    sent;
+  - a refused notice whose provider's code is past its bound, sent
+    empty, and whose reason is past its bound, cut at a character's
+    boundary;
+  - an LLM with no account: its start carries no grant, and its calls
+    run with no credential;
   - facts dropped under pressure, and facts after the answer, each
     counted as not projected while the event stream keeps them all;
   - a start asking for text: a completion's pieces arrive in order with

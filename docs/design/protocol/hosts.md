@@ -258,7 +258,10 @@ directory, each record under its lock (`docs/design/shell.md`, section
   (programs.md, section 4). The host holds nothing of it: it checks the
   source's login at startup and before each run on it, signs it out
   when the person asks (section 2), and grants the source's name.
-- **`none`,** for a provider that takes no credential.
+- **`none`,** for a provider that takes no credential. It lends no
+  grant: the charter's LLMs on it name no account, so the start carries
+  no grant for them and their calls carry no credential (charter.md,
+  section 2; channel.md, section 6).
 - **Another program's login is never read** (`docs/design/shell.md`,
   section 7).
 

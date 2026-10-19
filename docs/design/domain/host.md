@@ -317,9 +317,11 @@ policy.
     section 3), has the program's own sign-out run when the person asks
     (protocol/hosts.md, section 2), and lends the source's name;
   - **none** (`none`): for an endpoint that takes no credential, whose
-    charter's LLM names no account (protocol/charter.md, section 2).
+    charter's LLM names no account (protocol/charter.md, section 2). It
+    lends no grant, and that LLM's calls carry no credential
+    (protocol/channel.md, section 6).
 
-  Whatever the source, the agent is lent grants the same way, so it has
+  Every other source lends its grants the same way, so the agent has
   one path for credentials. Another program's login is never read.
 
 ## 8. The local host

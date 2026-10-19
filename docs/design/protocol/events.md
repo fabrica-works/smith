@@ -395,7 +395,7 @@ when it is about one; and the kind's fields.
 | `reasoning_dropped` | warning | `bytes` | a reasoning item past its bound left out of later requests, as the model's declaration allows (limits.md, section 2.1) |
 | `credential_unauthorized` | warning | `account` | a provider refused a credential, or a program source's login was lost (programs.md, 5.6) |
 | `account_limited` | warning | `account`, and `reset_ms` when its provider said | an account reached a usage limit; `reset_ms` is how long from this record until it may be used again |
-| `account_refused` | warning | `account`, `code` | a provider refused the account what the run asked, with its code |
+| `account_refused` | warning | `account`, `code` | a provider refused the account what the run asked, with its code. The notice's reason is the provider's text, so it is never here: it is the failed response's `detail`, content under the capture policy (3.10) |
 | `teardown_aborted` | warning | | a termination signal after the answer turned closes into aborts |
 | `forced_exit` | warning | `exit`, `forced` | a host's agent did not exit on its own (domain/host.md, section 4) |
 
@@ -403,10 +403,9 @@ when it is about one; and the kind's fields.
 
 - **model:** `endpoint`, `model`, `window_tokens` and `output_tokens`,
   the window and output the charter gave it (charter.md, section 2),
-  `effort`, or null, `account`, the account that pays for it, or null
-  for none, and
-  `backend`, `direct` or the program's name, `claude_code`
-  (programs.md).
+  `effort`, or null, `account`, the number of the account that pays for
+  it, its charter's `u32`, or null for none, and `backend`, `direct` or
+  the program's name, `claude_code` (programs.md).
 - **usage:** `input_tokens`, read afresh; `cache_read_tokens`;
   `cache_write_tokens`; `output_tokens`; and `reasoning_tokens`, the part
   of the output spent on reasoning. Each is an integer, or null when the
@@ -441,8 +440,9 @@ when it is about one; and the kind's fields.
 - **answer failure:** `class`, one of `model` (with `endpoint` and
   `model`, the last completion's, `attempts`, how many it made, and
   `completion`, a completion failure; or with `account` and `state`:
-  `limited`, with `retry_after_ms`, how long from this record until it
-  may be used again, when the provider said, `refused`, with `code`, or
+  `limited`, with `reset_ms`, how long from this record until it may
+  be used again, when the provider said, as `account_limited` has it
+  (3.9), `refused`, with `code`, or
   `unauthorized`, a program source's login lost; or with `program`, its
   name, a program that could not run or exited before its answer, with
   its `exit` when it exited and, as content, its `detail`
@@ -583,8 +583,8 @@ The vocabulary is pre-release, like every format (README.md, section 8).
   `credential_unauthorized`, `account_limited` and `account_refused` in
   place of `credential_rejected` and `account_exhausted` (3.9), the
   completion failures `refused` and `unsupported` with their evidence,
-  and a model's answer failure for an account and for a program
-  (3.10).
+  and a model's answer failure for an account, its reset as `reset_ms`
+  in place of `retry_after_ms`, and for a program (3.10).
 - **`v` is on every record,** so a line read alone says its version. A
   stream holds one version, which `session.started` gives.
 - **A reader refuses another version.** `smith-events`' reader reads its

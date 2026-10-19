@@ -911,13 +911,16 @@ profile (2.1).
 
 | | `openai` | `anthropic` |
 |---|---|---|
-| endpoint | `api.openai.com:443`, TLS name `api.openai.com`, `/v1/responses`, OpenAI's public Responses dialect (skein's `llm.md`, 4.8) | `api.anthropic.com:443`, TLS name `api.anthropic.com`, `/v1/messages`, Anthropic's Messages dialect with a key (skein's `llm.md`, 4.7) |
+| endpoint | `api.openai.com:443`, TLS name `api.openai.com`, `/v1/responses`, OpenAI's public Responses dialect, `openai` (skein's `llm.md`, 4.8) | `api.anthropic.com:443`, TLS name `api.anthropic.com`, `/v1/messages`, Anthropic's Messages dialect, `anthropic`, with a key (skein's `llm.md`, 4.7) |
 | program | none | `claude_code`, Claude Code (protocol/programs.md) |
 | sources | `sign_in`, with smith's registration; `key`; `env` | `program`; `key`; `env` |
 | how a credential is sent | `Authorization: Bearer`, a sign-in's token or a key alike (skein's `llm.md`, 2.6) | a key, in `x-api-key` |
 | `connect`, `handshake` | 10 s each | 10 s each |
 | `connection_keep` | 30 s, provisional | 30 s, provisional |
 
+- **The dialects** are named `openai` and `anthropic`, in settings as an
+  endpoint's `dialect` (5.2), and the local host writes each into the
+  agent's configuration with its number (protocol/agent.md, section 4).
 - **smith's OpenAI registration,** the `openai` preset's and never a
   setting's: Sign in with ChatGPT for an open-source program, with no
   client secret and no partner key.
@@ -1119,7 +1122,10 @@ whatever its source (domain/host.md, section 7).
   section 3), grants the account's name, and runs the run on a spawned
   agent (section 9).
 - **`none`:** for an endpoint that takes no credential, such as a local
-  model's.
+  model's. It lends no grant: a run's LLM whose account it is names no
+  account in its charter, so its calls carry no credential
+  (protocol/charter.md, section 2; protocol/channel.md, section 6). The
+  account's name still has a number, checked with the rest (7.4).
 
 ### 7.2 The credentials directory
 
@@ -1175,14 +1181,21 @@ whatever its source (domain/host.md, section 7).
 
 ### 7.4 Account numbers
 
-A charter's LLM names its account by number, and a transcript's
-opening turn keeps it (protocol/charter.md, section 2;
+A charter's LLM names its account by number, a `u32`, and a
+transcript's opening turn keeps it (protocol/charter.md, section 2;
 protocol/transcript.md, section 2). The local host derives each
-account's number from its name by a fixed hash, never from its place in
-the settings or among the run's models, so that an account has one
-number in every invocation, and a chat resumed on the same account is
-not carried over. Two names of one number are refused, naming both
-(exit 2); renaming an account changes its number.
+account's number from its name: the first four bytes of the name's
+SHA-256 (skein's `lib.md`, 6.2), read as a big-endian `u32`. It never
+comes from the account's place in the settings or among the run's
+models, so that an account has one number in every invocation, and a
+chat resumed on the same account is not carried over. Renaming an
+account changes its number.
+
+Two of the settings' accounts with one number are refused, naming both
+(exit 2). Every declared account is checked, not only the run's, and
+`none` accounts among them though their numbers name no grant (7.1), so
+that neither the models a run uses nor an account's source changes
+whether the settings are admitted.
 
 ### 7.5 What the person sees
 
@@ -1305,8 +1318,10 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
     of bounds, an ambiguous account, `--account` of another provider, a
     `program` source on an endpoint without a program, and each setting
     of an earlier version naming what takes its place;
-  - account numbers: one name, one number, in any order of the settings;
-    two names of one number refused.
+  - account numbers: one name, one number, in any order of the settings,
+    the first four bytes of its SHA-256 read big-endian; two account
+    names of one number, a `none` account's among them, refused with
+    exit 2, naming both.
 - **Step tests in `smith-agent-service` and `smith-local-service`:** the
   `standard` profile derives, and its derived worst case fits `memory`.
 - **The local host's simulated world** (testing.md, section 2.1):

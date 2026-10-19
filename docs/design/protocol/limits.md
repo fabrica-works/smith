@@ -169,7 +169,13 @@ in every deployment:
   bound), the channel schema's (channel.md, section 4);
 - **a model's effort:** a name of at most 32 bytes, the charter schema's
   (charter.md, section 2). The list of names a model accepts is its
-  declaration (`docs/design/shell.md`, 6.1), never the vocabulary's.
+  declaration (`docs/design/shell.md`, 6.1), never the vocabulary's;
+- **an account's refusal:** the refused notice's code, text of at most
+  128 bytes, skein's report bound, left empty past it, never clipped
+  (skein's `llm.md`, 2.5 and 7); and its reason, text of at most 512
+  bytes, the failure's detail cut at a character's boundary. Both are
+  the channel schema's, and a failed run's refused account carries the
+  code within the same bound (channel.md, section 4).
 
 ## 3. The derivation
 

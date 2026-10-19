@@ -203,7 +203,10 @@ child domain `smith-domain-session`, whose own child is the tools domain
   raises, which the agent sends to its host as unauthorized, limited and
   refused (host.md, section 7). An unauthorised failure is transient, so
   a refreshed credential may answer the retry; the others end the
-  session as a failure of its model, naming the account. An unsupported
+  session as a failure of its model, naming the account. A model with no
+  account raises none of them: no grant can come for it, so each ends
+  the session as a failure of its model, with its provider's failure
+  class and no account (protocol/charter.md, section 2). An unsupported
   request raises no notice: it names the field, and fails the session
   (protocol/llm.md, section 6).
 

@@ -84,13 +84,16 @@ A versioned record (skein's `codec.md`, section 3):
 
   Each LLM has:
   - an endpoint's name;
-  - **`account`,** optional: the number the host's grants for it are
-    named by (channel.md, section 6). The start carries a grant for each
-    LLM's account, and the grant's value says whether the LLM runs on
-    its endpoint's dialect or on its endpoint's program (programs.md,
-    section 3). LLMs may share an account. An LLM without one makes its
-    calls with no credential, for an endpoint that takes none, such as
-    a local model;
+  - **`account`,** optional: the `u32` the host's grants for it are
+    named by (channel.md, section 6), a name the host chooses, sparse
+    and never an index. The start carries a grant for each LLM's
+    account, and the grant's value says whether the LLM runs on its
+    endpoint's dialect or on its endpoint's program (programs.md,
+    section 3). LLMs may share an account. An LLM without one runs on
+    its endpoint's dialect, for an endpoint that takes no credential,
+    such as a local model: the start carries no grant for it, and its
+    calls carry no credential. No grant stands for no credential, and
+    no grant's value is empty;
   - a model, one the agent's configuration declares for that endpoint;
   - **`effort`,** optional: the reasoning effort its completions ask
     for, one of those the agent's configuration declares for the model
@@ -235,6 +238,7 @@ and a refusal names what was too large.
   - a reserve its budget cannot hold;
   - an LLM's account the start carries no grant for, and a program
     source granted for a sub-agent's LLM;
+  - an LLM with no account, admitted with no grant;
   - a charter in a version the agent does not read.
 - **For a host:** a writer's own tests encode every charter it writes and
   check that smith's codec and entrance admit it, as temper's

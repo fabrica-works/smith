@@ -53,8 +53,9 @@ A versioned record. Every turn starts with its version.
 - **kind:** ordinary, or window, a compaction that opened a new window
   (domain/session.md, section 8.2);
 - **endpoint:** the name of the endpoint it ran on, as the agent's
-  configuration names it, and the dialect of its provider; for a window
-  turn, those of the window it opens, as with its model;
+  configuration names it, and the dialect of its provider, by its number
+  (protocol/agent.md, section 4); for a window turn, those of the window
+  it opens, as with its model;
 - **model and effort:** for an ordinary turn, the model its completion
   was made with and the effort it asked for, if any; for a window turn,
   the model and effort of the window it opens, the charter's, whatever
@@ -115,7 +116,8 @@ A versioned record. Every turn starts with its version.
       protocol/llm.md, section 5). A resumed history
       renders it as it rendered when told, so the prefix stays stable;
     - withdrawn;
-  - **an opaque block:** the provider's bytes, tagged with its dialect.
+  - **an opaque block:** the provider's bytes, tagged with its dialect's
+    number (protocol/agent.md, section 4).
 
 A call's typed form is not kept. The agent decodes the input again when it
 resumes, as it did when the call was made.

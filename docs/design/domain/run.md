@@ -470,11 +470,12 @@ host tool for it, as temper's `delegate` does.
   the run withdrew and its host decided later), with their answers, so the
   LLM does not ask them again; and goes on with the messages that woke
   it, which its start carries (3.2). A transcript it cannot use
-  (another version, another provider or endpoint, malformed, too large)
-  fails the run as transient, saying which (session.md, section 3), and
-  the host decides what the next run starts from. A run that does not
-  resume starts fresh from its brief, which carries what the host thinks
-  it needs.
+  (another version, malformed, unresolved, too large) fails the run as
+  transient, saying which (session.md, section 3), and the host decides
+  what the next run starts from. A window that ran on another endpoint,
+  dialect, account or backend is not refused: it is carried over
+  (session.md, 8.2). A run that does not resume starts fresh from its
+  brief, which carries what the host thinks it needs.
 - **Messages mid-work,** designed here and built later. Between
   completions, not only when main yields, the run offers its queued
   messages to the working session, which appends them after the results

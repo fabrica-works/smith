@@ -447,6 +447,11 @@ A completion's prompt is built from what the domain gives:
 
 - **A call names its grant,** an account and a generation. When the call
   starts, the component reads the grant's value from the table.
+- **A call of an LLM with no account names no grant** (charter.md,
+  section 2; channel.md, section 6). It starts with no credential, and
+  its request carries no credential field (skein's `llm-connection.md`,
+  section 4.2). It never reads the table, so it never fails as a grant
+  missing.
 - **A credential's scheme says how it is sent.** A bearer goes as an
   authorization bearer and a key as its provider's key, as the
   endpoint's dialect sends that scheme (skein's `llm.md`, 2.6). A scheme the
@@ -561,6 +566,8 @@ component and skein's client against scripted byte peers, in each dialect.
   - a bearer and a key, each sent as its scheme, on each dialect that
     takes it, and a scheme a dialect does not take refused at the
     start;
+  - a call of an LLM with no account: it starts with no credential, its
+    request carries no credential field, and it never reads the table;
   - the withdrawn `codex` dialect with its id-and-bearer grant;
   - replay going back after a resume;
   - a grant refreshed between two calls;

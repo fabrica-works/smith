@@ -153,7 +153,13 @@ product's own settings are `docs/design/shell.md`'s.
   neutral bounds, since that would invent a declaration. Each endpoint
   has:
   - its name, which charters and transcripts use;
-  - its dialect;
+  - **its dialect,** by name and number, each fixed for good: `openai`,
+    3, OpenAI's public Responses dialect (skein's `llm.md`, 4.8);
+    `anthropic`, 2, Anthropic's Messages dialect (skein's `llm.md`,
+    4.7); and the withdrawn `codex`, 1 (below). A transcript's turns and
+    opaque blocks carry the number (transcript.md, section 2), so a
+    number is never given to another dialect, and a name and number
+    that do not match are refused, naming the field;
   - its address, as a name resolved at startup (skein's `io.md`,
     section 4);
   - its transport: TLS, with its server name and what to trust it by, the
