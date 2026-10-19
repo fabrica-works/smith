@@ -16,7 +16,7 @@ development.md, section 3.3).
 | reliability | done 2026-10-14 | the 2026-10-09 revision of every document, with `shell.md`, `benchmarks.md`, `protocol/events.md` and `protocol/limits.md`: what is left of sessions 00 and 03–12, and session 13, which proves live what its first run (2026-10-09 to 2026-10-12, `~/src/rust/plans/reliability-plan/`, not versioned) landed unproven | `docs/development/plans/reliability/` |
 | parity | done 2026-10-15: ended short of parity at `87a8d1e8` on RT (benchmarks.md 16.5) | smith on par with Codex, as `benchmarks.md` section 16 defines it: the benchmark tasks, pins, price basis, summaries and verdict (`benchmarks.md` 3, 5, 6, 8–11, 16); jobs (`domain/tools.md` 3 and 5, `domain/session.md` 5, `domain/run.md` 5.3, 8.1 and 9.1, `domain/host.md` 4, `protocol/llm.md` 3, `protocol/events.md` 3.6, `protocol/limits.md` 2–7, `protocol/agent.md` 2, `protocol/transcript.md` 2 and 4); a compaction asked with `ToolChoice::None`, its summary framed (`domain/session.md` 8.2, `domain/run.md` 3.3); the task role (`shell.md` 5.2 and 6.6, `domain/run.md` 3.1, `protocol/limits.md` 4); a failed start that ends the command (`shell.md` 4.3); the tools' descriptions and the empty path (`protocol/llm.md` 3 and 4, `domain/tools.md` 2); `gpt-6.1-sol` (`shell.md` 6.1); skein's `fake-llm.md` 2.1 | `docs/development/plans/parity/` |
 | wall-clock | done 2026-10-17 | smith on par with Codex, RT included (`benchmarks.md` 16): the window's check bounding the next prompt, its appended bytes counted at a measured ratio, and a guard holding each prompt sent within the line, the history's bytes taken from the line, the line's material among the effective limits in event vocabulary version 3 (`domain/session.md` 4, 8.1 and 8.2, `protocol/limits.md` 2.1, 3.2, 3.9, 4 and 9, `protocol/llm.md` 6, `protocol/charter.md` 6, `protocol/events.md` 6), and the `history` probe's condition at the line (`benchmarks.md` 11.1); the task role's batched edits and checks, polls beside other work and ranged reads (`shell.md` 6.6); a failed write stopping the writes after it, in transcript version 5 (`domain/session.md` 5, `protocol/llm.md` 3 and 5, `protocol/transcript.md` 2 and 6); a job's wait giving way to the rest of its response (`domain/session.md` 5, `domain/tools.md` 3 and 5); the task role counted as written in the host part's check (`protocol/limits.md` 4, `shell.md` 6.6); spend priced per response, a response failed unsent at nothing, ten `shell-cwd` attempts, the `parity-change` suite and a change's report and stop, peak memory in summaries (`benchmarks.md` 1, 4.2, 5.4, 8.1, 8.2, 11.5, 14, 16.1, 16.2 and 16.6; `shell.md` 5.2); memory returning when its use ends, and `memory` raised should the worst case pass it (`protocol/limits.md` 5 and 11, `testing.md` 6, `shell.md` 6.3) | `docs/development/plans/wall-clock/` |
-| Claude Code, and smith on Anthropic | drafting | `benchmarks.md`, sections 6, 7 and 10: Claude Code as the third agent, smith's probes on Anthropic models. Reworked for the user's `~/.claude` login before it runs, after reliability | `~/src/rust/plans/reliability-plan/smith/11-claude.md (not versioned)` |
+| Claude Code, and smith on Anthropic | drafting | `benchmarks.md`, sections 6, 7 and 10: Claude Code as the third agent, smith's probes on Anthropic models. Reworked before it runs, after reliability, for the harness's own login (`benchmarks.md`, section 10), not the user's `~/.claude` | `~/src/rust/plans/reliability-plan/smith/11-claude.md (not versioned)` |
 
 ## 2. The design
 
@@ -29,22 +29,23 @@ instead.
 | Document | Built | Left |
 |---|---|---|
 | `domain/README.md` | partly | 4: `smith-mcp` and supervised processes with a view: not planned |
-| `domain/host.md` | partly | 2, 3: live content, the ask and the host's half handing pieces to its owner: not planned (live text). 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`) |
-| `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned (the reliability and parity plans' `later.md`). 6, 9.2: mid-work messages and threshold notes: not planned (the reliability plan's `later.md`) |
-| `domain/session.md` | partly | 11: provider-native compaction: not planned (the reliability plan's `later.md`) |
-| `domain/tools.md` | partly | 5: containment: not planned |
-| `protocol/README.md` | partly | 5: `smith-mcp`: not planned. 9: contained trees, Codex routing extras: not planned (the reliability and parity plans' `later.md`). 4, 11: a connected agent: not planned |
-| `protocol/agent.md` | partly | 3: the view: not planned |
-| `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned. 3, 4, 5, 7, 8: the ask in the start and live content in pieces, with their order and best effort: not planned (live text) |
-| `protocol/charter.md` | yes | Nothing |
-| `protocol/events.md` | partly | 3.2: `containment: "trees"`: not planned |
-| `protocol/hosts.md` | partly | 3: the tree: not planned. 4: connecting later: not planned |
+| `domain/host.md` | partly | 2, 3: live content, the ask and the host's half handing pieces to its owner: not planned (live text). 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`). 2, 7, 9.1: accounts by source, the account notices, program sources checked, the inline agent on the direct backend only: not planned: the first part of LLM accounts |
+| `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned (the reliability and parity plans' `later.md`). 6, 9.2: mid-work messages and threshold notes: not planned (the reliability plan's `later.md`). 4, 9, 9.1: a run on a program backend, its completions, spend and reserve: not planned: the first part of LLM accounts |
+| `domain/session.md` | partly | 11: provider-native compaction: not planned (the reliability plan's `later.md`). 3, 4, 8.2: a window carried over between providers, an account's failures as notices, never retried: not planned: the first part of LLM accounts |
+| `domain/tools.md` | partly | 5: containment: not planned. 10: a program backend's tools: not planned: the first part of LLM accounts |
+| `protocol/README.md` | partly | 5: `smith-mcp`: not planned. 9: contained trees, Codex routing extras: not planned (the reliability and parity plans' `later.md`). 4, 11: a connected agent: not planned. 5, 8: `smith-protocol-program`; the channel's, charter's, transcripts' and events' versions with accounts and programs: not planned: the first part of LLM accounts |
+| `protocol/agent.md` | partly | 3: the view: not planned. 1, 4: two backends, an endpoint's program, the programs directory and programs' paths, the withdrawn fields accepted: not planned: the first part of LLM accounts |
+| `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned. 3, 4, 5, 7, 8: the ask in the start and live content in pieces, with their order and best effort: not planned (live text). 4, 6: version 4, after live text's 3: a grant's value as a credential with its scheme or a program source's name, the notices unauthorized, limited and refused (the code is at version 2, `crates/smith-channel/src/kinds.rs`, with rejected and exhausted): not planned: the first part of LLM accounts |
+| `protocol/charter.md` | partly | 2, 5: version 3: each LLM's account (the code is at version 2, `crates/smith-charter/src/lib.rs`): not planned: the first part of LLM accounts |
+| `protocol/events.md` | partly | 3.2: `containment: "trees"`: not planned. 3.5, 3.9, 6: version 4: the account notices, a program backend's completions (the code is at version 3, `crates/smith-events/src/lib.rs`): not planned: the first part of LLM accounts |
+| `protocol/hosts.md` | partly | 3: the tree: not planned. 4: connecting later: not planned. 2, 5.2-5.4, 5.6: program sources checked, the accounts' sources, signing in by source, a run on a program spawned: not planned: the first part of LLM accounts |
 | `protocol/limits.md` | partly | 2.3, 2.4, 3.6: the piece, the interval and the held bytes of live content: not planned (live text) |
-| `protocol/llm.md` | partly | 6: deltas handed over for the channel's ask: not planned (live text). 12: edit formats per dialect: not planned |
-| `protocol/transcript.md` | yes | Nothing |
-| `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned (the reliability plan's `later.md`) |
-| `testing.md` | partly | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned |
-| `benchmarks.md` | partly | 3.1, 5.2: each probe's and each variant's calibration in its task file (8 blocks in 4 of the 15 probe directories), with six task files and the two `history` variants to recalibrate before `suite smoke` relies on them: not planned (the parity and wall-clock plans' `later.md`). 11.1: `mid-work`, `build-environment`: not planned. 11.3: the `delegation` experiment: not planned. 15: beyond serial runs: not planned. 16.6: a change's projection on its own ratio (`summarise` multiplies in the ratios of the landed changes named to it, `benchmarks/src/parity/change.rs`): not planned. 6: Claude Code: Claude Code, and smith on Anthropic |
+| `protocol/llm.md` | partly | 6: deltas handed over for the channel's ask: not planned (live text). 12: edit formats per dialect: not planned. 6, 7: a credential's scheme, an account's failures as notices, the `codex` dialect withdrawn: not planned: the first part of LLM accounts |
+| `protocol/programs.md` | no | 1-9: Claude Code as a backend: its sign-in, configuration directory, command, tools, permission prompt, stream, notices, budget and sessions, and the fake program: not planned: the first part of LLM accounts |
+| `protocol/transcript.md` | partly | 3, 4, 6: version 6: the opening turn's account and backend, a window carried over between providers (the code is at version 5, `crates/smith-domain-session/src/record.rs`): not planned: the first part of LLM accounts |
+| `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned (the reliability plan's `later.md`). 4.1-4.6, 5.2-5.4, 6.1, 6.2, 7, 9: accounts by source, several per provider; `smith login` and `smith logout`; the `openai` and `anthropic` presets, with smith's own registration; the credentials directory, records locked across processes, account numbers from names; a run on a program spawned (the code borrows Codex's and Claude's logins, `crates/smith-local-protocol/src/borrowed.rs`, and numbers accounts by their order, `crates/smith-local-shell/src/settings/resolve.rs`): not planned: the first part of LLM accounts |
+| `testing.md` | partly | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned. 2.3, 4: the live suite on smith's own accounts, the OAuth issuer by moved addresses, the fake program: not planned: the first part of LLM accounts |
+| `benchmarks.md` | partly | 3.1, 5.2: each probe's and each variant's calibration in its task file (8 blocks in 4 of the 15 probe directories), with six task files and the two `history` variants to recalibrate before `suite smoke` relies on them: not planned (the parity and wall-clock plans' `later.md`). 11.1: `mid-work`, `build-environment`: not planned. 11.3: the `delegation` experiment: not planned. 15: beyond serial runs: not planned. 16.6: a change's projection on its own ratio (`summarise` multiplies in the ratios of the landed changes named to it, `benchmarks/src/parity/change.rs`): not planned. 6: Claude Code: Claude Code, and smith on Anthropic. 6, 7, 10, 11.1: each agent on the harness's own login, smith on `openai`, the `smith-claude-code` arm, the `credentials` probe on a sign-in record shared across processes: not planned: the first part of LLM accounts |
 
 ## 3. Not planned
 
@@ -136,7 +137,44 @@ instead.
   changes named to it (`benchmarks/src/parity/change.rs`). Waits for the
   next plan that measures a change against its parent; until then, a
   plan names no landed change to it.
-
+- **The first part of LLM accounts**, the rows here and skein's that name
+  it, is one plan, run after live text's skein and smith parts: its
+  channel is version 4, after live text's 3, and skein's fakes it uses
+  are those beside live text's pieces and holds (skein's `fake-llm.md`,
+  2.2 and 2.3). The downstream repositories' parts follow, as the second
+  part.
+- **Accounts by source** (`shell.md`, 4.1 to 4.6, 5.2, 5.3, 6.1, 6.2
+  and 7; `domain/host.md`, section 7; `protocol/hosts.md`, 5.2 and
+  5.4): accounts by provider and name, several per provider, each with
+  one source (`sign_in`, `key`, `env`, `program`, `none`); `smith login`
+  and `smith logout`; smith's own Sign in with ChatGPT registration in
+  the `openai` preset, and the `anthropic` preset; the credentials
+  directory with its host id, records locked across processes, and
+  account numbers from names. The first part of LLM accounts.
+- **Grants and notices** (`protocol/channel.md`, sections 4 and 6;
+  `protocol/charter.md`, sections 2 and 5; `protocol/transcript.md`,
+  sections 3, 4 and 6; `protocol/events.md`, 3.9 and 6;
+  `protocol/llm.md`, sections 6 and 7; `domain/session.md`, sections 3,
+  4 and 8.2): channel version 4, charter version 3, transcript version 6
+  and event vocabulary version 4; a grant's value as a credential with
+  its scheme or a program source's name; each LLM's account; the
+  notices unauthorized, limited and refused; a window carried over
+  between providers; the `codex` dialect and its grant withdrawn,
+  accepted but written by none of smith's. The first part of LLM
+  accounts.
+- **Programs as backends** (`protocol/programs.md`; `protocol/agent.md`,
+  sections 1 and 4; `protocol/README.md`, section 5; `domain/tools.md`,
+  section 10; `domain/run.md`, sections 4 and 9; `shell.md`, 5.4 and 9):
+  Claude Code as the agent's second backend, in `smith-protocol-program`,
+  and a run on it spawned. The first part of LLM accounts.
+- **Live tests and benchmarks on smith's own accounts** (`testing.md`,
+  2.3, 4 and 8; `benchmarks.md`, sections 6, 7, 10, 11.1 and 15): the
+  live suite's tree and logins, the fake program, each benchmark agent
+  on the harness's own login, and the `smith-claude-code` arm. The
+  first part of LLM accounts.
+- **The MIT licence**: a `LICENSE` file at the root and
+  `license = "MIT"` in each manifest (the user's decision, with the LLM
+  accounts design, 2026-10-19). The first part of LLM accounts.
 - **A run's live text** (`protocol/channel.md`, sections 3, 4, 5, 7 and
   8; `protocol/llm.md`, section 6; `protocol/limits.md`, 2.3, 2.4 and
   3.6; `domain/host.md`, sections 2 and 3): the start's ask, and the
@@ -154,4 +192,3 @@ instead.
 | Draft | About | Next |
 |---|---|---|
 | `draft/one-host.md` | smith's side of jig's one host: the inline agent | Nothing in smith: adopted into `domain/host.md`, section 9, built by session 03. jig's side is on jig's schedule |
-| `draft/accounts.md` | smith's side of jig's `draft/llm-accounts.md`: the product as its own client (accounts by provider and source, several per provider, smith's own Sign in with ChatGPT registration in the `openai` preset, Claude Code as a program, a credentials directory, refreshes locked across processes, `smith login` and `smith logout`); the agent's two backends, grants and notices; a conversation carried over between providers; live tests and benchmarks on smith's own accounts | not adopted: review; then a design pass in the documents its section 8 names, after skein's design pass for jig's `draft/llm-accounts.md` |

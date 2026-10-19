@@ -1,6 +1,6 @@
 # smith's protocol layer
 
-Provisional, 2026-10-06, revised 2026-10-09. The protocol layer of smith
+Provisional, 2026-10-06, revised 2026-10-19. The protocol layer of smith
 turns smith's vocabulary into bytes and back. It sits between an agent and
 its peers: its host, its LLM providers and its machine. It follows skein's
 `programming-model.md`, sections 4 and 8, and the domain design in
@@ -26,7 +26,10 @@ What is still open is listed in section 11.
   - LLM providers, through skein's LLM client;
   - the machine (files and processes), through skein's io.
 
-  MCP servers come later, as a fourth.
+  MCP servers come later, as a fourth. A run may also run on a
+  program the agent spawns, Claude Code first, which makes its LLM
+  calls in place of the agent's own loop, under smith's policy
+  (programs.md).
 - **Components, not bundles.** No component makes the stream its channel
   runs on: none spawns, listens or connects for it. Whoever composes the
   components decides how an agent and its host meet: a process spawned, a
@@ -92,6 +95,9 @@ What is still open is listed in section 11.
    call.
 9. **hosts.md:** the host's side of a channel, whether the host spawns the
    agent or connects to it, and the local host's protocol layer.
+10. **programs.md:** programs as backends: a run on Claude Code, signed in
+    by the program's own flow, its tools under smith's policy, its stream
+    told as smith's.
 
 ## 3. Names
 
@@ -128,8 +134,10 @@ host would be another.
 | one process | the consumer owns smith's inline agent as a child, with no channel: everything crosses as typed values, the charter and turns included, and nothing is encoded (domain/host.md, 9.4) | its own domain and protocol layer | as the consumer's child, `smith-inline-agent`: smith's domain, with its LLM and machine components in the consumer's protocol layer |
 
 - **A spawned agent** is how temper's worker runs smith. The local host
-  offers it later, with contained trees (hosts.md, section 5.6). The
-  process tree is the run's containment (domain/host.md, section 4).
+  spawns one for a run on a program backend, which the inline agent
+  cannot run, and offers it for every run later, with contained trees
+  (hosts.md, section 5.6; programs.md, section 2). The process tree is
+  the run's containment (domain/host.md, section 4).
 - **A connected agent** is not available yet: it waits on the domain. The
   components allow it, but admission, cancellation, a lost connection and
   the daemon's own life have no contract yet. The domain today:
@@ -163,6 +171,7 @@ host would be another.
 | `smith-protocol-channel` | component | the agent's half: skein's channel and smith's codecs on the streams it is given, translated to and from `smith-domain` |
 | `smith-protocol-llm` | component | `smith-domain`'s LLM calls to skein's LLM client and back, with tools' schemas, decoding and rendering (llm.md) |
 | `smith-protocol-machine` | component | the workspace's files, searches, commands, checks and guides, through skein's io (agent.md) |
+| `smith-protocol-program` | component | a run on a program backend: the program's status, command, settings and stream, and the agent's MCP server with its permission prompt, through skein's io, translated to and from `smith-domain` (programs.md) |
 | `smith-host-protocol` | component | the host's half: skein's channel and smith's codecs on the streams it is given, translated to and from `smith-host-domain` (hosts.md) |
 | `smith-local-protocol` | protocol layer | the local host's: the terminal, transcripts in files, signing in and committing in place (hosts.md) |
 | `smith-inline-agent` | domain | an agent capability in its host's process: one composed `smith-domain` per run, speaking `smith-host-domain`'s vocabulary; smith's side of jig's one host (domain/host.md, section 9) |
@@ -206,6 +215,7 @@ smith-agent                        the binary: glue in the root package
             ├── smith-protocol-channel     to its host, on the streams it is given
             ├── smith-protocol-llm         to providers, through skein's LLM client
             ├── smith-protocol-machine     to files and processes, through skein's io
+            ├── smith-protocol-program     to a program as a backend, its child
             └── its event sink             records, with smith-events, through skein's io
 ```
 
@@ -341,6 +351,15 @@ to an older reader or writer. Each has one version at a time.
     The conversation vocabulary's first version stays with temper's
     legacy run (domain/README.md, section 7);
   - **the events' first** (events.md).
+- **Then, with accounts and programs,** in one release:
+  - **the channel's third:** grants as a credential with its scheme or
+    a program source's name, beside the withdrawn id-and-bearer form,
+    and the notices unauthorized, limited and refused (channel.md,
+    section 5);
+  - **the charter's third:** each LLM's account (charter.md, section 5);
+  - **transcripts' sixth:** an opening turn's account and backend
+    (transcript.md, section 6);
+  - **the events' fourth** (events.md, section 6).
 - **A build says which it speaks.** `smith check` prints each format's
   version (`docs/design/shell.md`), and the event stream's header carries
   them (events.md, section 3.2), so a mismatch shows before a run.
@@ -407,6 +426,13 @@ it.
   - `Usage` with each count optional, cache writes and reasoning tokens
     included;
   - `ToolChoice`: `Auto`, `None` or `Only`;
+  - the public OpenAI Responses dialect (skein's `llm.md`, 4.8) and
+    Anthropic's Messages with a key (4.7); a credential's scheme, a
+    bearer or a key (2.6); and the failure classes exhausted, with its
+    reset only where the provider gives one, refused and unsupported,
+    naming its field, with the provider's error code and request id as
+    evidence (2.5). The Codex dialect and its account header stay,
+    withdrawn (4.6);
   - an oversized call as a block of its own, and a call cut off by the
     output limit marked;
   - typed `Limit` kinds, and HTTP statuses in failures;
@@ -420,18 +446,26 @@ it.
     for the event stream (`io.md`, 5.1);
   - durable replacement of a whole file, and private files for secrets
     (`io.md`, 5.2 and 5.3);
+  - a lock on a directory, taken without waiting, for the credentials
+    directory's records (`io.md`, section 5);
   - the loop's host interface and its drive, out of the testing crates
     (`shell.md`, section 12);
   - trust roots loaded from the machine or a file (`shell.md`, 6.2);
   - the kernel's resource usage of the process and its children.
 - **Sockets and TLS** for a connected agent.
-- **OAuth** for the local host's sign-in (skein's `oauth.md`), with
-  `localhost` redirects, records that hold an access token alone, and the
-  io that drives a sign-in.
+- **OAuth** for the local host's sign-in (skein's `oauth.md`, section
+  6): the client's issued client id, ID token and revocation (2.1, 2.2
+  and 2.3); the driver, taking a provider's registration (6.2), its
+  requests and events (6.3), a record kept privately and shared across
+  processes, read again under its owner's lock before each write (6.4),
+  a redirect on a port each sign-in binds (6.5), and a fake issuer
+  (6.8).
 - **Fakes:**
   - a scripted peer on a channel;
-  - skein's fake LLM provider, taking the affinity and cache markers, and
-    its fake checkout;
+  - skein's fake LLM provider, taking the affinity and cache markers,
+    several credentials each with its scheme, and each failure class
+    scripted (skein's `fake-llm.md`, 2.1, 2.3 and 3), and its fake
+    checkout;
   - protocol worlds that join two ends with streams cut at random
     (testing-strategy.md, 2.5).
 - **Later, and only if measured:** Codex's routing state and reasoning

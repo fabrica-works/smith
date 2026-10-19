@@ -1,6 +1,6 @@
 # Tools
 
-Provisional, 2026-10-05, revised 2026-10-17. What a smith session does to
+Provisional, 2026-10-05, revised 2026-10-19. What a smith session does to
 its workspace, as a domain layer: read, list, search, write, edit, shell
 and job. It is the child domain `smith-domain-tools`, under the session
 (session.md). A run with no workspace has none of these tools; its LLM
@@ -33,6 +33,9 @@ listed in section 8.
   the session works; `job` reads its output, waits for its end or stops
   it. A job's end is told once, and a job never outlives its session
   (section 5).
+- **On a program backend,** the program's own tools stand in for these,
+  and only this domain's confinement holds, checked at each call's
+  permission prompt (section 10).
 
 ## 2. The workspace
 
@@ -400,3 +403,39 @@ replacements and needing a match rather than a read, `list` answering a
 tree, output budgets the LLM chooses within ceilings, and one path
 namespace; only the names of what it confines for (temper's worker)
 become the host's.
+
+## 10. On a program backend
+
+A run on a program backend (protocol/programs.md) has none of this
+domain's tools: the program runs its own built-in tools for the granted
+families, and this domain checks each call before it runs.
+
+- **What stands in:** for inspect, the program's `Read`, `Glob` and
+  `Grep`; for modify, `Write` and `Edit`; for shell, `Bash`
+  (protocol/programs.md, 5.3). There is no `list`, `search` or `job` of
+  this domain's.
+- **What holds, at the permission prompt** (protocol/programs.md, 5.4):
+  - each path a call names, resolved against the working directory,
+    within the start's directories, and outside every `.git` directory
+    (section 4);
+  - a write's or an edit's path within a writable directory;
+  - the families the run granted, and no other tool.
+
+  A call that breaks a rule is denied, with the rule in words, as an
+  invalid call is answered here.
+- **What does not:**
+  - one path namespace: the program sees its working directory and the
+    paths of the directories beside it as its view mounts them
+    (protocol/hosts.md, section 3), not `/name/...`;
+  - read before write and match before edit, which are the program's
+    own checks;
+  - the stated bounds on each tool's output, which are the program's;
+  - commands: `Bash`'s command is not parsed, so its paths are not
+    checked; its process is the program's child, in the agent's tree
+    and the commands' environment (protocol/programs.md, 4.2), and its
+    deadline is the program's, within the run's wall time;
+  - jobs: a command the program runs in the background is the
+    program's, and ends with it.
+- **Outcomes are text.** A built-in tool's result is told as the text
+  the program wrote, never as this domain's typed outcome
+  (protocol/transcript.md, section 2).

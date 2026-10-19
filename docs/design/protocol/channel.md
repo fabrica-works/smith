@@ -35,7 +35,7 @@ of domain/host.md, section 2.
   - turns;
   - waiting;
   - long operations;
-  - notices about credentials;
+  - notices about accounts: limited, refused and unauthorized;
   - facts;
   - live content, in pieces;
   - the answer, its last word, with the last message read.
@@ -49,9 +49,10 @@ of domain/host.md, section 2.
   tool's input.
 - **Calls carry their names** (domain/run.md, 5.2): the activation, the
   completion and the position. Each is answered once.
-- **Credentials travel as grants.** Their values cross the channel and stop
-  at each side's protocol layer, so each domain sees an account and a
-  generation only.
+- **Credentials travel as grants.** A grant's value is a credential, a
+  bearer or a key, or a program source's name (section 6). Values cross
+  the channel and stop at each side's protocol layer, so each domain
+  sees an account and a generation only.
 - **Live content is not a fact.** What the run's main conversation
   streams before a turn commits (its text, later its reasoning and a
   tool call's input) crosses as pieces, only at the host's ask, with
@@ -146,7 +147,8 @@ of domain/host.md, section 2.
   They enter the inbox at admission, before any message sent after the
   start (domain/host.md, section 2). A headless host sends its prompt so;
   a host that starts a run before it has a message sends none;
-- **the grants** the charter's endpoints need;
+- **the grants** the accounts of the charter's LLMs need (charter.md,
+  section 2);
 - **the ask,** if the host wants live content: one boolean for each
   kind of it, `text`, `reasoning` and `input` (section 4). An absent ask,
   or one with every kind false, asks for nothing, and nothing is sent.
@@ -190,8 +192,9 @@ of domain/host.md, section 2.
 | waiting | the last message read, if any | when the run waits for a message, or awaits its first |
 | long | what it is (`check`, `completion` or `command`) and how long, at most, as a duration | when the checks, an LLM completion or a command start |
 | long done | nothing | when one ends |
-| rejected | an account and a generation | when a provider refused that credential |
-| exhausted | an account, and how long until it may be used again | when its account ran out |
+| unauthorized | an account and a generation | when a provider refused that credential, or a program source's login was lost (programs.md, 5.6) |
+| limited | an account, and how long until it may be used again, only when its provider said | when its account reached a usage limit |
+| refused | an account, and the provider's code and reason, as text | when its provider refused the account what the run asked, such as a model its plan does not serve |
 | fact | one fact (section 8) | while the run is admitted and has not answered, with room to spare; any other is not projected, and counted (section 7) |
 | live | a piece of live content (below) | while the run is admitted and has not answered, only for a kind the start asked for, with room to spare; any other is dropped, and counted (section 7) |
 | answer | the turns it took; what it spent; the last message read, if any; how it ended (below) | the last word |
@@ -256,9 +259,12 @@ last one with `opens_window` (domain/host.md, section 6).
 - **accepted,** with its result, as bytes (charter.md);
 - **parked;**
 - **failed,** typed, so the host can act without reading prose:
-  - the model, with its provider's failure class; an exhausted account
+  - the model, with its provider's failure class; a limited account,
     with the account and, when its provider said, how long until it may
-    be used again, measured when the run answers;
+    be used again, measured when the run answers; a refused account, with
+    the account and the provider's code; an unauthorized account, whose
+    program source's login was lost; or a program that could not run,
+    naming it, with its detail (programs.md, 5.6);
   - the budget, naming what ran out, with what was used and its bound;
   - policy;
   - cancelled;
@@ -333,6 +339,15 @@ last one with `opens_window` (domain/host.md, section 6).
 - **Version 3.** One bump covers the ask in the start and live content in
   pieces, with their order and best effort (sections 3, 4 and 7). Both
   halves move to it together, as they moved to version 2.
+- **Version 4** covers:
+  - a grant's value as a credential with its scheme, or a program
+    source's name, beside the withdrawn form (section 6);
+  - the notices unauthorized, limited and refused, in place of rejected
+    and exhausted (section 4);
+  - a failed run's limited or refused account, and a program that could
+    not run (section 4).
+
+  Both halves move to it together, as to version 3.
 
 ## 6. Grants
 
@@ -340,21 +355,35 @@ last one with `opens_window` (domain/host.md, section 6).
   - an account;
   - a generation;
   - how long it is valid;
-  - the credential, with whatever skein's LLM client needs beside it, such
-    as an account's id.
-- **A value is one byte string:** the account's id length in two bytes,
-  big-endian, then the id, then the bearer token, never empty. A value
-  that does not read so is a credential the agent cannot install: a
-  start that carries one is refused, and a later grant of one fails as
-  any credential the agent cannot install.
+  - its value.
+- **A value is one of,** told apart by a tag in the record, so no form
+  is read as another and the withdrawn one needs no guess:
+  - **a credential:** its scheme, `bearer` or `key`, and its bytes,
+    never empty. The dialect sends it as its provider takes that scheme
+    (llm.md, section 7). It carries no account's id;
+  - **a program source:** its name, 1 to 32 characters of `a-z`, `0-9`
+    and `-`, which names its configuration directory in the agent's
+    programs directory (agent.md, section 4; programs.md, section 3). It
+    holds no secret, and a later generation changes nothing;
+  - ***withdrawn:*** **an account's id and a bearer,** for the withdrawn
+    `codex` dialect (llm.md, section 7): the id's length in two bytes,
+    big-endian, then the id, then the bearer token, never empty. The
+    agent accepts it from a host that still sends it; smith's own host
+    never does, and no new host may. It goes when its last host has
+    moved.
+- **A value the agent cannot install:** one that does not read so, a
+  scheme the endpoint's dialect does not take, or a program source for
+  an endpoint that names no program. A start that carries one is
+  refused, and a later grant of one fails as any credential the agent
+  cannot install.
 - **The agent's half keeps the values** in a table holding two generations
   per account, so a refresh does not cut a call in flight. It hands the
   domain only the account, the generation and when the grant lapses. The
   LLM component reads the value from the table when it starts a call
   (llm.md).
-- **The host's half fills the values in** from its host's credentials, so
-  the host's domain also names only accounts and generations
-  (domain/host.md, section 7).
+- **The host's half fills the values in** from its host's credentials,
+  or with the program source's name, so the host's domain also names
+  only accounts and generations (domain/host.md, section 7).
 - **A value goes nowhere else:** not into a turn, a fact, a trace or a
   charter.
 
@@ -479,6 +508,11 @@ a trace is kept is the agent's configuration (agent.md).
     refused;
   - a peer that leaves an optional kind out of its terms;
   - grants refreshed while a call is in flight;
+  - a grant of each form: a bearer, a key, a program source's name, and
+    the withdrawn id and bearer, each installed; one of each kind the
+    agent cannot install, refused;
+  - each notice: unauthorized, limited with a reset and without one, and
+    refused, and a failed run naming its limited or refused account;
   - facts dropped under pressure, and facts after the answer, each
     counted as not projected while the event stream keeps them all;
   - a start asking for text: a completion's pieces arrive in order with

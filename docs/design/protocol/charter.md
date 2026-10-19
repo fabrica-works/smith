@@ -1,6 +1,6 @@
 # The charter and the result
 
-Provisional, 2026-10-07, revised 2026-10-16. Two records:
+Provisional, 2026-10-07, revised 2026-10-19. Two records:
 
 - **the charter:** how a run is set up (domain/run.md, 3.1);
 - **the result:** what a run declares to finish (domain/run.md, section 7).
@@ -22,7 +22,8 @@ workers carry unread, and its version must be the one its agents read
   - the result contract;
   - conventions;
   - a budget with a reserve to finish with;
-  - the LLMs, each with its window, its output and its prices;
+  - the LLMs, each with its account, its window, its output and its
+    prices;
   - the waiting time;
   - whether to resume.
 
@@ -30,7 +31,8 @@ workers carry unread, and its version must be the one its agents read
   (domain/README.md, section 5).
 - **Endpoints by name.** A charter names the endpoints its LLMs run on, and
   the agent's configuration says what each name is (agent.md). A charter
-  holds no address and no credential.
+  holds no address and no credential: it names each LLM's account, and
+  the host grants the account (channel.md, section 6).
 - **Checked twice, in two places:**
   - **the codec** checks what a schema can check: bounds, tags, text;
   - **the domain** checks the rest at the entrance: an endpoint not
@@ -82,6 +84,13 @@ A versioned record (skein's `codec.md`, section 3):
 
   Each LLM has:
   - an endpoint's name;
+  - **`account`,** optional: the number the host's grants for it are
+    named by (channel.md, section 6). The start carries a grant for each
+    LLM's account, and the grant's value says whether the LLM runs on
+    its endpoint's dialect or on its endpoint's program (programs.md,
+    section 3). LLMs may share an account. An LLM without one makes its
+    calls with no credential, for an endpoint that takes none, such as
+    a local model;
   - a model, one the agent's configuration declares for that endpoint;
   - **`effort`,** optional: the reasoning effort its completions ask
     for, one of those the agent's configuration declares for the model
@@ -167,9 +176,12 @@ version at a time, and any change a reader would notice is a new one.
 - **A writer writes the version of its release.** `smith check` prints the
   version an agent reads (`docs/design/shell.md`), so a writer and its
   agents that differ find out before a run.
-- **Version 2 is current.** It adds each LLM's `window` and `output`, in
-  place of the most output tokens, the cache-write price, and the
-  budget's reserve. The result keeps its shape.
+- **Version 3 is current.** It adds each LLM's `account` (section 2):
+  the charter's LLM names the account its grants are named by, and an
+  endpoint of the agent's configuration never does (agent.md, section
+  4). Version 2 adds each LLM's `window` and `output`, in place of the
+  most output tokens, the cache-write price, and the budget's reserve.
+  The result keeps its shape.
 
 ## 6. Limits
 
@@ -221,6 +233,8 @@ and a refusal names what was too large.
     admitted;
   - text past a window's host part;
   - a reserve its budget cannot hold;
+  - an LLM's account the start carries no grant for, and a program
+    source granted for a sub-agent's LLM;
   - a charter in a version the agent does not read.
 - **For a host:** a writer's own tests encode every charter it writes and
   check that smith's codec and entrance admit it, as temper's

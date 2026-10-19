@@ -1,6 +1,6 @@
 # Benchmarks
 
-Provisional, 2026-10-09, revised 2026-10-17. How smith shows that a change has the effect it
+Provisional, 2026-10-09, revised 2026-10-19. How smith shows that a change has the effect it
 claims and keeps it, and how smith compares with other agents. Tests are
 testing.md's; the events smith is observed through are
 protocol/events.md's; its commands, settings and exit codes are
@@ -25,12 +25,13 @@ Codex, the comparison's verdict, is section 16.
   failing before it and passing after it. A change to the runtime,
   limits, providers or host records a smoke run there.
 - **Agents are adapters.** `Smith`, `Codex` and `ClaudeCode` are a closed
-  set, each run as it ships, at a pinned version, with the user's existing
-  login, never a copy of a refresh token, under a hard deadline on its
-  whole process tree. A pin changes only what an attempt must own: its
-  paths, its model and effort, its account, and the keys that keep it
-  unattended and isolated. smith is observed only through its event
-  stream.
+  set, each run as it ships, at a pinned version, on a login of the
+  harness's own, signed in once with the agent's own flow, never a
+  person's own tool directory and never a copy of a refresh token, under
+  a hard deadline on its whole process tree. A pin changes only what an
+  attempt must own: its paths, its model and effort, its account, and
+  the keys that keep it unattended and isolated. smith is observed only
+  through its event stream.
 - **Unknown is never zero.** A measurement is observed, a lower bound, or
   unavailable with its reason. Tokens count once per response.
 - **Statistics fit the question.** A probe reruns once on failure. A
@@ -202,7 +203,7 @@ workspace, ending in one result (section 8). The kinds are a closed set:
 | Tier | Contents | When | Agents | Cost (estimate) |
 |---|---|---|---|---|
 | offline | parsers on recorded outputs, manifests, statistics | in the focused suite | none | under a second |
-| smoke | a few probes and the passive checks, one attempt each | each change to the runtime, limits, providers or host, and each fix | smith on `codex`, small tier; `anthropic` too for a change to its path | a few minutes, under 100k tokens |
+| smoke | a few probes and the passive checks, one attempt each | each change to the runtime, limits, providers or host, and each fix | smith on `openai`, small tier; `anthropic` too for a change to its path | a few minutes, under 100k tokens |
 | probes | every probe and variant, both providers; outcome halves on other agents | weekly | smith; Codex; later Claude Code | about an hour, a few million tokens |
 | compare | fixtures, interleaved | on demand | smith and the agents compared, working tier | one to two hours |
 | repository | repository tasks | at milestones | smith and Codex, working tier | several hours |
@@ -368,7 +369,7 @@ tasks = ["probes/first-request", "probes/budget/wrap-up"]
 
 [[agents]]
 agent = "smith"
-provider = "codex"
+provider = "openai"
 config = "standard"
 ```
 
@@ -394,11 +395,11 @@ since what it would charge is not known.
   every result's identity.
 - **A comparison's pin changes nothing the agent ships** but what the
   attempt must own: its paths (home, temporary directory, caches, trace),
-  its model and effort, its account, and the keys that keep it
-  unattended and isolated (section 10). It restates no default. An
-  experiment's arm names each key it changes, and only those (11.3). A
-  probe that needs another value, a small window or an empty brief, names
-  it in its own task's `[smith]` overrides (5.2).
+  its model and effort, its account, one of the harness's, and the keys
+  that keep it unattended and isolated (section 10). It restates no
+  default. An experiment's arm names each key it changes, and only those
+  (11.3). A probe that needs another value, a small window or an empty
+  brief, names it in its own task's `[smith]` overrides (5.2).
 - **Raw results stay outside the tree,** under
   `$XDG_STATE_HOME/smith-bench/runs/<run>/<attempt>/`: the result, the
   agent's output and records, standard error's tail, the grader's logs,
@@ -431,7 +432,7 @@ files.
 
 | Step | Smith | Codex | Claude Code |
 |---|---|---|---|
-| prepare | `XDG_CONFIG_HOME` holds the pinned settings as the user's layer: the account's file and the trace, capturing `calls` so the scope gate sees each call's input (`everything` where a task needs prompts), and nothing else of a comparison's; `XDG_STATE_HOME` the state; the account borrows the user's `~/.codex` login, read-only and access-token-only (shell.md, section 7). Before an arm's first attempt, `smith check --json exec` with the attempt's own `exec` flags records the effective limits, the teardown bound, schema versions and credentials of the run it will start; a nonzero exit refuses the arm as setup. The attempt's events are its standard output's, under `--json`: the harness gives `exec` no trace file, so the run has one event destination | a `CODEX_HOME` of the attempt's own, holding only an access-only `auth.json` the harness writes from the user's `~/.codex` login (section 10), so none of the user's instructions, skills, plugins, memories or configuration reach it and its rollouts are the attempt's; only the keys an attempt must own (5.4) pinned by `-c` overrides: no MCP servers, the attempt root trusted, workspace edits allowed, no approvals, the model and effort, and the attempt's private caches among its sandbox's writable roots, so that it can write them; no other key, so that the rest is Codex's default; its background service disabled where it can be, or ended with the tree | the user's own Claude login, the same way as Codex's; pinned settings and an empty MCP configuration passed on the command line, edits and commands allowed without asking |
+| prepare | `XDG_CONFIG_HOME` holds the pinned settings as the user's layer: the account's file and the trace, capturing `calls` so the scope gate sees each call's input (`everything` where a task needs prompts), and nothing else of a comparison's; `XDG_STATE_HOME` the attempt's state; `credentials` the harness's credentials directory, and the account one of its own (section 10). Before an arm's first attempt, `smith check --json exec` with the attempt's own `exec` flags records the effective limits, the teardown bound, schema versions and credentials of the run it will start; a nonzero exit refuses the arm as setup. The attempt's events are its standard output's, under `--json`: the harness gives `exec` no trace file, so the run has one event destination | a `CODEX_HOME` of the attempt's own, holding only an access-only `auth.json` the harness writes from the harness's own Codex login (section 10), so none of the user's instructions, skills, plugins, memories or configuration reach it and its rollouts are the attempt's; only the keys an attempt must own (5.4) pinned by `-c` overrides: no MCP servers, the attempt root trusted, workspace edits allowed, no approvals, the model and effort, and the attempt's private caches among its sandbox's writable roots, so that it can write them; no other key, so that the rest is Codex's default; its background service disabled where it can be, or ended with the tree | `CLAUDE_CONFIG_DIR` the harness's own configuration directory, signed in once with `claude auth login` (section 10); the attempt's own settings, instructions and empty MCP configuration given by flags (`--settings`, `--strict-mcp-config`, `--setting-sources`), so that none of the login's directory's reach it, and its session found by its id; edits and commands allowed without asking |
 | command | `smith exec --json -C <workspace> -m <endpoint>/<model> --effort <effort> -`, overrides as `-c KEY=VALUE` (shell.md, section 4.2); interactive, `smith --trace <file>` at a pseudo-terminal | `codex exec --json -m <model> -c model_reasoning_effort=<effort> -C <workspace> -o <final> -` | `claude -p --output-format stream-json --verbose --model <model> --effort <effort> --max-budget-usd <ceiling> --settings <pinned> --mcp-config <empty>`; `--input-format stream-json` for later messages |
 | observe | the event stream, through `smith-events`; standard error is never parsed | JSON lines: thread, turns, items, and each turn's usage, of the root thread only, cached input within input | the opening record, assistant messages with usage, sub-agent messages with their parent's call, the result with durations, turns, cost and per-model usage, in the pinned version's recorded shapes |
 | collect | nothing beyond the stream | the rollouts of the thread named and of each thread linked to it as a child (codex-cli 0.160.0 names its parent in the child's opening record): per-response usage, children and their spans, and each command's span against its call's; where a child is not linked to its parent, child scopes are unavailable and totals lower bounds | nothing; transcripts are archived |
@@ -498,7 +499,7 @@ files.
 
 ## 7. Models as tiers
 
-| Tier | `codex` | `anthropic` | Used by |
+| Tier | `openai` | `anthropic` | Used by |
 |---|---|---|---|
 | `small` | `gpt-6-luna`, low effort | `claude-haiku-5-5`, low effort | probes, smoke, the live tier |
 | `working` | the user's working model and effort | the same | fixtures, repository tasks |
@@ -511,9 +512,15 @@ files.
   that smith runs it as it ships; a model the presets lack gets its row
   there first.
 - **Providers are a closed set,** named as smith's presets (shell.md,
-  section 6.2). smith runs on both, Codex on `codex`, Claude Code on
-  `anthropic`. Each result records the model and effort asked for and
-  those the agent reports; a mismatch is flagged.
+  section 6.2). smith runs on both, Codex on `openai`'s models, Claude
+  Code on `anthropic`'s. Each result records the model and effort asked
+  for and those the agent reports; a mismatch is flagged.
+- **smith's accounts.** smith's own loop runs on `openai` with a sign-in
+  of the harness's, and on `anthropic` with a key. smith on a Claude
+  subscription runs Claude Code's loop under smith's adapter
+  (protocol/programs.md): its results are an arm of their own,
+  `smith-claude-code`, never pooled with smith's own loop's, and it is
+  not measured until the program backend is built.
 
 ## 8. The result schema
 
@@ -663,28 +670,38 @@ answer is a warning on a completed attempt.
 
 ## 10. Isolation
 
-- **Credentials are the user's existing logins,** never a copy of a
-  refresh token: issuers rotate them, and a copy logs the other holder
-  out. Every agent borrows the login access-only, and none runs in a
-  user's tool directory:
-  - smith borrows `~/.codex` read-only and takes its access token only
-    (domain/host.md, section 7);
-  - Codex gets a `CODEX_HOME` of the attempt's own. Its `auth.json` is
-    written by the harness from the user's login: the access and
-    identity tokens and the account, with the refresh token left empty.
-    It is `0o600` in a `0o700` directory and removed when the tree has
-    ended. Codex cannot refresh it, so it never rotates the user's
-    token. Codex runs from a private copy of its pinned release's whole
-    package under the harness's state, never the user's installation;
-    its pin names the executable's SHA-256, and setup refuses another;
-  - Claude Code, later, gets the same with its own configuration
-    directory.
+- **Credentials are logins of the harness's own,** each signed in once
+  by the developer with its agent's own flow, never a person's own tool
+  directory and never a copy of a refresh token: issuers rotate them,
+  and a copy is spent by whichever holder refreshes first.
+  - **smith** runs on a credentials directory of the harness's, signed
+    in once with `smith login` as the live suite's is (testing.md, 2.3),
+    and shared by attempts under each record's lock (shell.md, 7.3);
+    each attempt keeps its own state directory. Its Anthropic models run
+    on a key.
+  - **Codex** gets a `CODEX_HOME` of the attempt's own. Its `auth.json`
+    is written by the harness from a Codex login of the harness's own: a
+    `CODEX_HOME` the developer signs in once with Codex's own flow, and
+    that Codex alone refreshes, never the person's `~/.codex`. The
+    attempt's file holds the access and identity tokens and the account,
+    with the refresh token left empty. It is `0o600` in a `0o700`
+    directory and removed when the tree has ended. Codex cannot refresh
+    it, so it never rotates the harness's login. Codex runs from a
+    private copy of its pinned release's whole package under the
+    harness's state, never the user's installation; its pin names the
+    executable's SHA-256, and setup refuses another.
+  - **Claude Code** runs with a configuration directory of the
+    harness's, signed in once with `claude auth login`, never a copy of
+    a login, which would carry a person's subscription credential
+    outside its program. The login is shared; each attempt's settings,
+    instructions and MCP servers are its own, given by flags (section
+    6). Attempts on one login run one at a time.
 
   An access token that expires before the attempt's hard deadline (its
   expiry read from its claims) is a setup refusal, like a lapsed login.
-  The refusal names the CLI to run once, whose own use refreshes the
-  login where it lives. Nothing in the harness writes to a user's tool
-  directories.
+  The refusal names the command to run once, whose own use refreshes the
+  login where it lives. Nothing in the harness writes to a person's own
+  tool directories.
 - **Configuration is pinned, not inherited.** An agent's home is the
   attempt's, so nothing of the user's configuration, instructions,
   skills, plugins or memories reaches it. The keys it is given come
@@ -742,7 +759,7 @@ Code.
 | `paths` | one path namespace (domain/tools.md, section 2) | `app` writable and `spec` read-only: read both, answer in `app`. `single`: one directory, its name never needed. The prompt names the files as any agent finds them on disk, from the working directory `app`: `spec`'s through `../spec/` (domain/tools.md, section 2: siblings by path). smith's own text tells its model `/spec/...`, and either route must resolve. Every agent runs in `app`, with `spec` beside it, read-only and protected | no `missing` verdict or path refused as outside; at most two completions before `finish` | seconds |
 | `tool-output` | output budgets, read windows and timeouts as the model chooses them; UTF-8 passed through; jobs (domain/tools.md, sections 3 and 5) | `test-output`: which assertion fails, in over ten kilobytes of output. `quote`: a sentence deep in a long document. `timeout`: a command past its timeout, and one asking past the ceiling. `utf-8`: replace an en dash. `background`: a command of about a minute started as a job, beside reads the answer also needs | one shell call; at most two reads; `timed_out` naming its bound, `clamped` set, no hang; one edit, matching first time. `background`: the command answered `running`, a completion started between the job's start and its end, one terminal for the job | seconds each; `background` a minute |
 | `process-tree` | a command in its own process group, signalled whole (domain/tools.md, section 5) | `sh -c 'sleep 600 & wait'` with a short timeout | no `sleep` left, by tree accounting; answered within timeout and grace; accepted | seconds |
-| `credentials` | the `borrow` source (domain/host.md, section 7) | an account borrowing the user's Codex login | accepted; smith never writes the login file (its digest unchanged by smith's run) | seconds |
+| `credentials` | a sign-in record shared across processes (shell.md, 7.3) | two smith attempts at once on one `sign_in` account of the harness's, the refresh lead raised so that both refresh | both accepted; the record's generation rose, and no refresh was refused as reused | seconds |
 | `slow-completion` | deadlines that measure progress; an oversized reasoning item as a typed failure (protocol/limits.md, section 7) | long reasoning at high effort, from a real provider (a fake slow source is the deterministic worlds', not this probe's) | the answer accepted; no timeout of any phase while events arrive; no reasoning-size failure; the call lasting over 60 s, the whole-response cap the spike's attempts were cut at (findings S5). An attempt under 60 s is "not exercised": neither a pass nor a fail, counted like a model deviation (more than two in twelve strengthen the prompt, or raise the effort). Recorded per provider and model, for shell.md's `head`, `idle` and `reasoning_item`: `first_byte_ms`, `largest_gap_ms`, the call's length and the largest reasoning item | minutes; occasional |
 
 Later, as their behaviour is built: **`mid-work`**, a message offered
@@ -806,7 +823,7 @@ repository task's delegation and length.
 
 | Suite | Tasks | Agents | Repetitions |
 |---|---|---|---|
-| `smoke` | `first-request`, `smoke-tools`, `large-write`, `budget/child-quota`, `budget/wrap-up`, `failures/one-turn`, each only while its task file holds a calibration | smith on `codex`, small | one, rerun on failure |
+| `smoke` | `first-request`, `smoke-tools`, `large-write`, `budget/child-quota`, `budget/wrap-up`, `failures/one-turn`, each only while its task file holds a calibration | smith on `openai`, small | one, rerun on failure |
 | `probes` | every probe and variant | smith on both providers; Codex, later Claude Code, on outcome halves | one; three where judged on a median |
 | `compare` | `01-backoff`, `02-line-decoder`; `03-planner` when asked | smith and Codex, later Claude Code, working | at least five per arm, interleaved |
 | `repository` | `shell-cwd` | smith and Codex, working | three, outcomes and large effects only |
@@ -824,8 +841,8 @@ repository task's delegation and length.
 - **To the live tier** (testing.md, section 2.3). The live tier checks
   once, by outcome, that each wire, issuer refresh and push is right.
   Benchmarks repeat, measure and compare. Both read smith through
-  `smith-events`, take the user's existing logins under one credential
-  guard, and default to
+  `smith-events`, take logins of their own, signed in once, under one
+  credential guard, and default to
   the small tier.
 - **To skein's test kit.** The harness is not a world: no schedule,
   replay, counting allocator or referee plumbing of its own. What it
@@ -900,7 +917,10 @@ Each runs in milliseconds, within the focused and fuzzy budgets.
   checks both before its first comparison.
 - **Claude Code:** the settings that allow edits and commands headless;
   whether `CLAUDE_CONFIG_DIR` keeps every user file out;
-  `claude-haiku-5-5` at low effort on the subscription route.
+  `claude-haiku-5-5` at low effort on a subscription.
+- **Claude Code's attempts at once on one login:** whether attempts that
+  share a configuration directory interfere. Default: one at a time
+  (section 10).
 - **Tree accounting:** cgroup v2 delegated to the user on the development
   machine, as containment also needs (testing.md, section 8).
 - **The shared credential guard:** which crate the live tier and
@@ -988,7 +1008,7 @@ holds for one pinned Codex at one working tier.
   spend that misses only retried failures counts as what was reported,
   and the attempt's row keeps the lower bound that names them.
   - The provider's failures are not the agent's. Both arms meet them,
-    interleaved on one account.
+    interleaved on one ChatGPT account, each on its own login.
   - Codex's tokens are its own running total, read as observed. The
     harness sees none of Codex's provider attempts, so whatever a Codex
     request that the provider failed and Codex retried added to that

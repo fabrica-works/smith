@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-07, revised 2026-10-13. The host's side of the
+Provisional, 2026-10-07, revised 2026-10-19. The host's side of the
 protocol:
 
 - `smith-host-protocol`, the host's half of the channel, a component that
@@ -18,7 +18,11 @@ The contract is domain/host.md's.
   - runs one channel per run, as the initiator, on streams it is given;
   - translates between the channel's records and `smith-host-domain`'s
     vocabulary;
-  - fills grants' values in from the host's credentials.
+  - fills grants' values in from the host's credentials, each in the
+    form the channel names (channel.md, section 6), the withdrawn
+    one included for a host that still writes it;
+  - checks a program source's login, and signs it out, when its host
+    asks (section 2).
 - **The streams are the host's to make:**
   - a spawned agent's pipes, from a contained tree (skein's `draft/process.md`);
   - or a connection to a daemon.
@@ -32,11 +36,12 @@ The contract is domain/host.md's.
   - a person at a terminal, or a prompt given once;
   - settings, which are the shell's;
   - transcripts in files;
-  - signing in to a provider, or borrowing a sign-in;
+  - signing in: to a provider, with a key, or through a program's own
+    flow;
   - committing in place.
 
-  Its agent runs inline by default; spawning one stays a capability
-  (section 5.6).
+  Its agent runs inline, and a run whose account's source is a program
+  runs on a spawned agent (section 5.6).
 
 ## 2. The host's half
 
@@ -60,8 +65,23 @@ The contract is domain/host.md's.
 - **Deadlines become durations** on the way down, and durations become
   deadlines on the host's clock on the way up.
 - **Grants:** the domain names an account and a generation. The half fills
-  in the value from its host's credentials as it encodes, so no domain of
-  the host's holds one (domain/host.md, section 7).
+  in the value from its host's credentials as it encodes, a credential
+  with its scheme or a program source's name (channel.md, section 6), so
+  no domain of the host's holds one (domain/host.md, section 7).
+- **Checking a program source.** When its host asks, the half runs the
+  program's status in the source's environment, with the host's
+  deadline, and answers usable, not signed in, signed in otherwise
+  (naming how) or failed (programs.md, section 3). It is no record of
+  the channel's: a host asks when it chooses, before it places a run on
+  the source, and the agent checks again at the run's start. The half
+  finds the program and the source's configuration directory as the
+  agent does (agent.md, section 4).
+- **Signing out of a program source.** When its host asks, the half
+  runs the program's own sign-out in the source's configuration
+  directory and environment, with the host's deadline (programs.md,
+  4.1), and answers signed out or failed, with the detail. It reads
+  nothing the sign-out removes. A run live on the source ends as a login
+  lost (programs.md, 5.6).
 - **The end.** The half reads the agent's channel to its end, so that what
   the agent said before it went is heard, then reports its terminal.
 
@@ -73,9 +93,13 @@ layer spawns a contained tree:
 - **the program:** an agent process, `smith-agent` as smith ships it or a
   host's own build of `smith-agent-shell`, with its configuration
   (agent.md, section 4);
-- **an environment** given whole, holding no credential;
+- **an environment** given whole, holding no credential, nor any of the
+  variables a program's environment leaves out (programs.md, 4.2);
 - **the view:** at least the workspace's directories, writable as the start
-  says, the binary and its configuration. The rest is the host's choice;
+  says, the binary and its configuration, and, for a run on a program,
+  the program and the source's configuration directory, writable, since
+  the program keeps its session there (programs.md, 5.8). The rest is
+  the host's choice;
 - **the pipes:** standard input and output for the channel, and standard
   error, whose tail the half keeps for the domain's report of how the agent
   ended (domain/host.md, section 4);
@@ -162,7 +186,9 @@ what its host's protocol layer would do:
   user's file, the repository's `.smith/`, overrides and flags, with
   provider presets that supply endpoints and known models' declared
   values. They cover:
-  - endpoints and their accounts, each with its credential source;
+  - accounts, each with its provider and its source, and the account
+    each endpoint runs on (`docs/design/shell.md`, 5.2);
+  - the credentials directory, and the programs' paths;
   - prices;
   - a budget;
   - models;
@@ -201,34 +227,41 @@ what its host's protocol layer would do:
   the person to read, and never sent back.
 - **Answers the transcript lacks** are kept the same way, until a waking
   prompt has told the LLM of them and a turn has been kept after it.
+- **A program's session** is the program's, in its source's
+  configuration directory, found by the conversation's session id
+  (programs.md, 5.8). An `--ephemeral` chat's program session is never
+  resumed by a later chat, and stays as the program keeps its sessions
+  (programs.md, section 9).
 
 ### 5.4 Signing in
 
-Each account has one credential source (domain/host.md, section 7):
+Each account's source is the one its settings give it (domain/host.md,
+section 7), and its records and keys are kept in the credentials
+directory, each record under its lock (`docs/design/shell.md`, section
+7):
 
 - **`sign_in`, smith's own,** with skein's OAuth client and its driver
   (skein's `oauth.md`, section 6), as a public client with the
-  registration its account's settings give; no preset carries one
-  (`docs/design/shell.md`, section 7). The authorization page's address
-  is shown at the terminal, and the redirect comes back to a loopback
-  listener bound to 127.0.0.1. A
-  redirect registered as `localhost` is accepted, and compared exactly,
-  by skein. The account's id comes from the token's claims. The refresh
-  token is kept in a file only the user may read; an access token is lent
-  to the agent as a grant, and refreshed before it lapses.
-- **`borrow`, another CLI's login,** opted into per account. Its file is
-  read and never written, and only the access token and the account's id
-  are taken: never the refresh token, which would rotate the other CLI's
-  sign-in away. The host hands them to skein's OAuth driver as an
-  access-only record (skein's `oauth.md`, sections 6.2 and 6.3), which
-  the driver lends, never refreshes and never keeps; the host reads the
-  file again and hands in a newer record when a grant is due. The
-  driver's `expiring`, and its failure once the token has lapsed or is
-  rejected, are only events: the words the person sees are smith's,
-  naming the file and exactly which CLI to run again
-  (`docs/design/shell.md`, section 7).
-- **`env`, a named variable,** for unattended use: an access-only grant,
-  never refreshed.
+  registration its provider's preset carries (`docs/design/shell.md`,
+  section 7). The authorization page's address is shown at the
+  terminal, and the redirect comes back to a loopback listener bound to
+  127.0.0.1, on a port drawn for each sign-in unless the settings fix
+  one. A redirect registered as `localhost` is accepted, and compared
+  exactly, by skein. The record's subject comes from its ID token. The
+  record is kept in a file only the user may read; its access token is
+  lent to the agent as a bearer grant, and refreshed before it lapses.
+- **`key`,** kept by `smith login` in a file only the user may read, and
+  lent as a key grant, never refreshed.
+- **`env`, a named variable,** for unattended use: a key grant, read at
+  start, never refreshed.
+- **`program`,** the program's own sign-in, handed the terminal
+  (programs.md, section 4). The host holds nothing of it: it checks the
+  source's login at startup and before each run on it, signs it out
+  when the person asks (section 2), and grants the source's name.
+- **`none`,** for a provider that takes no credential.
+- **Another program's login is never read** (`docs/design/shell.md`,
+  section 7).
+
 - **A credential's value goes nowhere else:** not into settings shown, a
   trace or an event.
 - **At the end,** the local host cancels a sign-in still waiting for the
@@ -278,9 +311,12 @@ Each account has one credential source (domain/host.md, section 7):
   `smith-host-protocol` and an agent process (section 3), as smith's
   libraries offer it to any host. The local host's composition takes an
   agent of either kind, so its worlds run both, and the shipped
-  `smith-agent` binary is the real-process proof. The product offers
-  spawning as a setting only later, with contained trees (domain/host.md,
-  section 12).
+  `smith-agent` binary is the real-process proof.
+- **A run on a program is spawned:** the inline agent has no program
+  backend (programs.md, section 2), so the product spawns `smith-agent`,
+  with its generated configuration, for a run whose account's source is
+  a program; every other run stays inline. Spawning every run, as a
+  setting, waits on contained trees (domain/host.md, section 12).
 - **Grace.** A spawned agent's exit grace is derived from the agent's
   teardown bound, which io's close deadlines make (agent.md, section 6;
   skein's `shell.md`, section 13), with a margin above it; a setting
@@ -297,7 +333,8 @@ Each account has one credential source (domain/host.md, section 7):
 - **`smith-local-domain` is owed:**
   - the person's lines as messages;
   - its files loaded and stored atomically;
-  - its sign-ins, and the credential sources' records;
+  - its sign-ins and sign-outs, each source's state, and a program
+    source's check;
   - its commits, each answered in smith's terms;
   - its agent's failures and end, typed, with their evidence and detail,
     whichever kind of agent runs.
@@ -306,9 +343,10 @@ Each account has one credential source (domain/host.md, section 7):
   - contained trees;
   - sockets and TLS;
   - its OAuth client, with `localhost` redirects, and its fake issuer;
-  - token records that hold an access token alone, and the OAuth driver
-    that signs in, refreshes, keeps records and lends access-only ones
-    handed in (skein's `oauth.md`, section 6);
+  - the OAuth driver that signs in with a registration, refreshes,
+    reads a kept record again before a refresh when its owner asks,
+    keeps records, revokes and lends (skein's `oauth.md`, section 6);
+  - a directory's lock and private files (skein's `io.md`, 5 and 5.3);
   - append streams and durable whole-file replacement, for the event
     stream and the chat's files;
   - the fake checkout, for commits in worlds.
@@ -317,6 +355,10 @@ Each account has one credential source (domain/host.md, section 7):
 
 - **The host's half** in the channel's protocol world (channel.md,
   section 10).
+- **A program source,** against the fake program (programs.md, section
+  8): the half's check answering usable, not signed in, signed in
+  otherwise and failed, and its sign-out answering signed out and
+  failed, each in the source's own directory and environment.
 - **Spawning,** in a simulated world with the fake machine:
   - agents that start, fail to start, miss the opening's deadline, exit
     after their last word, and ignore the cancel;
@@ -332,12 +374,17 @@ Each account has one credential source (domain/host.md, section 7):
   - lines at a scripted terminal, and notices observed by kind;
   - chats resumed from files across runs of the binary, after a
     compaction from the current window's files only;
-  - a sign-in against skein's fake issuer, with a `localhost` redirect;
-  - a borrowed login: a valid token lent; one the other CLI refreshed,
-    read again and handed in; one nearing its expiry, then expired, each
-    shown in smith's words naming its CLI, with no run started on the
-    expired one; its file never written; its refresh token in no trace;
-  - an account from the environment;
+  - a sign-in against skein's fake issuer, with smith's registration, a
+    `localhost` redirect and a port drawn for it;
+  - a record refreshed by one process while another waits on its lock,
+    then lends the newer record without refreshing;
+  - a key kept and lent with its scheme, and an account from the
+    environment;
+  - a program source checked at startup against the fake program, each
+    answer shown in smith's words, and a run on it spawned
+    (programs.md, section 8);
+  - each notice, limited, refused and unauthorized, shown in smith's
+    words;
   - commits made in the fake checkout;
   - an interrupt in the middle of a turn, and a second that drops the
     run;

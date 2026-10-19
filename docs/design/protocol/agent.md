@@ -1,6 +1,6 @@
 # The agent process
 
-Provisional, 2026-10-07, revised 2026-10-14. What an agent process is:
+Provisional, 2026-10-07, revised 2026-10-19. What an agent process is:
 the `smith-agent` binary, glue over `smith-agent-shell`, which a host
 spawns to run one run. It covers:
 
@@ -31,6 +31,8 @@ are limits.md's, and its event vocabulary events.md's.
   (section 3).
 - **Configuration is declared quantities.** It gives:
   - the endpoints and their models' declared quantities;
+  - the programs it may run, and their configuration directories'
+    parent;
   - a profile: a named bundle of the rest;
   - the commands' environment;
   - where the event stream goes.
@@ -45,6 +47,10 @@ are limits.md's, and its event vocabulary events.md's.
 - **One process, one run.** The binary reads its channel on its standard
   input and output, runs the run it is started with, sends its answer,
   closes everything it owns and exits (domain/host.md, section 1).
+- **Two backends.** The agent runs a run on its own loop, over skein's
+  LLM client, or on a program it spawns as its child, Claude Code first,
+  as the run's grant says: a credential, or a program source's name
+  (programs.md).
 - **Its end is one phase:** `Live → Answered → Closing → Closed`. The LLM
   pool closes at the answer, and a termination signal after the answer
   aborts what is still closing (section 6).
@@ -156,10 +162,13 @@ product's own settings are `docs/design/shell.md`'s.
   - the dialect's path and headers, each the dialect's own by default
     (skein's `llm.md`). The affinity's header names are reserved and
     refused here (llm.md, 2.1);
-  - the account its grants are named by;
-  - its options: an identity profile. Reasoning effort is a run's
-    choice, in its charter's LLM (charter.md, section 2), and cache
-    affinity is the run's, never an endpoint's (llm.md, 2.1);
+  - **its program,** optional: the program, `claude_code`, that runs a
+    run whose grant names a program source (programs.md, section 3). An
+    endpoint without one takes credentials only. The account a run's
+    grants are named by is its charter's LLM's (charter.md, section 2),
+    never an endpoint's. Reasoning effort is a run's choice, in its
+    charter's LLM too, and cache affinity is the run's, never an
+    endpoint's (llm.md, 2.1);
   - its connect and handshake deadlines;
   - **its models,** each with its declared quantities: `window`,
     `output`, `reasoning_item`, `head` and `idle` (limits.md, section
@@ -167,6 +176,23 @@ product's own settings are `docs/design/shell.md`'s.
     charter may name only a declared model, at most its declared window
     and output, and one of its declared efforts when it declares any
     (charter.md, section 2).
+- ***Withdrawn,*** accepted from a host that still writes them, and
+  written by none of smith's:
+  - the `codex` dialect, with the account's id its grants carry
+    (skein's `llm.md`, 4.6; channel.md, section 6);
+  - an endpoint's account, which the agent ignores, since the charter's
+    LLM names the account;
+  - an endpoint's identity profile, with skein's withdrawn Anthropic
+    subscription route (skein's `llm.md`, 4.7).
+
+  They go when their last host has moved.
+- **Programs:** the programs directory, which holds each program
+  source's configuration directory by the source's name (programs.md,
+  4.2), and each program's path, by the program's name: the path of
+  `claude`, for `claude_code` (programs.md, section 3). A configuration
+  whose endpoint names a program it gives no path for is refused,
+  naming the field. The agent runs a program as programs.md, section 5
+  says, in the commands' environment as programs.md, 4.2 changes it.
 - **A profile:** its name, and the deployment's declared quantities and
   policy values (limits.md, sections 2.2 and 2.3). A profile is a named
   bundle, kept as step code in the service crate, which the configuration
@@ -359,9 +385,12 @@ spawns one (hosts.md, section 5.2).
     loss counted, the event stream's none, the answer unchanged;
   - an event stream slowed under `complete`, losing nothing, and under
     best effort, counting what it dropped;
-  - three sessions starting completions in one pass, each recorded.
+  - three sessions starting completions in one pass, each recorded;
+  - a run on a program backend, against the fake program (programs.md,
+    section 8).
 - **Configuration:** every refusal of a malformed one, and of each
-  relationship of limits.md, section 4.
+  relationship of limits.md, section 4; an endpoint naming a program
+  with no path; each withdrawn field accepted.
 - **Memory:** the process at its worst case, against skein's counting
   allocator (limits.md, section 11).
 

@@ -1,6 +1,6 @@
 # Events
 
-Provisional, 2026-10-09, revised 2026-10-16. The event vocabulary: one
+Provisional, 2026-10-09, revised 2026-10-19. The event vocabulary: one
 versioned stream of JSON lines that says what a process running smith
 did, from its start to its end. `smith exec --json` writes it to
 standard output, and a trace file is the same stream. Its records,
@@ -84,12 +84,12 @@ their writer and their reader are `smith-events` (README.md, section
 ### 3.1 Every record
 
 ```json
-{"v":3,"type":"tool.completed","t_ms":48213,"run":3,"conversation":1,"call":"call_4f2","tool":"read","verdict":"read","bytes":2048,"omitted_bytes":0,"clamped":false,"duration_ms":12}
+{"v":4,"type":"tool.completed","t_ms":48213,"run":3,"conversation":1,"call":"call_4f2","tool":"read","verdict":"read","bytes":2048,"omitted_bytes":0,"clamped":false,"duration_ms":12}
 ```
 
 | Field | Type | What it is |
 |---|---|---|
-| `v` | integer | the vocabulary's version: 3 |
+| `v` | integer | the vocabulary's version: 4 |
 | `type` | string | the record's type, `noun.verb` or a single word |
 | `t_ms` | integer | milliseconds since the process started, when the event happened |
 
@@ -158,7 +158,7 @@ also writes an `operator` notice saying that usage could not be read.
 | `messages` | integer | the start's messages (domain/run.md, 3.2) |
 | `main` | model | main's LLM (3.10) |
 | `budget` | object | `turns`, `spend`, `time_ms`, and `reserve`: `turns`, `time_ms` and its derived `spend` (domain/run.md, 9.1) |
-| `tools` | object | `families` granted, as a list of `inspect`, `modify`, `shell` and `sub_agents`; `wait` and `deliver`, bools; `host`, the host tools declared |
+| `tools` | object | `families` granted, as a list of `inspect`, `modify`, `shell` and `sub_agents`; `withheld`, the granted families the run does not offer, `sub_agents` on a program backend (programs.md, section 2); `wait` and `deliver`, bools; `host`, the host tools declared |
 | `contract` | list | the result forms the contract allows: `report`, `verdict`, `change`, `failure` |
 
 **`run.completed`**, authoritative, once per run, also for a start
@@ -265,6 +265,16 @@ complete, is in `response.completed`.
 | `run`, `conversation`, `response` | integer | |
 | `block` | integer | the block's index within the response |
 | `text` | string | the piece, as it came |
+
+**On a program backend** (programs.md, 5.5), each completion the
+program reports is one response: `response.started` at its first
+partial message, `response.completed` at its assistant message. A
+`system/api_retry` is a `response.completed` whose `outcome` is
+`failed`, with the class its status gives and `retry_ms` its delay,
+and the next attempt's `response.started`. The agent sees no request:
+`request_bytes`, `first_byte_ms` and `largest_gap_ms` are null, and
+`prompt` holds only what the agent sent the program, the start's text
+and its user messages.
 
 ### 3.6 Tools and checks
 
@@ -383,16 +393,20 @@ when it is about one; and the kind's fields.
 | `not_contained` | warning | | at startup, while commands run in process groups rather than contained trees |
 | `limit_near` | info | `which`, `bound`, `value` | the first time in a run a measured size passes the compaction threshold's share of its limit |
 | `reasoning_dropped` | warning | `bytes` | a reasoning item past its bound left out of later requests, as the model's declaration allows (limits.md, section 2.1) |
-| `credential_rejected` | warning | `account` | a provider refused a credential |
-| `account_exhausted` | warning | `account`, `wait_ms` | an account ran out |
+| `credential_unauthorized` | warning | `account` | a provider refused a credential, or a program source's login was lost (programs.md, 5.6) |
+| `account_limited` | warning | `account`, and `reset_ms` when its provider said | an account reached a usage limit; `reset_ms` is how long from this record until it may be used again |
+| `account_refused` | warning | `account`, `code` | a provider refused the account what the run asked, with its code |
 | `teardown_aborted` | warning | | a termination signal after the answer turned closes into aborts |
 | `forced_exit` | warning | `exit`, `forced` | a host's agent did not exit on its own (domain/host.md, section 4) |
 
 ### 3.10 Shared values
 
 - **model:** `endpoint`, `model`, `window_tokens` and `output_tokens`,
-  the window and output the charter gave it (charter.md, section 2), and
-  `effort`, or null.
+  the window and output the charter gave it (charter.md, section 2),
+  `effort`, or null, `account`, the account that pays for it, or null
+  for none, and
+  `backend`, `direct` or the program's name, `claude_code`
+  (programs.md).
 - **usage:** `input_tokens`, read afresh; `cache_read_tokens`;
   `cache_write_tokens`; `output_tokens`; and `reasoning_tokens`, the part
   of the output spent on reasoning. Each is an integer, or null when the
@@ -407,12 +421,15 @@ when it is about one; and the kind's fields.
   its typed usage overflow, which `run.completed`'s failure and an
   `operator` notice name. The format's integers are not widened for it.
 - **completion failure:** `class` (`overloaded`, `rate_limited`,
-  `exhausted`, `unavailable`, `timed_out`, `context_too_long`,
-  `invalid`, `unauthorized`, `limit`, `protocol`, `cancelled`);
+  `exhausted`, `refused`, `unsupported`, `unavailable`, `timed_out`,
+  `context_too_long`, `invalid`, `unauthorized`, `limit`, `protocol`,
+  `cancelled`);
   `evidence` (`unsent`, `maybe_sent` or `response`); and, as they apply,
   `phase` for a timeout (`connect`, `handshake`, `head`, `idle`,
   `whole`), `limit` (`which` and `bound`) for a limit, `status` for an
-  HTTP failure, `retry_after_ms` when the provider said, and `detail`,
+  HTTP failure, `retry_after_ms` when the provider said, `field` for
+  `unsupported`, the field the provider does not take, `code` and
+  `request_id`, the provider's, when it gave them, and `detail`,
   the provider's text or the limit's words, as the session kept it
   (limits.md, 3.2): content, so only under `calls` and `everything`
   (llm.md, section 6). A limit a provider's failure caused, the window's
@@ -423,9 +440,13 @@ when it is about one; and the kind's fields.
   met is `unsent`, its detail the limit's words.
 - **answer failure:** `class`, one of `model` (with `endpoint` and
   `model`, the last completion's, `attempts`, how many it made, and
-  `completion`, a completion failure; or with `account`, and
-  `retry_after_ms`, how long from this record until it may be used
-  again, when the provider said; or with
+  `completion`, a completion failure; or with `account` and `state`:
+  `limited`, with `retry_after_ms`, how long from this record until it
+  may be used again, when the provider said, `refused`, with `code`, or
+  `unauthorized`, a program source's login lost; or with `program`, its
+  name, a program that could not run or exited before its answer, with
+  its `exit` when it exited and, as content, its `detail`
+  (programs.md, 5.6); or with
   `which`, a fault of the model's own answer, `refused`, `truncated` or
   `malformed`, domain/run.md, section 10), `budget` (with `which`: `turns`,
   `spend` or `time`, and `used` and `bound` in its unit: a count, the
@@ -482,7 +503,7 @@ when it is about one; and the kind's fields.
 | `check.started`, `.completed` | the run's facts that checks started, with their deadline, and finished |
 | `message.received`, `.read`, `.unread` | the run's facts that a message was admitted or refused, each told turn's fence, and the answer's final fence |
 | `budget` | the run's facts of its budget, at each charge and at the wind-down |
-| `notice` | the domain's notices of credentials; the session's dropped reasoning item; the service's measured sizes against their limits; the shell's containment and aborted teardown; a host kit's evidence of its agent's exit |
+| `notice` | the domain's notices of accounts; the session's dropped reasoning item; the service's measured sizes against their limits; the shell's containment and aborted teardown; a host kit's evidence of its agent's exit |
 | `session.ended` | the shell: the exit code, the teardown's span and whether it aborted, each sink's loss, the counts emitted, and the kernel's resource usage of the process and its reaped children |
 
 What the domain owes these records is domain/run.md, section 11's: no
@@ -548,7 +569,7 @@ projection.
 
 The vocabulary is pre-release, like every format (README.md, section 8).
 
-- **One version.** This is version 3. Any change a reader would notice is
+- **One version.** This is version 4. Any change a reader would notice is
   a new version: a record type or a field added, renamed or removed, a
   field's type, unit or meaning changed, a value added to a field whose
   values are listed, an effective limit's name or unit (limits.md,
@@ -556,7 +577,14 @@ The vocabulary is pre-release, like every format (README.md, section 8).
   Version 2 added jobs: the `running` and `stopped` verdicts, a call's
   `job`, and `job.ended` (3.6). Version 3 adds `run.compaction_material`
   among the effective limits `session.started` carries (3.2), from which
-  a reader finds each conversation's line (limits.md, 3.9).
+  a reader finds each conversation's line (limits.md, 3.9). Version 4
+  adds accounts and programs: the model's `account` and `backend`
+  (3.10), `run.started`'s `withheld` (3.3), the notices
+  `credential_unauthorized`, `account_limited` and `account_refused` in
+  place of `credential_rejected` and `account_exhausted` (3.9), the
+  completion failures `refused` and `unsupported` with their evidence,
+  and a model's answer failure for an account and for a program
+  (3.10).
 - **`v` is on every record,** so a line read alone says its version. A
   stream holds one version, which `session.started` gives.
 - **A reader refuses another version.** `smith-events`' reader reads its
@@ -624,6 +652,10 @@ The vocabulary is pre-release, like every format (README.md, section 8).
     `text.delta` pieces joined equal to its text blocks;
   - three conversations that start calls in one pass, each attempt with
     its own `response.started`;
+  - a run on a program backend against the fake program (programs.md,
+    section 8): a response per completion, a program's retry as a failed
+    attempt, `withheld` naming `sub_agents`, and each notice and answer
+    failure of programs.md, 5.6;
   - a destination slowed under `complete`: nothing lost and the answer
     unchanged.
 - **End to end:** `smith exec --json` against the fake provider: the

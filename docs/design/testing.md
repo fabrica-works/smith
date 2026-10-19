@@ -1,6 +1,6 @@
 # Testing smith
 
-Provisional, 2026-10-08, revised 2026-10-16. How smith is tested. The
+Provisional, 2026-10-08, revised 2026-10-19. How smith is tested. The
 strategy is skein's `docs/foundation/testing-strategy.md`: the tiers,
 faults, what every fake shares, what every world checks, scenarios and
 the referee, the two suites, and where a failure is fixed. This document
@@ -39,7 +39,8 @@ document's "The world" section.
   loop.
 - **End to end, smith runs as it ships:** the root package's binaries as
   processes, against fakes in the focused suite, and against the real
-  providers, issuers and a git remote in a live suite run by choice.
+  providers, their issuers, Claude Code and a git remote in a live suite
+  run by choice, on smith's own accounts, signed in once (2.3).
 - **Benchmarks are not tests.** Real agents on real models are measured
   in a tier of their own, outside both suites and the gate (2.4).
 - **One scenario, every tier its fakes reach.** The local host's
@@ -52,7 +53,9 @@ document's "The world" section.
 - **Worlds end as the product ends:** with shipped keep and idle times,
   and under skein's teardown invariant (section 6).
 - **The fakes are skein's.** smith adds only the scripted neighbours its
-  own worlds need: a host, a parent, a person at a terminal, a browser.
+  own worlds need: a host, a parent, a person at a terminal, a browser,
+  and the fake program a program backend runs in place of Claude Code
+  (section 4).
 
 ## 2. smith's tiers
 
@@ -93,7 +96,8 @@ Domain worlds use domains and fakes only, never protocol crates.
     copies (protocol/hosts.md, section 7);
   - the local host with a scripted terminal, a browser, the fake issuer,
     the fake provider and its checkout (protocol/hosts.md, section 7), in
-    both placements (2.6).
+    both placements (2.6); and, for a run on a program, the agent it
+    spawns with the fake program as its child.
 
 ### 2.2 The real loop
 
@@ -107,11 +111,12 @@ Domain worlds use domains and fakes only, never protocol crates.
   - the browser, following the sign-in's redirect to the host's loopback
     listener;
   - the fake provider and the fake issuer, serving TLS on loopback with
-    skein's test certificates.
-- **Outside the loop:** git, rg, sh and the checks, as children in a
-  scratch directory. The directory holds:
+    skein's test certificates, the issuer reached through a `sign_in`
+    account's moved addresses (shell.md, 7.1).
+- **Outside the loop:** git, rg, sh, the checks and the fake program, as
+  children in a scratch directory. The directory holds:
   - the settings;
-  - the state and token directories;
+  - the state and credentials directories;
   - the workspace's repositories.
 - **Signals:** the local host reads the process's signals as it ships,
   and the referee sends it real ones. The agent's arrive through the
@@ -132,8 +137,9 @@ Domain worlds use domains and fakes only, never protocol crates.
 - **smith as it ships** (testing-strategy.md, section 2.9): the root
   package's binaries (shell.md, section 3), each a process with its own
   loop, started by the test by its program:
-  - `smith`, the product in one process: interactive, `exec`, `check`
-    and `login`;
+  - `smith`, the product in one process: interactive, `exec`, `check`,
+    `login` and `logout`, and the agent it spawns for a run on a
+    program;
   - `smith-agent`, the agent a host spawns.
 
   The tests are the root package's own targets, so cargo names the
@@ -145,7 +151,9 @@ Domain worlds use domains and fakes only, never protocol crates.
     skein's test certificates;
   - for `smith-agent`, the sample host, which spawns it by its program.
 - **The scratch directory** is 2.2's. The settings' user layer and the
-  state directory are in it, so no test reads the user's own.
+  state and credentials directories are in it, so no test reads the
+  user's own. The settings move the `sign_in` account's addresses to the
+  fake issuer, and give the fake program's path as `claude_code`'s.
 - **The referee reads what shows from outside:**
   - the terminal's transcript;
   - what the fakes saw;
@@ -156,7 +164,8 @@ Domain worlds use domains and fakes only, never protocol crates.
 - **Against fakes,** in the focused suite and within its budget. These
   tests are few, one per path through `main`:
   - the startup refusals: one per settings layer, each naming its key,
-    with exit 2; and an account without a credential, with exit 3;
+    with exit 2; the first run's lines, with exit 2; and an account
+    without a credential, with exit 3;
   - `smith check --json`, passing and failing;
   - `smith exec --json` to an accepted answer, its events and exit 0; and
     to a parked one, exit 5;
@@ -164,49 +173,110 @@ Domain worlds use domains and fakes only, never protocol crates.
     commit in place; a second invocation that resumes the chat from its
     files; an interrupt that cancels the run. The interrupt reaches the
     process alone (skein's `io.md`, section 6);
-  - `smith login` against the fake issuer and the browser;
+  - `smith login` and `smith logout` against the fake issuer and the
+    browser: a first sign-in that registers, and one again; and on a
+    `program` account, against the fake program;
+  - `smith exec` on a `program` account: the product spawns
+    `smith-agent`, which runs the fake program;
   - `smith-agent` spawned by the sample host: the real-process proof of
     the channel.
 - **Live,** the real backends replace the fakes:
-  - the providers' endpoints, over TLS with the machine's roots and each
-    provider's identity profile;
-  - their OAuth issuers;
+  - the providers' endpoints, over TLS with the machine's roots: OpenAI's
+    public Responses route and Anthropic's Messages;
+  - OpenAI's issuer, with smith's own registration (shell.md, 6.2);
+  - Claude Code, as its publisher ships it;
   - a git remote, for a configured push, when one is named.
 
   The live tests form a suite of their own, `live`, chosen by its
   profile: one at a time, without retries, never at the gate. They check
   that each wire is right; they measure nothing, which is benchmarks'
   (2.4).
-  - **Credentials come from the caller,** named by environment variables.
-    A test that lacks one fails, saying which.
-  - **The user's existing login by default.** The live tests borrow
-    `~/.codex` read-only, access token only, as benchmarks do
-    (benchmarks.md, section 10). Only the issuer-refresh story needs a
-    refresh token of smith's own: it runs when the caller names a durable
-    token directory, signed in once with `smith login`, never the user's
-    own tool directory, and is skipped otherwise.
+  - **On smith's own accounts,** in a durable live directory the
+    developer signs in once per machine, which `$SMITH_LIVE` names. It is
+    the suite's credentials directory and holds the suite's user layer
+    of settings; its records are refreshed in place, under their locks
+    (shell.md, 7.3), and each test keeps its chats in its own scratch
+    directory:
+
+    ```
+    ~/.local/state/smith-live/          private; the suite reads $SMITH_LIVE
+    ├── config/smith/config.toml        the live user layer
+    ├── host-id
+    ├── tokens/chatgpt                  smith's ChatGPT record
+    ├── tokens/chatgpt.lock/
+    └── programs/claude/                Claude Code's own login
+    ```
+
+    ```toml
+    # $SMITH_LIVE/config/smith/config.toml
+    credentials = "/home/me/.local/state/smith-live"
+
+    [accounts.chatgpt]
+    provider = "openai"
+    source = "sign_in"
+
+    [accounts.claude]
+    provider = "anthropic"
+    source = "program"
+
+    [accounts.anthropic-key]
+    provider = "anthropic"
+    source = "env"
+    variable = "ANTHROPIC_API_KEY"
+    ```
+
+    Once per machine, then the suite:
+
+    ```sh
+    export SMITH_LIVE=~/.local/state/smith-live
+    XDG_CONFIG_HOME=$SMITH_LIVE/config smith login chatgpt   # approve in the browser
+    XDG_CONFIG_HOME=$SMITH_LIVE/config smith login claude    # Claude Code's own sign-in
+    cargo nextest run --profile live
+    ```
+  - **A missing setup fails by name,** saying what to run: "no record in
+    `$SMITH_LIVE/tokens/chatgpt`: run `XDG_CONFIG_HOME=$SMITH_LIVE/config
+    smith login chatgpt`", or "`ANTHROPIC_API_KEY` is not set".
+  - **Renewed by use.** A run more than an hour after the last refresh
+    refreshes the record, which renews its refresh token for the
+    provider's 30 days; a directory left unused past them is signed in
+    again.
   - **One credential guard, shared with `smith-bench`.** The same guard
-    refuses to write into a user's tool directories or to copy a refresh
-    token, for the live tests and the benchmarks alike. Which crate holds
+    refuses to write into a person's own tool directories, such as
+    `~/.codex` and `~/.claude`, to copy a refresh token, or to copy a
+    login, for the live tests and the benchmarks alike. Which crate holds
     it is benchmarks.md, section 15's.
   - **The small tier by default.** The live tests run on each provider's
     small-tier model unless the caller names another (benchmarks.md,
     section 7).
-  - **Stories,** for each provider, through `smith exec --json`:
-    - a run refreshes its grant at the issuer;
-    - a run ends with a commit in place (`--deliver`);
+  - **Stories,** through `smith exec --json`:
+    - a run ends with a commit in place (`--deliver`), on ChatGPT:
+      `--account chatgpt -m openai/gpt-6-luna --effort low`; smith loads
+      the record, refreshes it under its lock when due, and calls
+      OpenAI's public route on the plan;
+    - the same outcome through Claude Code: `--account claude -m
+      anthropic/claude-haiku-5-5`, on the agent the product spawns,
+      which runs `claude -p` with the configuration directory
+      `$SMITH_LIVE/programs/claude`; the story also checks what the fake
+      program assumes (protocol/programs.md, section 8);
+    - the same outcome on a key: `--account anthropic-key`, smith's own
+      loop on Anthropic's model;
     - a second run resumes it (`--chat`);
+    - a chat started on ChatGPT, resumed on Claude, then on ChatGPT
+      again, each run completing (domain/session.md, 8.2);
+    - a run refreshes its grant at the issuer: the story raises the
+      refresh lead, a policy value a test may set, so its run refreshes
+      at once, and checks that the record's generation rose and the run
+      completed;
     - with a remote named, the push lands, and the test removes the
-      branch afterwards;
-    - a borrowed login, from the user's Codex login, lends a grant, and
-      smith leaves its file unchanged.
+      branch afterwards.
   - **Outcomes, not words.** An LLM's words vary, so a story asks for a
     precise outcome, such as a file with given content, and the referee
     checks that outcome and the typed events, read through `smith-events`
     and never as text: the answer, its exit code, and where the task
     appears in the prompts.
   - **What they show:** each provider's wire as it is today, refresh and
-    rotation at the issuer, and a push to a real forge. A failure is
+    rotation at the issuer, Claude Code's stream, prompt tool and login
+    as its release has them, and a push to a real forge. A failure is
     captured as a recorded exchange for skein's fakes, and rerun lower
     down.
 
@@ -222,7 +292,8 @@ Domain worlds use domains and fakes only, never protocol crates.
 - **Beside the live suite, not inside it.** A live test checks once that
   a wire is right, by its outcome. A benchmark repeats, measures and
   compares.
-- **What they share:** the user's existing logins behind the one
+- **What they share:** smith's own accounts and logins the harness
+  signed in once, never a person's own tool directory, behind the one
   credential guard (2.3), and the one typed reader of the event stream,
   `smith-events`. Neither keeps a guard or a reader of its own.
 - **A probe's failure is a finding,** reproduced and fixed in the lowest
@@ -292,9 +363,9 @@ it:
 
 Every component's files and processes go through it:
 - the agent's tools and checks;
-- the local host's chat files, token files and deliveries, and a
-  borrowed login's file, which the scenario writes and smith only reads;
-- a host's agent process.
+- the local host's chat files, the credentials directory's files and
+  its lock, and deliveries;
+- a host's agent process, and the program an agent runs as its child.
 
 ## 4. The fakes
 
@@ -302,7 +373,17 @@ Every component's files and processes go through it:
   domain worlds. Its protocol face serves bytes to the protocol worlds.
   As a service on io, it listens on loopback for the simulated worlds and
   the real loop. Its recorded exchanges are skein's.
-- **The OAuth issuer:** skein's fake issuer, with the same three faces.
+- **The OAuth issuer:** skein's fake issuer, with the same three faces
+  (skein's `oauth.md`, section 5), reached through a `sign_in` account's
+  moved addresses (shell.md, 7.1), so that smith's own registration is
+  what the worlds exercise: the entry client, the issued client id, the
+  scopes and the ID token.
+- **The program:** smith's own fake `claude` (protocol/programs.md,
+  section 8), which the agent spawns by its path in place of Claude
+  Code: a step machine the machine's face runs in the simulated worlds,
+  and a binary of the tests' own in the real loop and end to end. It
+  answers the program's status, sign-in and sign-out, and speaks its
+  stream both ways and its MCP client, as its story scripts.
 - **The machine:** skein's fake checkout and fake machine (3.2). smith
   seeds repositories for its scenarios, and adapts programs to them.
 - **The channel's far end:** skein's fake channel, a scripted peer that
@@ -488,8 +569,9 @@ benchmarks/                      smith-bench, the benchmark harness (benchmarks.
 - **The sample host in the real loop:** whether a second host earns a
   real loop of its own, beside the local host's, now that an end-to-end
   story spawns `smith-agent` from it.
-- **Live tests on a schedule:** credentials kept as CI secrets, and how
-  often to spend a subscription's usage on them.
+- **Live tests on a schedule:** a live directory on the CI's machine,
+  signed in once, or keys kept as CI secrets, and how often to spend a
+  subscription's usage on them.
 - **A reacting person in skein:** whether a scripted neighbour that acts
   on what it observes is generic enough for skein's world kit. It moves
   there when a second service needs it.

@@ -38,24 +38,34 @@ schemas, decodes what the LLM calls, and renders what the tools return.
   section 4). This component writes that as text, and passes text the
   domain wrote as it was written.
 - **Credentials come from the grant table,** read when a call starts
-  (channel.md, section 6).
+  (channel.md, section 6): a bearer or a key, each sent as its scheme
+  says (section 7).
 - **Provider-neutral.** The endpoint's dialect is the agent's
   configuration's (agent.md), and skein's client speaks it.
+- **The direct backend only.** A run whose grant names a program source
+  makes its completions in the program, and none here (programs.md).
+- **An account's failures are notices too.** An exhausted account,
+  a refused one and an unauthorized credential go up as failures and as
+  the domain's notices, limited, refused and unauthorized; a request the
+  provider does not support goes up naming its field, and is never a
+  notice (section 6).
 
 ## 2. Prompts
 
 A completion's prompt is built from what the domain gives:
 
 - **the system text,** which the domain wrote (domain/run.md, 3.3), after
-  any identity blocks the endpoint's configuration asks skein's client for;
+  any identity blocks an endpoint's withdrawn identity profile asks
+  skein's client for (agent.md, section 4);
 - **the messages,** in order. Each block is translated, and a provider's
   replay goes back verbatim, only to its own dialect;
 - **the tools offered,** with their schemas (section 3), and the
   completion's tool choice;
 - **the model, and the prompt's output cap,** the charter's `output` for
-  that model (charter.md, section 2): Anthropic's dialect sends it as
-  `max_tokens`, and Codex's route takes none, so there it stays a local
-  bound on the answer (skein's `llm.md`, sections 4.6 and 4.7);
+  that model (charter.md, section 2): a dialect that takes an output cap
+  sends it, Anthropic's as `max_tokens`, and the withdrawn Codex route
+  takes none, so there it stays a local bound on the answer (skein's
+  `llm.md`, section 4);
 - **the endpoint's options,** from its configuration: reasoning effort;
 - **the affinity,** the conversation's (2.1).
 
@@ -382,14 +392,17 @@ A completion's prompt is built from what the domain gives:
   nothing (events.md, section 3.5).
 - **Failures** keep the class and the evidence skein's client gives them:
   - the classes: unavailable, timed out (with its phase), overloaded,
-    rate limited or exhausted (each with how long to wait), context too
-    long, invalid, unauthorized, a local limit, a protocol breach;
+    rate limited (with how long to wait), exhausted (with when it may be
+    used again, only when its provider said), refused, unsupported
+    (naming the field the provider does not take), context too long,
+    invalid, unauthorized, a local limit, a protocol breach;
   - skein's `Limit { which, bound }` becomes the domain's local limit,
     naming the limit that fired by its kind and giving its bound;
   - skein's `TimedOut { phase }` becomes timed out with the same phase;
   - the evidence: unsent, possibly sent, or a response received with
     its HTTP status, `Evidence::Response { status }`, which every
-    failure after a response's head carries.
+    failure after a response's head carries, with the provider's error
+    code and its request's id where it gave them.
 
   The session's classes are these, unchanged (domain/session.md,
   section 4).
@@ -399,8 +412,15 @@ A completion's prompt is built from what the domain gives:
   and the event stream keeps it whole only under content capture
   (agent.md, section 6; events.md, section 3.10). It never enters a
   prompt.
-- **Unauthorized and exhausted** also go up to the domain, which raises the
-  notices the host acts on (domain/host.md, section 7).
+- **Unauthorized, exhausted and refused** also go up to the domain,
+  which raises the notices the host acts on: unauthorized, *limited* and
+  refused (channel.md, section 4; domain/host.md, section 7). From the
+  domain up, an exhausted account is *limited*, and text a person reads
+  says so.
+- **Unsupported is the request's own error,** never the account's: the
+  provider does not take a field the request sent, such as an effort or
+  a tool's form. It names the field, raises no notice, and is never
+  retried unchanged (domain/session.md, section 4).
 - **Deadlines measure progress.** The connection component arms them
   (skein's `llm-connection.md`):
   - connecting and the handshake;
@@ -427,6 +447,19 @@ A completion's prompt is built from what the domain gives:
 
 - **A call names its grant,** an account and a generation. When the call
   starts, the component reads the grant's value from the table.
+- **A credential's scheme says how it is sent.** A bearer goes as an
+  authorization bearer and a key as its provider's key, as the
+  endpoint's dialect sends that scheme (skein's `llm.md`, 2.6). A scheme the
+  dialect does not take is a value the agent cannot install (channel.md,
+  section 6).
+- **A program source is never read here.** Its run makes no call through
+  this component (programs.md, section 3).
+- ***Withdrawn:*** the `codex` dialect, and the grant value that carries
+  an account's id beside a bearer, which that dialect sends as its
+  account's header (skein's `llm.md`, 4.6). The component accepts them
+  for a host that still sends them; smith's product, its presets, the
+  live suite and the benchmarks use neither (`docs/design/shell.md`,
+  6.2).
 - **A grant missing or lapsed** fails the call as unauthorized and unsent.
   The session retries it once a refreshed grant has come.
 - **In one process,** the host's protocol layer fills the table directly
@@ -469,6 +502,11 @@ A completion's prompt is built from what the domain gives:
     per-call headers, `ToolChoice`, an oversized call as a block of its
     own, typed limits and HTTP statuses, Anthropic's cache markers, and
     `Limits::derive`;
+  - the public OpenAI Responses dialect (skein's `llm.md`, 4.8) and
+    Anthropic's Messages with a key (4.7), the credential's scheme
+    (2.6), and the failure classes exhausted, with its reset only where
+    the provider gives one, refused and unsupported, naming its field,
+    with the provider's error code and request id as evidence (2.5);
   - its JSON tokenizer and writer (skein's `json.md`);
   - the LLM connection component (skein's `llm-connection.md`): deadlines
     by phase, waiting at a full pool, and closing for its owner;
@@ -516,6 +554,14 @@ component and skein's client against scripted byte peers, in each dialect.
   - a host tool's input passed through;
   - each failure class, with each kind of evidence, a limit naming
     itself and an HTTP failure its status;
+  - an exhausted account with a reset and without one, a refused
+    account, an unsupported field and an unauthorized credential, each
+    with the provider's code and request id, each notice raised once,
+    and none for unsupported;
+  - a bearer and a key, each sent as its scheme, on each dialect that
+    takes it, and a scheme a dialect does not take refused at the
+    start;
+  - the withdrawn `codex` dialect with its id-and-bearer grant;
   - replay going back after a resume;
   - a grant refreshed between two calls;
   - each deadline passing, a steady stream outliving any fixed time, and
@@ -568,8 +614,8 @@ All run in virtual time, in milliseconds each, within the focused suite.
 
 ## 12. Open questions
 
-- **More providers:** API keys, other dialects, local models. They are
-  skein's client's to add, and configuration's to name.
+- **More providers:** other dialects and local models. They are skein's
+  client's to add, and configuration's to name.
 - **Reasoning and a tool call's arguments as they stream:** the channel
   carries their kinds (channel.md, section 4) and this component drops
   their deltas until they are built. Reasoning also needs each provider

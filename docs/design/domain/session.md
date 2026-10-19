@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-17. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-19. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -21,8 +21,9 @@ child domain `smith-domain-session`, whose own child is the tools domain
   and history is appended to, never edited. Near the model's context
   window the session compacts, and a summary opens a new window.
 - **Opened from a transcript,** a session goes on where an earlier one
-  stopped, from its last window, on the same provider and endpoint and
-  with the same affinity.
+  stopped, from its last window, with the same affinity. A window that
+  ran on another endpoint, dialect, account or backend is carried over:
+  compacted on the charter's LLM, and a new window opened (8.2).
 - **Provider-neutral.** Nothing in a session depends on which provider
   answers; each provider's API is skein's shared LLM client's.
 - **Bounded:** turns, tokens, spend, time and bytes held, each a budget
@@ -115,9 +116,12 @@ child domain `smith-domain-session`, whose own child is the tools domain
   or from its last window turn, as they were told, including the
   provider's opaque blocks, which go back to the same provider and
   endpoint verbatim. History is checked before a completion starts:
-  version, endpoint and dialect; contiguous turns; the affinity in the
+  version, and one endpoint and dialect; contiguous turns; the affinity,
+  account and backend in the
   opening turn; message and block bounds; roles and call and result ids;
-  and no unresolved ticket. It must fit the session's byte limits with
+  and no unresolved ticket. A window that ran on another endpoint,
+  dialect, account or backend than the charter's main LLM is carried
+  over, not refused (8.2). It must fit the session's byte limits with
   the waking prompt and room for a completion. A history that fits them
   but fails the window check (section 8.1) is compacted before its first
   ordinary completion. An unanswered call in the tail gets the same
@@ -125,9 +129,9 @@ child domain `smith-domain-session`, whose own child is the tools domain
   it as the session opens, as a run answers the `wait` it withheld when
   it parked; answers the history does not hold go to the LLM as text in
   the waking prompt (run.md, section 6).
-- **Refused transcripts.** Another version, endpoint or dialect, a
-  malformed, unresolved or oversized history are distinct refusals; the
-  run treats every one as a transient failure (run.md, section 6).
+- **Refused transcripts.** Another version, a malformed, unresolved or
+  oversized history are distinct refusals; the run treats every one as
+  a transient failure (run.md, section 6).
 
 ## 4. Providers and retries
 
@@ -137,9 +141,13 @@ child domain `smith-domain-session`, whose own child is the tools domain
   translates the session's vocabulary and tool schemas to it.
 - **Retries are policy.** A session classifies a failed call
   (overloaded, rate limited, unavailable, timed out, context too long,
-  invalid, unauthorised, an account exhausted, a local limit), retries
-  the transient ones after a jittered exponential backoff, and gives up
-  when its retries run out. The protocol layer runs the attempt and its
+  invalid, unauthorised, an account exhausted or refused, a request
+  unsupported, a local limit), retries the transient ones after a
+  jittered exponential backoff, and gives up when its retries run out.
+  An exhausted account, a refused one and an unsupported request are
+  never retried: the same request on the same account would meet them
+  again, and the agent never moves a run to another account
+  (protocol/programs.md, section 3). The protocol layer runs the attempt and its
   deadlines. A provider's failure carries its HTTP status where it had
   one.
 - **Timeouts carry their phase, and are retried by it:** connecting, the
@@ -190,10 +198,14 @@ child domain `smith-domain-session`, whose own child is the tools domain
   failure replacing it. It goes with the session's end to its opener,
   and on to the agent's log and, as the capture policy allows, its trace
   (protocol/events.md). It never enters the model's history.
-- **Credentials** are the protocol layer's. A rejected credential or an
-  exhausted account is a notice the session raises, which the agent sends
-  to its host (host.md, section 7); an unauthorised failure is transient,
-  so a refreshed credential may answer the retry.
+- **Credentials** are the protocol layer's. An unauthorised credential,
+  an exhausted account and a refused one are each a notice the session
+  raises, which the agent sends to its host as unauthorized, limited and
+  refused (host.md, section 7). An unauthorised failure is transient, so
+  a refreshed credential may answer the retry; the others end the
+  session as a failure of its model, naming the account. An unsupported
+  request raises no notice: it names the field, and fails the session
+  (protocol/llm.md, section 6).
 
 ## 5. Tools in a session
 
@@ -457,6 +469,18 @@ window, history only grows (section 3).
   compact again; one the configuration no
   longer declares makes the transcript one the run cannot resume
   (section 3).
+- **A window carried over** (protocol/transcript.md, section 4): a
+  session opened from a window that ran on another endpoint or dialect
+  than its charter's main LLM, on another account or backend, or on a
+  program whose session its host does not hold, compacts first. That
+  compaction runs on the charter's main LLM, since the window's own
+  account may not be granted, with the window's history less its
+  opaque blocks and providers' replay, which go back only to the dialect
+  that wrote them. It is otherwise this section's compaction, a model
+  change's included: the new window opens on the charter's LLM, and its
+  window turn records its endpoint, dialect, account and backend. On a
+  program backend it runs as a program session of its own, with no
+  tools (protocol/programs.md, 5.8).
 - **The compaction completion** has the same model, affinity, system
   text and tools as the completion it stands in for, and is asked with
   `ToolChoice::None`, whatever the conversation's own choice; the new
@@ -551,7 +575,8 @@ window, history only grows (section 3).
   decoding; credentials lent by the host (host.md, section 7).
 - **Turns' encoding** (`smith-transcript`): a turn's bytes, with a
   version, every provider's opaque blocks kept verbatim with the dialect
-  and endpoint they came from, and a transcript's affinity, once.
+  and endpoint they came from, and a transcript's affinity, account and
+  backend, once.
 - **Limits** derived from declared quantities (protocol/limits.md): the
   window's threshold and headroom, the history's bounds, the
   completion's block bound and the failure detail's.
@@ -594,7 +619,12 @@ budgets.
     compaction;
   - a session opened from a transcript, and each refusal of one; one
     opened from a window turn; one whose tail holds a call its opener
-    withheld at closing, answered by the opener as it opens;
+    withheld at closing, answered by the opener as it opens; a window
+    carried over from another dialect, account and backend, compacted on
+    the charter's LLM with no opaque block sent;
+  - an exhausted account, a refused one and an unsupported request,
+    each failing at once with no retry, and an unauthorised credential
+    answered by a refreshed grant;
   - a conversation compacted at the threshold, and after a context too
     long; context too long on the compaction, failing; calls in a
     compaction's answer not run; a request skein finds too large, taken
@@ -649,8 +679,9 @@ budgets.
 
 ## 11. Open questions
 
-- **Transcripts across providers:** whether a later version may carry a
-  provider-neutral form, so a run can resume on another provider.
+- **Transcripts across providers:** a window is carried over by
+  compaction (8.2), losing its opaque blocks; whether a later version
+  keeps a provider-neutral form of them, so that less is lost.
 - **A window's contents:** the task, the summary preamble, the summary
   and the held-back messages, as section 8.2 has them; whether the last
   results should also be kept is for the history probe to measure.

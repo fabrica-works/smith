@@ -31,8 +31,8 @@ section 12.
   (section 5); smith supervises, relays and enforces the channel's rules.
 - **Standard features stand alone.** The local host runs a run in a
   directory, with a person at a terminal or a prompt given once,
-  transcripts in files and changes committed in place, its agent inline
-  (section 8).
+  transcripts in files and changes committed in place, its agent inline,
+  or spawned for a run on a program (section 8).
 
 ## 2. The contract
 
@@ -90,7 +90,9 @@ Up, from the run:
   and its end (section 4);
 - **waiting,** with the last message read, if any: a run awaiting its
   first message has read none;
-- **notices** that a credential was rejected or an account exhausted;
+- **notices** about accounts: a credential unauthorized; an account
+  limited, with how long until it may be used again when its provider
+  said; or an account refused, with the provider's code (section 7);
 - **the answer,** its last word, with its turn count, its spend and the
   last message read, the final fence (run.md, section 10).
 
@@ -171,8 +173,10 @@ policy.
 
 - **Spawned within a deadline,** in a contained process tree, with an
   environment holding no credentials: what the run's LLM calls need comes
-  as grants on the channel. A run whose agent could not be started fails
-  as such.
+  as grants on the channel. A run on a program source has that source's
+  configuration directory in its view, and no other login
+  (protocol/programs.md, 4.2). A run whose agent could not be started
+  fails as such.
 - **Gone only once gone:** its process exited, its tree empty, which io
   proves, and its channel read to the end, so what it said before it went
   is heard.
@@ -282,30 +286,41 @@ policy.
   endpoints need as a grant on the channel, or from the host's protocol
   layer in one process (section 9), named by account and generation,
   refreshed before it lapses; the agent's protocol layer
-  holds it, and the domain names only the grant. A notice of a rejected
-  credential or an exhausted account goes up for the host to act on.
+  holds it, and the domain names only the grant. A grant's value is a
+  credential, a bearer or a key, or a program source's name
+  (protocol/channel.md, section 6), and it decides the backend the run
+  runs on (protocol/programs.md, section 3).
+- **Notices go up for the host to act on:** a credential unauthorized,
+  an account limited, an account refused. The run that met one ends
+  failed for its account, except an unauthorized credential, which a
+  refreshed grant may answer (session.md, section 4). A host never moves
+  a run to another account; which account its next run takes is the
+  host's.
 - **The local host's sources.** Each account the local host lends has
-  one source, which its settings choose:
-  - **its own sign-in** (`sign_in`): skein's OAuth client and its
-    driver, with presets for the providers whose public clients smith
-    knows. The refresh token is kept where only the user may read it,
-    and the access token refreshed before it lapses;
-  - **a borrowed login** (`borrow`): another CLI's login, read and never
-    written, of which the host takes the access token and the account's
-    id only, never the refresh token, so the other CLI's sign-in is never
-    rotated away. The host hands what it took to skein's OAuth driver as
-    an access-only record, which the driver lends, never refreshes and
-    never keeps (skein's `oauth.md`, section 6.3). The host reads the
-    login again when a grant is due, so a login the other CLI refreshed
-    is handed in afresh. When the driver says the token is about to
-    lapse, or that it has lapsed or was rejected, the host says so in its
-    own words, naming the CLI to run again (`docs/design/shell.md`,
-    section 7), and starts no run that needs it;
+  the source its settings give it (`docs/design/shell.md`, 5.2):
+  - **its own sign-in** (`sign_in`): skein's OAuth driver with the
+    registration of the provider's preset (skein's `oauth.md`, 6.2), a
+    redirect on a port drawn for each sign-in unless the settings fix
+    one (6.5), and the subject from the ID token. The record is kept
+    privately in the credentials directory, under its lock, and read
+    again before each refresh, so two processes never refresh one
+    record twice (6.4). The access token is lent as a bearer, refreshed
+    before it lapses; signing out revokes and removes the record;
+  - **a key** (`key`): a key the person gave, kept privately in the
+    credentials directory, lent as a key, never refreshed;
   - **the environment** (`env`): a named variable, for unattended use,
-    lent as it is and never refreshed.
+    lent as a key as it is and never refreshed;
+  - **a program** (`program`): a program source, signed in by the
+    program's own flow into its configuration directory
+    (protocol/programs.md, section 4). The host keeps nothing of the
+    login: it checks the source's status (protocol/programs.md,
+    section 3), has the program's own sign-out run when the person asks
+    (protocol/hosts.md, section 2), and lends the source's name;
+  - **none** (`none`): for an endpoint that takes no credential, whose
+    charter's LLM names no account (protocol/charter.md, section 2).
 
   Whatever the source, the agent is lent grants the same way, so it has
-  one path for credentials.
+  one path for credentials. Another program's login is never read.
 
 ## 8. The local host
 
@@ -350,7 +365,10 @@ the inline agent it is the `smith` product:
     handled in the answered state, never assumed away.
 - **Failures in words.** The person sees what went wrong, whichever kind
   of agent runs: a run's typed failure (the model, with its provider's
-  class; an exhausted account, and when it may be used again; the budget,
+  class; a limited account, and when it may be used again; a refused
+  account, with the provider's code; a program source whose login was
+  lost, with the command to run on this host; a program that could not
+  run, naming it; the budget,
   naming what ran out and how much of its bound was used; policy;
   cancelled; stale; a
   transcript it could not resume), an agent's failure with its bounded
@@ -367,6 +385,10 @@ the inline agent it is the `smith` product:
   A subscription's models carry notional prices, so spend still bounds a
   run; a budget that could not pay for one completion is refused before
   any run starts.
+- **Program sources checked:** each account whose source is a program
+  is checked as the local host starts, and again before each run on it
+  (protocol/programs.md, section 3). One not usable is shown with its
+  state and the command to run, and starts no run.
 - **The run's identity:** minted once for each chat, kept with its
   transcript and given in every start, so the chat keeps its provider's
   cache across activations and resumes.
@@ -378,10 +400,12 @@ the inline agent it is the `smith` product:
 - **Host tools:** none of its own at first; tools from MCP servers it is
   configured with, once MCP is a tool source.
 
-It runs its agent inline, in its own process (section 9). Spawning an
-agent process (section 4) stays a capability of smith's libraries,
-tested by its worlds, for other hosts and for a later isolated mode
-(section 12).
+It runs its agent inline, in its own process (section 9), except a run
+whose account's source is a program, which the inline agent cannot run:
+its agent is spawned (section 4; protocol/programs.md, section 2).
+Spawning every run stays a capability of smith's libraries, tested by
+its worlds, for other hosts and for a later isolated mode (section
+12).
 
 ## 9. One process
 
@@ -425,6 +449,9 @@ A child a host embeds, beside or instead of `smith-host-domain`:
 - **Credentials:** the root's protocol layer lends the LLM component its
   grants directly; the inline agent passes the run only their names, as
   the channel would.
+- **The direct backend only.** A run in the host's process has no child
+  of its own, so the inline agent refuses as invalid a start whose
+  grant names a program source (protocol/programs.md, section 2).
 - **Facts and content** are drained from each run every pass by the
   inline agent's owner, independently of any channel, into the host's
   event stream (protocol/events.md), under the capture policy the host
@@ -543,8 +570,10 @@ cancelled at the terminal; and, for messages, a follow-up as the run
 finishes, two lines back to back, lines then the end of input, a line at
 the moment of parking, an interrupt with a line unread, a brief with an
 early finish, and a slow store racing the answer. Each failure kind is
-shown in its words, a headless run ends with each status, and an expired
-borrowed login starts no run.
+shown in its words, a headless run ends with each status, each notice
+is shown in its words, a program source not usable at startup starts no
+run on it, and a run on a program source is spawned and answers,
+against the fake program.
 
 Its referee adds, as safety: a line relayed at most once in an
 activation, and again only if it was never read; fences that never go

@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-18. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-19. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -22,33 +22,38 @@ profile numbers (section 6); everything else derives from them
   presets, credentials, composition and front ends (section 2). Both are
   ordinary Rust under skein's shell bans.
 - **skein first.** The loop driver, an append sink, durable replace and
-  a secret store, the OAuth io driver, trust roots, terminal modes and
-  the process's resource usage are generic, and land in skein before
-  smith uses them (2.4).
+  a secret store, a directory's lock, the OAuth io driver, the LLM
+  client's routes and credentials, trust roots, terminal modes and the
+  process's resource usage are generic, and land in skein before smith
+  uses them (2.4).
 - **One process.** The product composes the local domain, which owns
   the inline agent as its child, with the effects: one loop, one ring,
   no channel. The shell builds the agent configuration from presets and
   settings as a value, and writes no file. Spawning an agent stays a
   library capability, and `smith-agent` is the spawned agent for hosts
-  that want a prebuilt one (section 9).
-- **Four commands.** `smith`, the interactive chat; `smith exec`, one
-  headless run; `smith check`, validation; `smith login`, sign-in
-  (section 4). A headless run says how it ended in its exit code (4.3).
+  that want a prebuilt one, and for the product's runs on a program,
+  which the inline agent cannot run (section 9).
+- **Five commands.** `smith`, the interactive chat; `smith exec`, one
+  headless run; `smith check`, validation; `smith login` and `smith
+  logout`, an account's sign-in and sign-out (section 4). A headless run says how it ended in its exit code (4.3).
 - **Instrumented as it ships.** `--json` and `--trace` carry the
   versioned event stream (protocol/events.md). The terminal
   renders the same records, never `Debug` text.
 - **Settings are TOML,** layered, strict and bounded, with presets for
-  `codex` and `anthropic`. A first run needs a model and an account.
-  Every refusal names the relationship it breaks (section 5).
+  `openai` and `anthropic`, which name no account. A first run needs a
+  model and an account of the person's. Every refusal names the
+  relationship it breaks (section 5).
 - **The numbers are here.** Each preset's per-model values and the
   `standard` profile's deployment and policy values are defaults that
   the probes of benchmarks.md validate. A value with thin evidence is marked
   provisional (section 6).
 - **smith's own role.** Without `instructions`, a run's role is the task
   role: one text for chats and tasks, on the topics section 6.6 lists.
-- **One credential source per account:** smith's own sign-in, another
-  tool's login borrowed read-only, or an environment variable. A refresh
-  token is never copied (section 7).
+- **An account is a provider and one source,** named in the person's
+  settings, several per provider: smith's own sign-in, a key, an
+  environment variable, a program's own login, or none. smith keeps its
+  records and keys in a credentials directory of its own, reads no other
+  program's login, and never copies a refresh token (section 7).
 - **The build environment is declared:** a named core environment,
   writable caches, and warnings for build wrappers whose caches cannot be
   written (section 8).
@@ -68,7 +73,7 @@ root package's (section 3). The layers are those of skein's echo
 | `smith-local-service` | service | the local host's `iterate`: the local domain, which owns its agent as a child (the inline agent, or `smith-host-domain` for a spawned one), composed with the effects: the LLM and machine components, the chat store, the terminal and the event sink; the host's and the local layers' share of the profile |
 | `smith-inline-agent` | domain | smith's side of the one-host draft: a run as a composed `smith-domain` that speaks `smith-host-domain`'s vocabulary (domain/host.md) |
 | `smith-events` | codec | the event vocabulary (protocol/events.md), encoded over skein-json, with its goldens |
-| `smith-local-protocol` | protocol | the chat store and delivery records over skein io (protocol/hosts.md, section 5.3); the formats of borrowed logins (section 7) |
+| `smith-local-protocol` | protocol | the chat store and delivery records over skein io (protocol/hosts.md, section 5.3); the credentials directory's keys and installation identifier, as private files (section 7) |
 | `smith-agent-shell` | shell | the agent process (2.2) |
 | `smith-local-shell` | shell | the product (2.3) |
 
@@ -83,8 +88,8 @@ setting overrides.
 
 - **The agent configuration:** the JSON document of protocol/agent.md,
   section 4, read whole before the loop, strict and bounded. It names a
-  profile and its declared values, the endpoints and the commands'
-  environment. Each endpoint declares its models' `window`, `output`,
+  profile and its declared values, the endpoints, the programs a run
+  may use (protocol/programs.md) and the commands' environment. Each endpoint declares its models' `window`, `output`,
   `reasoning_item`, `head` and `idle` (protocol/limits.md, 2.1); a
   charter's model entries carry the effective `window` and `output`, at
   most the declared ones, and a charter naming a model the configuration
@@ -115,13 +120,15 @@ setting overrides.
 - **Settings:** the layers, the presets, the defaults and their
   validation (section 5), and `smith check`, a function of the resolved
   settings and what startup found (4.4).
-- **Credentials:** each account's source and the sign-in's front end
-  (section 7).
+- **Credentials:** each account's provider and source, the credentials
+  directory, a program source's check, and the front ends of sign-in
+  and sign-out (section 7).
 - **Composition:** `compose` builds `smith-local-service`: the local
   domain with the inline agent as its child, and the effects, the agent's
-  LLM and machine components among them (section 9); or, when asked, the
-  local domain with `smith-host-domain` as its child and a spawned
-  `smith-agent`, whose JSON configuration it then generates (5.4). Either
+  LLM and machine components among them (section 9); or, for a run
+  whose account's source is a program, the local domain with
+  `smith-host-domain` as its child and a spawned `smith-agent`, whose
+  JSON configuration it then generates (5.4). Either
   way the agent configuration is built from the presets and the resolved
   settings.
 - **The `Local` adapter:** a `skein_shell::Host` over
@@ -133,8 +140,8 @@ setting overrides.
   4.3). Both read `smith-events` records.
 
 It owns no store and no loop: chats are kept by `smith-local-protocol`
-over skein io, sign-in records by skein's secret store, and the loop is
-`skein_shell::drive`.
+over skein io, sign-in records by skein's OAuth driver as private files
+under their lock (section 7), and the loop is `skein_shell::drive`.
 
 ### 2.4 What skein provides first
 
@@ -154,10 +161,22 @@ Each lands in skein, with its design, before its smith consumer
 - **Durable replace and a secret store:** a whole file replaced over
   io's create, write, sync and rename, its directory synced; and private
   record files on it, with their permissions and links checked.
+- **A directory's lock:** exclusive, taken without waiting, released
+  when its root closes or its process ends (skein's `io.md`, section 5),
+  so that processes sharing a record take turns writing it (section 7).
 - **The OAuth io driver:** the loopback listener, the token exchange over
   skein-http, and refresh before expiry, which `skein-oauth` leaves to
   its caller (skein's `oauth.md`); and `localhost` redirects, bound to
-  127.0.0.1 and compared exactly.
+  127.0.0.1 and compared exactly. With it, a client id the issuer
+  issues, a checked ID token and its subject, revocation, a redirect
+  whose port varies, and a record shared across processes, read again
+  under its owner's lock before each write (skein's `oauth.md`, 2.1 to
+  2.3, 6.4 and 6.5).
+- **The LLM client's routes:** OpenAI's public Responses route and
+  Anthropic's Messages with a key, a credential as a value and its
+  scheme, and the failure classes for an account's limit, its refusal
+  and a field a provider does not take (skein's `llm.md`, 2.5, 2.6, 4.7
+  and 4.8).
 - **Trust roots:** the machine's roots, or one DER file, loaded at
   startup (skein's `tls.md`).
 - **Terminal modes:** the window's size, as a shell effect, for the
@@ -215,6 +234,10 @@ Each lands in skein, with its design, before its smith consumer
   `smith-agent.rs` reads the configuration's path, starts
   `smith-agent-shell`, runs it with `drive`, and exits 0 after its
   answer or 1 when it could not answer (protocol/agent.md, section 6).
+- **MIT-licensed.** A `LICENSE` file at the root holds the MIT licence,
+  and every manifest, the root package's and each crate's, says
+  `license = "MIT"`. smith's registration with a provider is an
+  open-source program's own (section 7).
 - **Files before the loop.** A shell may read whole files with std before
   its loop runs: the settings, the agent configuration. Once the loop
   runs, every file and process operation is a ring operation
@@ -251,6 +274,7 @@ Shared flags:
 | `-C DIR` | the workspace: one directory, writable; a git working tree is a repository. The current directory by default |
 | `-m ENDPOINT/NAME` | the main model |
 | `--effort LEVEL` | its reasoning effort |
+| `--account NAME` | the account main's endpoint runs on, for this invocation (5.2) |
 | `--chat NAME` | the chat to resume or start |
 | `-c KEY=VALUE` | a setting, by its dotted path, as a TOML value; repeatable (5.1) |
 | `--trace PATH` | append the event stream to `PATH` |
@@ -261,7 +285,10 @@ The interactive chat, the local host of domain/host.md, section 8:
 
 - **A chat in the workspace.** It opens the workspace and the chat
   (`default`, or `--chat NAME`) under the state directory, and resumes
-  its transcript.
+  its transcript. A chat whose window ran on another endpoint, account or
+  backend is carried over to this invocation's, which the status line
+  says once (domain/session.md, 8.2); a chat kept by an earlier version
+  is refused (5.3).
 - **Lines are messages.** A line entered is one message, and a line
   ending in a backslash continues it (protocol/hosts.md, section 5.1).
   The line that starts an activation travels in its start.
@@ -270,8 +297,11 @@ The interactive chat, the local host of domain/host.md, section 8:
     front end asks for (protocol/events.md, 3.5);
   - each tool call, with its verdict and duration;
   - notices, and failures in words;
-  - a status line after each response: the model, tokens in, cached and
-    out, notional spend, elapsed time and what is left of the budget.
+  - a status line after each response: the model; its account and how
+    it pays, `Using ChatGPT plan` for a sign-in on the `openai` preset,
+    `through Claude Code` for a program, `API key` for a key or a
+    variable, and nothing for none; tokens in, cached and out, notional
+    spend, elapsed time and what is left of the budget.
 
   This is the live view. The front end asks the one event sink for the
   records it shows, typed and in process (protocol/events.md, 5.2),
@@ -293,7 +323,8 @@ The interactive chat, the local host of domain/host.md, section 8:
     on another endpoint is refused, and the chat kept: an endpoint is
     resolved, derived and signed in to at startup (5.2), so another
     endpoint is another invocation, and the refusal names it: `smith
-    --chat NAME -m ENDPOINT/NAME`. An effort the model does not declare
+    --chat NAME -m ENDPOINT/NAME`. So is another account: `smith --chat
+    NAME --account ACCOUNT`. An effort the model does not declare
     is refused, naming those it does. `/model` to a model that declares
     efforts without the chat's current one applies, and drops that
     effort for the provider's default, saying so: the effort dropped and
@@ -382,7 +413,10 @@ One run, then exit:
 - **`--chat NAME`** resumes or starts that chat. Without it, the run
   starts a new chat, named in `session.started` and on standard error.
 - **`--ephemeral`** keeps no chat: its files live in a private temporary
-  directory removed at exit. Sign-in records are kept as usual.
+  directory removed at exit. The credentials directory is kept as
+  usual. A run on a program leaves the program's own session in the
+  source's configuration directory, where no later run looks for it
+  (protocol/programs.md, 5.8).
   - **Removed by the names it wrote.** At exit, after the run has
     answered and before the process ends, the chat store removes through
     io each file it wrote there, by the names it knows (its state, its
@@ -400,9 +434,9 @@ A headless run's code follows its answer (domain/run.md, section 10):
 | Code | Meaning | When |
 |---|---|---|
 | 0 | accepted | an accepted answer, however long its teardown took |
-| 1 | run failed | a failed answer: the model (a provider's failure past its retries, an exhausted account, a limit that fired), policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing; the result's file not written after an accepted answer (`-o`); or a start refused as busy |
-| 2 | usage or configuration | arguments, a settings refusal (5.3), a start the run refused as invalid, a writable repository whose head the start cannot read (one with no commit among them) |
-| 3 | credentials | an account the run needs without a usable credential: not signed in, rejected, a borrowed login expired, a variable unset; also a run that failed because the provider refused its credential (a model failure of class `unauthorized`) |
+| 1 | run failed | a failed answer: the model (a provider's failure past its retries, a field the provider does not take, a limited account, a limit that fired), the program it ran on, policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing; the result's file not written after an accepted answer (`-o`); or a start refused as busy |
+| 2 | usage or configuration | arguments, a settings refusal (5.3), a start the run refused as invalid, a writable repository whose head the start cannot read (one with no commit among them), an account whose provider refused smith's registration |
+| 3 | credentials | an account the run needs without a usable credential: not signed in, its sign-in lapsed or without a scope it needs, no key kept, a variable unset, a program not signed in or signed in otherwise; also a run that failed for its account: unauthorized past a refreshed grant, a program's login lost, or refused by its provider |
 | 4 | budget | a failed answer for its budget: spend, time or turns |
 | 5 | needs input | a parked answer |
 | 130 | interrupted | a cancelled answer, after an interrupt or a termination signal; or a run dropped before it answered, at the person's second interrupt or past the cancel's grace |
@@ -424,7 +458,7 @@ exhaustively, so a new class has no words until it is given some. The
 words are one function of the answer's failure and of the two facts only
 the host has: each account's name, and its own clock when the answer
 came, which turns a wait into a time. Every other value is the failure's
-own: an exhausted account's number and wait, and a budget's used and
+own: a limited account's number and reset, and a budget's used and
 bound, the time used being the run's wall time as its budget counted it,
 never the product's elapsed time. Each
 is one line, beginning `smith: `, its detail clipped as an operator's
@@ -435,14 +469,16 @@ the typed values:
 |---|---|---|
 | 0 | accepted | `smith: accepted in <turns> turns, <spend> notional, <time>` |
 | 1 | the model | `smith: run failed: <endpoint>/<model> <provider's class> after <attempts> attempts: <detail>`; for a limit, `smith: run failed: <limit> reached its bound of <bound>` |
-| 1 | an exhausted account | `smith: run failed: account <account> exhausted, usable again at <time>`; when its provider gave no time, `smith: run failed: account <account> exhausted` |
+| 1 | a limited account | `smith: run failed: account <account> reached its usage limit, usable again at <time>; manage it at <address>`, the time only where its provider gave one and the address only where the account's preset gives one (6.2); never "exhausted" or "empty" |
+| 1 | a field the provider does not take | `smith: run failed: <endpoint>/<model> does not take <field>: <detail>` |
+| 1 | the program | `smith: run failed: <program> <could not run, or exited before its answer>: <detail>`, the program by its plain name |
 | 1 | policy, stale | `smith: run failed: policy: <what was refused>`; `smith: run failed: stale: <what moved>` |
 | 1 | a transcript | `smith: run failed: chat <name> cannot be resumed: <reason>` |
 | 1 | a spawned agent's failure | `smith: run failed: the agent <how it ended>: <its error output's tail>` |
 | 1 | a host failure | `smith: run failed: chat <name>: turn <n> could not be kept: <error>` |
 | 1 | the result's file | `smith: run accepted, but its result could not be written to <file>: <the kernel's error>` |
-| 2 | usage or configuration | `smith: usage: <problem>`; a setting as in 5.3; `smith: run refused: <what> is <value>, past its bound of <bound>`; `smith: run refused: repository <directory>: its head cannot be read` |
-| 3 | credentials | ``smith: account <account> has no credential: run `smith login <account>` ``; the expiry notice of section 7; `smith: account <account>: the provider rejected its credential`; `smith: account <account>: <VARIABLE> is not set` |
+| 2 | usage or configuration | `smith: usage: <problem>`; a setting as in 5.3; `smith: run refused: <what> is <value>, past its bound of <bound>`; `smith: run refused: repository <directory>: its head cannot be read`; `smith: account <account>: the provider refused smith's registration` |
+| 3 | credentials | ``smith: account <account> has no credential: run `smith login <account>` ``; ``smith: account <account> must sign in again: run `smith login <account>` ``; ``smith: account <account> was signed in without <scope>: run `smith login <account>` again and allow it, or use a key ``; ``smith: account <account>: <program> is not signed in: run `smith login <account>` ``; ``smith: account <account>: <program> is signed in with <method>, not a subscription: run `smith login <account>` ``; `smith: account <account>: the provider refused it: <its code and reason>`; `smith: account <account>: <VARIABLE> is not set` |
 | 4 | budget | `smith: run failed: out of <spend, time or turns>: used <used> of <limit>` |
 | 5 | needs input | ``smith: needs input: answer with `smith exec --chat <name>` `` |
 | 130 | interrupted | `smith: interrupted: the run was cancelled`; for a dropped run, `smith: interrupted: the run was dropped before it answered` |
@@ -477,9 +513,14 @@ ones `smith exec` with the same flags would have. `check`'s own
 - each format's version: the channel, the charter, the transcript, the
   event stream, the chat store and this document's own; and the build's
   identity;
-- each account: its source, where it comes from and when it expires,
-  never a value;
-- the tools' paths, `sh`, `rg` and `git`, resolved;
+- each account: its provider, its source, its number (section 7) and
+  its state: usable, with where its credential is kept and when it
+  expires; not signed in; must sign in again; signed in without a scope
+  it needs; a program not signed in, signed in otherwise, or whose
+  check failed (protocol/programs.md, section 3); a variable unset.
+  Never a value;
+- the tools' paths, `sh`, `rg` and `git`, and each program a run may
+  use, resolved;
 - the commands' environment by name, and the build environment's
   warnings (section 8).
 
@@ -494,17 +535,63 @@ problems are the credentials of accounts the run needs (5.2). Startup runs the s
 smith login ACCOUNT
 ```
 
-- **`sign_in` accounts:** opens the loopback listener, shows the
-  authorization address, waits for the browser's redirect, exchanges the
-  code and keeps the record (section 7).
-- **`borrow` accounts:** says which login file it reads, and whether its
-  access token is valid and until when, or which program refreshes it.
-- **`env` accounts:** names the variable, and says whether it is set.
+Each source acts in its own way:
+
+- **`sign_in`:** binds a loopback listener on 127.0.0.1, on a port drawn
+  for this sign-in, or first on the account's `redirect_port` when the
+  settings give one (section 7); shows the authorization address, and,
+  when `SSH_CONNECTION` is set in smith's own environment, the line
+  `ssh -L <port>:127.0.0.1:<port> <this host>` for a browser on another
+  machine; waits for the browser's redirect; exchanges the code, checks
+  the ID token and the granted scopes, and keeps the record under its
+  lock (section 7).
+  - **Signing in again:** an account that holds a record signs in with
+    its issued client id and its hints, and a sign-in whose subject is
+    another's is refused (section 7).
+  - **Plan usage:** at an account's first sign-in that grants it, the
+    preset's notice is printed once (6.2). A sign-in without a scope the
+    preset requires keeps the record and says: "Signed in without plan
+    usage: run `smith login <account>` again and allow it, or use a
+    key".
+- **`key`:** reads the key from standard input, to its end, without its
+  last newline: `smith login ACCOUNT < FILE`. Standard input that is a
+  terminal is a usage error, since a terminal echoes what is typed, and
+  so is an empty key. The key is kept, private, in the credentials
+  directory, replacing any before it.
+- **`env`:** names the variable, and says whether it is set.
+- **`program`:** makes the account's configuration directory, private,
+  when absent; hands the terminal to the program's own sign-in, `claude
+  auth login`, run in the source's environment (protocol/programs.md,
+  4.2); waits for it to exit; then checks the source
+  (protocol/programs.md, section 3) and says what the check answered.
+- **`none`:** says that the account needs nothing.
 
 It exits 0 when the account has a usable credential afterwards, 3 when
-it does not, and 2 for an unknown account. `smith exec` never starts a
+it does not, and 2 for an account the settings do not declare, printing
+the first run's lines for it (5.3). `smith exec` never starts a
 sign-in: an account without a record ends it with exit 3, naming this
 command.
+
+### 4.6 `smith logout`
+
+```sh
+smith logout ACCOUNT
+```
+
+- **`sign_in`:** under the record's lock, revokes its refresh token at
+  the provider's revocation endpoint and removes the record. When the
+  provider does not confirm the revocation, the record is removed all
+  the same, and smith says to disconnect it in the provider's own
+  settings, at the address the preset gives (6.2).
+- **`key`:** removes the kept key.
+- **`program`:** has the host's half run the program's own sign-out,
+  `claude auth logout`, in the source's environment (protocol/hosts.md,
+  section 2; protocol/programs.md, 4.1), then checks the source. The
+  configuration directory stays, for the next sign-in.
+- **`env` and `none`:** say that smith holds nothing for the account.
+
+It exits 0 when the account holds nothing afterwards, 3 when it still
+does, and 2 for an account the settings do not declare.
 
 ## 5. Settings
 
@@ -526,9 +613,10 @@ before, key by key:
   content a person may not have written. Its layer may set instructions,
   conventions, the contract, the model and effort among configured
   endpoints, and environment values. It may not set endpoints, accounts,
-  trust, inherited environment names, writable caches, the trace, the
-  deployment's values, or a budget above the user's. A key it may not
-  set is refused, naming the file.
+  the account a run takes, trust, the credentials directory, the
+  programs' paths, inherited environment names, writable caches, the
+  trace, the deployment's values, or a budget above the user's. A key it
+  may not set is refused, naming the file.
   - **The line.** What the layer may set is what the repository's own
     files already do to a run: its guide is read into the system text,
     its checks are its own executable (domain/run.md, 3.3 and 8.1), and
@@ -536,8 +624,10 @@ before, key by key:
     authority. Its environment values are constants it writes, as its
     own scripts may export: they shape the commands and checks, and widen
     nothing a command can reach (section 8). What it may not set reaches
-    past the repository: where requests go and on which credential
-    (endpoints, accounts, trust), what is taken from smith's own
+    past the repository: where requests go and who pays for them
+    (endpoints, accounts, the account a run takes, trust), where smith
+    finds credentials and the programs it runs (the credentials
+    directory, the programs' paths), what is taken from smith's own
     environment (inherited names), what is written outside the workspace
     (writable caches, the trace), and what the person pays for or
     reserves (the deployment's values, a budget above the user's).
@@ -547,24 +637,48 @@ before, key by key:
     `smith exec` and a host's runs, which no person watches, would need
     a way around it. The refusal is the boundary, checked at every
     start.
-- **State** lives under `$XDG_STATE_HOME/smith`: chats by workspace,
-  sign-in records, temporary chats.
+- **State** lives under `$XDG_STATE_HOME/smith`: chats by workspace and
+  temporary chats, and, unless `credentials` names another directory,
+  the credentials directory's files (section 7).
 
 ### 5.2 Contents and defaults
 
-A first run needs a model and an account's source:
+A first run needs a model and an account:
 
 ```toml
-model = "codex/gpt-6-astra"
+model = "openai/gpt-6.1-sol"
 effort = "high"
 
-[accounts.codex]
-source = "borrow"
+[accounts.chatgpt]
+provider = "openai"
+source = "sign_in"            # then `smith login chatgpt`
+```
+
+Several accounts, several per provider:
+
+```toml
+[accounts.claude-alice]
+provider = "anthropic"
+source = "program"            # Claude Code, signed in by `smith login claude-alice`
+
+[accounts.anthropic-key]
+provider = "anthropic"
+source = "key"                # kept by `smith login anthropic-key < FILE`
+
+[accounts.ci]
+provider = "openai"
+source = "env"
+variable = "OPENAI_API_KEY"
+
+[endpoints.anthropic]
+account = "claude-alice"      # the endpoint's account, when its provider has several
 ```
 
 | Key | What it is | Default |
 |---|---|---|
 | `model`, `effort` | the main model, `endpoint/name`, and its effort, one the model declares when it declares any (6.1) | none; the provider's effort |
+| `account` | the account main's endpoint runs on, for this invocation; `--account` | the endpoint's own |
+| `credentials` | the credentials directory (section 7) | `$XDG_STATE_HOME/smith` |
 | `profile` | the named bundle of deployment values | `standard` |
 | `instructions` | the role (domain/run.md, section 3.1) | the task role (6.6): smith's own, one text for a chat and for a task |
 | `chat` | the interactive chat | `default` |
@@ -572,31 +686,54 @@ source = "borrow"
 | `sub_agents` | whether runs may delegate | off (domain/run.md, section 5.3) |
 | `[budget]` | spend, seconds, turns and the reserve | 6.4 |
 | `[models."<endpoint>/<name>"]` | a model's declared values, its efforts and its prices | the preset's, 6.1 |
-| `[endpoints.<name>]` | a preset, or its dialect, address, TLS name, trust, headers, identity and account | `codex` and `anthropic` |
-| `[accounts.<name>]` | the credential source and its fields (section 7) | none: each account names its source; `sign_in` takes its registration from these fields, never from a preset |
+| `[endpoints.<name>]` | a preset, or its dialect, program, address, TLS name, trust and headers; and its account | `openai` and `anthropic` (6.2) |
+| `[accounts.<name>]` | its provider, its source and the source's keys (section 7) | none: no preset names an account |
+| `[programs]` | each program's path, by the program's name: `claude_code` | `claude`, found on `PATH` at startup |
 | `[deployment]` | declared deployment values | the profile's, 6.3 |
 | `[workspace]` | directories, conventions, the contract, delivery fields, the title field, pushes | the workspace directory; a report |
 | `[environment]` | `inherit`, the names taken from smith's own environment, and `set` | the core list (section 8) |
 | `[build]` | a build preset and writable caches | none |
 | `[trace]` | a path and a capture policy (protocol/events.md) | none |
 
-- **Presets.** `codex` and `anthropic` each supply an endpoint and an
-  account of that name, and their known models' declared values
-  (section 6). A model a preset does not know declares its `window`,
+- **Presets.** `openai` and `anthropic` each supply an endpoint of that
+  name, the sources its provider takes, and their known models' declared
+  values (section 6). Neither names an account: a first run needs one of
+  the person's. A model a preset does not know declares its `window`,
   `output` and prices in settings.
+- **Accounts.** An account is a provider and one source (section 7),
+  declared under `[accounts.<name>]`, several per provider, each signed
+  in on its own.
+  - **A provider** is a preset, `openai` or `anthropic`. An endpoint the
+    settings declare without a preset is a provider of its own, under
+    the endpoint's name, and takes `key`, `env` or `none`.
+  - **A name** is 1 to 32 characters of `a-z`, `0-9` and `-`, since it
+    names files and a directory in the credentials directory.
+  - **An endpoint's account** is its `account`, by default the only
+    account of its provider. For an endpoint of the run's models,
+    several accounts of its provider with none named is refused, naming
+    the key; for another endpoint, it is a warning.
+  - **`--account NAME`,** or `account`, sets main's endpoint's account
+    for one invocation, and one of another provider is refused, naming
+    both. An account is fixed for an invocation, as main's endpoint is
+    (4.1), and a run never moves to another account, at a limit or
+    otherwise (section 7).
+  - **A source's program** is its endpoint's: an account whose source is
+    `program` on an endpoint that names no program is refused, naming
+    both.
 - **The run's models and accounts.** A run's charter lists main's model
   and, with `sub_agents` on, every model a preset knows or settings
-  declare whose endpoint's account names a source; the asking LLM names
-  one of them, or gets main's (domain/run.md, 5.3). Every model main's
-  endpoint declares is also the run's, so that `/model` may choose any
-  of them (4.1): they share main's account and connections, and the
-  derivation is the largest of them. An account with no
-  source is one the person has not set up, so its models stay out: a
-  first run with one account's source needs no other credential.
+  declare whose endpoint has an account whose source is not a program;
+  the asking LLM names one of them, or gets main's (domain/run.md, 5.3).
+  A sub-agent never runs on a program (protocol/programs.md, section 2).
+  Every model main's endpoint declares is also the run's, so that
+  `/model` may choose any of them (4.1): they share main's account and
+  connections, and the derivation is the largest of them. An endpoint
+  with no account is one the person has not set up, so its models stay
+  out: a first run with one account needs no other credential.
   - **Needed accounts** are the accounts of the run's models. Main's
-    must name a source, or the settings are refused, naming the key
-    (exit 2). Each needed account's credential must be usable (exit 3,
-    4.3). An account no model of the run needs is reported, and
+    endpoint must have an account, or the command exits 2 with the first
+    run's lines (5.3). Each needed account's credential must be usable
+    (exit 3, 4.3). An account no model of the run needs is reported, and
     its problems are warnings.
   - **The agent's configuration holds the run's models only,** so the
     derivation and every relationship (protocol/limits.md) are those of
@@ -616,7 +753,7 @@ source = "borrow"
   past a prompt size, the preset prices the model at the highest rates a
   prompt within its window can reach, its window as settings leave it:
   Haiku 5.5 at its long-prompt rates whenever its window passes 100,000
-  tokens, and each Codex model at its long-context rates whenever its
+  tokens, and each OpenAI model at its long-context rates whenever its
   window passes 272,000 tokens, so at its base rates at the preset's
   window. A charter's prices stay flat (domain/run.md, section 9), so
   spend is never under-counted. A person who wants the lower rates
@@ -642,8 +779,10 @@ source = "borrow"
   - each model known to a preset or declared, and priced above zero at
     every rate;
   - each endpoint of the run's models resolved, and each needed
-    account's source usable (5.2);
-  - the tools' paths.
+    account's source usable (5.2): a sign-in's record present and its
+    scopes granted, a key kept, a variable set, and a program source's
+    check usable (protocol/programs.md, section 3);
+  - the tools' paths, and each program a run may use.
 - **A refusal names the relationship:** the keys on each side, their
   values and their layers, and the relationship's name, for example:
 
@@ -653,6 +792,31 @@ source = "borrow"
 
 - **Startup is `smith check`.** Every command runs its checks first and
   refuses with exit 2, or 3 for credentials.
+- **A first run's lines.** With no model, or no account for main's
+  endpoint, `smith` and `smith exec` exit 2 and print what to add and
+  the command to run after:
+
+  ```text
+  smith: no account: add to ~/.config/smith/config.toml
+    model = "openai/gpt-6.1-sol"
+    [accounts.chatgpt]
+    provider = "openai"
+    source = "sign_in"
+  then run `smith login chatgpt`
+  ```
+
+- **Settings of an earlier version are refused,** each naming what takes
+  its place, since strict settings never guess:
+  - `source = "borrow"`: "declare `provider = "openai"` and `source =
+    "sign_in"`, then run `smith login <account>`";
+  - a `sign_in` account's `client_id`, `redirect_uri`, `scope` or
+    `token_format`: "the provider's preset gives the registration";
+  - an endpoint's `identity`, `dialect = "codex"`, and the `codex`
+    endpoint: "use `openai/<model>`".
+- **A chat kept by an earlier version is refused,** naming it and its
+  transcript's version, and never carried over, such as one on the
+  withdrawn `codex` endpoint (protocol/transcript.md, section 6). The
+  person starts another chat.
 
 ### 5.4 Generated agent configuration
 
@@ -660,9 +824,13 @@ Hosts generate an agent's configuration, so it stays JSON
 (protocol/agent.md, section 4): `smith-agent CONFIG.json`. In the
 product the shell writes the agent configuration from the presets and
 the resolved settings: in one process as a value it hands the service,
-with no file; when it spawns an agent (the worlds, and an `isolate`
-option later), as that JSON, with the spawned agent's `exit_grace`
-derived beside it (6.5).
+with no file; when it spawns an agent (a run whose account's source is a
+program, the worlds, and an `isolate` option later), as that JSON, with
+the spawned agent's `exit_grace` derived beside it (6.5). It names each
+endpoint's dialect and program, each program's path, and the programs
+directory, `<credentials>/programs` (section 7); never an account or a
+credential, which the run's charter and grants carry
+(protocol/charter.md, section 2; protocol/channel.md, section 6).
 
 ## 6. Presets' declared values
 
@@ -680,9 +848,9 @@ profile (2.1).
 
 | Preset | Model | `window` | `output` | `reasoning_item` | `head` | `idle` |
 |---|---|---:|---:|---:|---:|---:|
-| `codex` | `gpt-6-astra` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
-| `codex` | `gpt-6-luna` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
-| `codex` | `gpt-6.1-sol` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
+| `openai` | `gpt-6-astra` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
+| `openai` | `gpt-6-luna` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
+| `openai` | `gpt-6.1-sol` | 272,000 | 32,000 | 64 KiB | 60 s | 300 s |
 | `anthropic` | `claude-opus-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
 | `anthropic` | `claude-sonnet-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
 | `anthropic` | `claude-haiku-5-5` | 200,000 | 32,000 | 64 KiB | 60 s | 120 s |
@@ -715,7 +883,7 @@ profile (2.1).
   `reasoning_item`, `head` and `idle` default to its provider's values in
   this table.
 - **The working tier's model.** `gpt-6.1-sol` is the working tier's
-  Codex model, and a tier's model is one the presets declare
+  OpenAI model, and a tier's model is one the presets declare
   (benchmarks.md, section 7), so that the tier runs smith as it ships. Its
   notional prices are its provider's list prices, tiered as 5.2's
   "Tiered list prices" says, and the code holds the numbers. It declares
@@ -728,7 +896,7 @@ profile (2.1).
 - **Every preset holds a window.** With the `standard` profile's 80%
   threshold, a window's room after two outputs, counting a byte as a
   token (protocol/limits.md, 3.9), is 96,000 tokens for the Anthropic
-  models and 153,600 for the Codex models, and the headroom above the
+  models and 153,600 for the OpenAI models, and the headroom above the
   threshold, less one output, is 8,000 and 22,400. Both pass
   `fresh-window` and `compaction-headroom`. Less the summary instruction
   and a marker for each of `calls_per_response` calls, that is each
@@ -736,17 +904,59 @@ profile (2.1).
   (protocol/limits.md, 3.9). Halved after smith's own
   part, the room bounds one offer, and so a message, a person's line or
   a headless prompt, near 20 KiB when an Anthropic model is declared and
-  near 34 KiB with the Codex models alone; `smith check` prints the
+  near 34 KiB with the OpenAI models alone; `smith check` prints the
   exact values.
 
 ### 6.2 Per provider
 
-| | `codex` | `anthropic` |
+| | `openai` | `anthropic` |
 |---|---|---|
-| endpoint | `chatgpt.com:443`, TLS name `chatgpt.com`, the Codex dialect | `api.anthropic.com:443`, TLS name `api.anthropic.com`, the Anthropic dialect and its identity profile |
+| endpoint | `api.openai.com:443`, TLS name `api.openai.com`, `/v1/responses`, OpenAI's public Responses dialect (skein's `llm.md`, 4.8) | `api.anthropic.com:443`, TLS name `api.anthropic.com`, `/v1/messages`, Anthropic's Messages dialect with a key (skein's `llm.md`, 4.7) |
+| program | none | `claude_code`, Claude Code (protocol/programs.md) |
+| sources | `sign_in`, with smith's registration; `key`; `env` | `program`; `key`; `env` |
+| how a credential is sent | `Authorization: Bearer`, a sign-in's token or a key alike (skein's `llm.md`, 2.6) | a key, in `x-api-key` |
 | `connect`, `handshake` | 10 s each | 10 s each |
 | `connection_keep` | 30 s, provisional | 30 s, provisional |
-| sign-in | none: an account's own registration (section 7) | the same |
+
+- **smith's OpenAI registration,** the `openai` preset's and never a
+  setting's: Sign in with ChatGPT for an open-source program, with no
+  client secret and no partner key.
+  - **Authorization** at `https://auth.openai.com/api/accounts/authorize`
+    and the token endpoint
+    `https://auth.openai.com/api/accounts/oauth/token`, with OpenAI's
+    published keys for the ID token and its revocation endpoint.
+  - **The entry client** `dynamic_agent_client`, used only to register:
+    the first sign-in sends `agent_name_hint` `smith` and the
+    installation's `ext_agent_host_id` (section 7), and keeps the
+    client id the callback issues for every exchange, refresh and
+    revocation after.
+  - **The scopes** `openid profile email` for identity and
+    `offline_access resource.invoke chatgpt.tokens.use.direct` for plan
+    usage, with `chatgpt.tokens.use.direct` required for a run;
+    `resource` `https://api.openai.com/v1`.
+  - **The redirect** `http://127.0.0.1:<port>/auth/callback`, whose port
+    alone may change between sign-ins (section 7).
+  - **The condition:** OpenAI sanctions plan usage for open-source
+    programs, and smith is MIT-licensed (3.1). A preset carries a
+    provider's registration only on such a sanction; one withdrawn is a
+    change to this document.
+- **What the `openai` preset shows,** as OpenAI asks of a program on a
+  person's plan:
+  - at an account's first sign-in with plan usage, once: "You're using
+    your ChatGPT plan. Eligible requests from smith use your plan's
+    included usage; manage it at chatgpt.com/settings/usage.";
+  - the usage address, `chatgpt.com/settings/usage`, in a limited
+    account's last line (4.3);
+  - after a sign-out whose revocation is not confirmed, to disconnect
+    smith in ChatGPT's settings (4.6);
+  - "Using ChatGPT plan" on the status line (4.1), and a plan's spend
+    as notional, never as a charge (5.2).
+- **The `anthropic` preset carries no registration.** Its subscription
+  is reached through Claude Code, signed in by the program's own flow
+  (protocol/programs.md, section 4), and its own loop takes a key.
+- **The plan's models:** which of the `openai` preset's models a ChatGPT
+  plan serves is what `/v1/models` lists for its account, open until a
+  capture (section 11).
 
 The connection keep is a live service's policy, never how it ends:
 pools close at the answer (section 9). It and the deadlines are policy
@@ -853,63 +1063,158 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
 
 ## 7. Credentials
 
-Each account has one source:
+In smith's product, an account has one source, which its settings name
+(5.2), and the local host lends every account's grants the same way,
+whatever its source (domain/host.md, section 7).
 
-- **`sign_in`:** smith's own OAuth sign-in (protocol/hosts.md, section
-  5.4), as a public client, with the registration its account's settings
-  give. The record is kept in smith's private secret store under
-  `$XDG_STATE_HOME/smith/tokens`, and its refresh token never leaves it.
-  - **No preset carries a registration.** No smith preset names a
-    provider's client, or another program's, so the presets' accounts
-    use `borrow` or `env`. A provider that sanctions smith's use of its
-    public client would let its preset carry one, as a change to this
-    document.
-  - **The registration's keys,** under `[accounts.<name>]`: `client_id`;
-    `authorization_url` and `token_url`, `https`, or `http` on loopback;
-    `redirect_uri`, on loopback with an explicit port and a path, a
-    `localhost` one compared exactly (skein's `oauth.md`, section 1);
-    `scope`; `token_format`, `json` or `form`, how the token endpoint
-    speaks; and `trust`, the token endpoint's roots, in the same form as
-    an endpoint's `trust` (`der` or `pem`), the machine's by default. The token endpoint's address and TLS name are
-    its URL's host and port. There is no client secret: a public client
-    has none.
-  - **Missing keys are refused,** each naming the key and its file, by
-    `smith check` and at startup (5.3), and a `sign_in` account without
-    them never reaches the driver.
-- **`borrow`:** another tool's login file, such as Codex's, read-only.
-  smith takes the access token and the account's identifier, and nothing
-  else: it never reads the refresh token into its state, never writes
-  the file, and never refreshes another tool's login. A borrowed token
-  is read again when a grant is due, so a login the other tool refreshed
-  meanwhile is used.
-- **`env`:** a named variable holding the credential the endpoint's
-  dialect sends, for CI.
+### 7.1 Sources
 
-What the person sees:
+| `source` | Its keys | What smith holds | Renewed by |
+|---|---|---|---|
+| `sign_in` | the registration's addresses, moved for a test, and `redirect_port` | a record, `tokens/<account>` | smith, under the record's lock (7.3) |
+| `key` | none | the key, `keys/<account>`, kept by `smith login` | the person, with `smith login` |
+| `env` | `variable` | nothing: the variable's value, read at start | whoever sets the variable |
+| `program` | none: the endpoint names the program (5.2) | nothing: the program's own login, in `programs/<account>/` | the program |
+| `none` | none | nothing | nothing |
 
-- **`smith login ACCOUNT`** acquires or reports a credential (4.5).
-- **Interactive sign-in:** a `sign_in` account without a record shows the
-  authorization address at the terminal, and the run starts once the
-  record is kept.
-- **The expiry notice** for a borrowed login names the file, when it
-  expired, and the exact program to run:
+- **`sign_in`:** smith's own OAuth sign-in, with skein's OAuth client
+  and its driver (skein's `oauth.md`, section 6), as a public client
+  with the registration its provider's preset carries (6.2), never one a
+  setting gives.
+  - **Its addresses may move,** so that a test reaches the fake issuer
+    (testing.md, section 4): `issuer`, `authorization_url`, `token_url`,
+    `keys_url` and `revocation_url`, each `https`, or `http` on
+    loopback, and `trust`, the roots their servers are trusted by, in
+    the same form as an endpoint's `trust` (`der` or `pem`), the
+    machine's by default. The registration itself, its client, name,
+    scopes and redirect path, never moves.
+  - **`redirect_port`,** optional: the port the loopback listener tries
+    first, on a port drawn for the sign-in when that one is taken
+    (skein's `oauth.md`, 6.5). Without it, each sign-in draws its port.
+    Only the port changes between sign-ins.
+  - **What a sign-in checks:** the ID token, by the provider's published
+    keys, its issuer, audience, expiry and nonce (skein's `oauth.md`,
+    2.2), and the granted scopes. The account is the token's subject,
+    never an email. A sign-in without a scope the preset requires keeps
+    its record, and the account is not usable for a run until it signs
+    in again and allows it (4.5).
+  - **The issued client id** is kept with the record, and every
+    exchange, refresh and revocation after uses it (skein's `oauth.md`,
+    2.1).
+  - **One subject per account.** A sign-in whose subject another of the
+    settings' accounts holds is refused, naming that account, and its
+    new tokens revoked; one whose subject is not the record's is refused
+    too. Two names never race one rotating token, and an account never
+    changes person.
+  - **Refreshed before it lapses** by the local host, under the record's
+    lock (7.3), and lent as a bearer.
+- **`key`:** a key the person gave `smith login`, kept privately, sent as
+  its endpoint's dialect sends a key (6.2), never refreshed.
+- **`env`:** the variable `variable` names, holding a key, read at
+  start, for unattended use.
+- **`program`:** the program's own login, signed in by the program's own
+  flow into the account's configuration directory (protocol/programs.md,
+  section 4). smith holds nothing of it: the local host checks the
+  source at startup and before each run on it (protocol/programs.md,
+  section 3), grants the account's name, and runs the run on a spawned
+  agent (section 9).
+- **`none`:** for an endpoint that takes no credential, such as a local
+  model's.
 
-  ```text
-  smith: the codex login borrowed from ~/.codex/auth.json expired at 14:02. Run `codex` once to refresh it, then try again.
-  ```
+### 7.2 The credentials directory
 
-  No run starts on it: exit 3 headless, and interactively the line is
-  shown as not delivered.
-- **A rejected credential** mid-run is a notice to the host
-  (domain/host.md, section 7). The local host re-reads a borrowed login
-  or refreshes its own record, and lends the new grant; without one, the
-  run fails for credentials.
+```
+<credentials>/                    private, the user's own
+├── host-id                       the installation's identifier, urn:uuid:…
+├── tokens/<account>              a sign-in's record, replaced whole
+├── tokens/<account>.lock/        the record's lock: a directory, never replaced
+├── keys/<account>                a key, as `smith login` read it
+└── programs/<account>/           a program source's configuration directory
+```
+
+- **smith's own,** never another program's: no other program's login,
+  such as `~/.codex` or `~/.claude`, is read, and the person's own
+  settings, hooks and plugins for a program never load into a run
+  (protocol/programs.md, 4.2).
+- **Each file private,** read and written as skein's private files are,
+  each replaced whole by durable replace (skein's `io.md`, 5.2 and 5.3).
+  The programs directory is private; `smith login` makes each
+  configuration directory in it, private, and only the program writes
+  there.
+- **`host-id`** is the installation's identifier, which a sign-in sends
+  to its provider as `ext_agent_host_id` (6.2): `urn:uuid:` and a random
+  UUID, drawn once, by the first process that finds it absent, and
+  stored expecting no file. A process that finds one stored meanwhile
+  reads that one. It is not a credential, and names no person.
+- **Chats are kept under the state directory** (5.1), apart from the
+  credentials directory, so that a test or a benchmark gives each run a
+  scratch state directory and a durable credentials directory.
+
+### 7.3 Records across processes
+
+- **Several processes share a record:** two terminals on one account, a
+  benchmark's attempts, a live test beside a person's chat.
+- **Each sign-in record is shared** (skein's `oauth.md`, 6.4): every
+  write of it, a refresh, `smith login`'s keep and `smith logout`'s
+  revocation, runs under the record's lock, and first reads the record
+  again. A newer generation another process kept is used with no
+  refresh; no record is an account signed out; another subject fails
+  the grant, so a run never changes person mid-run.
+- **The lock** is `tokens/<account>.lock/`, a directory opened and
+  locked with skein's `Lock` (skein's `io.md`, section 5): exclusive,
+  released when it is closed or its process ends, never left behind by
+  a crash. A process that finds it busy asks again on a timer, within
+  the driver's lock wait (skein's `oauth.md`, 6.7), and then the write
+  fails as busy, for now, and the grant is asked for again.
+- **A refresh refused for good,** such as `invalid_grant` or
+  `refresh_token_reused`, means the account must sign in again (exit 3,
+  4.3); a transient failure keeps the record, and is retried.
+- **A crash between the provider's rotation and the kept record** leaves
+  a spent refresh token: the next refresh is refused as reused, and the
+  person signs in again.
+
+### 7.4 Account numbers
+
+A charter's LLM names its account by number, and a transcript's
+opening turn keeps it (protocol/charter.md, section 2;
+protocol/transcript.md, section 2). The local host derives each
+account's number from its name by a fixed hash, never from its place in
+the settings or among the run's models, so that an account has one
+number in every invocation, and a chat resumed on the same account is
+not carried over. Two names of one number are refused, naming both
+(exit 2); renaming an account changes its number.
+
+### 7.5 What the person sees
+
+- **`smith login` and `smith logout`** act per source (4.5 and 4.6).
+- **Interactive sign-in:** the interactive `smith` signs in a needed
+  `sign_in` account that holds no record, at the terminal, as `smith
+  login` does, and the run starts once the record is kept. `smith exec`
+  never does, and exits 3 naming `smith login`.
+- **The notices** (domain/host.md, section 7):
+  - **limited:** the provider says the account has reached its usage
+    limit, with when it resets only where it says. The run fails for
+    its account (exit 1), naming the usage address the preset gives
+    (6.2). A run never moves to another account; the person chooses one
+    with `--account`;
+  - **refused:** the provider refused the account what was asked, such
+    as an account not eligible for plan usage, or a scope not granted.
+    It is never retried, and the run fails for its account (exit 3),
+    with the provider's code and reason;
+  - **unauthorized:** the local host refreshes a sign-in's grant once and
+    lends the new generation. A key, a variable, a refresh refused for
+    good, or a program's login lost, fails the run for its account
+    (exit 3), naming the command to run.
+- **The provider refused smith's registration** (`invalid_client`) at a
+  sign-in or a refresh: exit 2, since no sign-in of the person's mends
+  it.
 - **Never shown:** credential values appear in no setting, event, trace,
   terminal line or `smith check` output.
 - **Refresh tokens are never copied.** An issuer rotates them, and a
-  copied one logs the other tool out. Live tests and benchmarks use the
-  user's existing logins, borrowed read-only (testing.md, section 2.3;
-  benchmarks.md, section 10).
+  copied one is spent by whichever copy refreshes first. Live tests and
+  benchmarks sign in smith's own accounts once, in a credentials
+  directory of their own (testing.md, section 2.3; benchmarks.md,
+  section 6), and never copy a login.
 
 ## 8. The build environment
 
@@ -952,6 +1257,14 @@ What the person sees:
   (domain/host.md, section 9). The agent configuration is a value the
   shell builds from presets and settings, never a file. Credentials are
   lent as entities. The loop is `skein_shell::drive`.
+- **A run on a program is spawned.** The inline agent has no program
+  backend (protocol/programs.md, section 2), so a run whose account's
+  source is a program runs on a spawned agent: the local domain is
+  composed with `smith-host-domain` and its protocol layer, and spawns
+  `smith-agent`, found beside `smith`'s own binary, with the generated
+  configuration (5.4). The agent spawns the program as its child, and
+  the run's events, failures and exit codes are the same as inline
+  ones. Every other run stays inline.
 - **Events come from the domain's owner.** The inline agent's owner
   drains each run's facts every pass into the service's event sink, so
   the event stream is the same in one process as from a spawned agent
@@ -967,10 +1280,11 @@ What the person sees:
   grace from the same bound (6.5).
 - **The spawned capability.** Spawning an agent is a library capability:
   `smith-host-domain` and `smith-host-protocol` in a host, and
-  `smith-agent-shell` in the process. `smith-agent` ships while any host
-  may want a prebuilt agent process, and is the real-process proof of
-  the channel. An `isolate` option of the product, which spawns its
-  agent, comes with contained trees.
+  `smith-agent-shell` in the process. `smith-agent` ships with `smith`,
+  for the product's runs on a program and for any host that wants a
+  prebuilt agent process, and is the real-process proof of the channel.
+  An `isolate` option of the product, which spawns the agent of every
+  run, comes with contained trees.
 
 ## 10. The world
 
@@ -985,9 +1299,14 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
   - the task role within 4 KiB, each tool it names one of smith's own;
   - one refusal per relationship, naming it;
   - the mapping from every answer to its exit code and its last line on
-    standard error, one per class;
-  - borrowed login files: valid, expired, malformed, and one whose refresh
-    token never reaches the shell's state.
+    standard error, one per class: limited, refused and unauthorized
+    among them, and a limited account's line with and without its reset;
+  - each source's settings, and each refusal of 5.2 and 5.3: a name out
+    of bounds, an ambiguous account, `--account` of another provider, a
+    `program` source on an endpoint without a program, and each setting
+    of an earlier version naming what takes its place;
+  - account numbers: one name, one number, in any order of the settings;
+    two names of one number refused.
 - **Step tests in `smith-agent-service` and `smith-local-service`:** the
   `standard` profile derives, and its derived worst case fits `memory`.
 - **The local host's simulated world** (testing.md, section 2.1):
@@ -995,9 +1314,19 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
   - events against what the fake provider saw: one `response.completed`
     per response, tool records paired by call id, usage summing to the
     answer's spend, no loss;
-  - a borrowed login lent; an expired one gives the notice and no run;
-    the login file is never written;
-  - an `env` account.
+  - each source lent: a sign-in's record, refreshed before it lapses;
+    a key; an `env` account; a `none` endpoint;
+  - two processes on one record: one refreshes under the lock, the
+    other uses the newer generation with no refresh; a lock held past
+    the lock wait fails the write as busy, and a later grant succeeds;
+  - a program account's check at startup, each answer of it, and a run
+    on the fake program on a spawned agent (protocol/programs.md,
+    section 8);
+  - a limited account, with a reset and without one; a refused account;
+    an unauthorized grant refreshed once, and one refused for good: each
+    with its exit code and last line;
+  - a chat of an earlier version refused, and a chat carried over to
+    another account.
 - **End to end** (testing.md, section 2.3), against fakes:
   - `smith exec --json` to an accepted answer, and to needs input;
   - `smith check --json`, passing and failing;
@@ -1005,7 +1334,13 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
   - `smith` on a terminal: a first sign-in and a change committed in
     place, then a second invocation that resumes; and one with
     `--trace`, its records read from the file as it grows;
-  - `smith login` against the fake issuer;
+  - `smith login` and `smith logout` against the fake issuer, reached
+    through the settings' moved addresses: a first sign-in that
+    registers, a sign-in again with the issued client id, another
+    subject refused, a scope declined, a revocation confirmed and one
+    not; a key read from standard input, and one from a terminal
+    refused;
+  - `smith login` on a `program` account, against the fake program;
   - `smith-agent`, spawned by a host in the test's loop.
 
 ## 11. Open questions
@@ -1015,7 +1350,13 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
   cost and quality there.
 - **Kept traces:** a default place for traces, their rotation and how
   long they are kept.
-- **`smith-agent`'s life:** whether it outlives temper's decision on how
-  its worker runs agents.
+- **The plan's models:** which of the `openai` preset's models
+  `/v1/models` lists for a ChatGPT plan, and whether the small and
+  working tiers' `gpt-6-luna` and `gpt-6.1-sol` are among them. Default:
+  the preset declares them, and a run on one the plan refuses fails as
+  refused.
+- **A chat's account between invocations:** a chat resumed with another
+  account is carried over (4.1). Default: allowed, said once on the
+  status line.
 - **An `isolate` option,** once contained trees make spawning contain
   more than one process does.

@@ -232,8 +232,11 @@ that is not empty, or a message.
    too small for the agent's limits, charter text too large for a
    window's host part, a host tool whose name is smith's or appears
    twice, a contract that cannot be met, a model priced at zero at any
-   rate, a budget that cannot hold its reserve). The start's messages
-   are admitted or refused with it.
+   rate, a budget that cannot hold its reserve, an LLM's account the
+   start carries no grant for, a grant the agent cannot install
+   (protocol/channel.md, section 6), a program source granted for a
+   sub-agent's LLM and not for main's (protocol/programs.md,
+   section 2)). The start's messages are admitted or refused with it.
 2. **Prepares:** reads each workspace directory's guide and looks for its
    checks (8.1).
 3. **Equips** its main session: prompt, tools, workspace authority, LLM,
@@ -662,6 +665,12 @@ answers as it was ending; the host has the delivery's own answer.
   budget. So a run never spends past its budget, and stops a little early
   rather than late. All of it is inside the run, with no call to its
   host.
+- **On a program backend,** the program makes each completion, so
+  none is reserved before it is made. Each is priced as it is reported,
+  at the charter's prices, and counted as a turn; one that passes the
+  ordinary pool is taken by the reserve, and its overrun is recorded as
+  spend (protocol/programs.md, 5.7). The run still never spends past
+  its budget by more than one completion.
 - **A compaction is a completion** like any other (session.md, section
   8): reserved, priced, and counted as a turn.
 - **Spend is told:** cumulative in each turn, and whole in the answer.
@@ -702,6 +711,11 @@ answers as it was ending; the host has the delivery's own answer.
   3. A result accepted then is accepted (section 10). A main that has not
      finished when the reserve's turns are used, or its time is out,
      answers failed for its budget.
+
+  On a program backend, the program's turn is ended and the note sent
+  as its next user message. The program's tools are not narrowed, so
+  the agent refuses every call but `finish` and `deliver` from then on,
+  each as an invalid call is answered (protocol/programs.md, 5.7).
 - **A sub-agent's share** runs out on its own: its final turn (5.3) ends
   it, and its parent goes on.
 
@@ -740,9 +754,13 @@ the last message it read (section 6).
 - **failed,** typed so the host can act without reading prose: the model
   (a provider's failure past its retries, with its class, the endpoint
   and model of the last completion and how many attempts it made; an
-  account exhausted, naming the account and, when its provider said, how
-  long until it may be used again, measured when the run answers; a
-  limit that fired, naming the limit and its
+  account limited, naming the account and, when its provider said, how
+  long until it may be used again, measured when the run answers; an
+  account refused, naming it and the provider's code; a program
+  source's login lost, naming the account; a program that could not
+  run or exited before its answer, naming the program, with its detail
+  (protocol/programs.md, 5.6); a limit that fired, naming the limit and
+  its
   bound; or a fault of the model's own answer, *refused*, *truncated* or
   *malformed*, when it kept refusing, stopping at its output limit, or
   asking for tools and naming none past its nudges (7.2), or when a
