@@ -2,15 +2,15 @@
 //! Contract: protocol/events.md, sections 5.3 and 6.
 
 use crate::records::{
-    Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding, Capture,
-    CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure,
-    Containment, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered,
-    Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Forced, Form,
-    JobEnded, Level, LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode,
-    Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
-    SharePart, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict,
-    Versions,
+    AccountState, Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding,
+    Capture, CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion,
+    CompletionFailure, Containment, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
+    Cpu, Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field,
+    Forced, Form, JobEnded, Level, LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal,
+    MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve,
+    ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share,
+    ShareBound, SharePart, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage,
+    Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -368,8 +368,9 @@ fn write_level(json: &mut Encoder, value: &Level, _capture: &Capture) {
 fn write_notice_kind(json: &mut Encoder, value: &NoticeKind, _capture: &Capture) {
     match value {
         NoticeKind::ReasoningDropped => json.string(b"reasoning_dropped"),
-        NoticeKind::CredentialRejected => json.string(b"credential_rejected"),
-        NoticeKind::AccountExhausted => json.string(b"account_exhausted"),
+        NoticeKind::CredentialUnauthorized => json.string(b"credential_unauthorized"),
+        NoticeKind::AccountLimited => json.string(b"account_limited"),
+        NoticeKind::AccountRefused => json.string(b"account_refused"),
         NoticeKind::TeardownAborted => json.string(b"teardown_aborted"),
         NoticeKind::ForcedExit => json.string(b"forced_exit"),
         NoticeKind::Unknown(text) => json.string(text),
@@ -611,8 +612,38 @@ fn write_completion_failure(json: &mut Encoder, value: &CompletionFailure, captu
 
 fn write_answer_failure(json: &mut Encoder, value: &AnswerFailure, capture: &Capture) {
     json.object_start();
-    if let Some(item) = value.retry_after_ms {
-        json.key(b"retry_after_ms");
+    if let Some(state) = &value.state {
+        json.key(b"state");
+        json.string(match state {
+            AccountState::Limited => b"limited",
+            AccountState::Refused => b"refused",
+            AccountState::Unauthorized => b"unauthorized",
+            AccountState::Unknown(value) => value,
+        });
+    }
+    if let Some(code) = &value.code {
+        json.key(b"code");
+        json.string(code);
+    }
+    if let Some(program) = &value.program {
+        json.key(b"program");
+        json.string(program);
+    }
+    if let Some(exit) = value.exit {
+        json.key(b"exit");
+        write_agent_exit(json, exit);
+    }
+    match capture {
+        Capture::None | Capture::Unknown(_) => {}
+        Capture::Calls | Capture::Everything => {
+            if let Some(detail) = &value.detail {
+                json.key(b"detail");
+                json.string(detail);
+            }
+        }
+    }
+    if let Some(item) = value.reset_ms {
+        json.key(b"reset_ms");
         json.unsigned(item);
     }
     if let Some(item) = value.used {
@@ -643,7 +674,7 @@ fn write_answer_failure(json: &mut Encoder, value: &AnswerFailure, capture: &Cap
     }
     if let Some(item) = &value.account {
         json.key(b"account");
-        json.unsigned(*item);
+        json.unsigned(u64::from(*item));
     }
     if let Some(item) = &value.which {
         json.key(b"which");
@@ -1130,8 +1161,9 @@ fn validate_level(value: &Level, limits: &Limits) -> Result<(), Error> {
 fn validate_notice_kind(value: &NoticeKind, limits: &Limits) -> Result<(), Error> {
     match value {
         NoticeKind::ReasoningDropped
-        | NoticeKind::CredentialRejected
-        | NoticeKind::AccountExhausted
+        | NoticeKind::CredentialUnauthorized
+        | NoticeKind::AccountLimited
+        | NoticeKind::AccountRefused
         | NoticeKind::TeardownAborted
         | NoticeKind::ForcedExit => Ok(()),
         NoticeKind::Unknown(text) => check_text(text, limits.string),
@@ -1221,6 +1253,19 @@ fn validate_answer_failure(value: &AnswerFailure, limits: &Limits) -> Result<(),
     }
     if let Some(item) = &value.reason {
         check_text(item, limits.string)?;
+    }
+    match &value.state {
+        Some(AccountState::Unknown(value)) => check_text(value, limits.string)?,
+        Some(AccountState::Limited | AccountState::Refused | AccountState::Unauthorized) | None => {}
+    }
+    if let Some(code) = &value.code {
+        check_text(code, limits.string)?;
+    }
+    if let Some(program) = &value.program {
+        check_text(program, limits.string)?;
+    }
+    if let Some(detail) = &value.detail {
+        check_text(detail, limits.content)?;
     }
     Ok(())
 }
@@ -1448,6 +1493,9 @@ fn validate_message_received(value: &MessageReceived, limits: &Limits) -> Result
 }
 
 fn validate_notice(value: &Notice, limits: &Limits) -> Result<(), Error> {
+    if let Some(code) = &value.code {
+        check_text(code, limits.string)?;
+    }
     validate_level(&value.level, limits)?;
     validate_notice_kind(&value.kind, limits)?;
     match &value.forced {
@@ -1456,11 +1504,13 @@ fn validate_notice(value: &Notice, limits: &Limits) -> Result<(), Error> {
     }
     match value.kind {
         NoticeKind::ForcedExit if value.forced.is_none() => Err(Error::Shape),
+        NoticeKind::AccountRefused if value.code.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped if value.bytes.is_none() => Err(Error::Shape),
-        NoticeKind::CredentialRejected | NoticeKind::AccountExhausted if value.account.is_none() => Err(Error::Shape),
+        NoticeKind::CredentialUnauthorized | NoticeKind::AccountLimited if value.account.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped
-        | NoticeKind::CredentialRejected
-        | NoticeKind::AccountExhausted
+        | NoticeKind::CredentialUnauthorized
+        | NoticeKind::AccountLimited
+        | NoticeKind::AccountRefused
         | NoticeKind::TeardownAborted
         | NoticeKind::ForcedExit
         | NoticeKind::Unknown(_) => Ok(()),
@@ -2091,8 +2141,9 @@ fn encode_notice(json: &mut Encoder, value: &Notice, capture: &Capture) {
                 json.null();
             }
             NoticeKind::ReasoningDropped
-            | NoticeKind::CredentialRejected
-            | NoticeKind::AccountExhausted
+            | NoticeKind::CredentialUnauthorized
+            | NoticeKind::AccountLimited
+            | NoticeKind::AccountRefused
             | NoticeKind::TeardownAborted
             | NoticeKind::Unknown(_) => {}
         },
@@ -2107,15 +2158,19 @@ fn encode_notice(json: &mut Encoder, value: &Notice, capture: &Capture) {
     }
     if let Some(account) = value.account {
         json.key(b"account");
-        json.unsigned(account);
+        json.unsigned(u64::from(account));
     }
     if let Some(bytes) = value.bytes {
         json.key(b"bytes");
         json.unsigned(bytes);
     }
-    if let Some(item) = &value.wait_ms {
-        json.key(b"wait_ms");
+    if let Some(item) = &value.reset_ms {
+        json.key(b"reset_ms");
         json.unsigned(*item);
+    }
+    if let Some(code) = &value.code {
+        json.key(b"code");
+        json.string(code);
     }
 }
 

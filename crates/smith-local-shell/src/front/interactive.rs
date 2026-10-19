@@ -182,8 +182,9 @@ fn notice_text(notice: smith_events::Notice) -> Option<Box<[u8]>> {
             };
             Some(text.into_bytes().into())
         }
-        smith_events::NoticeKind::CredentialRejected
-        | smith_events::NoticeKind::AccountExhausted
+        smith_events::NoticeKind::CredentialUnauthorized
+        | smith_events::NoticeKind::AccountLimited
+        | smith_events::NoticeKind::AccountRefused
         | smith_events::NoticeKind::ForcedExit
         | smith_events::NoticeKind::TeardownAborted => None,
     }
@@ -442,11 +443,12 @@ mod tests {
 
     fn notice(kind: smith_events::NoticeKind, bytes: Option<u64>) -> Event {
         Event::Notice(smith_events::Notice {
+            code: None,
             level: smith_events::Level::Warning,
             kind,
             run: None,
             account: None,
-            wait_ms: None,
+            reset_ms: None,
             bytes,
             exit: None,
             forced: None,
@@ -529,8 +531,8 @@ mod tests {
     #[test]
     fn terminal_failure_notices_remain_with_the_local_hosts_words() {
         for kind in [
-            smith_events::NoticeKind::CredentialRejected,
-            smith_events::NoticeKind::AccountExhausted,
+            smith_events::NoticeKind::CredentialUnauthorized,
+            smith_events::NoticeKind::AccountLimited,
             smith_events::NoticeKind::ForcedExit,
             smith_events::NoticeKind::TeardownAborted,
         ] {

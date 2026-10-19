@@ -53,7 +53,12 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
 fn model_failure_requires_the_run_class_and_the_actual_matching_exit() {
     let mut records = common::events::balanced();
     let failure = AnswerFailure {
-        retry_after_ms: None,
+        state: None,
+        code: None,
+        program: None,
+        exit: None,
+        detail: None,
+        reset_ms: None,
         used: None,
         bound: None,
         dropped: None,
@@ -148,7 +153,12 @@ fn set_completion_failure(records: &mut [smith_events::Record], completion: &smi
         run.status = Status::Failed;
         run.result = None;
         run.failure = Some(AnswerFailure {
-            retry_after_ms: None,
+            state: None,
+            code: None,
+            program: None,
+            exit: None,
+            detail: None,
+            reset_ms: None,
             used: None,
             bound: None,
             dropped: None,
@@ -205,7 +215,12 @@ fn reserve_refusal_requires_exact_typed_identity_under_every_capture() {
         run.status = Status::Refused;
         run.result = None;
         run.failure = Some(AnswerFailure {
-            retry_after_ms: None,
+            state: None,
+            code: None,
+            program: None,
+            exit: None,
+            detail: None,
+            reset_ms: None,
             used: None,
             bound: None,
             dropped: None,

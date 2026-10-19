@@ -152,7 +152,12 @@ fn measured_resource_objects_round_trip_with_exact_values() {
 
 fn word_failure(class: crate::AnswerClass) -> crate::AnswerFailure {
     crate::AnswerFailure {
-        retry_after_ms: None,
+        state: None,
+        code: None,
+        program: None,
+        exit: None,
+        detail: None,
+        reset_ms: None,
         used: None,
         bound: None,
         class,
@@ -199,7 +204,9 @@ fn every_provider_class_has_its_words() {
     let cases = [
         (FailureClass::Overloaded, b"overloaded".as_slice()),
         (FailureClass::RateLimited, b"rate limited".as_slice()),
-        (FailureClass::Exhausted, b"exhausted".as_slice()),
+        (FailureClass::Exhausted, b"limited".as_slice()),
+        (FailureClass::Refused, b"refused".as_slice()),
+        (FailureClass::Unsupported, b"unsupported".as_slice()),
         (FailureClass::Unavailable, b"unavailable".as_slice()),
         (FailureClass::TimedOut, b"timed out".as_slice()),
         (FailureClass::ContextTooLong, b"context too long".as_slice()),
@@ -246,20 +253,6 @@ fn clip_keeps_the_first_line() {
 }
 
 #[test]
-fn an_exhausted_answer_names_its_account_and_time_when_known() {
-    let mut failure = word_failure(crate::AnswerClass::Model);
-    failure.account = Some(7);
-    failure.retry_after_ms = Some(120_000);
-    let at = Some(skein_lib::Wall::from_nanos(86_340_000_000_000));
-    assert_eq!(crate::words(&failure, Some(b"work"), at).as_ref(), b"account work exhausted, usable again at 00:01");
-    failure.retry_after_ms = Some(0);
-    assert_eq!(crate::words(&failure, Some(b"work"), at).as_ref(), b"account work exhausted, usable again at 23:59");
-    failure.retry_after_ms = None;
-    assert_eq!(crate::words(&failure, Some(b"work"), at).as_ref(), b"account work exhausted");
-    assert_eq!(crate::words(&failure, None, None).as_ref(), b"account 7 exhausted");
-}
-
-#[test]
 fn each_settled_budget_answer_names_its_used_and_bound() {
     for (which, used, bound, expected) in [
         (b"turns".as_slice(), 7, 8, b"out of turns: used 7 of 8".as_slice()),
@@ -275,29 +268,74 @@ fn each_settled_budget_answer_names_its_used_and_bound() {
 }
 
 #[test]
-fn a_rejected_credential_names_its_account_in_the_shared_words() {
-    let mut failure = word_failure(crate::AnswerClass::Model);
-    failure.account = Some(7);
-    failure.completion = Some(crate::CompletionFailure {
-        field: None,
-        code: None,
-        request_id: None,
-        class: crate::FailureClass::Unauthorized,
-        evidence: crate::Evidence::Response,
-        retry_after_ms: None,
-        phase: None,
-        limit: None,
-        status: Some(401),
-        detail: None,
-    });
-    assert_eq!(
-        crate::words(&failure, Some(b"work\nignored"), None).as_ref(),
-        b"account work: the provider rejected its credential"
-    );
-}
-
-#[test]
 fn a_stream_of_version_two_is_refused() {
     let limits = Limits { string: 64, content: 1024, items: 4 };
     assert_eq!(read(b"{\"v\":2,\"type\":\"future\",\"t_ms\":0}\n", &limits), Err(Error::Version(2)));
+}
+
+#[test]
+fn an_account_failure_has_its_words() {
+    struct Row {
+        name: &'static str,
+        state: AccountState,
+        reset: Option<u64>,
+        code: Option<&'static [u8]>,
+        account: Option<&'static [u8]>,
+        expected: &'static [u8],
+    }
+    use crate::AccountState;
+    for row in [
+        Row {
+            name: "limited reset",
+            state: AccountState::Limited,
+            reset: Some(120_000),
+            code: None,
+            account: Some(b"work"),
+            expected: b"account work reached its usage limit, usable again at 00:01",
+        },
+        Row {
+            name: "limited now",
+            state: AccountState::Limited,
+            reset: Some(0),
+            code: None,
+            account: Some(b"work"),
+            expected: b"account work reached its usage limit, usable again at 23:59",
+        },
+        Row {
+            name: "limited unknown",
+            state: AccountState::Limited,
+            reset: None,
+            code: None,
+            account: None,
+            expected: b"account 7 reached its usage limit",
+        },
+        Row {
+            name: "refused",
+            state: AccountState::Refused,
+            reset: None,
+            code: Some(b"not_allowed"),
+            account: Some(b"work"),
+            expected: b"account work: the provider refused it: not_allowed",
+        },
+        Row {
+            name: "unauthorized",
+            state: AccountState::Unauthorized,
+            reset: None,
+            code: None,
+            account: Some(b"work\nignored"),
+            expected: b"account work unauthorized",
+        },
+    ] {
+        let mut failure = word_failure(crate::AnswerClass::Model);
+        failure.account = Some(7);
+        failure.state = Some(row.state);
+        failure.reset_ms = row.reset;
+        failure.code = row.code.map(Box::from);
+        assert_eq!(
+            crate::words(&failure, row.account, Some(skein_lib::Wall::from_nanos(86_340_000_000_000))).as_ref(),
+            row.expected,
+            "{}",
+            row.name
+        );
+    }
 }

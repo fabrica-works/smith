@@ -1,6 +1,6 @@
 //! Operator failure words, never channel or prompt content (protocol/agent.md,
 //! section 6; shell.md, section 4.3). No process state or credential is known.
-use crate::{AnswerClass, AnswerFailure, FailureClass};
+use crate::{AccountState, AnswerClass, AnswerFailure, FailureClass};
 use alloc::boxed::Box;
 use skein_lib::{Decimal, List, Wall};
 
@@ -112,11 +112,11 @@ pub fn words(failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: 
 
 fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: Option<Wall>) {
     if let Some(number) = failure.account {
-        match &failure.completion {
-            None => {
+        match &failure.state {
+            Some(AccountState::Limited) => {
                 account(line, number, account_name);
-                put(line, b" exhausted");
-                if let Some(wait) = failure.retry_after_ms
+                put(line, b" reached its usage limit");
+                if let Some(wait) = failure.reset_ms
                     && let Some(wall) = answered_at
                 {
                     put(line, b", usable again at ");
@@ -124,26 +124,20 @@ fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8
                 }
                 return;
             }
-            Some(completion) => match &completion.class {
-                FailureClass::Unauthorized => {
-                    account(line, number, account_name);
-                    put(line, b": the provider rejected its credential");
-                    return;
+            Some(AccountState::Refused) => {
+                account(line, number, account_name);
+                put(line, b": the provider refused it");
+                if let Some(code) = &failure.code {
+                    named(line, b": ", Some(code), b"unknown");
                 }
-                FailureClass::Overloaded
-                | FailureClass::RateLimited
-                | FailureClass::Exhausted
-                | FailureClass::Refused
-                | FailureClass::Unsupported
-                | FailureClass::Unavailable
-                | FailureClass::TimedOut
-                | FailureClass::ContextTooLong
-                | FailureClass::Invalid
-                | FailureClass::Limit
-                | FailureClass::Protocol
-                | FailureClass::Cancelled
-                | FailureClass::Unknown(_) => {}
-            },
+                return;
+            }
+            Some(AccountState::Unauthorized) => {
+                account(line, number, account_name);
+                put(line, b" unauthorized");
+                return;
+            }
+            Some(AccountState::Unknown(_)) | None => {}
         }
     }
     if let Some(endpoint) = &failure.endpoint {
@@ -188,11 +182,11 @@ fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8
     }
 }
 
-fn account(line: &mut List<u8>, number: u64, name: Option<&[u8]>) {
+fn account(line: &mut List<u8>, number: u32, name: Option<&[u8]>) {
     put(line, b"account ");
     match name {
         Some(name) => put(line, clip(name)),
-        None => put(line, Decimal::of(number).as_bytes()),
+        None => put(line, Decimal::of(u64::from(number)).as_bytes()),
     }
 }
 
@@ -215,7 +209,7 @@ fn class(class: &FailureClass) -> &[u8] {
     match class {
         FailureClass::Overloaded => b"overloaded",
         FailureClass::RateLimited => b"rate limited",
-        FailureClass::Exhausted => b"exhausted",
+        FailureClass::Exhausted => b"limited",
         FailureClass::Refused => b"refused",
         FailureClass::Unsupported => b"unsupported",
         FailureClass::Unavailable => b"unavailable",

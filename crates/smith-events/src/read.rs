@@ -5,8 +5,8 @@
 //! protocol/limits.md, section 3, rule 1.
 
 use crate::records::{
-    Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding, Capture,
-    CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion,
+    AccountState, Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding,
+    Capture, CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion,
     CompletionFailure, Containment, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
     Cpu, Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase,
     Family, Field, Forced, Form, JobEnded, Level, LimitValue, Loss, Message, MessageRead, MessageReceived,
@@ -697,8 +697,9 @@ fn read_notice_kind(tokens: &[Token], limits: &Limits) -> Result<NoticeKind, Err
     let value = text(tokens, limits.string.max(64))?;
     Ok(match value.as_ref() {
         b"reasoning_dropped" => NoticeKind::ReasoningDropped,
-        b"credential_rejected" => NoticeKind::CredentialRejected,
-        b"account_exhausted" => NoticeKind::AccountExhausted,
+        b"credential_unauthorized" => NoticeKind::CredentialUnauthorized,
+        b"account_limited" => NoticeKind::AccountLimited,
+        b"account_refused" => NoticeKind::AccountRefused,
         b"teardown_aborted" => NoticeKind::TeardownAborted,
         b"forced_exit" => NoticeKind::ForcedExit,
         _ => {
@@ -939,7 +940,27 @@ fn read_agent_exit(tokens: &[Token]) -> Result<AgentExit, Error> {
 fn read_answer_failure(tokens: &[Token], limits: &Limits) -> Result<AnswerFailure, Error> {
     object(tokens)?;
     Ok(AnswerFailure {
-        retry_after_ms: match field(tokens, b"retry_after_ms")? {
+        state: match field(tokens, b"state")? {
+            Some(item) => Some(read_account_state(item, limits)?),
+            None => None,
+        },
+        code: match field(tokens, b"code")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        program: match field(tokens, b"program")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        exit: match field(tokens, b"exit")? {
+            Some(item) => Some(read_agent_exit(item)?),
+            None => None,
+        },
+        detail: match field(tokens, b"detail")? {
+            Some(item) => Some(text(item, limits.content)?),
+            None => None,
+        },
+        reset_ms: match field(tokens, b"reset_ms")? {
             Some(item) => Some(unsigned(item)?),
             None => None,
         },
@@ -981,7 +1002,10 @@ fn read_answer_failure(tokens: &[Token], limits: &Limits) -> Result<AnswerFailur
             None => None,
         },
         account: match field(tokens, b"account")? {
-            Some(item) => Some(unsigned(item)?),
+            Some(item) => Some(match u32::try_from(unsigned(item)?) {
+                Ok(value) => value,
+                Err(_) => return Err(Error::Shape),
+            }),
             None => None,
         },
         which: match field(tokens, b"which")? {
@@ -1534,6 +1558,10 @@ fn read_forced(tokens: &[Token], limits: &Limits) -> Result<Forced, Error> {
 fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
     object(tokens)?;
     let notice = Notice {
+        code: match field(tokens, b"code")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
         exit: match field(tokens, b"exit")? {
             Some([Token::Null]) | None => None,
             Some(item) => Some(read_agent_exit(item)?),
@@ -1549,14 +1577,17 @@ fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
             None => None,
         },
         account: match field(tokens, b"account")? {
-            Some(item) => Some(unsigned(item)?),
+            Some(item) => Some(match u32::try_from(unsigned(item)?) {
+                Ok(value) => value,
+                Err(_) => return Err(Error::Shape),
+            }),
             None => None,
         },
         bytes: match field(tokens, b"bytes")? {
             Some(item) => Some(unsigned(item)?),
             None => None,
         },
-        wait_ms: match field(tokens, b"wait_ms")? {
+        reset_ms: match field(tokens, b"reset_ms")? {
             Some(item) => Some(unsigned(item)?),
             None => None,
         },
@@ -1564,10 +1595,14 @@ fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
     match notice.kind {
         NoticeKind::ForcedExit if notice.forced.is_none() || field(tokens, b"exit")?.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped if notice.bytes.is_none() => Err(Error::Shape),
-        NoticeKind::CredentialRejected | NoticeKind::AccountExhausted if notice.account.is_none() => Err(Error::Shape),
+        NoticeKind::AccountRefused if notice.code.is_none() => Err(Error::Shape),
+        NoticeKind::CredentialUnauthorized | NoticeKind::AccountLimited if notice.account.is_none() => {
+            Err(Error::Shape)
+        }
         NoticeKind::ReasoningDropped
-        | NoticeKind::CredentialRejected
-        | NoticeKind::AccountExhausted
+        | NoticeKind::CredentialUnauthorized
+        | NoticeKind::AccountLimited
+        | NoticeKind::AccountRefused
         | NoticeKind::TeardownAborted
         | NoticeKind::ForcedExit
         | NoticeKind::Unknown(_) => Ok(notice),
@@ -1893,4 +1928,14 @@ fn read_list_clamp(tokens: &[Token], limits: &Limits) -> Result<List<Clamp>, Err
         at = end;
     }
     Ok(values)
+}
+
+fn read_account_state(tokens: &[Token], limits: &Limits) -> Result<AccountState, Error> {
+    let value = text(tokens, limits.string)?;
+    Ok(match value.as_ref() {
+        b"limited" => AccountState::Limited,
+        b"refused" => AccountState::Refused,
+        b"unauthorized" => AccountState::Unauthorized,
+        _ => AccountState::Unknown(value),
+    })
 }

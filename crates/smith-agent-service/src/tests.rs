@@ -1057,3 +1057,5 @@ fn a_refused_completions_detail_is_content() {
         assert_eq!(record, expected, "{}", row.name);
     }
 }
+
+mod accounts;

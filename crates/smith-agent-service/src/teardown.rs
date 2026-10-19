@@ -173,11 +173,12 @@ pub(super) fn shutdown(service: &mut Service) {
             events.notice(
                 service.io_env.now,
                 smith_events::Notice {
+                    code: None,
                     level: smith_events::Level::Warning,
                     kind: smith_events::NoticeKind::TeardownAborted,
                     run: None,
                     account: None,
-                    wait_ms: None,
+                    reset_ms: None,
                     bytes: None,
                     exit: None,
                     forced: None,

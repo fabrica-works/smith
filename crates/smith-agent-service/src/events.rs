@@ -218,11 +218,12 @@ impl Producer {
         self.notice(
             now,
             smith_events::Notice {
+                code: None,
                 level: smith_events::Level::Warning,
                 kind: smith_events::NoticeKind::Unknown(b"not_contained".as_slice().into()),
                 run: None,
                 account: None,
-                wait_ms: None,
+                reset_ms: None,
                 bytes: None,
                 exit: None,
                 forced: None,
@@ -566,8 +567,9 @@ impl Producer {
         notice.run = match notice.kind {
             smith_events::NoticeKind::ForcedExit => self.activation,
             smith_events::NoticeKind::ReasoningDropped
-            | smith_events::NoticeKind::CredentialRejected
-            | smith_events::NoticeKind::AccountExhausted
+            | smith_events::NoticeKind::CredentialUnauthorized
+            | smith_events::NoticeKind::AccountLimited
+            | smith_events::NoticeKind::AccountRefused
             | smith_events::NoticeKind::TeardownAborted
             | smith_events::NoticeKind::Unknown(_) => self.admitted,
         };

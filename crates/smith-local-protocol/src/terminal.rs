@@ -623,9 +623,9 @@ mod failure_tests {
         for (wait, expected) in [
             (
                 Some(skein_lib::Duration::from_secs(60)),
-                b"run failed: account work exhausted, usable again at 10:01\n".as_slice(),
+                b"run failed: account work reached its usage limit, usable again at 10:01\n".as_slice(),
             ),
-            (None, b"run failed: account work exhausted\n".as_slice()),
+            (None, b"run failed: account work reached its usage limit\n".as_slice()),
         ] {
             let failure = host::RunFailure::Model(host::ModelFault::Limited { account: 7, reset: wait });
             assert_eq!(named_failure(failure, b"").as_ref(), expected);
@@ -641,7 +641,7 @@ mod failure_tests {
             attempts: 3,
             report: host::Report::none(),
         });
-        assert_eq!(named_failure(failure, b"").as_ref(), b"account work: the provider rejected its credential\n");
+        assert_eq!(named_failure(failure, b"").as_ref(), b"account work unauthorized\n");
     }
 
     #[test]
@@ -727,15 +727,15 @@ mod failure_tests {
     }
     fn last_line_faults() -> [(host::ModelFault, &'static [u8]); 9] {
         [
-            (host::ModelFault::Limited { account: 7, reset: None }, b"run failed: account work exhausted\n".as_slice()),
+            (
+                host::ModelFault::Limited { account: 7, reset: None },
+                b"run failed: account work reached its usage limit\n".as_slice(),
+            ),
             (
                 host::ModelFault::Refused { account: 7, code: b"quota".as_slice().into() },
-                b"run failed: refused\n".as_slice(),
+                b"run failed: account work: the provider refused it: quota\n".as_slice(),
             ),
-            (
-                host::ModelFault::Unauthorized { account: 7 },
-                b"run failed: account work: the provider rejected its credential\n".as_slice(),
-            ),
+            (host::ModelFault::Unauthorized { account: 7 }, b"run failed: account work unauthorized\n".as_slice()),
             (
                 host::ModelFault::Program { name: b"login".as_slice().into(), exit: Some(2), detail: Box::default() },
                 b"run failed: provider\n".as_slice(),

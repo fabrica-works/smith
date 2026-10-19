@@ -121,11 +121,12 @@ impl View {
         let string = u64::try_from(smith_events::DETAIL_BYTES).ok()?;
         let model = string.checked_mul(4)?;
         let tool = string.checked_mul(2)?;
-        let notice = string.checked_mul(3)?;
+        let notice = string.checked_mul(4)?;
         // Answer class, endpoint, model, completion class/evidence/phase/limit,
-        // and answer which/reason and provider field/code/request are twelve independently bounded strings.
+        // answer which/reason, provider field/code/request, and account state/code/program/detail
+        // are sixteen independently bounded strings.
         let failure = string
-            .checked_mul(12)?
+            .checked_mul(16)?
             .checked_add(string)?
             .checked_add(u64::try_from(size_of::<AnswerFailure>()).ok()?)?;
         let payload = u64::from(text_bytes).max(model).max(tool).max(notice).max(failure);
@@ -217,6 +218,21 @@ fn answer_failure(value: &AnswerFailure) -> AnswerFailure {
         completion = Some(completion_failure(value));
     }
     AnswerFailure {
+        state: match &value.state {
+            Some(smith_events::AccountState::Unknown(text)) => {
+                Some(smith_events::AccountState::Unknown(smith_events::clip(text).into()))
+            }
+            Some(
+                smith_events::AccountState::Limited
+                | smith_events::AccountState::Refused
+                | smith_events::AccountState::Unauthorized,
+            )
+            | None => value.state.clone(),
+        },
+        code: optional(value.code.as_deref()),
+        program: optional(value.program.as_deref()),
+        exit: value.exit,
+        detail: optional(value.detail.as_deref()),
         class: match &value.class {
             smith_events::AnswerClass::Unknown(text) => {
                 smith_events::AnswerClass::Unknown(smith_events::clip(text).into())
@@ -237,7 +253,7 @@ fn answer_failure(value: &AnswerFailure) -> AnswerFailure {
         attempts: value.attempts,
         completion,
         account: value.account,
-        retry_after_ms: value.retry_after_ms,
+        reset_ms: value.reset_ms,
         used: value.used,
         bound: value.bound,
         which: optional(value.which.as_deref()),
@@ -257,6 +273,7 @@ fn notice(value: &Notice) -> Notice {
         });
     }
     Notice {
+        code: optional(value.code.as_deref()),
         level: match &value.level {
             smith_events::Level::Unknown(text) => smith_events::Level::Unknown(smith_events::clip(text).into()),
             smith_events::Level::Info | smith_events::Level::Warning => value.level.clone(),
@@ -266,14 +283,15 @@ fn notice(value: &Notice) -> Notice {
                 smith_events::NoticeKind::Unknown(smith_events::clip(text).into())
             }
             smith_events::NoticeKind::ReasoningDropped
-            | smith_events::NoticeKind::CredentialRejected
-            | smith_events::NoticeKind::AccountExhausted
+            | smith_events::NoticeKind::CredentialUnauthorized
+            | smith_events::NoticeKind::AccountLimited
+            | smith_events::NoticeKind::AccountRefused
             | smith_events::NoticeKind::ForcedExit
             | smith_events::NoticeKind::TeardownAborted => value.kind.clone(),
         },
         run: value.run,
         account: value.account,
-        wait_ms: value.wait_ms,
+        reset_ms: value.reset_ms,
         bytes: value.bytes,
         exit: value.exit,
         forced,

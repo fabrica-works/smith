@@ -159,7 +159,7 @@ fn heap_answer_failure(limits: &Limits) -> Option<u64> {
     length = length.checked_add(heap_completion_failure(limits)?)?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
-    length.checked_add(u64::from(limits.string).checked_mul(2)?)
+    length.checked_add(u64::from(limits.string).checked_mul(5)?)?.checked_add(u64::from(limits.content))
 }
 
 fn heap_field(limits: &Limits) -> Option<u64> {
@@ -334,7 +334,7 @@ fn heap_notice(limits: &Limits) -> Option<u64> {
     let mut length = u64::from(limits.string);
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
-    Some(length)
+    length.checked_add(u64::from(limits.string))
 }
 
 fn heap_block(limits: &Limits) -> Option<u64> {
@@ -459,7 +459,7 @@ fn size_level(_capture: &Capture, limits: &Limits) -> Option<u64> {
 }
 
 fn size_notice_kind(_capture: &Capture, limits: &Limits) -> Option<u64> {
-    u64::from(limits.string.max(19)).checked_mul(6)?.checked_add(2)
+    u64::from(limits.string.max(23)).checked_mul(6)?.checked_add(2)
 }
 
 fn size_role(_capture: &Capture, limits: &Limits) -> Option<u64> {
@@ -580,16 +580,26 @@ fn size_completion_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
 
 fn size_answer_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
-    length = length.checked_add(18)?.checked_add(20)?;
+    length = length.checked_add(12)?.checked_add(20)?;
     length = length.checked_add(8)?.checked_add(20)?;
     length = length.checked_add(9)?.checked_add(20)?;
     length = length.checked_add(9)?.checked_add(size_answer_class(capture, limits)?)?;
     length = length.checked_add(14)?.checked_add(size_completion_failure(capture, limits)?)?;
-    length = length.checked_add(11)?.checked_add(20_u64)?;
+    length = length.checked_add(11)?.checked_add(10_u64)?;
     length = length.checked_add(9)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(10)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(24)?.checked_add(u64::from(limits.string).checked_mul(12)?.checked_add(4)?)?;
     length = length.checked_add(12)?.checked_add(20)?;
+    length = length
+        .checked_add(9 + 8 + 11)?
+        .checked_add(u64::from(limits.string.max(12)).checked_mul(6)?.checked_add(2)?.checked_mul(3)?)?;
+    length = length.checked_add(8 + 31)?;
+    match capture {
+        Capture::None | Capture::Unknown(_) => {}
+        Capture::Calls | Capture::Everything => {
+            length = length.checked_add(10)?.checked_add(u64::from(limits.content).checked_mul(6)?.checked_add(2)?)?;
+        }
+    }
     length.checked_add(16)?.checked_add(39)?.checked_add(28)
 }
 
@@ -905,10 +915,10 @@ fn size_notice(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(9)?.checked_add(size_level(capture, limits)?)?;
     length = length.checked_add(8)?.checked_add(size_notice_kind(capture, limits)?)?;
     length = length.checked_add(7)?.checked_add(20_u64)?;
-    length = length.checked_add(11)?.checked_add(20_u64)?;
-    length = length.checked_add(11)?.checked_add(20_u64)?;
+    length = length.checked_add(11)?.checked_add(10_u64)?;
+    length = length.checked_add(12)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(20_u64)?;
-    Some(length)
+    length.checked_add(8)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)
 }
 
 fn size_block(_capture: &Capture, limits: &Limits) -> Option<u64> {

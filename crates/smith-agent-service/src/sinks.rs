@@ -901,8 +901,9 @@ fn authoritative(event: &Event) -> bool {
         Event::Notice(notice) => match notice.kind {
             smith_events::NoticeKind::TeardownAborted => true,
             smith_events::NoticeKind::ReasoningDropped
-            | smith_events::NoticeKind::CredentialRejected
-            | smith_events::NoticeKind::AccountExhausted
+            | smith_events::NoticeKind::CredentialUnauthorized
+            | smith_events::NoticeKind::AccountLimited
+            | smith_events::NoticeKind::AccountRefused
             | smith_events::NoticeKind::ForcedExit
             | smith_events::NoticeKind::Unknown(_) => false,
         },
@@ -1367,7 +1368,7 @@ pub(crate) mod tests {
     fn drain_until(sinks: &mut Sinks, token: Token, ended: bool) -> Vec<Record> {
         let mut out = Queue::with_capacity(2);
         let mut read = Vec::new();
-        let mut reader = smith_events::Reader::new(&sinks.limits.records).unwrap();
+        let mut reader = smith_events::Reader::with_ceiling(&sinks.limits.records, sinks.line).unwrap();
         for _ in 0_u32..10_000 {
             sinks.down(&mut out);
             match out.pop() {

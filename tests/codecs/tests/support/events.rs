@@ -280,11 +280,12 @@ fn value_level(name: &str, spelling: &str) -> Level {
 
 fn value_notice_kind(name: &str, spelling: &str) -> NoticeKind {
     if name != "NoticeKind" {
-        return NoticeKind::CredentialRejected;
+        return NoticeKind::CredentialUnauthorized;
     }
     match spelling {
-        "credential_rejected" => NoticeKind::CredentialRejected,
-        "account_exhausted" => NoticeKind::AccountExhausted,
+        "credential_unauthorized" => NoticeKind::CredentialUnauthorized,
+        "account_limited" => NoticeKind::AccountLimited,
+        "account_refused" => NoticeKind::AccountRefused,
         _ => panic!("fixture enum spelling"),
     }
 }
@@ -382,7 +383,12 @@ fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
 
 fn value_answer_failure(name: &str, spelling: &str) -> AnswerFailure {
     AnswerFailure {
-        retry_after_ms: None,
+        state: None,
+        code: None,
+        program: None,
+        exit: None,
+        detail: None,
+        reset_ms: None,
         used: None,
         bound: None,
         dropped: if name == "AnswerClass" && spelling == "cancelled" { Some(false) } else { None },
@@ -393,7 +399,7 @@ fn value_answer_failure(name: &str, spelling: &str) -> AnswerFailure {
         attempts: None,
         class: value_answer_class(name, spelling),
         completion: Some(value_completion_failure(name, spelling)),
-        account: Some(u64::MAX),
+        account: Some(u32::MAX),
         which: Some(Box::from("sample\n\"🌍".as_bytes())),
         reason: Some(Box::from("sample\n\"🌍".as_bytes())),
     }
@@ -617,12 +623,13 @@ fn value_check_completed(_name: &str, _spelling: &str) -> CheckCompleted {
 
 fn value_notice(name: &str, spelling: &str) -> Notice {
     Notice {
+        code: None,
         level: value_level(name, spelling),
         kind: value_notice_kind(name, spelling),
         run: Some(u64::MAX),
-        account: Some(u64::MAX),
+        account: Some(u32::MAX),
         bytes: None,
-        wait_ms: Some(u64::MAX),
+        reset_ms: Some(u64::MAX),
         exit: None,
         forced: None,
     }
@@ -1508,8 +1515,8 @@ fn samples_13() -> Vec<(&'static str, Record, Capture)> {
             Capture::Everything,
         ),
         (
-            "notice_kind_credential_rejected",
-            Record { t_ms: u64::MAX, event: Event::Notice(value_notice("NoticeKind", "credential_rejected")) },
+            "notice_kind_credential_unauthorized",
+            Record { t_ms: u64::MAX, event: Event::Notice(value_notice("NoticeKind", "credential_unauthorized")) },
             Capture::Everything,
         ),
     ]
@@ -1518,8 +1525,8 @@ fn samples_13() -> Vec<(&'static str, Record, Capture)> {
 fn samples_14() -> Vec<(&'static str, Record, Capture)> {
     vec![
         (
-            "notice_kind_account_exhausted",
-            Record { t_ms: u64::MAX, event: Event::Notice(value_notice("NoticeKind", "account_exhausted")) },
+            "notice_kind_account_limited",
+            Record { t_ms: u64::MAX, event: Event::Notice(value_notice("NoticeKind", "account_limited")) },
             Capture::Everything,
         ),
         (
@@ -1575,6 +1582,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         response.tool_choice = choice;
         samples.push((name, Record { t_ms: u64::MAX, event: Event::ResponseStarted(response) }, Capture::Everything));
     }
+    samples.extend(accounts::samples());
     samples.extend(accounts_samples());
     samples.extend(failure_samples());
     samples.extend(end_samples());
@@ -1940,7 +1948,12 @@ fn end_samples() -> Vec<(&'static str, Record, Capture)> {
                     unread: 0,
                     status: Status::Failed,
                     failure: Some(AnswerFailure {
-                        retry_after_ms: None,
+                        state: None,
+                        code: None,
+                        program: None,
+                        exit: None,
+                        detail: None,
+                        reset_ms: None,
                         used: None,
                         bound: None,
                         endpoint: None,
@@ -1983,11 +1996,12 @@ fn end_samples() -> Vec<(&'static str, Record, Capture)> {
         Record {
             t_ms: 0,
             event: Event::Notice(Notice {
+                code: None,
                 level: Level::Warning,
                 kind: NoticeKind::TeardownAborted,
                 run: None,
                 account: None,
-                wait_ms: None,
+                reset_ms: None,
                 bytes: None,
                 exit: None,
                 forced: None,
@@ -2012,11 +2026,12 @@ fn forced_exit_samples() -> Vec<(&'static str, Record, Capture)> {
             Record {
                 t_ms: 0,
                 event: Event::Notice(Notice {
+                    code: None,
                     level: Level::Warning,
                     kind: NoticeKind::ForcedExit,
                     run: Some(1),
                     account: None,
-                    wait_ms: None,
+                    reset_ms: None,
                     bytes: None,
                     exit,
                     forced: Some(forced),
@@ -2034,11 +2049,12 @@ fn reasoning_dropped_sample() -> (&'static str, Record, Capture) {
         Record {
             t_ms: u64::MAX,
             event: Event::Notice(Notice {
+                code: None,
                 level: Level::Warning,
                 kind: NoticeKind::ReasoningDropped,
                 run: Some(u64::MAX),
                 account: None,
-                wait_ms: None,
+                reset_ms: None,
                 bytes: Some(u64::MAX),
                 exit: None,
                 forced: None,
@@ -2050,19 +2066,28 @@ fn reasoning_dropped_sample() -> (&'static str, Record, Capture) {
 
 fn answer_field_samples() -> Vec<(&'static str, Record, Capture)> {
     let mut samples = Vec::new();
-    for (name, which, used, bound, account, retry_after_ms) in [
-        ("run_account_exhausted", None, None, None, Some(17), Some(73)),
-        ("run_account_exhausted_unknown_wait", None, None, None, Some(17), None),
-        ("run_budget_turns_fields", Some("turns"), Some(8), Some(8), None, None),
-        ("run_budget_spend_fields", Some("spend"), Some(19), Some(17), None, None),
-        ("run_budget_time_fields", Some("time"), Some(1073), Some(1000), None, None),
+    for (name, which, used, bound, account, reset_ms, state) in [
+        ("run_account_limited", None, None, None, Some(17), Some(73), Some(smith_events::AccountState::Limited)),
+        (
+            "run_account_limited_unknown_reset",
+            None,
+            None,
+            None,
+            Some(17),
+            None,
+            Some(smith_events::AccountState::Limited),
+        ),
+        ("run_budget_turns_fields", Some("turns"), Some(8), Some(8), None, None, None),
+        ("run_budget_spend_fields", Some("spend"), Some(19), Some(17), None, None, None),
+        ("run_budget_time_fields", Some("time"), Some(1073), Some(1000), None, None, None),
     ] {
         let mut run = value_run_completed("Status", "failed");
         let failure = run.failure.as_mut().expect("failed fixture");
         failure.class = if account.is_some() { AnswerClass::Model } else { AnswerClass::Budget };
         failure.completion = None;
         failure.account = account;
-        failure.retry_after_ms = retry_after_ms;
+        failure.reset_ms = reset_ms;
+        failure.state = state;
         failure.which = which.map(|which| Box::from(which.as_bytes()));
         failure.reason = None;
         failure.used = used;
@@ -2155,3 +2180,6 @@ fn accounts_samples() -> Vec<(&'static str, Record, Capture)> {
     }
     samples
 }
+
+#[path = "events/accounts.rs"]
+mod accounts;

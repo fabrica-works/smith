@@ -58,13 +58,18 @@ fn completion_failure() -> smith_events::CompletionFailure {
 
 fn answer_failure() -> smith_events::AnswerFailure {
     smith_events::AnswerFailure {
+        state: None,
+        code: None,
+        program: None,
+        exit: None,
+        detail: None,
         class: smith_events::AnswerClass::Unknown(vec![b'c'; 64].into()),
         endpoint: Some(vec![b'e'; 64].into()),
         model: Some(vec![b'm'; 64].into()),
         attempts: Some(1),
         completion: Some(completion_failure()),
         account: Some(1),
-        retry_after_ms: Some(20),
+        reset_ms: Some(20),
         used: Some(2),
         bound: Some(1),
         which: Some(vec![b'w'; 64].into()),
@@ -137,11 +142,12 @@ fn shown() -> Vec<Record> {
         Record {
             t_ms: 0,
             event: Event::Notice(smith_events::Notice {
+                code: None,
                 level: smith_events::Level::Unknown(vec![b'l'; 64].into()),
                 kind: smith_events::NoticeKind::Unknown(vec![b'k'; 64].into()),
                 run: Some(1),
                 account: None,
-                wait_ms: None,
+                reset_ms: None,
                 bytes: Some(10),
                 exit: None,
                 forced: Some(smith_events::Forced::Unknown(vec![b'f'; 64].into())),

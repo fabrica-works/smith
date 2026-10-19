@@ -377,10 +377,12 @@ pub enum Level {
 pub enum NoticeKind {
     /// The service reports one reasoning item omitted by the model's opt-in.
     ReasoningDropped,
-    /// The `credential_rejected` classification.
-    CredentialRejected,
-    /// The `account_exhausted` classification.
-    AccountExhausted,
+    /// The provider refused the credential.
+    CredentialUnauthorized,
+    /// The account reached its usage limit.
+    AccountLimited,
+    /// The provider refused the account what the run asked.
+    AccountRefused,
     /// The host had to signal its agent to end its tree.
     ForcedExit,
     /// A termination signal interrupted the service's teardown after its answer.
@@ -633,9 +635,15 @@ pub struct AnswerFailure {
     pub model: Option<Box<[u8]>>,
     pub attempts: Option<u64>,
     pub completion: Option<CompletionFailure>,
-    pub account: Option<u64>,
+    pub account: Option<u32>,
     /// Remaining provider cooldown measured when the run answers, in milliseconds.
-    pub retry_after_ms: Option<u64>,
+    pub reset_ms: Option<u64>,
+    pub state: Option<AccountState>,
+    pub code: Option<Box<[u8]>>,
+    pub program: Option<Box<[u8]>>,
+    pub exit: Option<AgentExit>,
+    /// Program diagnostic content, governed by content capture.
+    pub detail: Option<Box<[u8]>>,
     /// Budget usage and ceiling in turns, host spend units, or run wall milliseconds.
     pub used: Option<u64>,
     pub bound: Option<u64>,
@@ -647,6 +655,19 @@ pub struct AnswerFailure {
     pub ended: Option<AgentExit>,
     /// Durable turn sequence the store could not keep.
     pub turn: Option<u64>,
+}
+
+/// An account's state when a model's answer failed for it.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum AccountState {
+    /// The account reached its usage limit.
+    Limited,
+    /// The provider refused the account what the run asked.
+    Refused,
+    /// The account lost its authorization.
+    Unauthorized,
+    /// A future account state retained by this reader.
+    Unknown(Box<[u8]>),
 }
 
 /// The process terminal supplied by the host kit for an unanswering agent.
@@ -1039,8 +1060,9 @@ pub struct Notice {
     pub level: Level,
     pub kind: NoticeKind,
     pub run: Option<u64>,
-    pub account: Option<u64>,
-    pub wait_ms: Option<u64>,
+    pub account: Option<u32>,
+    pub reset_ms: Option<u64>,
+    pub code: Option<Box<[u8]>>,
     /// Actual size of the reasoning item omitted from history, in bytes.
     pub bytes: Option<u64>,
     pub exit: Option<AgentExit>,
@@ -1078,6 +1100,7 @@ pub struct Record {
 
 /// A record body sent by a stream producer.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[expect(clippy::large_enum_variant, reason = "a record is built once and written directly")]
 pub enum Event {
     /// The `budget` record.
     Budget(BudgetStanding),

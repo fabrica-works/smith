@@ -25,11 +25,13 @@ pub(super) fn run(
                 });
                 value.model = Some(clip(&model.model).into());
                 if let Some(account) = model.account {
-                    value.account = Some(u64::from(account));
+                    value.account = Some(account);
                 }
             }
             match value.completion.as_ref().expect("completion failure").class {
-                FailureClass::Unauthorized if value.account.is_some() => {}
+                FailureClass::Unauthorized if value.account.is_some() => {
+                    value.state = Some(smith_events::AccountState::Unauthorized);
+                }
                 FailureClass::Unauthorized
                 | FailureClass::Overloaded
                 | FailureClass::RateLimited
@@ -159,7 +161,12 @@ pub(super) fn end(text: &mut Shown, ended: host::End) {
 
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     let mut result = AnswerFailure {
-        retry_after_ms: None,
+        state: None,
+        code: None,
+        program: None,
+        exit: None,
+        detail: None,
+        reset_ms: None,
         used: None,
         bound: None,
         dropped: None,
@@ -232,8 +239,9 @@ fn failed(why: &host::RunFailure) -> AnswerFailure {
             }
             host::ModelFault::Limited { account, reset } => {
                 let mut result = failure(AnswerClass::Model, None);
-                result.account = Some(u64::from(*account));
-                result.retry_after_ms = match reset {
+                result.account = Some(*account);
+                result.state = Some(smith_events::AccountState::Limited);
+                result.reset_ms = match reset {
                     Some(reset) => reset.as_nanos().checked_div(1_000_000),
                     None => None,
                 };
@@ -242,15 +250,18 @@ fn failed(why: &host::RunFailure) -> AnswerFailure {
             host::ModelFault::Provider | host::ModelFault::Program { .. } => {
                 failure(AnswerClass::Model, Some(b"provider"))
             }
-            // smith 05.2 gives these faults their event vocabulary.
-            host::ModelFault::Refused { .. } | host::ModelFault::Declined => {
-                failure(AnswerClass::Model, Some(b"refused"))
+            host::ModelFault::Refused { account, code } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.account = Some(*account);
+                result.state = Some(smith_events::AccountState::Refused);
+                result.code = Some(code.clone());
+                result
             }
+            host::ModelFault::Declined => failure(AnswerClass::Model, Some(b"refused")),
             host::ModelFault::Unauthorized { account } => {
                 let mut result = failure(AnswerClass::Model, None);
-                result.account = Some(u64::from(*account));
-                result.completion =
-                    Some(completion(host::CompletionFailure::Unauthorized, host::CompletionEvidence::Unsent));
+                result.account = Some(*account);
+                result.state = Some(smith_events::AccountState::Unauthorized);
                 result
             }
             host::ModelFault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),

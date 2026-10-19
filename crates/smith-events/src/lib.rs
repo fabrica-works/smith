@@ -18,8 +18,8 @@ mod write;
 pub use limits::{Limits, largest_record, largest_record_for, largest_size, worst_case};
 pub use read::{Line, Reader, read, read_with_ceiling};
 pub use records::{
-    Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding, Capture,
-    CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion,
+    AccountState, Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding,
+    Capture, CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion,
     CompletionFailure, Containment, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
     Cpu, Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase,
     Family, Field, Forced, Form, JobEnded, Level, LimitValue, Loss, Message, MessageRead, MessageReceived,

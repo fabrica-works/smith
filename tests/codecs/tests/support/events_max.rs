@@ -99,7 +99,12 @@ fn max_completion_failure(limits: &smith_events::Limits) -> CompletionFailure {
 
 fn max_answer_failure(limits: &smith_events::Limits) -> AnswerFailure {
     AnswerFailure {
-        retry_after_ms: Some(u64::MAX),
+        state: Some(smith_events::AccountState::Unknown(payload(limits.string))),
+        code: Some(payload(limits.string)),
+        program: Some(payload(limits.string)),
+        exit: Some(smith_events::AgentExit::Signal(u64::MAX)),
+        detail: Some(payload(limits.content)),
+        reset_ms: Some(u64::MAX),
         used: Some(u64::MAX),
         bound: Some(u64::MAX),
         endpoint: Some(payload(limits.string)),
@@ -110,7 +115,7 @@ fn max_answer_failure(limits: &smith_events::Limits) -> AnswerFailure {
         turn: Some(u64::MAX),
         class: AnswerClass::Unknown(payload(limits.string)),
         completion: Some(max_completion_failure(limits)),
-        account: Some(u64::MAX),
+        account: Some(u32::MAX),
         which: Some(payload(limits.string)),
         reason: Some(payload(limits.string)),
     }
@@ -363,12 +368,13 @@ fn max_check_completed(limits: &smith_events::Limits) -> CheckCompleted {
 
 fn max_notice(limits: &smith_events::Limits) -> Notice {
     Notice {
+        code: Some(payload(limits.string)),
         level: Level::Unknown(payload(limits.string)),
         kind: NoticeKind::Unknown(payload(limits.string)),
         run: Some(u64::MAX),
-        account: Some(u64::MAX),
+        account: Some(u32::MAX),
         bytes: Some(u64::MAX),
-        wait_ms: Some(u64::MAX),
+        reset_ms: Some(u64::MAX),
         exit: Some(smith_events::AgentExit::Signal(u64::MAX)),
         forced: Some(smith_events::Forced::Unknown(payload(limits.string))),
     }

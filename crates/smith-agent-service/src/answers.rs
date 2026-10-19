@@ -140,7 +140,12 @@ pub fn accepted(outcome: &run::outcome::Declared, capture: Capture) -> RunResult
 
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     AnswerFailure {
-        retry_after_ms: None,
+        state: None,
+        code: None,
+        program: None,
+        exit: None,
+        detail: None,
+        reset_ms: None,
         used: None,
         bound: None,
         dropped: None,
@@ -220,16 +225,23 @@ fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
             }
             run::Fault::Limited { account, reset_at } => {
                 let mut result = failure(AnswerClass::Model, None);
-                result.account = Some(u64::from(account));
-                result.retry_after_ms = match reset_at {
+                result.account = Some(account);
+                result.state = Some(smith_events::AccountState::Limited);
+                result.reset_ms = match reset_at {
                     Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
                     None => None,
                 };
                 result
             }
             run::Fault::Provider => failure(AnswerClass::Model, Some(b"provider")),
-            // smith 05.2 replaces version 3's nearest class for account refusal.
-            run::Fault::Refused { .. } | run::Fault::Declined => failure(AnswerClass::Model, Some(b"refused")),
+            run::Fault::Refused { account, code } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.account = Some(account);
+                result.state = Some(smith_events::AccountState::Refused);
+                result.code = Some(code);
+                result
+            }
+            run::Fault::Declined => failure(AnswerClass::Model, Some(b"refused")),
             run::Fault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             run::Fault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
@@ -560,7 +572,7 @@ mod tests {
             };
             let record = answer_record(meta, &answer, Capture::None);
             let failure = record.failure.expect("failed answer");
-            assert_eq!((failure.account, failure.retry_after_ms, failure.completion), (Some(23), expected, None));
+            assert_eq!((failure.account, failure.reset_ms, failure.completion), (Some(23), expected, None));
         }
     }
 

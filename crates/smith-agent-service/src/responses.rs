@@ -1740,7 +1740,12 @@ pub(crate) mod tests {
 
     fn unlocated_failure(completion: CompletionFailure) -> smith_events::AnswerFailure {
         smith_events::AnswerFailure {
-            retry_after_ms: None,
+            state: None,
+            code: None,
+            program: None,
+            exit: None,
+            detail: None,
+            reset_ms: None,
             used: None,
             bound: None,
             dropped: None,

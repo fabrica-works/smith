@@ -2062,6 +2062,14 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             service.llm.from_domain(&service.llm_env, request, &mut service.llm_events, &mut service.llm_below);
         }
         domain::Request::Unauthorized { grant } => {
+            account_notice(
+                service,
+                service.domain_env.now,
+                smith_events::NoticeKind::CredentialUnauthorized,
+                grant.account,
+                None,
+                None,
+            );
             let token = service.next_send();
             if service
                 .channel
@@ -2074,6 +2082,14 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             }
         }
         domain::Request::Limited { account, reset } => {
+            account_notice(
+                service,
+                service.domain_env.now,
+                smith_events::NoticeKind::AccountLimited,
+                account,
+                reset,
+                None,
+            );
             let token = service.next_send();
             if service
                 .channel
@@ -2086,6 +2102,14 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             }
         }
         domain::Request::Refused { account, code, reason } => {
+            account_notice(
+                service,
+                service.domain_env.now,
+                smith_events::NoticeKind::AccountRefused,
+                account,
+                None,
+                Some(code.clone()),
+            );
             let token = service.next_send();
             if service
                 .channel
@@ -2511,9 +2535,39 @@ pub const fn failure(service: &Service) -> Option<Failure> {
     service.failure
 }
 
+#[expect(clippy::manual_map, reason = "the strict subset requires explicit matches instead of closures")]
+fn account_notice(
+    service: &mut Service,
+    now: Time,
+    kind: smith_events::NoticeKind,
+    account: u32,
+    reset: Option<Duration>,
+    code: Option<Box<[u8]>>,
+) {
+    if let Some(events) = &mut service.events {
+        events.notice(
+            now,
+            smith_events::Notice {
+                level: smith_events::Level::Warning,
+                kind,
+                run: None,
+                account: Some(account),
+                reset_ms: match reset {
+                    Some(reset) => Some(reset.as_nanos() / 1_000_000),
+                    None => None,
+                },
+                code,
+                bytes: None,
+                exit: None,
+                forced: None,
+            },
+        );
+    }
+}
+
 #[cfg(test)]
 #[expect(clippy::wildcard_enum_match_arm, reason = "test assertions describe unexpected events")]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use skein_lib::Duration;
     use teardown::{Answer, Close};
@@ -2936,6 +2990,26 @@ mod tests {
         assert!(work_pending(&service, Time::ZERO), "the last close wakes the phase after reclaim");
         teardown::advance(&mut service);
         assert_eq!(done(&service), Some(true));
+    }
+
+    pub(crate) fn account_service() -> Service {
+        let mut agent = event_service();
+        agent.channel = service().channel;
+        agent
+            .events
+            .as_mut()
+            .unwrap()
+            .sinks()
+            .add(crate::sinks::Destination::Trace, Token::new(400), crate::sinks::Delivery::Complete)
+            .unwrap();
+        agent
+    }
+
+    pub(crate) fn account_request(agent: &mut Service, request: domain::Request) -> smith_events::Record {
+        domain_request(agent, request);
+        let records = crate::sinks::tests::drain_ready(agent.events.as_mut().unwrap().sinks(), Token::new(400));
+        assert_eq!(records.len(), 1);
+        records.into_iter().next().unwrap()
     }
 
     fn event_service() -> Service {
