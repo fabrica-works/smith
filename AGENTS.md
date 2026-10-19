@@ -1,16 +1,17 @@
 # Agent guidance for smith
 
-- Land on main with `land` (skein's `docs/foundation/development.md`,
-  section 9): it rebases on `origin/main`, runs `scripts/check.sh`, the
-  checks in `docs/development/workflow.md`, section 1, and pushes. A
+- Land on main with `land`: it rebases on `origin/main`, runs
+  `scripts/check.sh`, the checks in `docs/development/workflow.md`,
+  section 1, and pushes. A
   Markdown-only change lands with `land --docs`, as that document
   specifies. Rust doc comments do not skip the checks.
 - The focused suite takes at most 15 seconds and the fuzzy suite at most
   60 seconds. Measure worlds on an idle machine with the workflow's
   serial profile; keep additions within those budgets.
 - smith follows skein's `docs/foundation/programming-model.md`,
-  `testing-strategy.md` and `notes.md`. Read them before writing code.
-  Source citations use those file names and their sections.
+  `testing-strategy.md` and `notes.md`. Read them before writing code:
+  the first two are rules, and a departure needs its reason, stated in
+  the design or the commit. Source citations use those file names and their sections.
 - smith's contracts are in `docs/design/domain/`. Code cites them as
   `domain/<file>.md` with a specific section, at module or type level,
   never stamped on every field. Module docs say what state is kept, what
