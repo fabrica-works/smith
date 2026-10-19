@@ -72,9 +72,13 @@ Scope: oauth.md 5 (the fake's additions, the ID token aside), 2.1 (the
 Needs: skein 05's version 3 record, terms, issued id and `Revoke`.
 Files: `testing/skein-fake-oauth` (`src/lib.rs`, `src/terms.rs` and
   `src/tests.rs`, both new, `README.md`); `testing/skein-fake-peers`
-  (`src/oauth.rs`: `Peer::deliver`, `fn redirect` and its test);
-  `tests/oauth` (`src/lib.rs`, `tests/terms.rs` (new), `tests/world.rs`,
-  `tests/memory.rs`, `tests/fuzzy_world.rs`). The `Config` and `Limits`
+  (`src/oauth.rs`: `Peer::deliver`, `fn redirect` and its test, `pub fn
+  worst_case`); `tests/oauth` (`src/lib.rs`, `tests/terms.rs` (new),
+  `tests/world.rs`, `tests/memory.rs`, `tests/fuzzy_world.rs`):
+  `src/lib.rs` also takes from `tests/world.rs` the fixtures `response`,
+  `time`, `wall`, `registration` and `error`, which 05.2 leaves there and
+  `tests/terms.rs` uses; move any further one it uses the same way, and
+  list it in the commit body. The `Config` and `Limits`
   literals, in skein: `tests/oauth-accounts/src/` (`world.rs`:
   `fn issuer`, `fn protocol`; `sign_in/protocol.rs`: `fn protocol`;
   `sign_in/issuer.rs`: `fn make`),
@@ -109,7 +113,14 @@ Shape: `fake::Config.terms: Option<fake::Terms>` (new; the sketches).
   (new) bounds the names kept, each within `document.string_bytes`, and
   widens the fields an authorization or form may hold from 10 to 10 +
   `carried`; `worst_case` counts both, and the terms' URLs within
-  `uri_bytes`. Fixture 8, in `tests/oauth/src/lib.rs`' `fake_limits()`;
+  `uri_bytes`. `Issuer::new` refuses terms with more than `ISSUED` (a
+  const, 4) issued ids, an issued id past `document.string_bytes` or a
+  terms URL past `uri_bytes`; `fake::worst_case` counts them at those
+  caps. skein-fake-peers' `oauth::worst_case` raises its `http.response`
+  floor by `3 * document.string_bytes + 11`, the `&client_id=` that `fn
+  redirect` adds, so `Peer::deliver`'s `expect` holds; a fixture whose
+  `http.response` the new floor refuses rises to it, listed in the
+  commit body. Fixture 8, in `tests/oauth/src/lib.rs`' `fake_limits()`;
   smallest valid 0. `terms.rs` holds the terms' checks and the carried
   names, so `lib.rs` (531) stays under 800. Breaks, each pattern taking
   `client_id`: `Request::Redirect` in `tests/oauth/src/lib.rs`
@@ -117,10 +128,10 @@ Shape: `fake::Config.terms: Option<fake::Terms>` (new; the sketches).
   (`a_localhost_registration_signs_in_through_its_exact_redirect`),
   `tests/oauth-accounts/src/sign_in/protocol.rs` (`fn protocol`) and
   `Peer::deliver`. Downstream, the `Config` literals take `terms: None`
-  and the `Limits` literals `carried: 0`. With them `scenario` in
-  `tests/oauth/tests/fuzzy_world.rs` passes 100 lines (clippy's
-  `too_many_lines`): its `plan` match moves into a
-  `token_plan(mode, delay)` helper. `tests/oauth/src/lib.rs` gains
+  and the `Limits` literals `carried: 0`. `scenario` in
+  `tests/oauth/tests/fuzzy_world.rs` is 93 lines on skein `887302f8`,
+  under clippy's `too_many_lines` (100): only if clippy flags it does its
+  `plan` match move into a `token_plan(mode, delay)` helper. `tests/oauth/src/lib.rs` gains
   `issued(ids)` (the one `fake::Terms` literal there; revocation
   endpoint `https://issuer.example/revoke`, a test sets a field by
   assignment), `issuer_with(public, terms)`, `issuing_registration()`
@@ -219,12 +230,17 @@ Shape: `key.rs` holds `PKCS8`, a 2048-bit RSA key's PKCS#8 DER as
   `openssl pkey` lines that made them in its doc.
   `fake::Terms.openid: Option<fake::OpenId>` (new; the sketches); 06.1's
   `Terms` literals, in `src/tests.rs` and `tests/oauth/src/lib.rs`
-  (`issued`), take `openid: None`. To a 2xx answer to an
+  (`issued`), take `openid: None`. `Issuer::new` refuses an `OpenId`
+  whose `issuer` or `key_set_url` passes `uri_bytes`, or whose `subject`
+  passes `document.string_bytes`; `fake::worst_case` counts them at
+  those caps. To a 2xx answer to an
   authorization-code exchange whose plan's `id_token` is `None`, the
   fake adds an ID token as it answers: the header `alg` `RS256`, `typ`
   `JWT` and, where `header_kid`, `kid`; the claims `iss` (the issuer),
   `aud` (the client id the exchange carried), `exp` (the POST's wall
-  plus `lifetime`, in seconds), `nonce` (the code's) and `sub`
+  plus `lifetime`, in seconds: `Wall::as_secs` and
+  `Duration::as_nanos` over 1,000,000,000, by checked arithmetic, as
+  `Duration` has no `as_secs`), `nonce` (the code's) and `sub`
   (`subject`); signed through
   `rustls::crypto::ring::sign::any_supported_type` over the decoded key
   and its signer for `SignatureScheme::RSA_PKCS1_SHA256`, and written
@@ -260,15 +276,19 @@ Test shape: unit, `src/tests.rs` (06.1's helpers, and
   `the_documents_name_the_issuer_and_its_key`;
   `a_get_for_another_endpoint_is_not_found`;
   `a_scripted_id_token_is_answered_unchanged`. Reference test, the
-  signing kind (imports `skein_lib::base64::{Alphabet, decode}` and
-  `skein_tls::verify_rs256`):
+  signing kind (imports `skein_lib::base64::{Alphabet, decode}`,
+  `skein_lib::bytes::{find, find_from}` and `skein_tls::verify_rs256`;
+  the root `clippy.toml` disallows `Iterator::rposition`, and
+  `arithmetic_side_effects` is denied):
   ```rust
   #[test]
   fn the_signature_verifies_against_the_published_key() {
       let token = id_token(&mut issuer(openid_terms(None)));
-      let cut = token.iter().rposition(|byte| *byte == b'.').expect("three parts");
+      let first = find(&token, b".").expect("a header");
+      let cut = find_from(&token, b".", first.checked_add(1).expect("in range")).expect("three parts");
       let raw = |text: &[u8]| decode(Alphabet::Url, text, 1024).expect("base64url");
-      let (input, signature) = (&token[..cut], raw(&token[cut + 1..]));
+      let (input, dotted) = token.split_at(cut);
+      let signature = raw(dotted.strip_prefix(b".").expect("a dot"));
       let (n, e) = (raw(key::MODULUS.as_bytes()), raw(b"AQAB"));
       assert!(verify_rs256(&n, &e, input, &signature));
       assert!(!verify_rs256(&n, &e, b"other", &signature));
@@ -306,10 +326,10 @@ pub struct Terms {
 impl Issuer {
     /// The names beyond OAuth's own that the last request carried, in order.
     #[must_use]
-    pub fn carried(&self) -> &[Box<[u8]>] { todo!() }
+    pub fn carried(&self) -> &[Box<[u8]>] { &[] }
     /// The access tokens the queued plans grant, in answer order; none is minted.
     #[must_use]
-    pub fn granted(&self) -> Box<[Box<[u8]>]> { todo!() }
+    pub fn granted(&self) -> Box<[Box<[u8]>]> { Box::default() }
 }
 
 // skein_fake_oauth (06.2)

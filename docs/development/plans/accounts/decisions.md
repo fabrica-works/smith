@@ -300,6 +300,16 @@ commits is this plan's.
   `locked` after it is the owner's to release, and the driver answers
   none.
 
+## Rulings
+
+101. **skein 06's Shapes against main** (ready check of skein-06.1).
+     skein 06's ready check, against skein `887302f8`, corrected `skein/06-fake-issuer.md`:
+     - 06.1 Files: `tests/oauth/src/lib.rs` also takes `response`, `time`, `wall`, `registration` and `error` from `tests/oauth/tests/world.rs` (05.2 moves only `issuer`, `sign_in`, `success`, `client_step`, `fake_step`, `record` and the limits); skein-fake-peers' `oauth::worst_case` joins the Files.
+     - 06.1 Shape: `Issuer::new` bounds the issued ids (at most `ISSUED`, 4, each within `document.string_bytes`) and the terms' URLs (`uri_bytes`); the peer's `http.response` floor rises by `3 * document.string_bytes + 11` for the redirect's `&client_id=`.
+     - 06.1: `scenario` in `tests/oauth/tests/fuzzy_world.rs` is 93 lines; its `token_plan` helper only if clippy's `too_many_lines` flags it.
+     - 06.2: `OpenId`'s `issuer`, `key_set_url` (`uri_bytes`) and `subject` (`document.string_bytes`) bounded by `Issuer::new`; `exp` from `Wall::as_secs` and `Duration::as_nanos`; the reference test finds the dots with `skein_lib::bytes::{find, find_from}`, without `rposition` or `cut + 1`; the sketches' bodies are not `todo!()`.
+     Not run: clippy on the sketches and the suites, the build lane being held by gates; the re-check at 06's start runs them.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
