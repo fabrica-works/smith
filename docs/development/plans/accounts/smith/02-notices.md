@@ -30,8 +30,9 @@ on `origin/main`; 02.2 also waits for smith 04.1's grant value union.
 
 ## Choices
 
-- The model's own refusal is `Declined`, keeping its wire tag and the
-  word `refused`; the account's is `Refused { account, code }`; the
+- The model's own refusal is `Declined`, keeping its wire tag 3 (its
+  arm named `declined` in version 4's schema, smith 01.2) and the event
+  vocabulary's word `refused`; the account's is `Refused { account, code }`; the
   reset is optional (decision 3; design question 7).
 - The run's faults carry what the agent raises: limited, refused,
   declined and the completion's report. The program's two (a login
@@ -52,11 +53,11 @@ on `origin/main`; 02.2 also waits for smith 04.1's grant value union.
   the failure's detail, never in a fact or a turn.
 - Files over 800 lines grow by at most ~100 per increment
   (code-organization.md, 8): in production `session.rs` (3665),
-  agent-service's `service.rs` (2920), `run.rs` (2584), local-domain's
-  `domain.rs` (2115), `responses.rs` (1855), `sinks.rs` (1511),
-  host-domain's `domain.rs` (1480), local-service's `process.rs`
-  (1420), domain-run's `boundary.rs` (1086), `route.rs` (1076) and
-  protocol-channel's `translate.rs` (871); the listed tests likewise.
+  agent-service's `service.rs` (2968), `run.rs` (2584), local-domain's
+  `domain.rs` (2115), `responses.rs` (1870), `sinks.rs` (1513),
+  host-domain's `domain.rs` (1496), local-service's `process.rs`
+  (1423), domain-run's `boundary.rs` (1086), `route.rs` (1076) and
+  protocol-channel's `translate.rs` (873); the listed tests likewise.
 
 ## Increments
 
@@ -90,7 +91,8 @@ Shape: the session's `llm::Failure` gains `Refused` and `Unsupported`,
   and `Exhausted`'s `retry_after` is an `Option<Duration>`; `llm::Report
   { code, request, field }` (new) holds skein's report, each part empty
   when not given: `Report::none()` builds it from three
-  `Box::default()`s, for `disallowed_macros` bans `Default`. Neither new
+  `Box::default()`s, for `disallowed_macros` bans `Default`, and is
+  `#[must_use]`, as `run::Report::none()` is. Neither new
   class is retried (`backoff` refuses them) and both end the session
   `Failed`. `failure.rs` maps skein's classes one to one, ending smith
   01.3's `failed()` mapping; the domain's `Event::Failed` gains `report`
@@ -124,8 +126,9 @@ Shape: the session's `llm::Failure` gains `Refused` and `Unsupported`,
   invalid. Until 02.3, inline-agent maps `Limited` to the host's
   `Exhausted`, `Declined` and `Refused` to its `Refused`, the classes to
   `Invalid`. Downstream: `run::Failure` loses `Copy`; its use in
-  `crates/temper-engine-smith/src/finish.rs` (a match by pattern) is the
-  repository downstream of jig's repin (decision 16).
+  `crates/temper-engine-smith/src/finish.rs` (a match by pattern) is
+  expected to compile unchanged, which the repin of the repository
+  downstream of jig checks (decision 16).
 Test shape: unit tests each under 20 ms. In the session's `tests.rs`:
   `a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried`
   gains rows refused and unsupported, one attempt each (`Harness`). In
@@ -153,22 +156,33 @@ Test shape: unit tests each under 20 ms. In the session's `tests.rs`:
   (`limits()`, `prompt()`, `credential`, `adapter::prepare`):
   `skeins_report_reaches_the_session_whole`, rows code, request id,
   field, none. Channel world, `stories.rs` (`CEILINGS`,
-  `smith_charter::CEILINGS`), a new kind of story, the failure as
-  written at the answer, read by smith 01.2's accessors:
+  `smith_charter::CEILINGS`), beside
+  `a_model_failure_keeps_transport_evidence_and_cooldown`, which writes
+  a failure at the answer by `answer_record` the same way, read by smith
+  01.2's accessors:
   `a_limited_account_is_written_with_its_reset_at_the_answer` and
   `a_refused_account_is_written_with_its_code` (rows a code, an empty
   one). Reference test:
   ```rust
   #[test]
   fn a_limited_account_is_written_with_its_reset_at_the_answer() {
-      let now = Time::from_nanos(20_000_000);
-      for (reset_at, said) in [(Some(Time::from_nanos(100_000_000)), Some(Duration::from_nanos(80_000_000))), (Some(now), Some(Duration::ZERO)), (None, None)] {
-          let answer = Answer::Failed { failure: Failure::Model(Fault::Limited { account: 7, reset_at }), spent: Spend::ZERO, turns: 0 };
-          let record = answer_record(now, answer, None, &CEILINGS, &smith_charter::CEILINGS).expect("bounded failure");
-          let smith_channel::RunResult::Failed(failed) = record.result() else { panic!("failure") };
-          let smith_channel::RunFailure::Model(model) = failed.reason() else { panic!("model") };
-          let smith_channel::ModelFault::Limited(limited) = model.value() else { panic!("limited") };
-          assert_eq!((limited.account(), limited.reset()), (&7, &said));
+      let now = skein_lib::Time::from_nanos(20_000_000);
+      for (reset_at, said) in [
+          (Some(skein_lib::Time::from_nanos(100_000_000)), Some(skein_lib::Duration::from_nanos(80_000_000))),
+          (Some(now), Some(skein_lib::Duration::ZERO)),
+          (None, None),
+      ] {
+          let answer = smith_domain::run::Answer::Failed {
+              failure: smith_domain::run::Failure::Model(smith_domain::run::Fault::Limited { account: 7, reset_at }),
+              spent: smith_domain::run::Spend::ZERO,
+              turns: 0,
+          };
+          let record = smith_protocol_channel::answer_record(now, answer, None, &CEILINGS, &smith_charter::CEILINGS)
+              .expect("bounded failure");
+          let smith_channel::RunResult::Failed(failed) = record.result() else { panic!("expected failure") };
+          let smith_channel::RunFailure::Model(model) = failed.reason() else { panic!("expected model failure") };
+          let smith_channel::ModelFault::Limited(limited) = model.value() else { panic!("expected limited") };
+          assert_eq!((limited.account(), limited.reset()), (7, &said));
       }
   }
   ```
@@ -179,8 +193,8 @@ Proof: world,
 Don't: retry a refused or unsupported call; move a run to another
   account; put a report or a reason in a fact; derive a reset not said.
 Size: about 400 lines.
-Removes: `Fault::Exhausted`; the session's and the run's
-  `Exhausted { retry_after: Duration }`; smith 01.2's zero-as-absent
+Removes: `Fault::Exhausted`; the bare `Duration` of the session's and
+  the run's `Exhausted { retry_after }`, now an `Option<Duration>`; smith 01.2's zero-as-absent
   and 01.3's `failed()` mappings.
 
 ### 02.2 The notices raised
@@ -241,7 +255,7 @@ Files: `crates/smith-host-domain/src/{channel,lib,tests}.rs`;
   `crates/smith-host-protocol/src/{answer,tests}.rs`;
   `crates/smith-inline-agent/src/{translate,tests}.rs`;
   `crates/smith-local-service/src/stream.rs`;
-  `crates/smith-local-domain/src/end.rs`;
+  `crates/smith-local-domain/src/{end,tests}.rs`;
   `crates/smith-local-protocol/src/{terminal.rs,terminal/failure.rs}`;
   `crates/smith-local-shell/src/local_host/words.rs`;
   `tests/host/tests/{simulation.rs,simulation/inline.rs}`;
@@ -267,11 +281,13 @@ Shape: `host::ModelFault` is `Completion { .., report }`, `Limited {
   `words.rs` matches `Limited`. Downstream: the repository downstream of
   jig's `crates/temper-worker-domain/src/translate.rs` matches
   `ModelFault::{Exhausted, Completion, Provider, Refused, Truncated,
-  Malformed}`: `Exhausted` is now `Limited`, `Refused` is `Declined`.
+  Malformed}`: `Exhausted` is now `Limited`, `Refused` is `Declined`; its
+  `src/tests/entrance.rs` builds `ModelFault::Exhausted`.
   With 02.1's `finish.rs`, its repin is about 15 lines (decision 16).
 Test shape: unit tests each under 20 ms. In smith-host-protocol's
   `tests.rs`: `each_version_4_fault_reads_as_its_own`, a row per fault.
-  In smith-local-domain: `each_model_fault_has_its_exit_status`, rows
+  In smith-local-domain's `tests.rs` (`end.rs` has no test module;
+  `crate::end::answer_status`): `each_model_fault_has_its_exit_status`, rows
   limited 1, refused 3, unauthorized 3, program 1, unsupported 1,
   unauthorized completion 3. In smith-local-protocol:
   `an_exhausted_failure_uses_its_answer_account_and_clock` takes
@@ -303,7 +319,7 @@ Scope: host.md 7, 8; shell.md 4.3, 7.5; design question 7.
 Needs: 02.2's notices; 02.3's faults.
 Files: `crates/smith-events/src/{lib,words}.rs`,
   `crates/smith-local-domain/src/{boundary,domain,parent_tests}.rs`,
-  `crates/smith-local-protocol/src/terminal.rs`,
+  `crates/smith-local-protocol/src/{terminal.rs,terminal/failure.rs}`,
   `tests/local/tests/{simulation,fuzzy_simulation}.rs`.
 Shape: `AccountFailure::Exhausted` becomes `Limited { account,
   reset_at: Option<Wall> }`, the wall clock plus the reset when said;
@@ -314,14 +330,19 @@ Shape: `AccountFailure::Exhausted` becomes `Limited { account,
   number as `failure::credential` does: `run failed: account N reached
   its usage limit, usable again at HH:MM` (no time when no reset was
   said) and `account N: the provider refused it`, then `: CODE` and
-  `: REASON` through `failure::detail`, each when not empty. 4.3's
+  `: REASON` through `failure::detail`, each when not empty; each new
+  arm appends `run failed: ` itself, for `failure::credential` and
+  today's `Account` arm print none. 4.3's
   `; manage it at <address>` (the preset's usage address, 6.2) is in no
-  increment of this plan and is not printed. smith-events' `clock` is
-  made public, not written twice. The run-failed last lines are smith
+  increment of this plan and is not printed. smith-events publishes
+  `clock(at: Wall) -> [u8; 5]`, the `HH:MM` its private `clock` writes
+  (which then takes its bytes), and `terminal.rs` appends them through
+  `Shown`: never `put` into a `List`, which panics past its room. The run-failed last lines are smith
   05.2's. Downstream: none.
 Test shape: unit tests each under 20 ms. In smith-local-protocol's
-  `terminal.rs`: `account_failures_keep_their_own_words`, rows limited
-  with a reset (`run failed: account 7 reached its usage limit, usable
+  `terminal.rs`: `account_failures_keep_their_own_words` keeps its
+  rows unavailable and not refreshed, and its exhausted row becomes
+  the rows limited with a reset (`run failed: account 7 reached its usage limit, usable
   again at 10:01`), limited without, refused with a reason, refused
   with an empty code. In smith-local-domain:
   `rejection_keeps_the_account_and_exhaustion_keeps_its_notice` becomes

@@ -327,6 +327,15 @@ commits is this plan's.
      - Done when: `rg -oIw`, not `rg -ohw` (`-h` prints rg's help), in 02's and in 01's.
      Ran: the 02.2 reference test with the names on main, under clippy on skein-llm-world; skein-llm-world's nextest, 139 passed in the default profile and 7 in fuzzy.
 
+104. **smith 02's Shapes against main** (ready check of smith-02.1).
+     smith 02's ready check, against smith `7bd4b6a6` and temper `2bc7d825`, corrected `smith/02-notices.md`, and `smith/01-grants.md` with it:
+     - Decision 3 keeps the model's own refusal at wire tag 3 as `Declined`, while 01.2 adds a `refused: RefusedFault` arm to `ModelFault`: in version 4's schema tag 3's arm is named `declined` (01.2's Shape says so now), and 02's Choices name the tag and the event word `refused` it keeps.
+     - The 800-line baselines: `service.rs` 2968, `responses.rs` 1870, `sinks.rs` 1513, host-domain `domain.rs` 1496, local-service `process.rs` 1423, protocol-channel `translate.rs` 873.
+     - 02.1: the reference test, rustfmt-clean, paths written whole as `a_model_failure_keeps_transport_evidence_and_cooldown` writes them, and `(7, &said)`; the story sits beside that one, which already writes a failure at the answer; `Report::none()` is `#[must_use]`; Removes names the bare `Duration`, not the variant; temper's `finish.rs` is expected to compile unchanged.
+     - 02.3: `each_model_fault_has_its_exit_status` lives in smith-local-domain's `tests.rs` (`end.rs` has no test module); temper's `crates/temper-worker-domain/src/tests/entrance.rs` builds `ModelFault::Exhausted`.
+     - 02.4: `account_failures_keep_their_own_words` exists and gains rows; the new arms append `run failed: ` themselves; smith-events publishes `clock(at: Wall) -> [u8; 5]`, appended through `Shown`, since `put` into a `List` panics past its room.
+     Not run: the suites and the sketch, the build lane being held by gates; the re-check at 02's start runs them.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

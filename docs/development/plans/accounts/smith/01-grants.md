@@ -109,7 +109,8 @@ Shape: from v3: `enum Scheme { bearer, key }`, `record
   `AccountRefused { account: u32 code: text 128 reason: text 512 }`
   (0x0113, after live text's `Live` 0x0112) replace `Rejected` and
   `Exhausted`: 20 kinds, all required, none optional. `ModelFault`
-  keeps tags 0 to 5, `limited` as `LimitedFault { account: u32 reset:
+  keeps tags 0 to 5, tag 3 named `declined` (the model's own refusal,
+  decision 3), `limited` as `LimitedFault { account: u32 reset:
   option duration }`, and gains `refused: RefusedFault { account: u32
   code: text 128 }`, `unauthorized: UnauthorizedFault { account: u32
   }` and `program: ProgramFault { name: text 32 exit: option u32
