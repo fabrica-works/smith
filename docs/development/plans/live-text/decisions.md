@@ -288,23 +288,33 @@ answers it.
 1. skein's script gives a reply in pieces as one `Line::Pieces`, the
    turn's first line, with a named hold before any piece; `Line::Text`
    stays one piece (1.1).
+   Decision: accepted, by director, 2026-10-19.
 2. A held reply writes the dialect's keep-alive once, not periodically,
    so a hold past the client's idle deadline times out, and a world
    settles while a reply is held (1.3).
+   Decision: accepted, by director, 2026-10-19.
 3. A release that comes before its hold is reached changes nothing, and
    one release frees every call held at its name (1.5).
+   Decision: accepted, by director, 2026-10-19.
 4. The start's ask is `live: Option<LiveAsk>` in smith's host API, and
    `live: None` is "no ask" downstream (2.1).
+   Decision: accepted, by director, 2026-10-19.
 5. The live record is a required kind of version 3 (2.3).
+   Decision: accepted, by director, 2026-10-19.
 6. The live bytes not projected are counted in the agent's channel half
    and reach no event (2.7; answer 1).
+   Decision: accepted, by director, 2026-10-19.
 7. The event stream keeps every conversation's `text.delta`; pieces come
    only from the main conversation's ordinary completions (3.1; answer
    3).
+   Decision: accepted, by director, 2026-10-19.
 8. A delta that comes after its turn is told, the event sink's
    backpressure included, is dropped and counted, never sent (3.5).
+   Decision: accepted, by director, 2026-10-19.
 9. No repin of jig or temper in this plan: the tools plan's closing
    repins take `live: None`, the ignored piece and, in jig, four
    `smith_channel::v3` paths (2.2; answer 4).
+   Decision: accepted, by director, 2026-10-19.
 10. `live_interval` is a policy value with its default, and no shell
     setting until shell.md 6.5 names one (3.6).
+    Decision: accepted, by director, 2026-10-19.
