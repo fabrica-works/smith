@@ -790,6 +790,20 @@ commits is this plan's.
      A further user of what 04 changes is refreshed the same way and listed
      in the commit body.
 
+124. **smith 04.1's key row waits for smith-repin** (plan defect, smith 04's block of 2026-10-19T16:22:18Z).
+     Ruling 124: content.rs's `no_grant_value_reaches_a_turn_fact_or_trace`
+     takes its bearer row alone in smith 04.1; its key row waits for
+     `smith-repin`, which adds it. The fake at smith's pin (skein 31bbf586)
+     reads only `Authorization: Bearer`, so a key gets 401s and no provider
+     reply; skein 04 (`skein/04-fake-credentials.md`) gives the fake
+     `x-api-key` against the keys, and only `smith-repin` moves smith's pin
+     to it (README, "No other step of this plan but `smith-repin` moves the
+     pin"). 04.1's Proof already rests on the unit
+     `each_grant_value_installs_its_scheme` for the key's installation, as
+     decision 13 says. Keep the world's provider-reply assertions for an
+     installable value (ruling 123), and assert no 401 path in this
+     increment. Go on with 04.1 to its landing.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

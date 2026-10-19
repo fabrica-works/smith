@@ -88,7 +88,7 @@ gate, and repairs with decisions 15 and 16's defaults (Rules).
 
 | Step | Starts once | Moves |
 |---|---|---|
-| `smith-repin` | every skein step has landed | smith's skein to skein's `origin/main` |
+| `smith-repin` | every skein step has landed | smith's skein to skein's `origin/main`, adding the key row of smith 04.1's `no_grant_value_reaches_a_turn_fact_or_trace` (ruling 124) |
 | `jig-repin` | `smith-repin` and every smith step have landed | jig's skein and smith, together, to their `origin/main` |
 | `hearth-repin` | `jig-repin` has landed | hearth's skein to skein's `origin/main` |
 | the repository downstream of jig's repin | `hearth-repin` has landed | its skein, smith and jig to their `origin/main` |

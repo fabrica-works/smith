@@ -166,8 +166,11 @@ Test shape: agent-process world, `grants.rs` (each under 0.5 s: a real
   `a_program_name_outside_its_charset_is_refused`, rows empty, 33
   bytes, uppercase, underscore, non-ASCII. Agent-process world,
   `content.rs` (under 0.5 s):
-  `no_grant_value_reaches_a_turn_fact_or_trace`, rows bearer, key (with
-  `private_grant()`, as `reconstruct` does). Reference, `grants.rs`:
+  `no_grant_value_reaches_a_turn_fact_or_trace`, row bearer (with
+  `private_grant()`, as `reconstruct` does); its key row waits for
+  `smith-repin`, whose pin reaches skein 04's fake, which matches
+  `x-api-key` (the fake at smith's pin reads only `Authorization:
+  Bearer`; ruling 124). Reference, `grants.rs`:
 
   ```rust
   use smith_agent_process_world::{World, charter, key};
