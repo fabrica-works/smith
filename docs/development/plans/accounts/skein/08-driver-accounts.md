@@ -42,8 +42,8 @@ also needs 05.4's hints and 06.1's fake issuer.
 ## Rules that bind it
 
 - Files over 800 lines grow by at most ~100 lines per increment:
-  `component.rs` (1135), `tests/oauth-accounts/src/world.rs` (1224),
-  `sign_in.rs` (852). `add`, `remove` and `want` go to
+  `component.rs` (1135), `tests/oauth-accounts/src/world.rs` (1249),
+  `sign_in.rs` (858). `add`, `remove` and `want` go to
   `component/accounts.rs` (new); the accounts' stories to
   `tests/oauth-accounts/src/accounts.rs` (new), reusing world.rs's
   `Client`, `limits()`, `registration()` and issuer.
@@ -82,35 +82,56 @@ Shape: `Component` gains `names: List<Name>` of capacity
   `tests/memory.rs`'s four. 08.1 reports that figure;
   `every_account_holds_a_maximal_record_within_the_heap_bound`
   holds against it.
-  Decision 8: `private.rs`'s `loaded` reads a record with no issued
-  client id, under a registration whose terms say the id is issued, as
-  `Unloaded { at: File, why: Unreadable }`: a grant fails as unloaded,
-  and a sign-in goes ahead and stores expecting the digest it loaded,
-  as for a damaged file (`sign_in_allowed`). An owner's kept record of
-  that kind (`Keeper::Owner { kept }`) is held as none: `State::Empty`,
-  a grant fails as expired, a sign-in goes ahead.
+  Decision 8: `private.rs`'s `loaded`, before it computes `has_record`,
+  turns a record with no issued client id, under a registration whose
+  terms say the id is issued, into `(None, Some(Failure::Unloaded { at:
+  Place::File, why: Unloaded::Unreadable }))` (`private_terminal` hands
+  it the decoded record; its own `Unreadable` is a decode error's): a
+  grant fails as unloaded, and a sign-in goes ahead and stores expecting
+  the digest it loaded (`keeper.expected`), as for a damaged file
+  (`sign_in_allowed`). An owner's kept record of that kind
+  (`Component::new`'s `Keeper::Owner { kept }` arm) is held as none:
+  `State::Empty`, a grant fails as expired, a sign-in goes ahead. Both
+  ask one private helper over the registration's `terms` and the
+  record's `issued_client_id` (skein-oauth's `issued_id` is
+  `pub(crate)` there). `boundary.rs`'s `Unloaded::Unreadable` doc names
+  this case beside damaged bytes and another version. `settled` clears
+  `names` with the other tables (ruling 114).
   Downstream: nothing breaks; `new`'s accounts keep their indices.
 Test shape: unit, with `setup()`, `assert_refused` and `refresh_account`
   of `src/tests.rs` and `Owner` of `src/private_tests.rs` (which gains
-  `with_terms(Option<Terms>)`, `new` calling it with `None`), each under
-  20 ms: `a_name_no_live_account_holds_is_refused` (rows: sign in,
-  redirected, hand in, grant, each with a name past `new`'s list);
+  `with_terms(Option<Terms>)`, `new` calling it with `None`); a test
+  under issued terms sets `registration.terms` on `refresh_account`'s
+  `Account::SignIn`, and one that loads a record holding an issued id
+  raises `limits()`' `issued_client_bytes`, 0 there; each under 20 ms:
+  `a_name_no_live_account_holds_is_refused` (rows: sign in, redirected,
+  hand in, each with a name past `new`'s list; the grant's row is
+  already `a_missing_account_and_missing_record_have_typed_terminals`');
   `an_owner_record_without_an_issued_id_is_held_as_none`;
   `a_record_without_an_issued_id_loads_unreadable`;
   `a_sign_in_replaces_it_expecting_the_digest_it_loaded`. World,
   `tests/private.rs`, under 0.1 s, over a new `Story::NoIssuedId` (the
-  file planted at version 2, its bytes written by hand as 05.2's tests
-  write theirs; `Client::private` takes issued terms for it; it joins
+  file planted at version 2: `encode_record` of a version-3 record with
+  no optional field, its version's low byte, index 5, set to 2 and its
+  last five bytes, the presence bytes, cut; `FileSystem::new`'s two
+  `match story` and `run`'s `stop_at_store` and `stop_at_load` matches
+  take it; `world.rs`' `Client` gains `terms: Option<Terms>`, `None` in
+  `with_limits`, which `Client::private(root, story, terms)` sets and
+  `start` puts on the registration: `private::run` passes issued terms
+  for `NoIssuedId`, else `None`, and `Client::recovery` `None`; it joins
   `fuzzy_private.rs`' list, which draws by `random.below(20)`, a count
-  of the list's 20 entries: it draws below the list's length instead, so
-  the new story is drawn; `accounts.rs` already imports
-  `skein_tls::Name`, so the table's `Name` is named by its path there):
+  of the list's 20 entries: it draws below the list's length instead,
+  bound to a local first, so the new story is drawn; the table's `Name`
+  is `component.rs`'s, and `accounts.rs`, which already imports
+  `skein_tls::Name`, names it by its path):
   `a_record_without_an_issued_id_ends_a_grant_unreadable`.
 Proof: world, `a_record_without_an_issued_id_ends_a_grant_unreadable`:
   the grant ends `Unloaded { at: File, why: Unreadable }` and the
   person's file is not written; under 0.1 s; unit,
-  `a_sign_in_replaces_it_expecting_the_digest_it_loaded`: the store
-  names the digest read; under 20 ms. The replacement has no world row:
+  `a_sign_in_replaces_it_expecting_the_digest_it_loaded`: after
+  `Loaded`, the keeper's `expected` is `file::Expect::Digest` of the
+  bytes read, which the sign-in's `file::Request::Store` sends (no unit
+  test scripts a sign-in to its store); under 20 ms. The replacement has no world row:
   it needs the fake issuer to issue an id (06.1), which 08.4 has.
 Don't: no second table or account type beside `State`, `Source` and
   `Store`; no hashed map (the scan is bounded); no change to `new`'s

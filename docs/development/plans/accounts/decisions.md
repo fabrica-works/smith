@@ -507,6 +507,46 @@ commits is this plan's.
      --all-targets` finds is repaired in the same commit and listed in its
      body; past about 200 lines besides `Cargo.lock`, it is a question.
 
+114. **skein 08's Shapes against main** (re-check of skein-08.1).
+     The re-check of skein-08.1 against skein f634f9c, then main 31ae5ab, found
+     08.1's Shapes short of the code; `skein/08-driver-accounts.md`, 08.1, now
+     says, checked by `git grep` on skein origin/main 31ae5ab:
+     - Decision 8 lives in `component/private.rs`'s `loaded`, before
+       `has_record`: `private_terminal` builds `Unloaded::Unreadable` only for
+       a decode error (`Err(_) => Some(Failure::Unloaded { at: Place::File,
+       why: Unloaded::Unreadable })`) and hands `loaded` the decoded record
+       (`self.loaded(env, account, Some(record), None, up, io)`); the owner's
+       case is `Component::new`'s `Keeper::Owner { kept }` arm. Both ask one
+       private helper over the terms and the record: skein-oauth's `issued_id`
+       is `pub(crate) fn issued_id(registration: &Registration) -> bool` in
+       `redirect.rs`. `boundary.rs`'s `Unreadable` doc ("Loaded bytes are
+       damaged or belong to another version") names the new case; `settled`
+       (`self.accounts.clear(); self.sources.clear(); self.keepers.clear();`)
+       clears `names` too.
+     - The world: `tests/oauth-accounts/src/private.rs`' `FileSystem::new`
+       (`match story` at two places) and `run`'s `client.stop_at_store =
+       match story` and `client.stop_at_load = match story` take
+       `Story::NoIssuedId`; `world.rs`' `Client` gains `terms`, set by
+       `Client::private(root, story, terms)` (now `fn private(root:
+       kernel::Fd, story: Story)`), whose callers are `private::run` and
+       `Client::recovery`. The version-2 bytes are `encode_record`'s of a
+       version-3 record with no optional field, version byte 5 set to 2, the
+       five presence bytes cut (`decode_record`: `if version == 2 { (None,
+       None, None, None, None) }`).
+     - The units: `refresh_account(account, address)` takes no terms (the test
+       sets them on its `Account::SignIn`); `limits()` has
+       `issued_client_bytes: 0`; the grant row of
+       `a_name_no_live_account_holds_is_refused` is already
+       `a_missing_account_and_missing_record_have_typed_terminals`'
+       (`Request::Grant { account: 3 }` refused `Refusal::Account`); no unit
+       test reaches `file::Request::Store` after a sign-in, so the digest's
+       proof reads the keeper's `expected` after `Loaded`.
+     - `fuzzy_private.rs`' draw (`random.below(20)`) takes the list's length
+       through a local; the table's `Name` is `component.rs`'s; sizes are
+       `world.rs` 1249 and `sign_in.rs` 858.
+     A further user of what 08.1 changes is refreshed the same way and listed
+     in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
