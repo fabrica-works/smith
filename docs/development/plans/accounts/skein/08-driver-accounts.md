@@ -61,7 +61,8 @@ Needs: skein 05.2's record version 3 (the issued client id it keeps,
   none in a version 2 record) and 05.3's terms (whether it is issued).
 Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
   `component/sign_in.rs`, `component/private.rs`, `boundary.rs`,
-  `limits.rs`, `tests.rs`, `private_tests.rs`; `tests/oauth-accounts/`:
+  `limits.rs`, `lib.rs` (its doc's "knows no account names", false from
+  here), `tests.rs`, `private_tests.rs`; `tests/oauth-accounts/`:
   `src/private.rs` (`Story`, and the matches in `run` over it),
   `src/world.rs`, `tests/private.rs`, `tests/fuzzy_private.rs`.
 Shape: `Component` gains `names: List<Name>` of capacity
@@ -100,7 +101,10 @@ Test shape: unit, with `setup()`, `assert_refused` and `refresh_account`
   `tests/private.rs`, under 0.1 s, over a new `Story::NoIssuedId` (the
   file planted at version 2, its bytes written by hand as 05.2's tests
   write theirs; `Client::private` takes issued terms for it; it joins
-  `fuzzy_private.rs`' list):
+  `fuzzy_private.rs`' list, which draws by `random.below(20)`, a count
+  of the list's 20 entries: it draws below the list's length instead, so
+  the new story is drawn; `accounts.rs` already imports
+  `skein_tls::Name`, so the table's `Name` is named by its path there):
   `a_record_without_an_issued_id_ends_a_grant_unreadable`.
 Proof: world, `a_record_without_an_issued_id_ends_a_grant_unreadable`:
   the grant ends `Unloaded { at: File, why: Unreadable }` and the
@@ -226,8 +230,12 @@ Files: `crates/skein-oauth-accounts/src/`: `component.rs` (`recorded()`
   `tests/accounts.rs`.
 Shape: `Request::Want { account, wanted: bool }` sets a flag of the live
   name, `Live { number, wanted }`; it is refused only as `Account` or
-  `Closed`, with `Asked::Want`. `refreshable` counts a wanted account as
-  held: at its lead it refreshes with no grant held, the new record is
+  `Closed`, with `Asked::Want`. `refreshable` stays a refresh-token
+  test; `wanted` joins `held` where the component gates on a held grant:
+  `Component::fire`'s refresh at the lead, `Component::next_deadline`'s
+  `State::Record` arm and `fail_exchange`'s `held(slot)`; a further gate
+  on `held` that the lead's refresh passes takes it the same way, listed
+  in the commit body. At its lead it refreshes with no grant held, the new record is
   kept, and no `Granted` follows. Its failure, with no grant held, is
   `Failed { ends: Ends::Refresh, failure }` (new), its record dropped as
   for any refresh that fails as sign in again (6.4). An account with no
@@ -281,7 +289,10 @@ Needs: 08.1's table; 08.2's `admit`; skein 05.3's terms (a redirect
   fake issuer, which takes a loopback redirect on any port.
 Files: `crates/skein-oauth-accounts/src/`: `redirect.rs`,
   `component/sign_in.rs`, `component/accounts.rs` (`admit`),
-  `component.rs` (`new`), `listener.rs`, `exchange.rs`, `limits.rs`,
+  `component.rs` (`new`; `up`, which carries `Listening`'s bound port,
+  dropped today by `Listening { owner, .. }`; `progress`, which passes
+  the bound redirect URI to `Listener::progress` in place of
+  `registration.redirect_uri`), `listener.rs`, `exchange.rs`, `limits.rs`,
   `tests.rs`; `tests/oauth-accounts/src/`: `sign_in.rs`,
   `sign_in/browser.rs`, `sign_in/cuts.rs`, `sign_in/protocol.rs` (its
   `Listen` arm asserted the fixed address), `sign_in/issuer.rs`;
@@ -367,7 +378,7 @@ Removes: the `SignIn` step before `Listening` in `begin_sign_in`; 05.4's
 ```rust
 // skein_oauth_accounts::component (08.2), a method of Component
 pub fn add(&mut self, env: &Env<Limits>, account: u32,
-           configuration: Account, up: &mut Queue<Event>) { todo!() } // refusals only
+           configuration: Account, up: &mut Queue<Event>); // refusals only; the body never todo!() (clippy denies it)
 // skein_oauth_accounts::boundary, added variants (08.2, 08.3)
 use crate::Unusable;
 pub enum Request { Remove { account: u32 }, Want { account: u32, wanted: bool } } // Remove: unsent work fails cancelled

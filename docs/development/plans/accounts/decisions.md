@@ -310,6 +310,14 @@ commits is this plan's.
      - 06.2: `OpenId`'s `issuer`, `key_set_url` (`uri_bytes`) and `subject` (`document.string_bytes`) bounded by `Issuer::new`; `exp` from `Wall::as_secs` and `Duration::as_nanos`; the reference test finds the dots with `skein_lib::bytes::{find, find_from}`, without `rposition` or `cut + 1`; the sketches' bodies are not `todo!()`.
      Not run: clippy on the sketches and the suites, the build lane being held by gates; the re-check at 06's start runs them.
 
+102. **skein 08's Shapes against main** (ready check of skein-08.1).
+     skein 08's ready check, against skein `887302f8`, corrected `skein/08-driver-accounts.md`:
+     - 08.1 Files: `lib.rs`, whose doc says the crate "knows no account names"; Test shape: `fuzzy_private.rs` draws its story by `random.below(20)`, so `Story::NoIssuedId` is drawn only if it draws below the list's length; `accounts.rs` already imports `skein_tls::Name`.
+     - 08.3 Shape: `Component::refreshable` tests only `refresh_token.is_some()`; `wanted` joins `held` at `Component::fire`'s refresh at the lead, `Component::next_deadline`'s `State::Record` arm and `fail_exchange`'s `held(slot)`.
+     - 08.4 Files: `component.rs`'s `up` (carries `Listening`'s bound port) and `progress` (passes the bound URI to `Listener::progress`).
+     - The `add` sketch's body is never `todo!()`.
+     Ran: clippy on `skein-oauth-accounts` with the sketch (only its `todo!()` and unused parameters failed). Not run: the suites, the build lane being held by gates; the re-check at 08's start runs them.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
