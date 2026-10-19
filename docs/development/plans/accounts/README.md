@@ -235,6 +235,15 @@ downstream repin.
   need different code are tests of their own, each calling one function
   with what differs. skein 05.4's `issued.rs` and 05.5's `revoke.rs`,
   where it was seen twice, stay as they landed.
+- **A test's outcome is named, and its sizes derived** (testing-strategy.md,
+  10, "Named fixtures and sizes"; ruling 125): a test reads an outcome of
+  more than two facts from a struct whose fields name them, never a tuple
+  by position (`type Sent = (Option<Failed>, (bool, u32, bool))`); a
+  length or a count in a fixture is derived from what it measures
+  (`BODY.len()` in a `Content-Length`), never counted by hand. skein
+  08.3 brings 08.2's `accounts_tests.rs`, where it was seen, to it; other
+  copies landed, in files a change does not otherwise touch, stay as
+  they are.
 
 ## Live services
 

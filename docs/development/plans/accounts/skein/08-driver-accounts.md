@@ -193,15 +193,18 @@ Test shape: unit, `src/accounts_tests.rs`, by `use super::*` over
   fn an_added_name_is_refused_while_a_live_account_holds_it() {
       let (mut component, env) = roomy();
       let mut up = Queue::with_capacity(MAX_OUT_DOWN.above);
-      component.add(&env, 0, Account::HandedIn, &mut up);
-      assert_refused(up.pop(), 0, Asked::Add, Refusal::Taken);
-      component.add(&env, 5, Account::HandedIn, &mut up);
-      assert!(up.pop().is_none(), "an admitted add answers nothing");
-      component.add(&env, 5, Account::HandedIn, &mut up);
-      assert_refused(up.pop(), 5, Asked::Add, Refusal::Taken);
+      component.add(&env, ADDED, Account::HandedIn, &mut up);
+      component.add(&env, ADDED, Account::HandedIn, &mut up);
+      assert_refused(up.pop(), ADDED, Asked::Add, Refusal::Taken);
   }
   ```
-  Beside it: `an_add_past_the_accounts_limit_is_refused_as_full`,
+  Beside it (ruling 125: testing-strategy.md, 10, "One behaviour per
+  test", "The setup the assertion reads" and "A bound's two sides"):
+  `a_free_name_is_added_with_no_answer` (an add of `ADDED` leaves `up`
+  empty); `an_add_at_the_accounts_limit_is_admitted` (both of
+  `roomy()`'s free places taken leave `up` empty);
+  `an_add_past_the_accounts_limit_is_refused_as_full` (both taken,
+  unasserted; the third add refused `Full { bound: ROOMY_ACCOUNTS }`);
   `an_added_configuration_new_refuses_is_refused_as_unusable` (rows:
   each `Unusable` but `Accounts` and `Limits`),
   `an_added_private_account_starts_its_load_at_the_next_fire`,
@@ -289,17 +292,36 @@ Test shape: unit, `src/accounts_tests.rs` with its `roomy()`, each under
   live name, a free name, after close),
   `no_refresh_starts_before_the_earliest_refresh_time` (rows: lead,
   grant within the lead, rejection, want),
+  `a_refresh_starts_at_the_earliest_refresh_time` (the same rows: the
+  test before sets each ask at the instant before that time and sees no
+  refresh start, this one sets it at that time and sees the refresh
+  start; a bound's two sides, ruling 125),
   `a_grant_before_it_is_answered_with_the_held_token`. World,
   `tests/accounts.rs`, both worlds, each under 0.1 s:
   `a_wanted_account_is_refreshed_with_no_grant_held`,
   `a_wanted_account_whose_refresh_fails_is_told_so`.
+  08.3 edits `accounts_tests.rs`, and brings 08.2's tests there to the
+  README's rules "A table test's rows are data" and "A test's outcome is
+  named, and its sizes derived", and to 08.2's amended Test shape (ruling
+  125): `an_added_configuration_new_refuses_is_refused_as_unusable`'s rows
+  hold each `Account`, built by a named constructor, in place of `Bad`
+  and `unusable(row: Bad)`; `Failed` and `Sent` become structs;
+  `finish_sent`'s `RESPONSE` takes a named `BODY` and `BODY.len()`; and
+  `a_removal_lets_a_sent_refresh_and_its_keep_finish`'s hand driver
+  (`sent`, `finish_sent`, `finish_socket`, `finish_file`) moves into
+  `private_tests.rs`' `Owner` as one named responder per effect, which
+  08.3's own refresh tests call, or that test leaves the behaviour to
+  `tests/accounts.rs`' `Story::Refreshing` and keeps what the owner
+  decides.
 Proof: world, `a_wanted_account_is_refreshed_with_no_grant_held`: the
   refresh is kept and no `Granted` follows; under 0.1 s; unit,
-  `no_refresh_starts_before_the_earliest_refresh_time`: each of the four
-  asks waits for it; under 20 ms.
+  `no_refresh_starts_before_the_earliest_refresh_time` and
+  `a_refresh_starts_at_the_earliest_refresh_time`: each of the four asks
+  waits for it, and starts at it; under 20 ms.
 Don't: no interval other than the refresh lead (oauth.md 7's default);
   no `Granted` for a refresh nobody holds; no wall clock in a deadline.
-Size: about 200 lines.
+Size: about 290 lines, about 90 of them 08.2's tests brought to the
+  rules.
 Removes: nothing.
 
 ### 08.4 A redirect whose port varies
@@ -359,16 +381,19 @@ Test shape: unit, `src/tests.rs` (`limits()`, `refresh_account`,
   `crypto()`, `redirect::parse`), each under 20 ms, with
   `varying(account, uri)` (new: the registration's `terms` carry
   `varying_port` and its redirect is `uri`):
-  `an_account_with_port_zero_is_configured_then_signed_in` (`new`
-  admits it; `Listen` on port 0; `Listening` with a bound port; the
-  `Visit` URL carries it);
+  `an_account_with_port_zero_listens_on_port_zero` (its `Listen` asks
+  port 0); `an_account_with_port_zero_visits_at_its_bound_port` (`new`
+  admits it, by `expect`; the `Visit` URL carries the port its
+  `Listening` gives), the one test asserting nothing on the way that
+  ruling 125 makes of the two;
   `a_fixed_redirect_with_port_zero_is_unusable` (rows: `new`, `add`);
   `a_redirect_is_matched_against_the_bound_uri` (`parse` and
   `from_head`, rows: the bound port, the preferred port);
   `a_redirects_client_id_reaches_the_machine` (rows: present, absent,
-  repeated, past its cap);
+  repeated, at its cap, one past it);
   `a_public_sign_in_visits_only_after_its_listener_listens` (rows:
-  fixed, varying); `a_varying_redirect_falls_back_to_port_zero`;
+  fixed, varying; the effects up to the `Visit` compared once, with
+  `assert_eq!`); `a_varying_redirect_falls_back_to_port_zero`;
   `a_listener_that_cannot_bind_ends_the_sign_in_before_its_visit`
   (rows: fixed, zero);
   `two_sign_ins_on_a_varying_redirect_own_two_ports`;
@@ -387,7 +412,7 @@ Test shape: unit, `src/tests.rs` (`limits()`, `refresh_account`,
 Proof: world, `a_varying_port_signs_in_with_its_preferred_port_taken`:
   the sign-in binds zero once the preferred port is refused, the
   browser follows it and the record is kept; under 0.5 s; unit,
-  `an_account_with_port_zero_is_configured_then_signed_in`: under 20 ms.
+  `an_account_with_port_zero_visits_at_its_bound_port`: under 20 ms.
 Don't: no `localhost` for a varying redirect (skein 05's terms refuse
   it); no shared listener between sign-ins; no hint in a log, a `Debug`
   or a test's output.

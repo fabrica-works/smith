@@ -804,6 +804,53 @@ commits is this plan's.
      installable value (ruling 123), and assert no 401 path in this
      increment. Go on with 04.1 to its landing.
 
+125. **skein 08's test shapes and named outcomes** (steer of 2026-10-19T16:30:20Z).
+     The hourly check of 2026-10-19T16:30:20Z found skein 08's reference
+     tests short of testing-strategy.md, section 10, and 08.2's landed
+     `crates/skein-oauth-accounts/src/accounts_tests.rs` short of the
+     README's rules; checked by `git grep` on skein origin/main 8564196:
+     - 08.2's `an_added_name_is_refused_while_a_live_account_holds_it` holds
+       three behaviours and asserts on the way (`assert!(up.pop().is_none(),
+       "an admitted add answers nothing");`), and
+       `an_add_past_the_accounts_limit_is_refused_as_full` holds both sides of
+       the bound (`assert!(up.is_empty(), "the account bound admits both free
+       places");`), as 08.2's Test shape wrote them. `skein/08-driver-accounts.md`
+       now says: the taken-name test adds `ADDED`, unasserted, and asserts
+       only the second add's `Refusal::Taken`; beside it,
+       `a_free_name_is_added_with_no_answer`,
+       `an_add_at_the_accounts_limit_is_admitted` and
+       `an_add_past_the_accounts_limit_is_refused_as_full` (`Full { bound:
+       ROOMY_ACCOUNTS }` only).
+     - 08.3: `no_refresh_starts_before_the_earliest_refresh_time` gains its
+       other side, `a_refresh_starts_at_the_earliest_refresh_time`, in Test
+       shape and Proof. 08.3 edits `accounts_tests.rs`, so it brings 08.2's
+       tests there to the rules: the taken-name and limit tests as above;
+       `Bad` and `unusable(row: Bad)` (a `match row` building each `Account`)
+       give way to rows that hold each `Account`, built by a named
+       constructor; `type Failed = (u32, Ends, Failure);` and `type Sent =
+       (Option<Failed>, (bool, u32, bool));` become structs; `finish_sent`'s
+       `RESPONSE` (`Content-Length: 61`, counted by hand) takes a named
+       `BODY` and `BODY.len()`; the hand driver of
+       `a_removal_lets_a_sent_refresh_and_its_keep_finish` (`fn sent`, `fn
+       finish_sent`, `fn finish_socket`, `fn finish_file`, about 100 lines)
+       moves into `private_tests.rs`' `pub(super) struct Owner` as one named
+       responder per effect, or that test leaves the behaviour to
+       `tests/oauth-accounts/tests/accounts.rs`' `Story::Refreshing` and keeps
+       what the owner decides. Size about 290.
+     - 08.4: `an_account_with_port_zero_is_configured_then_signed_in`, which
+       asserted four things on the way, becomes
+       `an_account_with_port_zero_listens_on_port_zero` and
+       `an_account_with_port_zero_visits_at_its_bound_port` (also the
+       Proof's); `a_redirects_client_id_reaches_the_machine` gains the row at
+       its cap; `a_public_sign_in_visits_only_after_its_listener_listens`
+       compares the effects up to the `Visit` once.
+     - The README's Rules of this plan gain "A test's outcome is named, and
+       its sizes derived" (testing-strategy.md, 10, "Named fixtures and
+       sizes"): no tuple read by position, no size counted by hand.
+     A further copy of these patterns in a file a step edits is brought to
+     the rules the same way, and listed in the commit body; copies in files
+     no step touches stay as they landed.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
