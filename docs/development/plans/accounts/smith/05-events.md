@@ -102,6 +102,30 @@ Shape: `VERSION` 4. `Model` gains `account: Option<u32>` and
   `response.completed` have no `retry_ms`. `completion_failure` in
   `responses.rs` and `answers.rs` map 02.1's classes and report.
   smith-events has no user downstream.
+  Against main (ruling 143): every `"v":3` line literal becomes 4, in
+  smith-events' `src/{tests,read}.rs`, `tests/codecs/tests/events.rs`,
+  agent-service's `src/tests.rs` and `benchmarks/tests/{events,
+  failure_probes}.rs`; `benchmarks/tests/events.rs`'s refusal feed
+  `"v":4` becomes 5 and its `contains("version 4")` `"version 5"`
+  (`typed_event_stream_classification_usage_and_author_predicates`);
+  `tests/codecs/tests/drift.rs`'s
+  `event_records_and_every_listed_value_match_frozen_version_three_goldens`
+  is renamed to version four, and each new golden gets its sample in
+  `support/events.rs` `samples()` (the test counts them). `FailureClass`
+  is matched also by smith-events' `write.rs` (`write_failure_class`,
+  `validate_failure_class`), `words.rs`' `model` and `class`, and
+  agent-service's `sinks/view.rs` `completion_failure`. The fields that
+  `Model`, `Tools` and `CompletionFailure` gain are carried, clipped, by
+  `sinks/view.rs`' `model` and `completion_failure` and counted in its
+  payload bound (`string.checked_mul(3)`), and counted by smith-events'
+  `limits.rs` (`heap_model`, `heap_tools`, `heap_completion_failure`
+  and the matching `size_*`) and agent-service's `events.rs`
+  `worst_case`. In `answers.rs` the mapping is `completion(why,
+  evidence)`: its report comes from `run::Fault::Completion { report
+  }` (`run::Report { code, request, field }`, an empty box for none),
+  and `responses.rs`' `completion_failure` callers, its unit tests
+  among them, pass the report. `answers.rs`' comments that give the
+  distinct classes to 05.2 now name 05.1.
 Test shape: codecs, `tests/codecs/tests/events.rs`: a golden for every
   value of every listed field (an account and null; `direct` and
   `claude_code`; `withheld` empty and `sub_agents`; each class,
