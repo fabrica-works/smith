@@ -311,6 +311,11 @@ plan's run.
 
      Not checked by it: the `tests/hosts` story (grepped only), the profile test's reason string, the bound and no-room unit stories. A further site the same change breaks gets the same correction, listed in the commit body.
 
+105. **the no-room story proves the bound and the turn; the service forwards lost_live_bytes** (plan defect, smith-02's block of 2026-10-19T10:59:13Z).
+     A plan defect: 02.2's Test shape asks a one-frame channel for "the next piece's offset past the gap", but `Component::takes_live` never gives that channel a piece, and `channel_loss` (facts refused) is not the live count. Your option (a) is the ruling. The world story becomes `a_channel_with_no_room_holds_the_bound_and_drops_the_newest`: `observe_facts` with one frame, one table of two rows, a reply of the held bound (16 KiB) and one byte past it, each row with the `lost_live_bytes()` the code counts; no piece sent, the turn's record still sent, `check_memory`. The gap in the next piece's offset (channel.md 7) stays proven by `live.rs`' `a_gap_survives_partial_draining_and_later_held_bytes`; no world restores room, and production framing limits stay as they are.
+
+     The one production change: `Service::lost_live_bytes()` in `smith-agent-service/src/service.rs`, beside `lost_channel_facts()` and as it does, forwarding the channel component's `lost_live_bytes()`. 02.2's Files gain `service.rs` for that accessor alone, and `tests/agent-process/src/tracing.rs` if the world keeps the observation there, as it keeps `channel_loss` (ruling 105). A further user the accessor or the rename needs gets the same treatment, listed in the commit body.
+
 ## For the user
 
 Each is a choice that outlasts the run; a `Decision:` line under it

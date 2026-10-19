@@ -173,12 +173,16 @@ Removes: nothing.
 Scope: channel.md 4 and 5 (a retry restarts at 0), 7 (no room, a gap);
   host.md 3 (decisions.md 3.4, 3.5; A26, A31; "For the user" 2).
 Needs: smith on skein's `main`, with the live interval [02.1].
-Files: `tests/agent-process` (`src/world.rs`, `tests/live.rs`);
+Files: `tests/agent-process` (`src/world.rs`, `src/tracing.rs` if the
+  observation is kept there, `tests/live.rs`); `smith-agent-service/
+  src/service.rs` (`lost_live_bytes`, ruling 105 only);
   `tests/hosts` (`src/world.rs`, `src/lib.rs`, its stories' file);
   `smith-local-service/src/process.rs` only if the joint story finds the
   piece's route short.
-Shape: no production change is planned: the stories prove 01.3 and
-  02.1 across a retry, a channel with no room and the real host. The
+Shape: no production change is planned but one accessor: `Service::
+  lost_live_bytes()`, beside `lost_channel_facts()`, forwards the channel
+  component's `lost_live_bytes()` (ruling 105). The stories prove 01.3
+  and 02.1 across a retry, a channel with no room and the real host. The
   agent-process world's `observe_facts` frames bound fills the channel;
   `tests/hosts`' `Seen` gains the owner's live pieces (turn, retry,
   offset, bytes), recorded by `route_channel` before it turns them into
@@ -207,10 +211,14 @@ Test shape: in `tests/agent-process/tests/live.rs`, reference:
   `Piece { text: "Hel", hold: None }`, `Piece { text: "lo", hold:
   Some("h") }`; `pieces` gives `smith_channel::Live`, read through
   `retry()`, `offset()` and `bytes()`; `ask` and `pieces` are 01.3's.) Beside it:
-  `a_channel_with_no_room_drops_the_newest_and_leaves_a_gap`
-  (`observe_facts` with one frame, pieces past 16 KiB; `channel_loss`
-  and `lost_live_bytes` agree, the next piece's offset past the gap,
-  the turn's record still sent, `check_memory`). In `tests/hosts`:
+  `a_channel_with_no_room_holds_the_bound_and_drops_the_newest`
+  (`observe_facts` with one frame, which `Component::takes_live` never
+  gives a piece: one table, a reply of the held bound, 16 KiB, and one
+  byte past it, each row with the `lost_live_bytes()` the code counts;
+  no piece sent, the turn's record still sent, `check_memory`). The gap
+  in the next piece's offset stays proven by `live.rs`'
+  `a_gap_survives_partial_draining_and_later_held_bytes`: no world
+  restores room (ruling 105). In `tests/hosts`:
   `a_host_asking_for_text_hears_the_reply_in_pieces_before_its_turn`
   (OpenAI, the world's default dialect, now writes a reply in pieces as
   deltas). Each under 0.5 s.
