@@ -343,6 +343,23 @@ commits is this plan's.
      - The 800-line list adds `tests/agent-process/src/world.rs` (1586), `tests/channel/src/lib.rs` (1131) and `tests/end-to-end/end_to_end.rs` (1000), and refreshes `service.rs` 2968, `config.rs` 1659, protocol-channel `component.rs` 1083 and `stories.rs` 1236.
      Not run: the suites and the sketch, the build lane being held by gates; the re-check at 04's start runs them.
 
+106. **skein 05.2's record fixtures** (cross-session scope, skein 05's block of 2026-10-19T12:47:11Z).
+     Yes, at 512. The session's question names its own case: "if a downstream
+     `record_bytes` cannot hold a version 3 record at its downstream caps
+     (decision 15), name the fixture and the size." Both 256-byte fixtures are
+     skein's own, `crates/skein-oauth-accounts/src/tests.rs` `limits()` and
+     `tests/oauth-accounts/tests/memory.rs`
+     `every_account_holds_a_maximal_record_within_the_heap_bound`, each with
+     `token_bytes` 64 and `scope_bytes` 64: a version 3 maximum is 379 bytes,
+     387 with the zero-cap fields present empty, which 256 cannot hold. Each
+     takes `record_bytes: 512`. Refusing the larger combinations instead would
+     leave a fixture that cannot hold the record its own caps admit. The memory
+     test's bound follows from `worst_case(&limits)`, so no ceiling literal
+     moves with it. Every other `record_bytes` literal on skein, smith and jig
+     is 1024 or more; a further `Limits` literal whose `record_bytes` cannot
+     hold a version 3 record at its caps takes the next power of two that
+     holds it, and the commit body lists it. 05.2's Shape now says so.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

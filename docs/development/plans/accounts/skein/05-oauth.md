@@ -145,7 +145,12 @@ Shape: `RECORD_VERSION` is 3. After version 2's fields, a version 3
   (`sign_in.rs`, `sign_in/cuts.rs`) pass a reference.
   `every_account_holds_a_maximal_record_within_the_heap_bound`
   (`tests/memory.rs`) would pass 100 lines: its `SavedToken` literal
-  moves to a `handed_in_record(account)` helper.
+  moves to a `handed_in_record(account)` helper. `record_bytes` 256
+  holds no version 3 record at 64-byte token and scope caps (379 bytes,
+  387 with the zero-cap fields present empty): `src/tests.rs` `limits()`
+  and that test take 512 (ruling 106); a further `Limits` literal
+  whose `record_bytes` cannot hold a version 3 record at its caps takes
+  the next power of two that holds it, listed in the commit body.
 Test shape: unit, `src/tests.rs` (`limits()`, `record()`, byte literals
   written by hand), each under 20 ms:
   `a_record_round_trips_each_addition`, rows each addition alone, all
@@ -387,7 +392,8 @@ pub const RECORD_VERSION: u16 = 3;
 ## Questions to raise when reached
 
 - 05.2: if a downstream `record_bytes` cannot hold a version 3 record at
-  its downstream caps (decision 15), name the fixture and the size.
+  its downstream caps (decision 15), name the fixture and the size
+  (skein's two 256-byte fixtures: ruling 106, in 05.2's Shape).
 
 ## Done when
 
