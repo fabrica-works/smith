@@ -429,6 +429,21 @@ commits is this plan's.
      call it; skein 01 moves the first copies at its next increment. A further
      retyped helper moves the same way, named in the commit body.
 
+111. **skein 05.3's terms, meanwhile** (design gap, skein 05's block of 2026-10-19T13:32:52Z).
+     Interim: whether a registration's terms refuse an empty added-parameter
+     name and an empty sign-in-again error name (`Malformed`), or count each
+     entry against `parameter_bytes` (`Limit`), is a design gap: oauth.md,
+     section 1, gives each added parameter as "a name and a value" and section
+     5 says `Limits` "also caps the added parameters", and neither says
+     whether a name may be empty or how an entry's storage counts. It went to
+     the designer at 2026-10-19T13:35:02Z, in the run's `question.md`. Meanwhile skein 05.3
+     goes on with the work that does not rest on the answer: the move into
+     `redirect.rs`, `Terms` and its types, the varying redirect and its bound
+     port, the resource and the nonce, and their tests, as 05.3's Shape and
+     Test shape give them. Leave the empty-name refusal and any per-entry term
+     of `client_worst_case` for the answer's ruling, and do not land 05.3
+     before it; commit locally meanwhile.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
