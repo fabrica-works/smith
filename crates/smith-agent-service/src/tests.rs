@@ -581,10 +581,11 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
             owner: Token::new(1),
             prompt: translated,
             endpoint: skein_llm::Endpoint::codex(),
-            credential: skein_llm::Credential {
-                access_token: b"fake".as_slice().into(),
+            credential: Some(skein_llm::Credential {
+                value: b"fake".as_slice().into(),
                 account_id: b"fake".as_slice().into(),
-            },
+                scheme: skein_llm::Scheme::Bearer,
+            }),
         },
         &limits.llm.adapter.client,
     );

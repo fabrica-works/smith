@@ -1143,7 +1143,7 @@ impl World {
                     }
                     Err(error) => {
                         let (failure, evidence) =
-                            self.failure.unwrap_or((translate::failure(error), agent::llm::Evidence::Unknown));
+                            self.failure.unwrap_or((translate::failure(error.error), agent::llm::Evidence::Unknown));
                         Event::Failed { owner, failure, evidence, detail: Box::default() }
                     }
                 };

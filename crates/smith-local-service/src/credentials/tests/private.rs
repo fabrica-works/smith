@@ -52,6 +52,11 @@ fn native_limits() -> oauth::Limits {
 }
 fn record(expired: bool) -> skein_oauth::SavedToken {
     skein_oauth::SavedToken {
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
         key: 0,
         generation: 1,
         access_token: ACCESS.into(),
@@ -87,6 +92,9 @@ fn issuer() -> Peer {
     peer.queue(fake::Plan {
         status: 200,
         body: fake::Body::Token(skein_oauth::TokenResponse {
+            scope: None,
+            id_token: None,
+            earliest_refresh_at: None,
             access_token: ACCESS.into(),
             refresh_token: Some(b"refresh-new".as_slice().into()),
             expires_in: 3600,
@@ -128,6 +136,7 @@ impl Private {
                     directory: b"tokens".as_slice().into(),
                     file: b"record".as_slice().into(),
                     registration: skein_oauth::Registration {
+                        terms: None,
                         authorization_url: AUTHORIZE.into(),
                         token_endpoint: ENDPOINT.into(),
                         client_id: b"client".as_slice().into(),

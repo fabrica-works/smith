@@ -68,6 +68,7 @@ pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
     let messages = messages.into_iter().map(|message| translate_message(message, &namespace)).collect();
     let caching = provider::Caching::Scope(affinity.key);
     provider::Query {
+        credential: None,
         caching,
         model,
         system,
@@ -209,8 +210,13 @@ fn failure(error: provider::Error) -> agent::Failure {
         provider::Error::Unavailable => agent::Failure::Unavailable,
         provider::Error::ContextTooLong => agent::Failure::ContextTooLong,
         provider::Error::Unauthorized => agent::Failure::Unauthorized,
-        provider::Error::Exhausted { retry_after } => agent::Failure::Exhausted { retry_after },
-        provider::Error::InvalidRequest => agent::Failure::Invalid,
+        provider::Error::Exhausted { retry_after } => {
+            agent::Failure::Exhausted { retry_after: retry_after.unwrap_or(skein_lib::Duration::ZERO) }
+        }
+        // Transitional until smith 02.1 maps the account classes.
+        provider::Error::Refused | provider::Error::Unsupported | provider::Error::InvalidRequest => {
+            agent::Failure::Invalid
+        }
     }
 }
 

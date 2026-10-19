@@ -87,7 +87,11 @@ pub fn peer_for(anthropic: bool) -> llm::Peer {
 }
 
 fn standard_credential() -> skein_llm::Credential {
-    skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() }
+    skein_llm::Credential {
+        value: b"token".as_slice().into(),
+        account_id: b"acc".as_slice().into(),
+        scheme: skein_llm::Scheme::Bearer,
+    }
 }
 
 /// Script a reply with the shared scenario's standard credential.
@@ -133,7 +137,11 @@ pub fn configured_anthropic(scripts: Box<[api::Script]>, credential: skein_llm::
 pub fn rejected() -> llm::Peer {
     configured_dialect(
         Box::new([]),
-        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        skein_llm::Credential {
+            value: b"token".as_slice().into(),
+            account_id: b"acc".as_slice().into(),
+            scheme: skein_llm::Scheme::Bearer,
+        },
         Duration::ZERO,
         Transport::Plaintext,
         false,
@@ -233,7 +241,11 @@ pub fn context_rejected(peer: &llm::Peer) -> bool {
 pub(crate) fn reasoning(scripts: Box<[api::Script]>) -> llm::Peer {
     configured_bounds(
         scripts,
-        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        skein_llm::Credential {
+            value: b"token".as_slice().into(),
+            account_id: b"acc".as_slice().into(),
+            scheme: skein_llm::Scheme::Bearer,
+        },
         Duration::ZERO,
         Transport::Plaintext,
         false,

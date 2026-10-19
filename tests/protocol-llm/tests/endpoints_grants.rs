@@ -13,6 +13,7 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
         .add(skein_tls::CertificateDer::from(include_bytes!("../fixtures/root.der").to_vec()))
         .expect("fixture TLS root");
     let llm = match provider {
+        shared::Provider::OpenAi => shared::Endpoint::openai(),
         shared::Provider::OpenAiCodex => shared::Endpoint::codex(),
         shared::Provider::Anthropic => shared::Endpoint::anthropic(),
     };
@@ -22,7 +23,7 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
         name: llm::Endpoint(name),
         destination: skein_llm_connection::Endpoint {
             limits: skein_llm_world::limits(),
-            credential: skein_llm::client::CredentialLimits { access_token: 64, account_id: 64 },
+            credential: skein_llm::client::CredentialLimits { value: 64, account_id: 64 },
             address: SocketAddr::from(([127, 0, 0, 1], 443)),
             transport: skein_llm_connection::Transport::Tls {
                 server_name: skein_tls::Name::new("example.test").expect("server name"),
@@ -93,7 +94,7 @@ fn duplicate_names_and_out_of_range_accounts_fail_at_startup() {
 }
 
 fn credential(value: &[u8], account_id: &[u8]) -> Credential {
-    Credential { access_token: value.into(), account_id: account_id.into() }
+    Credential { value: value.into(), account_id: account_id.into(), scheme: skein_llm::Scheme::Bearer }
 }
 
 #[test]
@@ -105,13 +106,13 @@ fn a_refresh_preserves_the_first_call_then_evicts_the_oldest_generation() {
     grants.grant(first, credential(b"first", b"account-id"), Time::from_nanos(100)).expect("first grant");
     let started = grants.read(first, Time::from_nanos(10)).expect("call reads its starting value");
     grants.grant(second, credential(b"second", b"account-id"), Time::from_nanos(200)).expect("refresh");
-    assert_eq!(started.access_token.as_ref(), b"first");
-    assert_eq!(grants.read(second, Time::from_nanos(20)).expect("next call").access_token.as_ref(), b"second");
-    assert_eq!(grants.read(first, Time::from_nanos(20)).expect("overlapping first").access_token.as_ref(), b"first");
+    assert_eq!(started.value.as_ref(), b"first");
+    assert_eq!(grants.read(second, Time::from_nanos(20)).expect("next call").value.as_ref(), b"second");
+    assert_eq!(grants.read(first, Time::from_nanos(20)).expect("overlapping first").value.as_ref(), b"first");
     grants.grant(third, credential(b"third", b"account-id"), Time::from_nanos(300)).expect("next refresh");
     assert!(matches!(grants.read(first, Time::from_nanos(20)), Err(GrantError::Missing)));
     assert!(matches!(grants.read(second, Time::from_nanos(201)), Err(GrantError::Lapsed)));
-    assert_eq!(grants.read(third, Time::from_nanos(201)).expect("new value").access_token.as_ref(), b"third");
+    assert_eq!(grants.read(third, Time::from_nanos(201)).expect("new value").value.as_ref(), b"third");
     assert!(matches!(grants.grant(second, credential(b"stale", b""), Time::from_nanos(400)), Err(GrantError::Stale)));
     assert!(Grants::worst_case(1, 64).expect("bounded footprint") >= 128);
     assert!(!format!("{grants:?}").contains("third"), "debug hides bearer values");

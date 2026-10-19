@@ -1101,7 +1101,7 @@ impl World {
                         }),
                         Err(error) => self.below(Below::Failed {
                             owner,
-                            failure: translate::failure(error),
+                            failure: translate::failure(error.error),
                             evidence: agent::llm::Evidence::Unknown,
                             detail: Box::new([]),
                         }),

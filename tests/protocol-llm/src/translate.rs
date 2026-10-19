@@ -42,6 +42,7 @@ pub(crate) fn query(prompt: agent::Prompt, stated: &adapter::Stated) -> provider
         })
         .collect();
     provider::Query {
+        credential: None,
         caching: provider::Caching::Scope(prompt.affinity.key),
         model: prompt.model,
         system: prompt.system,
@@ -262,8 +263,13 @@ pub(crate) fn failure(error: provider::Error) -> agent::Failure {
         provider::Error::Unavailable => agent::Failure::Unavailable,
         provider::Error::ContextTooLong => agent::Failure::ContextTooLong,
         provider::Error::Unauthorized => agent::Failure::Unauthorized,
-        provider::Error::Exhausted { retry_after } => agent::Failure::Exhausted { retry_after },
-        provider::Error::InvalidRequest => agent::Failure::Invalid,
+        provider::Error::Exhausted { retry_after } => {
+            agent::Failure::Exhausted { retry_after: retry_after.unwrap_or(skein_lib::Duration::ZERO) }
+        }
+        // Transitional until smith 02.1 maps the account classes.
+        provider::Error::Refused | provider::Error::Unsupported | provider::Error::InvalidRequest => {
+            agent::Failure::Invalid
+        }
     }
 }
 

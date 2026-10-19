@@ -128,8 +128,8 @@ fn full_pool() -> (List<skein_llm_connection::Endpoint>, skein_llm_connection::L
     let (mut endpoints, _) = configured.llm_endpoints.into_parts();
     let client = endpoints.get_mut(0).expect("one endpoint");
     let call = skein_llm_world::call(7);
-    let measured =
-        skein_llm::client::measure(&call.prompt, &call.credential, &client.llm, &client.limits).expect("fixture fits");
+    let measured = skein_llm::client::measure(&call.prompt, call.credential.as_ref(), &client.llm, &client.limits)
+        .expect("fixture fits");
     client.limits.request = measured.body;
     let reservation = skein_llm::client::reservation(measured, &client.limits).expect("reservation");
     let mut pool = configured.limits.llm.connection;

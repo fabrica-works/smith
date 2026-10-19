@@ -59,6 +59,7 @@ fn commit_fields_and_files_are_checked_through_the_checkout_interface() {
         shown: b"Change delivered".to_vec(),
         errors: vec![],
         queries: vec![Query {
+            credential: None,
             caching: skein_fake_llm_domain::api::Caching::Scope([0; 16]),
             model: b"fake".as_slice().into(),
             system: b"@local-shell".as_slice().into(),

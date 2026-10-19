@@ -22,6 +22,7 @@ pub fn registration(account: &Account, codex: bool, workspace: &std::path::Path)
 
 fn configured(account: &Account, codex: bool) -> Result<oauth::Registration, Refusal> {
     let registration = oauth::Registration {
+        terms: None,
         client_id: text(account, "client_id")?.as_bytes().into(),
         authorization_url: text(account, "authorization_url")?.as_bytes().into(),
         token_endpoint: text(account, "token_url")?.as_bytes().into(),

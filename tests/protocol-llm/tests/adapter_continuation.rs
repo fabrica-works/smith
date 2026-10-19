@@ -131,8 +131,9 @@ fn adopt(
             endpoint_name: llm::Endpoint(1),
             endpoint: configuration.endpoint.clone(),
             credential: shared::Credential {
-                access_token: configuration.credential.access_token.clone(),
+                value: configuration.credential.value.clone(),
                 account_id: configuration.credential.account_id.clone(),
+                scheme: skein_llm::Scheme::Bearer,
             },
             application: Box::new([]),
             receiving: receiving(&bounds),
@@ -563,6 +564,7 @@ fn observe_failure(
         failure: actual_failure,
         evidence: actual_evidence,
         detail: actual_detail,
+        report: _,
     } = take_terminal(peer)
     else {
         panic!("actual failure entrance")
@@ -654,8 +656,9 @@ fn block_peer(configuration: &Configuration, bounds: &Limits, source: Vec<u8>) -
             endpoint_name: llm::Endpoint(1),
             endpoint: configuration.endpoint.clone(),
             credential: shared::Credential {
-                access_token: configuration.credential.access_token.clone(),
+                value: configuration.credential.value.clone(),
                 account_id: configuration.credential.account_id.clone(),
+                scheme: skein_llm::Scheme::Bearer,
             },
             application: Box::new([]),
             receiving: receiving(bounds),

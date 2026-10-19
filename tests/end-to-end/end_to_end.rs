@@ -384,7 +384,7 @@ fn standard_profile_runs_a_large_coding_write_and_the_following_checks() {
                 })
                 .collect(),
         }]),
-        skein_llm::Credential { access_token: token, account_id: b"acc".as_slice().into() },
+        skein_llm::Credential { value: token, account_id: b"acc".as_slice().into(), scheme: skein_llm::Scheme::Bearer },
         skein_lib::Duration::ZERO,
         skein_fake_peers::Transport::Tls,
     );

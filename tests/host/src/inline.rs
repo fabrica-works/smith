@@ -520,7 +520,7 @@ impl World {
                     },
                     Err(error) => {
                         let (failure, evidence) = self.failure.unwrap_or((
-                            smith_agent_world::translate::failure(error),
+                            smith_agent_world::translate::failure(error.error),
                             smith::llm::Evidence::Response { status: None },
                         ));
                         Below::Failed { owner: binding.owner, failure, evidence, detail: Box::default() }

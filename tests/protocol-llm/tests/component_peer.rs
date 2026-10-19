@@ -70,21 +70,24 @@ fn limits() -> ComponentLimits {
 fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
     let mut call = skein_llm_world::call(7);
     match dialect {
+        skein_llm::Provider::OpenAi => panic!("fixture exercises the withdrawn routes"),
         Provider::OpenAiCodex => {}
         Provider::Anthropic => {
             call.endpoint = skein_llm::Endpoint::anthropic();
-            call.credential = Credential::anthropic(b"fake-token".as_slice().into());
+            call.credential = Some(Credential::anthropic(b"fake-token".as_slice().into()));
             call.prompt.affinity = None;
         }
     }
     call.prompt.output_ceiling(dialect, 4096).expect("provider output ceiling");
     call.prompt.instructions = b"connection-world".as_slice().into();
     let peer_credential = Credential {
-        access_token: call.credential.access_token.clone(),
-        account_id: call.credential.account_id.clone(),
+        value: call.credential.as_ref().expect("fixture credential").value.clone(),
+        account_id: call.credential.as_ref().expect("fixture credential").account_id.clone(),
+        scheme: skein_llm::Scheme::Bearer,
     };
     let peer_limits = skein_llm_world::fake::limits(&skein_llm_world::limits());
     let provider_kind = match dialect {
+        skein_llm::Provider::OpenAi => panic!("fixture exercises the withdrawn routes"),
         Provider::OpenAiCodex => documents::Provider::OpenAi,
         Provider::Anthropic => documents::Provider::Anthropic,
     };
@@ -126,7 +129,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             destination: skein_llm_connection::Endpoint {
                 limits: limits().adapter.client,
                 credential: skein_llm::client::CredentialLimits {
-                    access_token: limits().grant_value_bytes,
+                    value: limits().grant_value_bytes,
                     account_id: limits().grant_value_bytes,
                 },
                 address: Addr::from((Ipv4Addr::LOCALHOST, 443)),
@@ -146,7 +149,11 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
     .expect("one endpoint");
     let mut component = Component::new(&limits(), endpoints).expect("component");
     component
-        .grant(GrantName { account: 0, generation: 1 }, call.credential, Time::from_nanos(10_000_000_000))
+        .grant(
+            GrantName { account: 0, generation: 1 },
+            call.credential.expect("fixture credential"),
+            Time::from_nanos(10_000_000_000),
+        )
         .expect("grant");
     let env = Env { now: Time::ZERO, wall: pki::VALID, limits: limits() };
     let peer_env = Env { now: Time::ZERO, wall: pki::VALID, limits: peer_limits };
@@ -443,6 +450,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                         assert!(completion.blocks.iter().any(|block| matches!(block, smith_events::Block::Call { tool, input, .. } if tool.as_ref() == b"read" && input.as_ref() == br#"{"path":"README.md"}"#)));
                     } else {
                         match dialect {
+                            skein_llm::Provider::OpenAi => panic!("fixture exercises the withdrawn routes"),
                             Provider::OpenAiCodex => assert!(
                                 deltas.is_empty(),
                                 "the shared fake Codex renderer emits Added/Done, without text deltas"

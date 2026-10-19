@@ -31,7 +31,14 @@ fn limits() -> oauth::Limits {
         },
         refresh_lead: Duration::from_secs(10),
         client: skein_oauth::ClientLimits {
+            parameter_bytes: 0,
+            resource_bytes: 0,
+            nonce_bytes: 0,
             document: skein_oauth::Limits {
+                issued_client_bytes: 0,
+                granted_bytes: 64,
+                subject_bytes: 0,
+                id_token_bytes: 256,
                 document_bytes: 1024,
                 string_bytes: 512,
                 token_bytes: 256,

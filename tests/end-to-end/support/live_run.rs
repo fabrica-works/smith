@@ -154,9 +154,11 @@ pub fn run_fake(scratch: &Scratch, scenario: &smith_local_process_world::world::
         if change { "change it" } else { "hello" },
         change,
         Expectation { before: change.then(|| scratch.checkout().head().expect("initial head")), files },
-        Some(
-            scenario.provider_with(skein_llm::Credential { access_token: token, account_id: b"acc".as_slice().into() }),
-        ),
+        Some(scenario.provider_with(skein_llm::Credential {
+            value: token,
+            account_id: b"acc".as_slice().into(),
+            scheme: skein_llm::Scheme::Bearer,
+        })),
     );
 }
 

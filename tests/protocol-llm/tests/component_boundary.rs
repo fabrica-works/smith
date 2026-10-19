@@ -83,7 +83,7 @@ fn endpoints_with_client(connect: Duration, client: skein_llm::client::Limits) -
             destination: skein_llm_connection::Endpoint {
                 limits: client,
                 credential: skein_llm::client::CredentialLimits {
-                    access_token: limits().grant_value_bytes,
+                    value: limits().grant_value_bytes,
                     account_id: limits().grant_value_bytes,
                 },
                 address: SocketAddr::from(([127, 0, 0, 1], 443)),
@@ -147,7 +147,7 @@ fn env(now: u64, limits: &ComponentLimits) -> Env<ComponentLimits> {
 }
 
 fn credential(value: &[u8]) -> Credential {
-    Credential { access_token: value.into(), account_id: b"account".as_slice().into() }
+    Credential { value: value.into(), account_id: b"account".as_slice().into(), scheme: skein_llm::Scheme::Bearer }
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
     let retry = Duration::from_secs(7);
     let cases = [
         (shared::Failure::Unauthorized, llm::Failure::Unauthorized),
-        (shared::Failure::Exhausted { retry_after: retry }, llm::Failure::Exhausted { retry_after: retry }),
+        (shared::Failure::Exhausted { retry_after: Some(retry) }, llm::Failure::Exhausted { retry_after: retry }),
         (shared::Failure::RateLimited { retry_after: retry }, llm::Failure::RateLimited { retry_after: retry }),
         (shared::Failure::Overloaded, llm::Failure::Overloaded),
         (shared::Failure::Unavailable, llm::Failure::Unavailable),

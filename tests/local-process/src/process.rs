@@ -145,6 +145,9 @@ fn issuer_with_token(transport: skein_fake_peers::Transport, port: u16, access_t
         .queue(fake_oauth::Plan {
             status: 200,
             body: fake_oauth::Body::Token(skein_oauth::TokenResponse {
+                scope: None,
+                id_token: None,
+                earliest_refresh_at: None,
                 access_token,
                 refresh_token: Some(b"refresh-new".as_slice().into()),
                 expires_in: 7200,

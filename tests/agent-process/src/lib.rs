@@ -201,7 +201,7 @@ fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::
             destination: skein_llm_connection::Endpoint {
                 limits: limits.llm.adapter.client,
                 credential: skein_llm::client::CredentialLimits {
-                    access_token: limits.llm.grant_value_bytes,
+                    value: limits.llm.grant_value_bytes,
                     account_id: limits.llm.grant_value_bytes,
                 },
                 address: kernel::Addr::from((std::net::Ipv4Addr::LOCALHOST, 443)),
@@ -336,7 +336,7 @@ pub(crate) fn start_workspace_message(
                             &limits,
                             smith_channel::WithdrawnValueParts {
                                 id: credential.account_id.clone(),
-                                bearer: skein_lib::Secret::new(credential.access_token.clone()),
+                                bearer: skein_lib::Secret::new(credential.value.clone()),
                             },
                         )
                         .expect("credential envelope"),
@@ -404,11 +404,8 @@ pub(crate) fn start_workspace_message(
 
 fn scenario_credential(anthropic: bool, private_grant: bool) -> skein_llm::Credential {
     skein_llm::Credential {
-        access_token: Box::from(if private_grant {
-            b"native-private-bearer-02.6".as_slice()
-        } else {
-            b"token".as_slice()
-        }),
+        scheme: skein_llm::Scheme::Bearer,
+        value: Box::from(if private_grant { b"native-private-bearer-02.6".as_slice() } else { b"token".as_slice() }),
         account_id: if anthropic {
             Box::new([])
         } else {

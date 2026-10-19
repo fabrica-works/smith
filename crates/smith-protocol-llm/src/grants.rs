@@ -55,7 +55,7 @@ impl Grants {
     /// Keep a newer generation and evict the oldest only when the account
     /// already has two. A stale refresh never replaces a value in flight.
     pub fn grant(&mut self, name: GrantName, credential: Credential, lapses: Time) -> Result<(), GrantError> {
-        let bytes = credential.access_token.len().checked_add(credential.account_id.len()).ok_or(GrantError::Bounds)?;
+        let bytes = credential.value.len().checked_add(credential.account_id.len()).ok_or(GrantError::Bounds)?;
         if name.account >= self.accounts
             || name.generation == 0
             || bytes > usize::try_from(self.value_bytes).expect("u32 fits usize")
@@ -96,8 +96,9 @@ impl Grants {
             return Err(GrantError::Lapsed);
         }
         Ok(Credential {
-            access_token: bytes::copy_of(&entry.credential.access_token),
+            value: bytes::copy_of(&entry.credential.value),
             account_id: bytes::copy_of(&entry.credential.account_id),
+            scheme: skein_llm::Scheme::Bearer,
         })
     }
 

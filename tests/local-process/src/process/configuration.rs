@@ -377,6 +377,7 @@ pub fn prepared_accounts(
         let port = if tls { 34_444 } else { 444 };
         let host = smith_agent_process_world::fake::loopback();
         let registration = skein_oauth::Registration {
+            terms: None,
             authorization_url: format!("{}://{host}:{port}/authorize", if tls { "https" } else { "http" })
                 .into_bytes()
                 .into(),

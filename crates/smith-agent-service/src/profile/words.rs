@@ -173,7 +173,7 @@ fn cap_name(cap: Cap) -> &'static str {
         Cap::Output => "output",
         Cap::Answer => "answer",
         Cap::ErrorBody => "error-body",
-        Cap::AccessToken => "access-token",
+        Cap::Value => "credential-value",
         Cap::AccountId => "account-id",
     }
 }

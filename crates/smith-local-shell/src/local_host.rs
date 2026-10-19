@@ -841,6 +841,10 @@ impl Host for Local {
 #[must_use]
 pub fn token_limits() -> skein_oauth::Limits {
     skein_oauth::Limits {
+        issued_client_bytes: 0,
+        granted_bytes: 1024,
+        subject_bytes: 0,
+        id_token_bytes: 8192,
         document_bytes: 16_384,
         string_bytes: 8192,
         token_bytes: 8192,

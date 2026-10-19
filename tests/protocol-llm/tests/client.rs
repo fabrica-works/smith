@@ -363,8 +363,9 @@ fn two_calls(
     let application = wire::schemas(&input, &bounds.stated);
     let endpoint = configuration.endpoint.clone();
     let credential = skein_llm::Credential {
-        access_token: configuration.credential.access_token.clone(),
+        value: configuration.credential.value.clone(),
         account_id: configuration.credential.account_id.clone(),
+        scheme: skein_llm::Scheme::Bearer,
     };
     let adapter::Prepared { client, context } = adapter::prepare(
         adapter::Input {
@@ -373,8 +374,9 @@ fn two_calls(
             prompt: input,
             endpoint: endpoint.clone(),
             credential: skein_llm::Credential {
-                access_token: credential.access_token.clone(),
+                value: credential.value.clone(),
                 account_id: credential.account_id.clone(),
+                scheme: skein_llm::Scheme::Bearer,
             },
             application,
             receiving,
@@ -554,6 +556,7 @@ fn actual_requests_render_the_run_key_and_thread_only_for_codex() {
             assert!(matches!(terminal, Event::Completed { .. }));
             let request = smith_protocol_llm_world::referee::NativeRequest::from_http(&wire.peer.requests);
             match configuration.endpoint.provider {
+                skein_llm::Provider::OpenAi => panic!("fixture exercises the withdrawn routes"),
                 skein_llm::Provider::OpenAiCodex => {
                     assert_eq!(
                         request.affinity,

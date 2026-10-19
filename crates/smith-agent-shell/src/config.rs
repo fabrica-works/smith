@@ -873,7 +873,7 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
 }
 
 fn credential_limits(limits: &llm::ComponentLimits) -> shared::client::CredentialLimits {
-    shared::client::CredentialLimits { access_token: limits.grant_value_bytes, account_id: limits.grant_value_bytes }
+    shared::client::CredentialLimits { value: limits.grant_value_bytes, account_id: limits.grant_value_bytes }
 }
 
 fn tls_transport() -> String {
@@ -1333,7 +1333,7 @@ mod tests {
         assert!(
             !std::str::from_utf8(line)
                 .expect("JSON UTF8")
-                .contains(std::str::from_utf8(&credential.access_token).expect("fixture access UTF8")),
+                .contains(std::str::from_utf8(&credential.value).expect("fixture access UTF8")),
             "grant access bytes never enter content"
         );
         assert!(
@@ -1351,8 +1351,9 @@ mod tests {
         let events = configured.service.limits.events.expect("actual product destination");
         let ceiling = events.sinks.line_ceiling(Capture::Everything).expect("joint ceiling");
         let credential = shared::Credential {
-            access_token: b"secret-prompt-bound-token".as_slice().into(),
+            value: b"secret-prompt-bound-token".as_slice().into(),
             account_id: b"secret-prompt-bound-account".as_slice().into(),
+            scheme: skein_llm::Scheme::Bearer,
         };
         for dense in [true, false] {
             let count = if dense { client.history_items } else { 8 };
@@ -1372,7 +1373,7 @@ mod tests {
                 affinity: None,
                 max_output_tokens: None,
             };
-            let measured = shared::client::measure(&native, &credential, &shared::Endpoint::codex(), &client)
+            let measured = shared::client::measure(&native, Some(&credential), &shared::Endpoint::codex(), &client)
                 .expect("the actual native writer admits the complete source payload");
             assert!(measured.body <= client.request, "native body stays within its owning cap");
             let mut messages = List::with_capacity(count);

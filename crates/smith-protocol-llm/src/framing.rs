@@ -14,11 +14,12 @@ use crate::Error;
 /// Actual endpoint option text and identity are counted separately in its own part.
 pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, tools: u32) -> Result<u64, Error> {
     let endpoint = match provider {
+        shared::Provider::OpenAi => shared::Endpoint::openai(),
         shared::Provider::OpenAiCodex => shared::Endpoint::codex(),
         shared::Provider::Anthropic => shared::Endpoint::anthropic(),
     };
     let reasoning_effort: Option<Box<[u8]>> = match provider {
-        shared::Provider::OpenAiCodex => Some(Box::new([0; 32])),
+        shared::Provider::OpenAi | shared::Provider::OpenAiCodex => Some(Box::new([0; 32])),
         shared::Provider::Anthropic => Some(Box::from(b"medium".as_slice())),
     };
     let mut prompt = shared::Prompt {
@@ -37,9 +38,10 @@ pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, too
     prompt.output_ceiling(provider, client.declared_output_tokens).or(Err(Error::Invalid))?;
     let account_id: Box<[u8]> = match provider {
         shared::Provider::OpenAiCodex => Box::from(b"a".as_slice()),
-        shared::Provider::Anthropic => Box::new([]),
+        shared::Provider::OpenAi | shared::Provider::Anthropic => Box::new([]),
     };
-    let credential = shared::Credential { access_token: Box::from(b"a".as_slice()), account_id };
+    let credential =
+        shared::Credential { value: Box::from(b"a".as_slice()), account_id, scheme: skein_llm::Scheme::Bearer };
     let mut limits = *client;
     // Only these actual fixed records participate in this measurement.
     // Runtime history/tool maxima do not belong to its temporary wrappers.
@@ -49,7 +51,7 @@ pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, too
     limits.http.read = 4096;
     limits.http.send = skein_tls::client::MAX_PLAINTEXT;
     limits.sse.chunk = limits.http.read;
-    let measured = match client::measure(&prompt, &credential, &endpoint, &limits) {
+    let measured = match client::measure(&prompt, Some(&credential), &endpoint, &limits) {
         Ok(measured) => measured,
         Err(error) => return Err(Error::from_shared(error)),
     };

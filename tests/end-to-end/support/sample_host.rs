@@ -57,7 +57,11 @@ pub fn run() {
     world.spawn(|| {
         Process::Script(Proc::Peer(Box::new(smith_agent_process_world::fake::configured_transport(
             Box::new([peer_script()]),
-            skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+            skein_llm::Credential {
+                value: b"token".as_slice().into(),
+                account_id: b"acc".as_slice().into(),
+                scheme: skein_llm::Scheme::Bearer,
+            },
             Duration::ZERO,
             skein_fake_peers::Transport::Tls,
         ))))

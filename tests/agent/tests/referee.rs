@@ -339,6 +339,7 @@ fn changed_bytes_between_check_and_submission_are_rejected_after_positive_check(
 fn prefix_query() -> skein_fake_llm_domain::api::Query {
     use skein_fake_llm_domain::api::{Message, Part, Query, Role, ToolChoice};
     Query {
+        credential: None,
         caching: skein_fake_llm_domain::api::Caching::Scope([0; 16]),
         model: b"model".as_slice().into(),
         system: b"system".as_slice().into(),

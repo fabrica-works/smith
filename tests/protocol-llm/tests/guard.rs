@@ -46,6 +46,7 @@ fn attempt(provider: Provider, guard: Option<llm::Guard>, text: &[u8]) -> Peer {
 
 fn measure(provider: Provider) -> u64 {
     match provider {
+        skein_llm::Provider::OpenAi => panic!("fixture exercises the withdrawn routes"),
         Provider::OpenAiCodex => CODEX_MEASURE,
         Provider::Anthropic => ANTHROPIC_MEASURE,
     }

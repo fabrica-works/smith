@@ -148,8 +148,9 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
                 prompt,
                 endpoint: configuration.endpoint.clone(),
                 credential: skein_llm::Credential {
-                    access_token: configuration.credential.access_token.clone(),
+                    value: configuration.credential.value.clone(),
                     account_id: configuration.credential.account_id.clone(),
+                    scheme: skein_llm::Scheme::Bearer,
                 },
                 application: Box::new([]),
                 receiving,
@@ -171,8 +172,9 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
             prepared.client,
             configuration.endpoint.clone(),
             skein_llm::Credential {
-                access_token: configuration.credential.access_token.clone(),
+                value: configuration.credential.value.clone(),
                 account_id: configuration.credential.account_id.clone(),
+                scheme: skein_llm::Scheme::Bearer,
             },
             bounds.client,
             scripts,

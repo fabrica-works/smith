@@ -41,9 +41,12 @@ pub fn failed(
             },
         },
         shared::Failure::ContextTooLong => llm::Failure::ContextTooLong,
-        shared::Failure::Invalid => llm::Failure::Invalid,
+        // Transitional until smith 02.1 gives the account classes their own mapping.
+        shared::Failure::Refused | shared::Failure::Unsupported | shared::Failure::Invalid => llm::Failure::Invalid,
         shared::Failure::Unauthorized => llm::Failure::Unauthorized,
-        shared::Failure::Exhausted { retry_after } => llm::Failure::Exhausted { retry_after },
+        shared::Failure::Exhausted { retry_after } => {
+            llm::Failure::Exhausted { retry_after: retry_after.unwrap_or(skein_lib::Duration::ZERO) }
+        }
         shared::Failure::Limit { which, bound } => llm::Failure::Limit { which: llm::Limit::Path(cap(which)), bound },
         shared::Failure::Protocol => llm::Failure::Protocol,
         shared::Failure::Cancelled => llm::Failure::Cancelled,
@@ -215,7 +218,7 @@ pub(crate) const fn cap(which: shared::Cap) -> llm::Cap {
         shared::Cap::Output => llm::Cap::Output,
         shared::Cap::Answer => llm::Cap::Answer,
         shared::Cap::ErrorBody => llm::Cap::ErrorBody,
-        shared::Cap::AccessToken => llm::Cap::AccessToken,
+        shared::Cap::Value => llm::Cap::AccessToken,
         shared::Cap::AccountId => llm::Cap::AccountId,
     }
 }

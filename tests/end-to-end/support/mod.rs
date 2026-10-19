@@ -338,8 +338,9 @@ pub fn run_with_provider(
     world.spawn(|| {
         Process::Script(Proc::Peer(Box::new(provider.unwrap_or_else(|| {
             scenario.provider_with(skein_llm::Credential {
-                access_token: token.clone(),
+                value: token.clone(),
                 account_id: b"acc".as_slice().into(),
+                scheme: skein_llm::Scheme::Bearer,
             })
         }))))
     });

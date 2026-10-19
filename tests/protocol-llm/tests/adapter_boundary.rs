@@ -66,8 +66,9 @@ fn input(configuration: &Configuration) -> Input {
         endpoint_name: llm::Endpoint(1),
         endpoint: configuration.endpoint.clone(),
         credential: shared::Credential {
-            access_token: configuration.credential.access_token.clone(),
+            value: configuration.credential.value.clone(),
             account_id: configuration.credential.account_id.clone(),
+            scheme: skein_llm::Scheme::Bearer,
         },
         application: Box::new([schema(ToolKind::Wait, b"wait")]),
         receiving: Receiving {
@@ -103,8 +104,9 @@ fn scripts(calls: bool) -> Box<[api::Script]> {
 fn adopt(input: Input, calls: bool) -> (Context, Exchange) {
     let endpoint = input.endpoint.clone();
     let credential = shared::Credential {
-        access_token: input.credential.access_token.clone(),
+        value: input.credential.value.clone(),
         account_id: input.credential.account_id.clone(),
+        scheme: skein_llm::Scheme::Bearer,
     };
     let adapter::Prepared { client, context } = adapter::prepare(input, &limits()).expect("positive admission");
     let peer = Exchange::prepared(client, endpoint, credential, limits().client, scripts(calls));
@@ -225,6 +227,7 @@ fn failed(configuration: &Configuration) -> (Context, Exchange, client::Event) {
             owner,
             failure: shared::Failure::Overloaded,
             evidence: client::Evidence::Response { status: 503 },
+            report: _,
             detail
         } if *owner == OWNER && detail.as_ref() == b"overloaded_error"
     ));
@@ -236,7 +239,7 @@ fn failed_owner_class_evidence_and_detail_survive_only_the_matching_context() {
     for configuration in &wire::configurations() {
         for wrong_owner in [false, true] {
             let (context, mut peer, terminal) = failed(configuration);
-            let client::Event::Failed { owner, failure, evidence, detail } = terminal else {
+            let client::Event::Failed { owner, failure, evidence, report: _, detail } = terminal else {
                 panic!("actual byte-peer failure established above");
             };
             let returned = adapter::failed(context, if wrong_owner { OTHER } else { owner }, failure, evidence, detail);
@@ -531,8 +534,9 @@ fn child_completed(configuration: &Configuration, arguments: &[u8]) -> (Context,
     let schema = offered.application[0].schema.clone();
     let endpoint = offered.endpoint.clone();
     let credential = shared::Credential {
-        access_token: offered.credential.access_token.clone(),
+        value: offered.credential.value.clone(),
         account_id: offered.credential.account_id.clone(),
+        scheme: skein_llm::Scheme::Bearer,
     };
     let adapter::Prepared { client, context } = adapter::prepare(offered, &limits()).expect("actual admission");
     let script = Box::new([api::Script {

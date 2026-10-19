@@ -45,6 +45,11 @@ impl Invocation {
         let tokens = credential_fixture::Tokens::new(&token_directory, token_limits()).expect("private tokens");
         let token = skein_oauth::encode_record(
             &skein_oauth::SavedToken {
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+                earliest_refresh_at: None,
                 key: 0,
                 generation: 1,
                 access_token: b"token".as_slice().into(),

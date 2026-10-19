@@ -134,7 +134,7 @@ fn credential(scratch: &Scratch) -> skein_llm::Credential {
     let login = std::fs::read(scratch.path().join("auth.json")).expect("scratch login");
     let document: serde_json::Value = serde_json::from_slice(&login).expect("scratch login document");
     skein_llm::Credential {
-        access_token: document
+        value: document
             .get("tokens")
             .and_then(|tokens| tokens.get("access_token"))
             .and_then(serde_json::Value::as_str)
@@ -142,6 +142,7 @@ fn credential(scratch: &Scratch) -> skein_llm::Credential {
             .as_bytes()
             .into(),
         account_id: b"acc".as_slice().into(),
+        scheme: skein_llm::Scheme::Bearer,
     }
 }
 
@@ -272,7 +273,7 @@ fn run_fixture(
             Process::Script(Proc::Issuer(Box::new(smith_local_process_world::process::IssuerProcess::with_token(
                 skein_fake_peers::Transport::Plaintext,
                 34_444,
-                credential(scratch).access_token,
+                credential(scratch).value,
             ))))
         });
         world.spawn(|| Process::Script(Proc::Browser(Box::default())));

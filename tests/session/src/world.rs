@@ -1708,7 +1708,7 @@ impl World {
             provider::Request::Reply { to, result } => {
                 let call = to.into_token().raw();
                 self.serving.end(call);
-                self.send(Delivery::Answer { call, result });
+                self.send(Delivery::Answer { call, result: result.map_err(|failure| failure.error) });
             }
             other @ (provider::Request::Piece { .. } | provider::Request::Hold { .. }) => {
                 panic!("typed provider expected a terminal reply, got {other:?}")

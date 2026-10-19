@@ -174,6 +174,11 @@ pub fn env_record(value: &[u8], codex: bool, wall: Wall) -> Option<Borrowed> {
     };
     Some(Borrowed {
         record: skein_oauth::SavedToken {
+            issued_client_id: None,
+            granted_scopes: None,
+            subject: None,
+            id_token: None,
+            earliest_refresh_at: None,
             key: 0,
             generation: 1,
             access_token: value.into(),

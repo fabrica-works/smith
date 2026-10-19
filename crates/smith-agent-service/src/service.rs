@@ -923,7 +923,11 @@ fn credential(value: &[u8]) -> Option<skein_llm::Credential> {
     if bearer.is_empty() {
         return None;
     }
-    Some(skein_llm::Credential { access_token: Box::from(bearer), account_id: Box::from(account_id) })
+    Some(skein_llm::Credential {
+        value: Box::from(bearer),
+        account_id: Box::from(account_id),
+        scheme: skein_llm::Scheme::Bearer,
+    })
 }
 
 /// Advance io, the components, and the domain once at injected clocks.
@@ -2684,7 +2688,7 @@ mod tests {
     fn grant_envelope_splits_account_and_bearer_without_leaking_the_header() {
         let value = credential(&[0, 3, b'a', b'c', b'c', b't', b'o', b'k']).expect("grant");
         assert_eq!(&*value.account_id, b"acc");
-        assert_eq!(&*value.access_token, b"tok");
+        assert_eq!(&*value.value, b"tok");
         assert!(credential(&[0, 2, b'a']).is_none());
         assert!(credential(&[0, 0]).is_none());
     }

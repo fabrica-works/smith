@@ -56,7 +56,7 @@ pub(crate) fn codex(resolved: &Resolved, account: u32) -> bool {
                 .expect("resolved endpoint");
             match endpoint.provider {
                 skein_llm::Provider::OpenAiCodex => return true,
-                skein_llm::Provider::Anthropic => {}
+                skein_llm::Provider::OpenAi | skein_llm::Provider::Anthropic => {}
             }
         }
     }
@@ -169,6 +169,9 @@ pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::
 #[must_use]
 pub fn client_limits() -> skein_oauth::ClientLimits {
     skein_oauth::ClientLimits {
+        parameter_bytes: 0,
+        resource_bytes: 0,
+        nonce_bytes: 0,
         document: crate::local_host::token_limits(),
         uri_bytes: 4096,
         scope_bytes: 1024,

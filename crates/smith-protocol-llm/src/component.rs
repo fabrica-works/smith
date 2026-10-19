@@ -456,7 +456,7 @@ impl Component {
             call: owner,
             endpoint: options.index,
             prompt: translated,
-            credential,
+            credential: Some(credential),
             deadlines,
             drop_reasoning,
         };
@@ -551,7 +551,7 @@ impl Component {
                         None => {}
                     }
                 }
-                connection::Event::Failed { call, failure, evidence, detail, measures } => {
+                connection::Event::Failed { call, failure, evidence, report: _, detail, measures } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => {
@@ -716,7 +716,7 @@ fn observed_prompt(
 ) -> Result<Option<smith_events::Prompt>, Error> {
     match observation {
         Some(observation) => {
-            match shared::client::measure(translated, credential, &options.endpoint, &options.client) {
+            match shared::client::measure(translated, Some(credential), &options.endpoint, &options.client) {
                 Ok(_) => {}
                 Err(error) => return Err(Error::from_shared(error)),
             }

@@ -843,7 +843,11 @@ impl TraceCase {
         };
         fake::configured(
             Box::new([api::Script { cue: Box::new([]), turns: turns.into() }]),
-            skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+            skein_llm::Credential {
+                value: b"token".as_slice().into(),
+                account_id: b"acc".as_slice().into(),
+                scheme: skein_llm::Scheme::Bearer,
+            },
             Duration::ZERO,
         )
     }
@@ -938,7 +942,11 @@ fn environment_peer() -> skein_fake_peers::llm::Peer {
                 },
             ]),
         }]),
-        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        skein_llm::Credential {
+            value: b"token".as_slice().into(),
+            account_id: b"acc".as_slice().into(),
+            scheme: skein_llm::Scheme::Bearer,
+        },
         Duration::ZERO,
     )
 }
@@ -1386,8 +1394,9 @@ impl World {
                         }]),
                     }]),
                     skein_llm::Credential {
-                        access_token: b"token".as_slice().into(),
+                        value: b"token".as_slice().into(),
                         account_id: b"acc".as_slice().into(),
+                        scheme: skein_llm::Scheme::Bearer,
                     },
                     Duration::ZERO,
                 )

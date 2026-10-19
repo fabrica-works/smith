@@ -19,6 +19,7 @@ const BORROWED_FILE: u64 = 1 << 63;
 
 /// One account source handed to the local service before its loop.
 #[expect(missing_debug_implementations, reason = "environment records contain credentials")]
+#[expect(clippy::large_enum_variant, reason = "bounded source registrations are priced in accounts_worst_case")]
 pub enum Source {
     /// A login under an adopted directory, loaded at startup and for later grants.
     Borrow { account: u32, root: kernel::Fd, path: Box<[u8]>, format: LoginFormat },

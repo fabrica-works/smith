@@ -58,7 +58,7 @@ fn endpoint_bytes(endpoint: &skein_llm::Endpoint) -> u64 {
 }
 
 fn credential_bytes(credential: &skein_llm::Credential) -> u64 {
-    sum([len(&credential.access_token), len(&credential.account_id)])
+    sum([len(&credential.value), len(&credential.account_id)])
 }
 
 fn configuration_bytes(configuration: &Configuration) -> u64 {

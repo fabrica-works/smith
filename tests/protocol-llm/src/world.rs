@@ -1007,7 +1007,7 @@ impl World {
                     }
                     Err(error) => Event::Failed {
                         owner,
-                        failure: translate::failure(error),
+                        failure: translate::failure(error.error),
                         evidence: smith_domain::llm::Evidence::Unknown,
                         detail: Box::default(),
                     },

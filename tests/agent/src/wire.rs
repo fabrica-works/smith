@@ -48,9 +48,8 @@ pub fn configurations() -> Box<[Configuration]> {
         Configuration {
             endpoint: shared::Endpoint::codex(),
             credential: shared::Credential {
-                access_token: b"fixture-token".as_slice().into(),
-                account_id: b"fixture-account".as_slice().into(),
-            },
+                value: b"fixture-token".as_slice().into(),
+                account_id: b"fixture-account".as_slice().into(), scheme: skein_llm::Scheme::Bearer,},
             error_prefix: b"Error: ".as_slice().into(),
             error_flag: false,
             continuation_arguments:
@@ -335,13 +334,11 @@ impl Wire {
         let endpoint = configuration.endpoint.clone();
         let peer_endpoint = endpoint.clone();
         let credential = shared::Credential {
-            access_token: configuration.credential.access_token.clone(),
-            account_id: configuration.credential.account_id.clone(),
-        };
+            value: configuration.credential.value.clone(),
+            account_id: configuration.credential.account_id.clone(), scheme: skein_llm::Scheme::Bearer,};
         let peer_credential = shared::Credential {
-            access_token: credential.access_token.clone(),
-            account_id: credential.account_id.clone(),
-        };
+            value: credential.value.clone(),
+            account_id: credential.account_id.clone(), scheme: skein_llm::Scheme::Bearer,};
         let adapter::Prepared { client, context } = adapter::prepare(
             adapter::Input {
                 owner,
@@ -412,7 +409,7 @@ impl Wire {
                             .expect("actual admitted Client completion and explicit application codec fit receiving"),
                     );
                 }
-                client::Event::Failed { owner, failure, evidence, detail } => {
+                client::Event::Failed { owner, failure, evidence, report: _, detail } => {
                     self.observed.push(Observed::Failed(owner));
                     let context = self.context.take().expect("one actual Client terminal owns the context");
                     returned.push(

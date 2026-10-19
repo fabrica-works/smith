@@ -262,6 +262,10 @@ mod store;
 
 fn login_limits() -> skein_oauth::Limits {
     skein_oauth::Limits {
+        issued_client_bytes: 0,
+        granted_bytes: 64,
+        subject_bytes: 0,
+        id_token_bytes: 256,
         document_bytes: 1024,
         string_bytes: 512,
         token_bytes: 256,
