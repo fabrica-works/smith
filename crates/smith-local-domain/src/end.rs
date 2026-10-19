@@ -54,10 +54,15 @@ pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) ->
                     failure: smith_host_domain::CompletionFailure::Unauthorized,
                     ..
                 } => ExitStatus::Credentials { account },
+                smith_host_domain::ModelFault::Refused { account, .. }
+                | smith_host_domain::ModelFault::Unauthorized { account } => {
+                    ExitStatus::Credentials { account: *account }
+                }
                 smith_host_domain::ModelFault::Completion { .. }
-                | smith_host_domain::ModelFault::Exhausted { .. }
+                | smith_host_domain::ModelFault::Limited { .. }
                 | smith_host_domain::ModelFault::Provider
-                | smith_host_domain::ModelFault::Refused
+                | smith_host_domain::ModelFault::Declined
+                | smith_host_domain::ModelFault::Program { .. }
                 | smith_host_domain::ModelFault::Truncated
                 | smith_host_domain::ModelFault::Malformed => ExitStatus::RunFailed,
             },

@@ -7,7 +7,7 @@ use smith_local_domain as local;
 
 pub(super) fn run(
     text: &mut Shown,
-    why: host::RunFailure,
+    why: &host::RunFailure,
     diagnostic: &[u8],
     models: &[smith_domain::run::charter::Llm],
     account_name: Option<&[u8]>,
@@ -18,7 +18,7 @@ pub(super) fn run(
     match why {
         host::RunFailure::Cancelled => append(text, b"interrupted: "),
         host::RunFailure::Model(host::ModelFault::Completion { model, .. }) => {
-            if let Some(model) = models.get(usize::try_from(model).expect("model index fits usize")) {
+            if let Some(model) = models.get(usize::try_from(*model).expect("model index fits usize")) {
                 value.endpoint = Some(match endpoint_name {
                     Some(name) => clip(name).into(),
                     None => skein_lib::Decimal::of(u64::from(model.endpoint.0)).as_bytes().into(),
@@ -193,24 +193,39 @@ fn invalid_name(invalid: host::RunInvalid) -> &'static [u8] {
     }
 }
 
-fn failed(why: host::RunFailure) -> AnswerFailure {
+fn failed(why: &host::RunFailure) -> AnswerFailure {
     match why {
         host::RunFailure::Model(fault) => match fault {
-            host::ModelFault::Completion { failure: why, evidence, model, attempts } => {
+            host::ModelFault::Completion { failure: why, evidence, model, attempts, report: _ } => {
                 let mut result = failure(AnswerClass::Model, None);
-                result.completion = Some(completion(why, evidence));
-                result.attempts = Some(u64::from(attempts));
-                result.model = Some(skein_lib::Decimal::of(u64::from(model)).as_bytes().into());
+                result.completion = Some(completion(*why, *evidence));
+                result.attempts = Some(u64::from(*attempts));
+                result.model = Some(skein_lib::Decimal::of(u64::from(*model)).as_bytes().into());
                 result
             }
-            host::ModelFault::Exhausted { account, retry_after_ms } => {
+            host::ModelFault::Limited { account, reset } => {
                 let mut result = failure(AnswerClass::Model, None);
-                result.account = Some(u64::from(account));
-                result.retry_after_ms = retry_after_ms;
+                result.account = Some(u64::from(*account));
+                result.retry_after_ms = match reset {
+                    Some(reset) => reset.as_nanos().checked_div(1_000_000),
+                    None => None,
+                };
                 result
             }
-            host::ModelFault::Provider => failure(AnswerClass::Model, Some(b"provider")),
-            host::ModelFault::Refused => failure(AnswerClass::Model, Some(b"refused")),
+            host::ModelFault::Provider | host::ModelFault::Program { .. } => {
+                failure(AnswerClass::Model, Some(b"provider"))
+            }
+            // smith 05.2 gives these faults their event vocabulary.
+            host::ModelFault::Refused { .. } | host::ModelFault::Declined => {
+                failure(AnswerClass::Model, Some(b"refused"))
+            }
+            host::ModelFault::Unauthorized { account } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.account = Some(u64::from(*account));
+                result.completion =
+                    Some(completion(host::CompletionFailure::Unauthorized, host::CompletionEvidence::Unsent));
+                result
+            }
             host::ModelFault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             host::ModelFault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
@@ -231,8 +246,8 @@ fn failed(why: host::RunFailure) -> AnswerFailure {
                 },
             };
             let mut result = failure(AnswerClass::Budget, Some(which));
-            result.used = used;
-            result.bound = bound;
+            result.used = *used;
+            result.bound = *bound;
             result
         }
         host::RunFailure::Policy(host::Policy::Unfinished { .. }) => failure(AnswerClass::Policy, None),
@@ -269,14 +284,20 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
         host::CompletionFailure::Unavailable => (FailureClass::Unavailable, None),
         host::CompletionFailure::TimedOut { .. } => (FailureClass::TimedOut, None),
         host::CompletionFailure::ContextTooLong => (FailureClass::ContextTooLong, None),
-        host::CompletionFailure::Invalid => (FailureClass::Invalid, None),
+        // smith 05.2 gives the new classes their event names.
+        host::CompletionFailure::Refused => (FailureClass::Unknown(b"refused".as_slice().into()), None),
+        host::CompletionFailure::Unsupported | host::CompletionFailure::Invalid => (FailureClass::Invalid, None),
         host::CompletionFailure::Unauthorized => (FailureClass::Unauthorized, None),
         host::CompletionFailure::RateLimited { retry_after } => {
             (FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
         }
-        host::CompletionFailure::Exhausted { retry_after } => {
-            (FailureClass::Exhausted, Some(retry_after.as_nanos() / 1_000_000))
-        }
+        host::CompletionFailure::Exhausted { retry_after } => (
+            FailureClass::Exhausted,
+            match retry_after {
+                Some(reset) => reset.as_nanos().checked_div(1_000_000),
+                None => None,
+            },
+        ),
     };
     let mut status = None;
     match evidence {
@@ -303,6 +324,8 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
         | host::CompletionFailure::Unavailable
         | host::CompletionFailure::ContextTooLong
         | host::CompletionFailure::Invalid
+        | host::CompletionFailure::Refused
+        | host::CompletionFailure::Unsupported
         | host::CompletionFailure::Unauthorized
         | host::CompletionFailure::RateLimited { .. }
         | host::CompletionFailure::Exhausted { .. } => None,
@@ -319,6 +342,8 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
         | host::CompletionFailure::TimedOut { .. }
         | host::CompletionFailure::ContextTooLong
         | host::CompletionFailure::Invalid
+        | host::CompletionFailure::Refused
+        | host::CompletionFailure::Unsupported
         | host::CompletionFailure::Unauthorized
         | host::CompletionFailure::RateLimited { .. }
         | host::CompletionFailure::Exhausted { .. } => None,

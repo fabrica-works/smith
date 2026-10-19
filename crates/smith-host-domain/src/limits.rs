@@ -147,7 +147,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Map::<u32, TurnMeta>::worst_case(limits.turns)?)?
         .checked_add(Map::<u32, Account>::worst_case(limits.accounts)?)?
         .checked_add(start.max(queued))?
-        .checked_add(u64::from(limits.detail_bytes))?;
+        .checked_add(u64::from(limits.detail_bytes))?
+        .checked_add(crate::ModelFault::BYTES)?;
     Slab::<Agent>::worst_case(limits.agents)?
         .checked_add(skein_lib::List::<Token>::worst_case(limits.calls)?)?
         .checked_add(skein_lib::List::<Token>::worst_case(limits.messages)?)?

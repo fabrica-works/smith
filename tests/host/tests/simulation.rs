@@ -304,7 +304,7 @@ fn a_run_may_fail_as_it_reports_it() {
     ] {
         let mut world = World::new(15, limits());
         world.live();
-        last(&mut world, RunResult::Failed { failure }, 0, 10);
+        last(&mut world, RunResult::Failed { failure: failure.clone() }, 0, 10);
         assert_eq!(world.seen.answer.as_ref().expect("last word").result, RunResult::Failed { failure });
         world.cleanup(Some(smith_host_domain::Exit::Code(0)));
         world.settled();

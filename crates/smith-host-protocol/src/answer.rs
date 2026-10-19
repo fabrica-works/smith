@@ -118,18 +118,16 @@ fn model_fault(record: &wire::ModelFaultValue) -> Result<host::ModelFault, Error
                     host::CompletionFailure::TimedOut { phase: completion_phase(record.phase()) }
                 }
                 wire::CompletionFailure::ContextTooLong => host::CompletionFailure::ContextTooLong,
-                // smith 02.1 gives the two new classes their domain form.
-                wire::CompletionFailure::Refused | wire::CompletionFailure::Unsupported => {
-                    host::CompletionFailure::Invalid
-                }
+                wire::CompletionFailure::Refused => host::CompletionFailure::Refused,
+                wire::CompletionFailure::Unsupported => host::CompletionFailure::Unsupported,
                 wire::CompletionFailure::Invalid => host::CompletionFailure::Invalid,
                 wire::CompletionFailure::Unauthorized => host::CompletionFailure::Unauthorized,
                 wire::CompletionFailure::RateLimited => host::CompletionFailure::RateLimited {
                     retry_after: (*record.retry_after()).ok_or(Error::InvalidAnswer)?,
                 },
-                wire::CompletionFailure::Exhausted => host::CompletionFailure::Exhausted {
-                    retry_after: (*record.retry_after()).ok_or(Error::InvalidAnswer)?,
-                },
+                wire::CompletionFailure::Exhausted => {
+                    host::CompletionFailure::Exhausted { retry_after: *record.retry_after() }
+                }
             };
             let evidence = match record.evidence() {
                 wire::CompletionEvidence::Unsent => host::CompletionEvidence::Unsent,
@@ -138,21 +136,30 @@ fn model_fault(record: &wire::ModelFaultValue) -> Result<host::ModelFault, Error
                     host::CompletionEvidence::Response { status: *record.status() }
                 }
             };
-            host::ModelFault::Completion { failure, evidence, model: record.model(), attempts: record.attempts() }
+            host::ModelFault::Completion {
+                failure,
+                evidence,
+                model: record.model(),
+                attempts: record.attempts(),
+                report: host::Report {
+                    code: record.code().into(),
+                    request: record.request_id().into(),
+                    field: record.field().into(),
+                },
+            }
         }
-        wire::ModelFault::Limited(value) => host::ModelFault::Exhausted {
-            account: value.account(),
-            retry_after_ms: match value.reset() {
-                Some(reset) => reset.as_nanos().checked_div(1_000_000),
-                None => None,
-            },
-        },
-        // smith 02.3 supplies the new host fault forms.
-        wire::ModelFault::Refused(_) | wire::ModelFault::Unauthorized(_) | wire::ModelFault::Program(_) => {
-            host::ModelFault::Provider
+        wire::ModelFault::Limited(value) => {
+            host::ModelFault::Limited { account: value.account(), reset: *value.reset() }
+        }
+        wire::ModelFault::Refused(value) => {
+            host::ModelFault::Refused { account: value.account(), code: value.code().into() }
+        }
+        wire::ModelFault::Unauthorized(value) => host::ModelFault::Unauthorized { account: value.account() },
+        wire::ModelFault::Program(value) => {
+            host::ModelFault::Program { name: value.name().into(), exit: *value.exit(), detail: value.detail().into() }
         }
         wire::ModelFault::Provider => host::ModelFault::Provider,
-        wire::ModelFault::Declined => host::ModelFault::Refused,
+        wire::ModelFault::Declined => host::ModelFault::Declined,
         wire::ModelFault::Truncated => host::ModelFault::Truncated,
         wire::ModelFault::Malformed => host::ModelFault::Malformed,
     };

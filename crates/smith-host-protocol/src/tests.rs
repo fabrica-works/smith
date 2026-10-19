@@ -470,12 +470,14 @@ fn the_host_reserves_its_joint_start_frame_in_its_sending_direction() {
 
 #[test]
 fn the_answer_carries_the_exhausted_account_and_its_remaining_wait() {
-    use skein_lib::Time;
+    use skein_lib::{Duration, Time};
     use smith_domain::run;
     use smith_host_domain as host;
-    for (reset_at, expected) in
-        [(Some(Time::from_nanos(100_000_000)), Some(80)), (Some(Time::ZERO), Some(0)), (None, None)]
-    {
+    for (reset_at, expected) in [
+        (Some(Time::from_nanos(100_000_000)), Some(Duration::from_nanos(80_000_000))),
+        (Some(Time::ZERO), Some(Duration::ZERO)),
+        (None, None),
+    ] {
         let answer = run::Answer::Failed {
             failure: run::Failure::Model(run::Fault::Limited { account: 23, reset_at }),
             spent: run::Spend::ZERO,
@@ -493,7 +495,7 @@ fn the_answer_carries_the_exhausted_account_and_its_remaining_wait() {
         assert_eq!(
             decoded.result,
             host::RunResult::Failed {
-                failure: host::RunFailure::Model(host::ModelFault::Exhausted { account: 23, retry_after_ms: expected }),
+                failure: host::RunFailure::Model(host::ModelFault::Limited { account: 23, reset: expected }),
             }
         );
     }
@@ -570,4 +572,113 @@ fn a_hosts_standard_error_keeps_its_last_bytes_whatever_its_deliveries() {
         );
         assert!(above.is_empty());
     }
+}
+
+#[test]
+fn each_version_4_fault_reads_as_its_own() {
+    use smith_channel as wire;
+    use smith_host_domain as host;
+    let limits = &wire::CEILINGS;
+    for (fault, expected) in fault_rows() {
+        let value = wire::ModelFaultValue::new(limits, wire::ModelFaultValueParts { value: fault }).unwrap();
+        let reason = wire::RunFailure::Model(value);
+        let result = wire::RunResult::Failed(wire::Failed::new(limits, wire::FailedParts { reason }).unwrap());
+        let record =
+            wire::Answer::new(limits, wire::AnswerParts { turns: 0, spent: 0, last_read: None, result }).unwrap();
+        let decoded = crate::answer::decode_answer(&record, &smith_charter::CEILINGS).unwrap();
+        assert_eq!(decoded.result, host::RunResult::Failed { failure: host::RunFailure::Model(expected) });
+    }
+}
+
+fn wire_completion(failure: smith_channel::CompletionFailure) -> smith_channel::ModelFault {
+    use smith_channel as wire;
+    wire::ModelFault::Completion(
+        wire::CompletionFault::new(
+            &wire::CEILINGS,
+            wire::CompletionFaultParts {
+                failure,
+                evidence: wire::CompletionEvidence::Unknown,
+                retry_after: None,
+                model: 1,
+                attempts: 2,
+                code: b"code".as_slice().into(),
+                request_id: b"request".as_slice().into(),
+                field: b"feature".as_slice().into(),
+            },
+        )
+        .unwrap(),
+    )
+}
+
+fn host_completion(failure: smith_host_domain::CompletionFailure) -> smith_host_domain::ModelFault {
+    use smith_host_domain as host;
+    host::ModelFault::Completion {
+        failure,
+        evidence: host::CompletionEvidence::Unknown,
+        model: 1,
+        attempts: 2,
+        report: host::Report {
+            code: b"code".as_slice().into(),
+            request: b"request".as_slice().into(),
+            field: b"feature".as_slice().into(),
+        },
+    }
+}
+
+fn fault_rows() -> [(smith_channel::ModelFault, smith_host_domain::ModelFault); 11] {
+    use smith_channel as wire;
+    use smith_host_domain as host;
+    let limits = &wire::CEILINGS;
+    [
+        (wire::ModelFault::Provider, host::ModelFault::Provider),
+        (wire::ModelFault::Declined, host::ModelFault::Declined),
+        (wire::ModelFault::Truncated, host::ModelFault::Truncated),
+        (wire::ModelFault::Malformed, host::ModelFault::Malformed),
+        (
+            wire::ModelFault::Limited(
+                wire::LimitedFault::new(limits, wire::LimitedFaultParts { account: 7, reset: None }).unwrap(),
+            ),
+            host::ModelFault::Limited { account: 7, reset: None },
+        ),
+        (
+            wire::ModelFault::Refused(
+                wire::RefusedFault::new(
+                    limits,
+                    wire::RefusedFaultParts { account: 7, code: b"quota".as_slice().into() },
+                )
+                .unwrap(),
+            ),
+            host::ModelFault::Refused { account: 7, code: b"quota".as_slice().into() },
+        ),
+        (
+            wire::ModelFault::Unauthorized(
+                wire::UnauthorizedFault::new(limits, wire::UnauthorizedFaultParts { account: 8 }).unwrap(),
+            ),
+            host::ModelFault::Unauthorized { account: 8 },
+        ),
+        (
+            wire::ModelFault::Program(
+                wire::ProgramFault::new(
+                    limits,
+                    wire::ProgramFaultParts {
+                        name: b"login".as_slice().into(),
+                        exit: Some(2),
+                        detail: b"unavailable".as_slice().into(),
+                    },
+                )
+                .unwrap(),
+            ),
+            host::ModelFault::Program {
+                name: b"login".as_slice().into(),
+                exit: Some(2),
+                detail: b"unavailable".as_slice().into(),
+            },
+        ),
+        (wire_completion(wire::CompletionFailure::Refused), host_completion(host::CompletionFailure::Refused)),
+        (wire_completion(wire::CompletionFailure::Unsupported), host_completion(host::CompletionFailure::Unsupported)),
+        (
+            wire_completion(wire::CompletionFailure::Exhausted),
+            host_completion(host::CompletionFailure::Exhausted { retry_after: None }),
+        ),
+    ]
 }

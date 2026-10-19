@@ -513,3 +513,27 @@ fn an_inline_answer_keeps_its_typed_completion_failure() {
     assert_eq!(failure, host::CompletionFailure::TimedOut { phase: host::Phase::Head });
     assert_eq!(evidence, host::CompletionEvidence::Response { status: Some(503) });
 }
+
+#[test]
+fn an_inline_answer_keeps_its_account_failure() {
+    use smith_domain::llm;
+    for (failure, expected) in [
+        (
+            llm::Failure::Exhausted { retry_after: Some(skein_lib::Duration::from_nanos(80_000_000)) },
+            host::ModelFault::Limited { account: 0, reset: Some(skein_lib::Duration::from_nanos(80_000_000)) },
+        ),
+        (llm::Failure::Exhausted { retry_after: None }, host::ModelFault::Limited { account: 0, reset: None }),
+        (llm::Failure::Refused, host::ModelFault::Refused { account: 0, code: Box::default() }),
+    ] {
+        let mut world = World::new(6809, inline::limits());
+        world.fail_with(failure, llm::Evidence::Response { status: Some(403) });
+        world.event(parent::Event::Spawn { client: Token::new(1), start: inline::start(6809, Job::HostTools) });
+        world.run();
+        world.settled();
+        assert_eq!(
+            world.seen[&Token::new(1)].answer.as_ref().expect("answer").result,
+            RunResult::Failed { failure: RunFailure::Model(expected) },
+            "{failure:?}"
+        );
+    }
+}

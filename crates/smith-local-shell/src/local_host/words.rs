@@ -10,7 +10,7 @@ impl Local {
             return Some(text);
         }
         let (failure, detail) = match notice {
-            domain::Notice::Failure(domain::Failure::Run { failure, detail }) => (*failure, detail),
+            domain::Notice::Failure(domain::Failure::Run { failure, detail }) => (failure, detail),
             domain::Notice::Failure(_)
             | domain::Notice::Warning(_)
             | domain::Notice::Waiting
@@ -20,7 +20,7 @@ impl Local {
         };
         let model = match failure {
             RunFailure::Model(ModelFault::Completion { model, .. }) => {
-                self.service.models().get(usize::try_from(model).expect("bounded model index"))
+                self.service.models().get(usize::try_from(*model).expect("bounded model index"))
             }
             RunFailure::Model(_)
             | RunFailure::Budget { .. }
@@ -30,7 +30,11 @@ impl Local {
             | RunFailure::Stale => None,
         };
         let account = match failure {
-            RunFailure::Model(ModelFault::Exhausted { account, .. }) => Some(account),
+            RunFailure::Model(
+                ModelFault::Limited { account, .. }
+                | ModelFault::Refused { account, .. }
+                | ModelFault::Unauthorized { account },
+            ) => Some(*account),
             RunFailure::Model(_)
             | RunFailure::Budget { .. }
             | RunFailure::Policy(_)

@@ -382,12 +382,14 @@ pub(crate) fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
         crate::Mode::Chat { .. } => ExitStatus::Accepted,
     };
     let detail = core::mem::replace(&mut domain.turns.detail, Box::new([]));
-    match answer.result {
+    match &answer.result {
         host::RunResult::Failed { failure } => {
-            out.push(Request::Notice { notice: crate::Notice::Failure(crate::Failure::Run { failure, detail }) });
+            out.push(Request::Notice {
+                notice: crate::Notice::Failure(crate::Failure::Run { failure: failure.clone(), detail }),
+            });
         }
         host::RunResult::Refused { refusal } => {
-            out.push(Request::Notice { notice: crate::Notice::Failure(crate::Failure::Refused(refusal)) });
+            out.push(Request::Notice { notice: crate::Notice::Failure(crate::Failure::Refused(*refusal)) });
         }
         host::RunResult::Accepted { .. } | host::RunResult::Parked => {
             let text = crate::agent::answer_text(&answer);

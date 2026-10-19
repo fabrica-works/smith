@@ -307,6 +307,12 @@ pub enum CompletionFailure {
     /// Provider context allowance was exceeded.
     ContextTooLong,
 
+    /// Provider refused the request.
+    Refused,
+
+    /// Provider does not support the requested feature.
+    Unsupported,
+
     /// Provider rejected the request shape.
     Invalid,
 
@@ -321,8 +327,8 @@ pub enum CompletionFailure {
 
     /// Provider account allowance requires the retained cooldown.
     Exhausted {
-        /// Exact lower cooldown, without scheduling or recovery policy.
-        retry_after: Duration,
+        /// Exact lower cooldown when the provider supplied one.
+        retry_after: Option<Duration>,
     },
 }
 
@@ -340,8 +346,27 @@ pub enum CompletionEvidence {
     Response { status: Option<u16> },
 }
 
+/// Provider diagnostics retained outside content-free facts (domain/host.md, section 8).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Report {
+    pub code: Box<[u8]>,
+    pub request: Box<[u8]>,
+    pub field: Box<[u8]>,
+}
+
+impl Report {
+    /// Three provider fields at the channel vocabulary's 128-byte bound.
+    pub const BYTES: u64 = 3 * 128;
+
+    /// No provider evidence was supplied.
+    #[must_use]
+    pub fn none() -> Self {
+        Self { code: Box::default(), request: Box::default(), field: Box::default() }
+    }
+}
+
 /// What kept an LLM from going on.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ModelFault {
     /// Full neutral failure and evidence after session retry policy.
     /// This is distinct from local model stopping rules and requested run Cancel.
@@ -354,19 +379,31 @@ pub enum ModelFault {
         /// Charter LLM index, resolved by `Charter::model`.
         model: u32,
         attempts: u32,
+        report: Report,
     },
 
-    /// The account spent its provider allowance. The host decides whether to retry after cooldown.
-    Exhausted { account: u32, retry_after_ms: Option<u64> },
+    /// The account spent its provider allowance, with a reset only when supplied.
+    Limited { account: u32, reset: Option<Duration> },
+    /// The provider refused this account.
+    Refused { account: u32, code: Box<[u8]> },
+    /// The account lost its login.
+    Unauthorized { account: u32 },
+    /// The account's credential program could not run.
+    Program { name: Box<[u8]>, exit: Option<u32>, detail: Box<[u8]> },
     /// Its provider failed for good: unreachable, overloaded past the
     /// retries, or refusing the call or its credentials.
     Provider,
     /// It kept declining to answer.
-    Refused,
+    Declined,
     /// It kept running out of tokens mid-answer.
     Truncated,
     /// It kept asking for tools and naming none.
     Malformed,
+}
+
+impl ModelFault {
+    /// Maximum owned fault bytes: the program name and diagnostic (protocol/channel.md, section 5).
+    pub const BYTES: u64 = 32 + 512;
 }
 
 /// Run-wide allowance exhausted, reported by the agent as a typed failure.
@@ -439,7 +476,7 @@ pub enum TranscriptRefusal {
 }
 
 /// Why a run ended without an outcome: what the host parent acts on.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum RunFailure {
     /// Exact transient history refusal before unsupported work starts.
     Transcript(

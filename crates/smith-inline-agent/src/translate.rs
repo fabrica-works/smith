@@ -152,21 +152,22 @@ fn failure(value: run::Failure, now: skein_lib::Time) -> host::RunFailure {
 
 fn model_fault(value: run::Fault, now: skein_lib::Time) -> host::ModelFault {
     match value {
-        run::Fault::Completion { failure, evidence, model, attempts, report: _ } => host::ModelFault::Completion {
+        run::Fault::Completion { failure, evidence, model, attempts, report } => host::ModelFault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
             model,
             attempts,
+            report: host::Report { code: report.code, request: report.request, field: report.field },
         },
-        run::Fault::Limited { account, reset_at } => host::ModelFault::Exhausted {
+        run::Fault::Limited { account, reset_at } => host::ModelFault::Limited {
             account,
-            retry_after_ms: match reset_at {
-                Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
+            reset: match reset_at {
+                Some(at) => Some(at.saturating_since(now)),
                 None => None,
             },
         },
-        // smith 02.3 gives account refusals their typed host fault.
-        run::Fault::Refused { .. } | run::Fault::Declined => host::ModelFault::Refused,
+        run::Fault::Refused { account, code } => host::ModelFault::Refused { account, code },
+        run::Fault::Declined => host::ModelFault::Declined,
         run::Fault::Provider => host::ModelFault::Provider,
         run::Fault::Truncated => host::ModelFault::Truncated,
         run::Fault::Malformed => host::ModelFault::Malformed,
@@ -261,18 +262,12 @@ const fn completion_failure(value: run::CompletionFailure) -> host::CompletionFa
             host::CompletionFailure::TimedOut { phase: completion_phase(phase) }
         }
         run::CompletionFailure::ContextTooLong => host::CompletionFailure::ContextTooLong,
-        // smith 02.3 gives both classes their own host vocabulary.
-        run::CompletionFailure::Refused | run::CompletionFailure::Unsupported | run::CompletionFailure::Invalid => {
-            host::CompletionFailure::Invalid
-        }
+        run::CompletionFailure::Refused => host::CompletionFailure::Refused,
+        run::CompletionFailure::Unsupported => host::CompletionFailure::Unsupported,
+        run::CompletionFailure::Invalid => host::CompletionFailure::Invalid,
         run::CompletionFailure::Unauthorized => host::CompletionFailure::Unauthorized,
         run::CompletionFailure::RateLimited { retry_after } => host::CompletionFailure::RateLimited { retry_after },
-        run::CompletionFailure::Exhausted { retry_after } => host::CompletionFailure::Exhausted {
-            retry_after: match retry_after {
-                Some(reset) => reset,
-                None => skein_lib::Duration::ZERO,
-            },
-        },
+        run::CompletionFailure::Exhausted { retry_after } => host::CompletionFailure::Exhausted { retry_after },
     }
 }
 

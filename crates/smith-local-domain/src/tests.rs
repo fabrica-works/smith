@@ -886,3 +886,40 @@ fn a_headless_start_whose_head_cannot_be_read_exits_refused() {
     crate::resume(&mut domain, &env, &mut out);
     assert!(out.is_empty(), "a failed start never opens a run");
 }
+
+#[test]
+fn each_model_fault_has_its_exit_status() {
+    use smith_host_domain::{self as host, ModelFault};
+    for (fault, expected) in [
+        (ModelFault::Limited { account: 7, reset: None }, crate::ExitStatus::RunFailed),
+        (
+            ModelFault::Refused { account: 7, code: b"quota".as_slice().into() },
+            crate::ExitStatus::Credentials { account: 7 },
+        ),
+        (ModelFault::Unauthorized { account: 8 }, crate::ExitStatus::Credentials { account: 8 }),
+        (
+            ModelFault::Program { name: b"login".as_slice().into(), exit: Some(1), detail: Box::default() },
+            crate::ExitStatus::RunFailed,
+        ),
+        (completion_fault(host::CompletionFailure::Unsupported), crate::ExitStatus::RunFailed),
+        (completion_fault(host::CompletionFailure::Unauthorized), crate::ExitStatus::Credentials { account: 9 }),
+    ] {
+        let answer = host::Answer {
+            read: None,
+            turns: 0,
+            spent: 0,
+            result: host::RunResult::Failed { failure: host::RunFailure::Model(fault.clone()) },
+        };
+        assert_eq!(crate::end::answer_status(&answer, 9), expected, "{fault:?}");
+    }
+}
+
+fn completion_fault(failure: smith_host_domain::CompletionFailure) -> smith_host_domain::ModelFault {
+    smith_host_domain::ModelFault::Completion {
+        failure,
+        evidence: smith_host_domain::CompletionEvidence::Unsent,
+        model: 0,
+        attempts: 1,
+        report: smith_host_domain::Report::none(),
+    }
+}

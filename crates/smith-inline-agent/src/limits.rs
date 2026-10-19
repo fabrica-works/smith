@@ -64,6 +64,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.slots).checked_mul(per_slot)?)?
         .checked_add(Queue::<smith::Request>::worst_case(smith::max_out(&limits.smith))?)?
         .checked_add(Queue::<Output>::worst_case(outputs)?)?
+        .checked_add(u64::from(limits.slots).checked_mul(smith_host_domain::Report::BYTES)?)?
         .checked_add(Queue::<Fact>::worst_case(limits.facts)?)?
         .checked_add(List::<Token>::worst_case(limits.slots)?)?
         .checked_add(List::<Token>::worst_case(limits.smith.run.messages)?)?

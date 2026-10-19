@@ -14,7 +14,7 @@ pub fn answered(answer: &host::Answer, capture: Capture) -> Answered {
     let (status, failure, result) = match &answer.result {
         host::RunResult::Parked => (Status::Parked, None, None),
         host::RunResult::Refused { refusal } => (Status::Refused, Some(refused(*refusal)), None),
-        host::RunResult::Failed { failure } => (Status::Failed, Some(failed(*failure)), None),
+        host::RunResult::Failed { failure } => (Status::Failed, Some(failed(failure.clone())), None),
         host::RunResult::Accepted { outcome } => {
             (Status::Accepted, None, Some(smith_agent_service::accepted(outcome.value(), capture)))
         }
@@ -139,19 +139,34 @@ fn invalid_name(invalid: host::RunInvalid) -> &'static [u8] {
 fn failed(why: host::RunFailure) -> AnswerFailure {
     match why {
         host::RunFailure::Model(fault) => match fault {
-            host::ModelFault::Completion { failure: why, evidence, model: _, attempts: _ } => {
+            host::ModelFault::Completion { failure: why, evidence, model: _, attempts: _, report: _ } => {
                 let mut result = failure(AnswerClass::Model, None);
                 result.completion = Some(completion(why, evidence));
                 result
             }
-            host::ModelFault::Exhausted { account, retry_after_ms } => {
+            host::ModelFault::Limited { account, reset } => {
                 let mut result = failure(AnswerClass::Model, None);
                 result.account = Some(u64::from(account));
-                result.retry_after_ms = retry_after_ms;
+                result.retry_after_ms = match reset {
+                    Some(reset) => reset.as_nanos().checked_div(1_000_000),
+                    None => None,
+                };
                 result
             }
-            host::ModelFault::Provider => failure(AnswerClass::Model, Some(b"provider")),
-            host::ModelFault::Refused => failure(AnswerClass::Model, Some(b"refused")),
+            host::ModelFault::Provider | host::ModelFault::Program { .. } => {
+                failure(AnswerClass::Model, Some(b"provider"))
+            }
+            // smith 05.2 gives these faults their event vocabulary.
+            host::ModelFault::Refused { .. } | host::ModelFault::Declined => {
+                failure(AnswerClass::Model, Some(b"refused"))
+            }
+            host::ModelFault::Unauthorized { account } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.account = Some(u64::from(account));
+                result.completion =
+                    Some(completion(host::CompletionFailure::Unauthorized, host::CompletionEvidence::Unsent));
+                result
+            }
             host::ModelFault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             host::ModelFault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
@@ -210,14 +225,20 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
         host::CompletionFailure::Unavailable => (FailureClass::Unavailable, None),
         host::CompletionFailure::TimedOut { .. } => (FailureClass::TimedOut, None),
         host::CompletionFailure::ContextTooLong => (FailureClass::ContextTooLong, None),
-        host::CompletionFailure::Invalid => (FailureClass::Invalid, None),
+        // smith 05.2 gives the new classes their event names.
+        host::CompletionFailure::Refused => (FailureClass::Unknown(b"refused".as_slice().into()), None),
+        host::CompletionFailure::Unsupported | host::CompletionFailure::Invalid => (FailureClass::Invalid, None),
         host::CompletionFailure::Unauthorized => (FailureClass::Unauthorized, None),
         host::CompletionFailure::RateLimited { retry_after } => {
             (FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
         }
-        host::CompletionFailure::Exhausted { retry_after } => {
-            (FailureClass::Exhausted, Some(retry_after.as_nanos() / 1_000_000))
-        }
+        host::CompletionFailure::Exhausted { retry_after } => (
+            FailureClass::Exhausted,
+            match retry_after {
+                Some(reset) => reset.as_nanos().checked_div(1_000_000),
+                None => None,
+            },
+        ),
     };
     let evidence = match evidence {
         host::CompletionEvidence::Unsent => Evidence::Unsent,

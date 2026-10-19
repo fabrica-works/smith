@@ -266,6 +266,56 @@ fn a_model_failure_keeps_transport_evidence_and_cooldown() {
 
 #[test]
 fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
+    use smith_domain::run;
+    use smith_host_domain as host;
+    for (fault, expected) in channel_faults() {
+        let mut world = admitted_channel();
+        world.agent_answers(run::Answer::Failed {
+            failure: run::Failure::Model(fault),
+            spent: run::Spend::ZERO,
+            turns: 0,
+        });
+        world.settle();
+        assert_eq!(
+            world.take_host_answer(),
+            Some(host::Answer {
+                read: None,
+                turns: 0,
+                spent: 0,
+                result: host::RunResult::Failed { failure: host::RunFailure::Model(expected) },
+            })
+        );
+    }
+}
+
+fn channel_faults() -> [(smith_domain::run::Fault, smith_host_domain::ModelFault); 10] {
+    use smith_domain::run;
+    use smith_host_domain as host;
+    let retry_after = skein_lib::Duration::from_nanos(42);
+    [
+        (
+            run::Fault::Limited { account: 7, reset_at: Some(skein_lib::Time::from_nanos(42)) },
+            host::ModelFault::Limited { account: 7, reset: Some(retry_after) },
+        ),
+        (run::Fault::Limited { account: 7, reset_at: None }, host::ModelFault::Limited { account: 7, reset: None }),
+        (
+            run::Fault::Refused { account: 7, code: b"quota".as_slice().into() },
+            host::ModelFault::Refused { account: 7, code: b"quota".as_slice().into() },
+        ),
+        (run::Fault::Provider, host::ModelFault::Provider),
+        (run::Fault::Declined, host::ModelFault::Declined),
+        (run::Fault::Truncated, host::ModelFault::Truncated),
+        (run::Fault::Malformed, host::ModelFault::Malformed),
+        channel_completion(
+            run::CompletionFailure::RateLimited { retry_after },
+            host::CompletionFailure::RateLimited { retry_after },
+        ),
+        channel_completion(run::CompletionFailure::Refused, host::CompletionFailure::Refused),
+        channel_completion(run::CompletionFailure::Unsupported, host::CompletionFailure::Unsupported),
+    ]
+}
+
+fn admitted_channel() -> World {
     let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     world.settle();
     world.send_start(Box::from(
@@ -274,37 +324,39 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
     world.settle();
     world.agent_admits();
     world.settle();
-    let retry_after = skein_lib::Duration::from_nanos(42);
-    world.agent_answers(smith_domain::run::Answer::Failed {
-        failure: smith_domain::run::Failure::Model(smith_domain::run::Fault::Completion {
-            failure: smith_domain::run::CompletionFailure::RateLimited { retry_after },
-            evidence: smith_domain::run::CompletionEvidence::Response { status: None },
+    world
+}
+
+fn channel_completion(
+    failure: smith_domain::run::CompletionFailure,
+    expected: smith_host_domain::CompletionFailure,
+) -> (smith_domain::run::Fault, smith_host_domain::ModelFault) {
+    use smith_domain::run;
+    use smith_host_domain as host;
+    (
+        run::Fault::Completion {
+            failure,
+            evidence: run::CompletionEvidence::Response { status: None },
             model: 0,
             attempts: 1,
-            report: smith_domain::run::Report::none(),
-        }),
-        spent: smith_domain::run::Spend::ZERO,
-        turns: 0,
-    });
-    world.settle();
-    assert_eq!(
-        world.take_host_answer(),
-        Some(smith_host_domain::channel::Answer {
-            read: None,
-            turns: 0,
-            spent: 0,
-            result: smith_host_domain::channel::RunResult::Failed {
-                failure: smith_host_domain::channel::RunFailure::Model(
-                    smith_host_domain::channel::ModelFault::Completion {
-                        failure: smith_host_domain::channel::CompletionFailure::RateLimited { retry_after },
-                        evidence: smith_host_domain::channel::CompletionEvidence::Response { status: None },
-                        model: 0,
-                        attempts: 1,
-                    },
-                ),
+            report: run::Report {
+                code: b"code".as_slice().into(),
+                request: b"request".as_slice().into(),
+                field: b"feature".as_slice().into(),
             },
-        }),
-    );
+        },
+        host::ModelFault::Completion {
+            failure: expected,
+            evidence: host::CompletionEvidence::Response { status: None },
+            model: 0,
+            attempts: 1,
+            report: host::Report {
+                code: b"code".as_slice().into(),
+                request: b"request".as_slice().into(),
+                field: b"feature".as_slice().into(),
+            },
+        },
+    )
 }
 
 #[test]

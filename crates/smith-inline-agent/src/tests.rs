@@ -555,19 +555,22 @@ fn a_dropped_slot_keeps_a_command_right_until_its_terminal() {
 
 #[test]
 fn the_inline_answer_measures_the_exhausted_accounts_wait() {
-    for (reset_at, expected) in
-        [(Some(Time::from_nanos(100_000_000)), Some(80)), (Some(Time::ZERO), Some(0)), (None, None)]
-    {
+    for (reset_at, now, expected) in [
+        (Some(Time::from_nanos(100_000_000)), Time::from_nanos(20_000_000), Some(Duration::from_nanos(80_000_000))),
+        (Some(Time::from_nanos(100_000_000)), Time::from_nanos(60_000_000), Some(Duration::from_nanos(40_000_000))),
+        (Some(Time::ZERO), Time::from_nanos(20_000_000), Some(Duration::ZERO)),
+        (None, Time::from_nanos(20_000_000), None),
+    ] {
         let answer = run::Answer::Failed {
             failure: run::Failure::Model(run::Fault::Limited { account: 23, reset_at }),
             spent: run::Spend::ZERO,
             turns: 0,
         };
-        let translated = translate::answer(answer, None, Time::from_nanos(20_000_000));
+        let translated = translate::answer(answer, None, now);
         assert_eq!(
             translated.result,
             host::RunResult::Failed {
-                failure: host::RunFailure::Model(host::ModelFault::Exhausted { account: 23, retry_after_ms: expected }),
+                failure: host::RunFailure::Model(host::ModelFault::Limited { account: 23, reset: expected }),
             }
         );
     }

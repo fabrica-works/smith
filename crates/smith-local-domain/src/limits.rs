@@ -159,6 +159,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(unsaved)?
         .checked_add(out)?
         .checked_add(child_out)?
+        .checked_add(smith_host_domain::ModelFault::BYTES.checked_mul(3)?)?
         .checked_add(held)?
         .checked_add(delivery)?
         .checked_add(answered)?

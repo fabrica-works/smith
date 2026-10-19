@@ -170,7 +170,7 @@ impl Terminal {
                     append(&mut text, b": its head cannot be read");
                 }
                 local::Failure::Run { failure, detail } => {
-                    failure::run(&mut text, *failure, detail, models, None, None, None);
+                    failure::run(&mut text, failure, detail, models, None, None, None);
                 }
                 local::Failure::Refused(refusal) => failure::refused(&mut text, *refusal),
                 local::Failure::Unstarted(end) => failure::end(&mut text, *end),
@@ -264,7 +264,7 @@ pub fn notice_text(
 /// Render a run failure with names and the host clock from its answer, within the notice cap.
 #[must_use]
 pub fn run_failure_text(
-    failure: smith_host_domain::RunFailure,
+    failure: &smith_host_domain::RunFailure,
     diagnostic: &[u8],
     models: &[smith_domain::run::charter::Llm],
     cap: u32,
@@ -558,7 +558,7 @@ mod failure_tests {
             output: 8,
         }];
         run_failure_text(
-            failure,
+            &failure,
             detail,
             &models,
             512,
@@ -575,6 +575,7 @@ mod failure_tests {
             evidence: host::CompletionEvidence::Response { status: Some(503) },
             model: 0,
             attempts: 3,
+            report: host::Report::none(),
         });
         assert_eq!(
             named_failure(failure, b"provider reason\nignored").as_ref(),
@@ -585,10 +586,13 @@ mod failure_tests {
     #[test]
     fn an_exhausted_failure_uses_its_answer_account_and_clock() {
         for (wait, expected) in [
-            (Some(60_000), b"run failed: account work exhausted, usable again at 10:01\n".as_slice()),
+            (
+                Some(skein_lib::Duration::from_secs(60)),
+                b"run failed: account work exhausted, usable again at 10:01\n".as_slice(),
+            ),
             (None, b"run failed: account work exhausted\n".as_slice()),
         ] {
-            let failure = host::RunFailure::Model(host::ModelFault::Exhausted { account: 7, retry_after_ms: wait });
+            let failure = host::RunFailure::Model(host::ModelFault::Limited { account: 7, reset: wait });
             assert_eq!(named_failure(failure, b"").as_ref(), expected);
         }
     }
@@ -600,6 +604,7 @@ mod failure_tests {
             evidence: host::CompletionEvidence::Response { status: Some(401) },
             model: 0,
             attempts: 3,
+            report: host::Report::none(),
         });
         assert_eq!(named_failure(failure, b"").as_ref(), b"account work: the provider rejected its credential\n");
     }
@@ -641,6 +646,7 @@ mod failure_tests {
             evidence: host::CompletionEvidence::Response { status: Some(400) },
             model: 0,
             attempts: 3,
+            report: host::Report::none(),
         });
         assert_eq!(
             shown(local::Failure::Run { failure, detail: b"provider reason\nprivate".as_slice().into() }).as_ref(),
@@ -655,6 +661,7 @@ mod failure_tests {
             evidence: host::CompletionEvidence::Unsent,
             model: 0,
             attempts: 2,
+            report: host::Report::none(),
         });
         assert_eq!(
             shown(local::Failure::Run { failure, detail: Box::new([]) }).as_ref(),
@@ -676,6 +683,43 @@ mod failure_tests {
             shown(local::Failure::Credential { account: 7, reason: local::CredentialFailure::Missing }).as_ref(),
             b"account 7 has no credential: run `smith login 7`\n"
         );
+    }
+    #[test]
+    fn each_model_fault_has_a_last_line() {
+        for (fault, expected) in last_line_faults() {
+            assert_eq!(named_failure(host::RunFailure::Model(fault.clone()), b"").as_ref(), expected, "{fault:?}");
+        }
+    }
+    fn last_line_faults() -> [(host::ModelFault, &'static [u8]); 9] {
+        [
+            (host::ModelFault::Limited { account: 7, reset: None }, b"run failed: account work exhausted\n".as_slice()),
+            (
+                host::ModelFault::Refused { account: 7, code: b"quota".as_slice().into() },
+                b"run failed: refused\n".as_slice(),
+            ),
+            (
+                host::ModelFault::Unauthorized { account: 7 },
+                b"run failed: account work: the provider rejected its credential\n".as_slice(),
+            ),
+            (
+                host::ModelFault::Program { name: b"login".as_slice().into(), exit: Some(2), detail: Box::default() },
+                b"run failed: provider\n".as_slice(),
+            ),
+            (host::ModelFault::Declined, b"run failed: refused\n".as_slice()),
+            (host::ModelFault::Provider, b"run failed: provider\n".as_slice()),
+            (host::ModelFault::Truncated, b"run failed: truncated\n".as_slice()),
+            (host::ModelFault::Malformed, b"run failed: malformed\n".as_slice()),
+            (
+                host::ModelFault::Completion {
+                    failure: host::CompletionFailure::Unsupported,
+                    evidence: host::CompletionEvidence::Unsent,
+                    model: 0,
+                    attempts: 1,
+                    report: host::Report::none(),
+                },
+                b"run failed: codex/small invalid after 1 attempts\n".as_slice(),
+            ),
+        ]
     }
 }
 
