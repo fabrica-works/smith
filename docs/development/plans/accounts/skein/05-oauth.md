@@ -11,7 +11,9 @@ live text step (decisions.md, 17).
 
 ## Read first
 
-- skein's design at `49725eca`: `oauth.md` 1 to 5 and 7; `tls.md` 4.
+- skein's design at `49725eca`: `oauth.md` 1 to 5 and 7; `tls.md` 4;
+  and, for 05.3's empty names and the terms' entries, `oauth.md` 1 and 5
+  at `0ccaf590`.
 - skein `docs/foundation/programming-model.md` 3, 4.4, 5.4, 6.3, 9, 10;
   `testing-strategy.md` 2.1, 2.5, 8, 10.
 - The README's Rules; code-organization.md (owners 05.1 to 05.5, its
@@ -217,7 +219,9 @@ Shape: first, in a commit of its own, `validate_registration` through
   issuer, the key set, the revocation endpoint) that `issuer_endpoint`
   refuses and OpenID whose scope lacks `openid`; as `Limit`, a terms URL
   past `uri_bytes` (as the token endpoint is), parameters past
-  `parameter_bytes` and a resource past `resource_bytes`; and, on a
+  `parameter_bytes`, an empty added parameter name or sign-in-again name
+  (as an empty client id is; an empty value is admitted) and a resource
+  past `resource_bytes`; and, on a
   sign-in, as `InvalidRedirect`, a varying port on a host other than
   `127.0.0.1` or `[::1]`. It admits port 0 or a preferred port in a
   varying redirect on `127.0.0.1` or `[::1]`, through the parse behind
@@ -235,14 +239,19 @@ Shape: first, in a commit of its own, `validate_registration` through
   exchange ends `Failed { failure: Malformed }`, never `Tokens`.
   `ClientLimits` gains `parameter_bytes` (the added parameters' names
   and values, and the sign-in-again names, together), `resource_bytes`
-  and `nonce_bytes`, counted by `client_worst_case`; fixtures 256, 128
-  and 64; smallest valid 0 each. The driver: `copy_registration` copies
-  `terms`; `component/sign_in.rs` sends `nonce: None, port: None`.
+  and `nonce_bytes`, counted by `client_worst_case`, `parameter_bytes`
+  as bytes and again as at most that many entries, each priced at
+  `size_of::<Parameter>()`, the larger of the two entries (oauth.md, 5);
+  fixtures 256, 128 and 64; smallest valid 0 each. The driver:
+  `copy_registration` copies `terms`; `component/sign_in.rs` sends
+  `nonce: None, port: None`.
 Test shape: unit, `machine_tests.rs` (`limits()`, `registration(public,
   wire)`, `state()`, `verifier()`, `step`, `failure`), each under 20 ms:
   `terms_are_refused_where_the_design_refuses`, rows OpenID without
   `openid`, a varying `localhost`, each terms URL on `http` off
-  loopback, each cap one past;
+  loopback, each cap one past, an empty parameter name and an empty
+  sign-in-again name (`Limit`), beside an empty value (admitted, the
+  URL carrying `name=`);
   `a_registration_admits_port_zero_only_where_the_redirect_varies`, rows
   `127.0.0.1:0` and `[::1]:0` varying (admitted), `127.0.0.1:0` fixed
   (`InvalidRedirect`), `redirect_address` on each (`InvalidRedirect`);
@@ -256,13 +265,18 @@ Test shape: unit, `machine_tests.rs` (`limits()`, `registration(public,
   `a_varying_redirect_refuses_another_ports_redirect`, the second port's
   redirect built by hand (the fake takes a varying port in skein 06.1);
   `the_resource_goes_in_every_request`;
-  `an_openid_sign_in_fails_before_its_check_exists`.
+  `an_openid_sign_in_fails_before_its_check_exists`. Memory,
+  `tests/oauth/tests/memory.rs`, under 0.1 s:
+  `terms_at_their_most_entries_fit_the_worst_case`: a public sign-in,
+  `url_bytes` 2048, whose terms hold `parameter_bytes` (256) parameters,
+  each the name `a` and an empty value, built inside the meter and
+  stepped to its `Visit`, measured against `client_worst_case`.
 Proof: world, `a_varying_redirect_refuses_another_ports_redirect`: a
   sign-in bound to port 40001, its redirect on 40002, ends `Failed {
   failure: InvalidRedirect }` with no exchange; under 0.1 s.
 Don't: resolve or bind a name; admit `localhost` to vary; let a terms
   URL choose the token endpoint; return `Tokens` for an OpenID sign-in.
-Size: about 240 lines, besides the move into `redirect.rs`.
+Size: about 275 lines, besides the move into `redirect.rs`.
 Removes: nothing.
 
 ### 05.4 An issued client id, the hints, Incomplete
