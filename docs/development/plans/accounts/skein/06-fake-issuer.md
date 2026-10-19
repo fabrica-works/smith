@@ -128,7 +128,16 @@ Shape: `fake::Config.terms: Option<fake::Terms>` (new; the sketches).
   (`a_localhost_registration_signs_in_through_its_exact_redirect`),
   `tests/oauth-accounts/src/sign_in/protocol.rs` (`fn protocol`) and
   `Peer::deliver`. Downstream, the `Config` literals take `terms: None`
-  and the `Limits` literals `carried: 0`. `scenario` in
+  and the `Limits` literals `carried: 0`, and two fixtures rise to the
+  new floor, `uri_bytes + 6 * string_bytes + 267` over the issuer's
+  limits (2059 for 256 and 256, as skein's did at 06.1's landing):
+  smith's `tests/local-process/src/process.rs` `fn issuer_with_token`
+  (`response: 49_152`; about 57,611 by ruling 117's re-check) and jig's
+  `tests/protocol-accounts/src/fixtures.rs` `limits()` (`response:
+  2048`, which `world.rs`' `fn issuer` passes as `profile.server`);
+  smith-local-service's `credentials/tests/private.rs` `fn issuer`
+  (8192) holds. The closing repins make them; a further fixture the
+  floor refuses rises the same way, named in the repin's commit body. `scenario` in
   `tests/oauth/tests/fuzzy_world.rs` is 93 lines on skein `887302f8`,
   under clippy's `too_many_lines` (100): only if clippy flags it does its
   `plan` match move into a `token_plan(mode, delay)` helper. `tests/oauth/src/lib.rs` gains
@@ -226,8 +235,11 @@ Files: `testing/skein-fake-oauth` (`src/key.rs` and `src/openid.rs`,
   `README.md`); `Cargo.lock`; `tests/oauth/src/lib.rs`.
 Shape: `key.rs` holds `PKCS8`, a 2048-bit RSA key's PKCS#8 DER as
   standard base64 text, `MODULUS`, its `n` as base64url text, `EXPONENT`
-  (`AQAB`) and `KID` (`skein-test`), with the `openssl genpkey` and
-  `openssl pkey` lines that made them in its doc.
+  (`AQAB`) and `KID` (`skein-test`), with the lines that made them in
+  its doc: `openssl genpkey` writes PEM, as `-outform DER` writes
+  PKCS#1 on OpenSSL 3.6.4, which ring refuses as PKCS#8; `PKCS8` is
+  the PEM's base64 body (or `openssl pkcs8 -topk8 -nocrypt -outform
+  DER`'s), and `openssl pkey` gives `MODULUS` (ruling 117).
   `fake::Terms.openid: Option<fake::OpenId>` (new; the sketches); 06.1's
   `Terms` literals, in `src/tests.rs` and `tests/oauth/src/lib.rs`
   (`issued`), take `openid: None`. `Issuer::new` refuses an `OpenId`
@@ -287,7 +299,7 @@ Test shape: unit, `src/tests.rs` (06.1's helpers, and
       let first = find(&token, b".").expect("a header");
       let cut = find_from(&token, b".", first.checked_add(1).expect("in range")).expect("three parts");
       let raw = |text: &[u8]| decode(Alphabet::Url, text, 1024).expect("base64url");
-      let (input, dotted) = token.split_at(cut);
+      let (input, dotted) = token.split_at_checked(cut).expect("in range");
       let signature = raw(dotted.strip_prefix(b".").expect("a dot"));
       let (n, e) = (raw(key::MODULUS.as_bytes()), raw(b"AQAB"));
       assert!(verify_rs256(&n, &e, input, &signature));

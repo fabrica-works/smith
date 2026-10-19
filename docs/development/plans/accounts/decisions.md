@@ -578,6 +578,31 @@ commits is this plan's.
      08.1 takes ruling 115: its decision-8 helper counts an empty issued id
      as none, as `Client::refresh` does.
 
+117. **skein 06's Shapes against main** (re-check of skein-06.1).
+     The re-check of skein-06.1 at its start (skein ceda164e, smith a34ac885,
+     jig 8922bfa4) ran its sketches and suites, which its ready check had not;
+     06.1 landed meanwhile (skein 11565f3), so its three 06.1-only mismatches
+     (the fixtures' move, `fn redirected`, `scenario`'s length) are moot: its
+     commit body says "The existing world library already owns response,
+     time, wall, registration and error, so no fixture movement is needed".
+     `skein/06-fake-issuer.md` now says:
+     - 06.1's Downstream: the peer floor 11565f3 names ("256 + 6 * 256 +
+       267") refuses two fixtures past skein, which the closing repins raise:
+       smith `tests/local-process/src/process.rs` (`response: 49_152`) and
+       jig `tests/protocol-accounts/src/fixtures.rs` (`response: 2048`, the
+       `profile.server` that `world.rs`' `fn issuer` passes), both by `git
+       grep -n 'response: '` on their origin/main.
+     - 06.2's `key.rs`: `openssl genpkey -algorithm RSA -pkeyopt
+       rsa_keygen_bits:2048 -outform DER` on this machine (OpenSSL 3.6.4)
+       writes 1192 bytes whose `asn1parse` opens `SEQUENCE`, `INTEGER :00`,
+       `INTEGER` (the modulus): PKCS#1, not PKCS#8. `PKCS8` comes from the
+       PEM body or `openssl pkcs8 -topk8 -nocrypt -outform DER`.
+     - 06.2's reference test: skein's `clippy.toml` disallows `{ path =
+       "slice::split_at", reason = "split_at_checked" }`; it uses
+       `split_at_checked(cut).expect("in range")`, which compiled clean.
+     A further fixture the floor refuses rises the same way, named in the
+     commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
