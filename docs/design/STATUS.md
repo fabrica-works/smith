@@ -67,7 +67,7 @@ instead.
   5.5): searches, commands, checks and agents in trees with views, git
   directories read-only, write scopes, network policy, per-tree limits
   and build profiles. Waits for a skein design and plan of their own
-  (skein's `draft/process.md`); until then, plain children with process
+  (skein's `io.md`, 6.2–6.4); until then, plain children with process
   groups.
 - **An isolated mode** (`shell.md`, section 9; `domain/host.md`,
   section 12): the product's `isolate`, the spawned agent as a

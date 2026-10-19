@@ -24,7 +24,7 @@ The contract is domain/host.md's.
   - checks a program source's login, and signs it out, when its host
     asks (section 2).
 - **The streams are the host's to make:**
-  - a spawned agent's pipes, from a contained tree (skein's `draft/process.md`);
+  - a spawned agent's pipes, from a contained tree (skein's `io.md`, 6.2–6.4);
   - or a connection to a daemon.
 
   The half works the same on either.
@@ -104,7 +104,7 @@ layer spawns a contained tree:
   error, whose tail the half keeps for the domain's report of how the agent
   ended (domain/host.md, section 4);
 - **room for the agent's own trees** inside its tree, so they are held,
-  stopped and proved empty with it (skein's `draft/process.md`).
+  stopped and proved empty with it (skein's `io.md`, 6.2–6.4).
 
 The spawn's deadline covers the opening. A tree that does not start, or
 whose channel does not reach ready in time, is reported as an agent that

@@ -25,7 +25,7 @@ are limits.md's, and its event vocabulary events.md's.
   - checks run and guides read.
 - **Everything runs in a view, once contained trees exist.** Each
   command, search and check is then a contained tree (skein's
-  `draft/process.md`) that sees the workspace's directories side by side,
+  `io.md`, 6.2–6.4) that sees the workspace's directories side by side,
   writable as the start says, with every git directory read-only. Until
   then they are plain children in process groups, and the agent says so
   (section 3).
@@ -343,7 +343,7 @@ spawns one (hosts.md, section 5.2).
 - **skein owes:**
   - io's files and roots;
   - process groups, signalled whole (skein's `io.md`, section 6), and
-    contained trees later (skein's `draft/process.md`);
+    contained trees later (skein's `io.md`, 6.2–6.4);
   - append streams on files, with write and close deadlines (skein's
     `io.md`, 5.1);
   - owner close, with a closed terminal, for every component the agent

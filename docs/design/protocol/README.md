@@ -409,7 +409,7 @@ it.
     whole and a view of the file system in which only named directories
     are writable, stopped politely, then terminated, then killed, and
     proved empty (domain/tools.md, section 5; domain/host.md, section 4).
-    Drafted in skein's `draft/process.md`. Resource limits and write
+    Designed in skein's `io.md`, 6.2–6.4. Resource limits and write
     scopes per tree come with them.
 - **Connections for LLM calls,** as a component: connecting, TLS, and the
   deadlines skein's LLM client leaves to its owner (skein's
