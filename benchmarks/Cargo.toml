@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-bench"
 description = "Offline checks and real-provider measurements of agent tasks"
 version.workspace = true

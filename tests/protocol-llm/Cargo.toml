@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-protocol-llm-world"
 description = "The protocol LLM adapter with a composed agent fixture"
 version.workspace = true

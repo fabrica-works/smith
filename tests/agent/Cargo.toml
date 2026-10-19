@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-agent-world"
 description = "The copied agent domain on a scripted typed host"
 version.workspace = true

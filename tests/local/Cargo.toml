@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-local-world"
 description = "Scripted person, store and fake provider around the local domain"
 version.workspace = true

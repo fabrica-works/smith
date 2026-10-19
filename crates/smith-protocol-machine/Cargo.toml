@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-protocol-machine"
 description = "Smith workspace file and process translation over skein IO"
 version.workspace = true

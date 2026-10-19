@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-domain-tools"
 description = "What a session does to the checkout: the agent domain's tools child domain, sans-io"
 version.workspace = true

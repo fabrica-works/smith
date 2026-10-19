@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-protocol-channel"
 description = "Agent side of Smith's host channel"
 version.workspace = true

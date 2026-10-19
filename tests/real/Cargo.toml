@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-real-world"
 description = "The local host and its agent on one real kernel loop"
 version.workspace = true

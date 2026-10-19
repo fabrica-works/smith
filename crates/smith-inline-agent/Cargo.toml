@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-inline-agent"
 description = "Bounded Smith runs composed behind the agent parent face"
 version.workspace = true

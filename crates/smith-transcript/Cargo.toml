@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-transcript"
 description = "Versioned turn and transcript codecs"
 version.workspace = true

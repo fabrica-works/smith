@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-machine-world"
 description = "The protocol machine over skein io, simulator and fake workspace"
 version.workspace = true

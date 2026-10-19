@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-domain-run"
 description = "One agent instance, from its charter to its answer: the agent domain's run child domain, sans-io"
 version.workspace = true

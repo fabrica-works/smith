@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-events"
 description = "Versioned bounded JSON-line event vocabulary"
 version.workspace = true

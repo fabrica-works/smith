@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-domain-session"
 description = "One conversation with an LLM: the agent domain's session child domain, sans-io"
 version.workspace = true

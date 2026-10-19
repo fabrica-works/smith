@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-agent-process-world"
 description = "The Smith agent process over a scripted host and simulated kernel"
 version.workspace = true

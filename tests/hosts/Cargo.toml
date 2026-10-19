@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-hosts-world"
 description = "A host service spawning Smith's agent over a simulated process tree"
 version.workspace = true

@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-local-process-world"
 description = "The local Smith host and its neighbours over a simulated kernel"
 version.workspace = true

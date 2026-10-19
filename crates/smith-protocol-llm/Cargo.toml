@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-protocol-llm"
 description = "Bounded application translation through the shared provider-neutral LLM Client"
 version.workspace = true

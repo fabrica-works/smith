@@ -6,6 +6,7 @@ resolver = "3"
 members = ["benchmarks", "crates/*", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real"]
 
 [workspace.package]
+license = "MIT"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.95"
@@ -165,6 +166,7 @@ tests_outside_test_module = "deny"
 iter_over_hash_type = "deny"
 
 [package]
+license.workspace = true
 name = "smith"
 version.workspace = true
 edition.workspace = true

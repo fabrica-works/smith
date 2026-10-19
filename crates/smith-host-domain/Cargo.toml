@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-host-domain"
 description = "V2 agent process supervision and typed host channel, sans-io"
 version.workspace = true

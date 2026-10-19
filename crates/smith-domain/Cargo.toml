@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-domain"
 description = "The domain layer of the temper coding agent: the agent loop's entry point, sans-io"
 version.workspace = true

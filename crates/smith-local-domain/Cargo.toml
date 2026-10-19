@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-local-domain"
 description = "Typed local host for one person and one chat"
 version.workspace = true

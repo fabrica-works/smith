@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-run-world"
 description = "The run child domain's world: a simulation with a scripted host and a scripted conversation partner"
 version.workspace = true

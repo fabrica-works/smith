@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-charter"
 description = "Versioned charter and result codecs"
 version.workspace = true

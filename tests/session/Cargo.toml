@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-session-world"
 description = "The session child domain's world: a simulation against a fake LLM provider"
 version.workspace = true

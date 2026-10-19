@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "smith-channel-world"
 description = "The Smith host and agent channel protocol world"
 version.workspace = true
