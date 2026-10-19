@@ -1267,6 +1267,49 @@ commits is this plan's.
      after; clippy over skein-oauth-accounts and skein-oauth-accounts-world
      `-D warnings` clean; nextest default 131 passed, fuzzy 4 passed.
 
+139. **jig repin.s1's race in the client** (cross-session scope, jig repin.s1's block of 2026-10-19T19:27:41Z).
+     The missed ending is jig's own race, not the repin's. The story's tier
+     starts only the clients component and no worker (`tests/client-browser/
+     src/lib.rs`' configuration), so it reaches neither smith's service nor
+     its hub; skein's changes between the pins touch only its oauth, llm,
+     forge-connection and tls crates, and license lines; the service records
+     the same durable `Outcome(Cancelled)` and `WatchEnded { why: Gone }` in
+     the passing and the failing runs; and the old pins fail it too, if less
+     often seen (5 of 5 passed, against the repin's 4 of 5).
+
+     jig-repin.s1 is not on the chain to `smith-repin`, which waits on every
+     skein step (09.1 to 10.2 are left), so it has time to fix the race, which
+     the closing `jig-repin` and every jig landing would meet too.
+
+     1. **A second budget, for the cause in jig's client:** 60 minutes and 20
+        focused runs, through `heavy`, of `under_a_prefix_the_inbox_s_links_
+        carry_the_prefix` (alone, or with the browser profile's other tests
+        for load, which counts as one run), on jig's `origin/main` or the
+        repin's tree, whichever reproduces it more often. Look where the
+        report points: the order in which the client receives the durable
+        `Cancelled` answer and the task watch's `Gone` terminal, and whether
+        the terminal ends the client's view before the answer is applied.
+        Temporary diagnostics never land.
+     2. **A cause found in jig:** fix it in its own commit, on jig's
+        `origin/main` (Step: jig-repin.s1, its subject naming the race), with
+        a test below the browser that fails without the fix where the order
+        can be forced (a world's or a unit's, under 0.1 s), and `land` it
+        first; then rebase the repin onto it and `land` the repin. The fix is
+        outside the repin's line count.
+     3. **The budget spent without a cause:** rebase the repin onto jig's
+        `origin/main` and `land` it under the README's "A known timing
+        flake", as amended: a gate that fails only in this story, at its wait
+        for `Cancelled`, is landed again, at most twice more on the same tree,
+        each failed gate's log named in the commit body; another failure, or a
+        third there, is a question. Report the evidence, and the supervisor
+        adds the race to `later.md`.
+
+     The README's "A known timing flake" (ruling 116) gains, until the race's
+     fix lands: jig's `tests/client-browser/tests/browser_tier.rs`
+     `under_a_prefix_the_inbox_s_links_carry_the_prefix`, failing at person
+     step 9's wait for `Cancelled` with the snapshot `Live` and "Behind",
+     may be gated again at most twice more on the same tree (ruling 139).
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

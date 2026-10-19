@@ -238,7 +238,12 @@ downstream repin.
   before `real::World::new` and `spawn`. A gate that fails only there is
   a timeout's failure (implementer.md, 8.5): `land` again once without
   asking; a second failure on the same tree is a question. Its fix is
-  `later.md`'s.
+  `later.md`'s. Until its race's fix lands, jig's
+  `tests/client-browser/tests/browser_tier.rs`
+  `under_a_prefix_the_inbox_s_links_carry_the_prefix`, failing at person
+  step 9's wait for `Cancelled` with the snapshot `Live` and "Behind",
+  may be gated again at most twice more on the same tree, each failed
+  gate's log named in the commit body (ruling 139).
 - **A table test's rows are data** (testing-strategy.md, 10, "Rows
   carry data" and "The setup the assertion reads"; ruling 119): a row
   holds its inputs and its expected value; the body runs the same lines
