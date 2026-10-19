@@ -1390,6 +1390,11 @@ commits is this plan's.
      1. hearth-repin keeps 78a04040 as it is, and runs no gate until a later unblock or steer names the hearth commit that brings its default suite within budget on x1. Then it rebases the unchanged pins onto that commit and lands once; a gate that still times out there is a question. Its session may end its turn meanwhile.
      2. The repository downstream of jig's repin starts now. None of its manifests names hearth, and the README placed its repin after hearth-repin only to set an order. Its row in "The closing repins" now starts once `jig-repin` has landed.
 
+148. **The closing steps' landed tests, to later.md** (steer of 2026-10-19T23:42:26Z).
+     The hourly check of 2026-10-19T23:33:04Z found more landed tests short of the README's rules (110, 125, 134), from steps no longer open: skein 10.s1's test asserts two preconditions before its outcome; smith-repin's `tests/local-process/src/process.rs` spells the issuer response as `limits.uri_bytes + 6 * limits.document.string_bytes + 267`, and `tests/protocol-llm/tests/adapter_boundary.rs` has `overloaded_status`, a fn that matches the provider for 503 or 529; jig-repin types `const DIALECT: u32 = 1;` in four files. No step left in this run touches them, so ruling 146's `later.md` row gains them; jig's part goes to jig's `STATUS.md` with the designer's next landing (development.md, section 5.7). The steer of this check sends the sizes rule again, now to the repins still open, with the fixture-const rule.
+
+     Checked at origin/main: smith `tests/local-process/src/process.rs:128 let response_bytes = limits.uri_bytes + 6 * limits.document.string_bytes + 267;`, `tests/protocol-llm/tests/adapter_boundary.rs:204 fn overloaded_status(configuration: &Configuration) -> u16 {`; jig `git grep -l 'const DIALECT: u32 = 1;'` → the four files named in the row; skein `crates/skein-oauth-accounts/src/shared_tests.rs:225 fn no_record_under_the_lock_fails_the_held_grant()`.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
