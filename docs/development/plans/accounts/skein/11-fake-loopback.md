@@ -54,18 +54,35 @@ Shape: the peer routes each call through a crate-private
   Revoke, Metadata, KeySet, Missing }` (`Clone, Copy, PartialEq, Eq,
   Debug`: the test compares it, `Connection` holds an `Option`); `Paths`
   (`pub(super)`, as `Peer::new` builds it) holds the five paths it takes
-  from the config and its terms. A GET of the metadata or key set path
-  goes to `issuer::Event::Get` under the next exchange id, and its
-  answer is delivered as a token answer is; a POST to the revocation
-  path goes to `issuer::Event::Post` with the revocation endpoint in
-  its `HttpRequest`; `Connection.token_post` becomes
-  `post: Option<Route>`, which `deliver` reads to tell a GET's answer
-  from a token's.
+  from the config, its terms and its OpenID, `revoke`, `metadata` and
+  `key_set` each an `Option` (terms and OpenID may be absent); `path()`
+  refuses a URL with no path (`http://127.0.0.1`), so the metadata path
+  is taken from the whole metadata URL, never from the issuer. `route`
+  matches `Method` by its variants or an `if` chain, never `_ =>`
+  (`wildcard_enum_match_arm` is denied in skein-fake-peers'
+  `Cargo.toml`). A GET of the metadata or key set path goes to
+  `issuer::Event::Get` under the next exchange id with the whole URL
+  that `skein_fake_oauth::openid::document` matches (the issuer's
+  followed by `/.well-known/openid-configuration`, or `key_set_url`),
+  which `Peer` keeps, with the revocation endpoint, as it keeps
+  `token_endpoint`; its answer is delivered as a token answer is; a POST
+  to the revocation path goes to `issuer::Event::Post` with the
+  revocation endpoint in its `HttpRequest`; `Connection.token_post`
+  becomes `post: Option<Route>`, which `call` sets for each of the four
+  routes it forwards and `deliver`'s `Request::Http` arm reads and
+  clears (`fn post` no longer clears it): it observes `Answered` for a
+  token or a revocation answer, never for a Metadata or KeySet answer,
+  since jig's `exchange_finished` waits on `Answered { status: 200, ..
+  }` (ruling 127).
   `Observation` gains `Document { connection, target }` (a GET's target)
   and `Revoke { connection }`; `Post` drops its `body` and becomes
   `Post { connection }`, as a token POST's body holds a code, a refresh
   token or a secret (every user, in skein, smith and jig, matches
-  `Post { .. }`); `Authorize`'s target keeps `id_token_hint`'s name and
+  `Post { .. }`: skein's `tests/oauth-accounts/src/world.rs` and
+  `sign_in.rs` too); `Redirect` drops its `location`, which holds the
+  code, and becomes `Redirect { connection }` (no user reads it; smith's
+  `tests/local-process/src/oauth.rs` reads the response head's
+  `Location`); `Authorize`'s target keeps `id_token_hint`'s name and
   drops its value, and `Observation`'s doc drops "secret bodies have no
   Debug". `Peer::granted()` (new) passes the issuer's through.
   `worst_case` counts the new paths. `lib.rs`'s doc gains the real
@@ -80,8 +97,10 @@ Shape: the peer routes each call through a crate-private
   `tests/protocol-accounts/src/world.rs` (`fn exchange_seen`,
   `fn exchange_finished`) match with `matches!`.
 Test shape: unit, `route.rs` (its own `paths()`), under 20 ms:
-  `route_names_each_endpoint`, rows each route, each with a query, a
-  POST to a GET's path, a GET to the token path, an unknown path.
+  `route_names_each_endpoint`, rows each route (the authorize target
+  with its query, the others exact, as the token POST's target is
+  compared today), a POST to a GET's path, a GET to the token path, an
+  unknown path.
   Reference test:
   ```rust
   #[test]
@@ -102,9 +121,17 @@ Test shape: unit, `route.rs` (its own `paths()`), under 20 ms:
   ```
   Fake peers, `testing/skein-fake-peers/tests/oauth.rs` over its `make`
   (gaining `terms: Option<issuer::Terms>`, `None` for today's tests)
-  and `support::call`, and `fetch(sim, peer, client, request)` (new: one
-  plaintext request by `Op::Send`, the reply by `Op::Recv`, the peer
-  iterated between), each under 0.5 s (two processes):
+  and `support::call`, and `fetch(sim, (pid, peer), client, request)`
+  (new: one plaintext request by `Op::Send`, the reply by `Op::Recv`,
+  the peer iterated between), each under 0.5 s (two processes). The new
+  tests' issuer has `issuer::Limits.carried: 1` (at 0 it refuses an
+  `id_token_hint`); its client is public (`client_secret: None`), so
+  the sign-in sends `code_challenge` and `code_challenge_method=S256` on
+  the authorize and `code_verifier` on the token POST; `observations:
+  16` holds exactly the four requests of four records that
+  `no_observation_holds_a_token_or_an_id_token` makes. Helpers outside a
+  `#[test]` use `expect`, never `unwrap` (`unwrap_used` is denied, and
+  `allow-unwrap-in-tests` covers only `#[test]` functions):
   `the_metadata_and_key_set_are_served_on_loopback`;
   `a_revocation_is_answered_as_scripted_on_loopback`, rows confirmed,
   refused; `no_observation_holds_a_token_or_an_id_token`, over a
@@ -146,14 +173,15 @@ Proof: joint, `the_issuers_granted_tokens_are_the_llm_peers_bearers`:
   answers both documents 200 and records each GET's target; under 0.5 s.
 Don't: build the LLM peer's list from a record (it is the script's); add
   a dependency to skein-fake-peers; observe a body that holds a token.
-Size: about 230 lines.
-Removes: the `token_post` flag; `Observation::Post`'s `body`.
+Size: about 260 lines.
+Removes: the `token_post` flag; `Observation::Post`'s `body`;
+  `Observation::Redirect`'s `location`.
 
 ## Interface sketches
 
 ```rust
 // skein_fake_peers::oauth (11.1)
-// Observation { .., Post { connection: Token }, Document { connection: Token, target: Box<[u8]> }, Revoke { connection: Token } }
+// Observation { .., Post { connection: Token }, Redirect { connection: Token }, Document { connection: Token, target: Box<[u8]> }, Revoke { connection: Token } }
 impl Peer {
     /// The issuer's `granted()`, for the LLM peer's list at start.
     #[must_use]
@@ -173,6 +201,8 @@ pub(super) fn route(paths: &Paths, method: Method, target: &[u8]) -> Route { tod
 - `rg -c '^skein-llm\.workspace' tests/oauth/Cargo.toml` and
   `rg -c '^skein-llm-world' tests/oauth/Cargo.toml` each print 1.
 - `rg -U '(Revoke|Post)\s*\{\s*connection\b[^}]*\bbody\b'
+  testing/skein-fake-peers/src` prints nothing.
+- `rg -U 'Redirect\s*\{\s*connection\b[^}]*\blocation\b'
   testing/skein-fake-peers/src` prints nothing.
 - `git diff --quiet origin/main -- testing/skein-fake-peers/Cargo.toml`
   exits 0.

@@ -879,6 +879,43 @@ commits is this plan's.
      A further user of what 04.2 to 04.4 change is refreshed the same way and
      listed in the commit body.
 
+127. **skein 11's Shapes against main** (ready check of skein-11.1).
+     The ready check of skein-11.1 against skein 8564196, smith 6c34c8d9, jig
+     b5d523d3, hearth 61ab3d1 and temper c896c4287 found
+     `skein/11-fake-loopback.md` short of the code and of its own Rule ("no
+     token, code, ID token or secret in an observation"); checked by `git
+     grep` on skein origin/main fb4fc28 and jig 1bc89fa7, it now says:
+     - `Observation::Redirect { connection: Token, location: Box<[u8]> }`
+       (testing/skein-fake-peers/src/oauth.rs) holds the code, as the check's
+       test saw ("an observation holds 0000000000000001"): it becomes
+       `Redirect { connection }`, in Shape, sketch, Removes and Done when. No
+       user reads `location` in the five repositories; smith's
+       `tests/local-process/src/oauth.rs` reads the head's `Location`.
+     - `skein_fake_oauth::openid::document` matches a whole URL (`suffix ==
+       b"/.well-known/openid-configuration"`; `endpoint ==
+       openid.key_set_url.as_ref()`): `Peer` keeps the metadata and key-set
+       URLs and the revocation endpoint, as it keeps `token_endpoint`;
+       `Paths`' `revoke`, `metadata` and `key_set` are `Option`s, the
+       metadata path taken from the whole metadata URL.
+     - `fn post` clears `token_post` before `deliver` runs (`if
+       !connection.token_post { return; } connection.token_post = false;`):
+       `call` sets `post` for the four routes, `deliver`'s `Request::Http`
+       arm reads and clears it, and a Metadata or KeySet answer observes no
+       `Answered`, which jig's `tests/protocol-accounts/src/world.rs` waits
+       on (`peer::Observation::Answered { status: 200, .. }`).
+     - `route` takes no `_ =>` on `Method` (`wildcard_enum_match_arm =
+       "deny"`, skein-fake-peers' `Cargo.toml`); helpers outside a `#[test]`
+       use `expect` (`unwrap_used = "deny"`; clippy.toml's
+       `allow-unwrap-in-tests = true` covers `#[test]` functions only).
+     - The fake peers' tests: `carried: 1`, a public client's PKCE fields,
+       `observations: 16` exactly four requests, `fetch` taking the peer's
+       `Pid`; `route_names_each_endpoint`'s prose matches its rows (only
+       the authorize target has a query). skein's
+       `tests/oauth-accounts/src/world.rs` and `sign_in.rs` match `Post {
+       .. }` and need no change. Size about 260.
+     A further user of what 11.1 changes is refreshed the same way and listed
+     in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
