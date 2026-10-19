@@ -146,6 +146,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
         write_deadline,
         cancel_grace,
         exit_grace,
+        live_interval,
     } = *limits;
     inventory.layer = Layer::Policy;
     inventory.value("max_turns", Value::Count(u64::from(max_turns)))?;
@@ -171,6 +172,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
     inventory.value("write_deadline", Value::Duration(write_deadline))?;
     inventory.value("cancel_grace", Value::Duration(cancel_grace))?;
     inventory.value("exit_grace", Value::Duration(exit_grace))?;
+    inventory.value("live_interval", Value::Duration(live_interval))?;
     Some(())
 }
 
@@ -413,6 +415,7 @@ fn service(inventory: &mut Inventory, limits: &crate::Limits) -> Option<()> {
         routes,
         memory,
         events: _,
+        live_interval: _,
     } = *limits;
     inventory.layer = Layer::Service;
     inventory.value("teardown", Value::Duration(super::super::teardown_bound(limits)?))?;

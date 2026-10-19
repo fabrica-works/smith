@@ -47,6 +47,8 @@ pub struct Limits {
     pub file_entries: u32,
     pub file_bytes: u32,
     pub file_timeout: Duration,
+    /// Longest hold before projecting live bytes (protocol/limits.md 2.3).
+    pub live_interval: Duration,
     /// Cells in each queue between layers.
     pub queue: u32,
     /// Concurrent IO owner and kernel submission routes.
@@ -622,7 +624,7 @@ impl Service {
             usage_unread: false,
             domain,
             channel,
-            live: crate::live::Live::new(None),
+            live: crate::live::Live::new(None, limits.live_interval),
             llm,
             machine,
             io,
@@ -1385,7 +1387,7 @@ fn live_step(service: &mut Service, action: crate::live::Action<'_>) {
         maximum: channel::max_out(&service.limits.channel),
         ending,
     };
-    service.live.act(action, &mut room);
+    service.live.act(action, service.io_env.now, &mut room);
     if room.failed {
         service.mark_failed(Failure::Send);
     }
@@ -2336,6 +2338,7 @@ pub fn next_deadline(service: &Service) -> Option<Time> {
             None => None,
         },
         service.files.next_deadline(),
+        service.live.deadline(),
     ] {
         earliest = match deadline {
             Some(next) => match earliest {
@@ -2356,7 +2359,7 @@ pub fn next_policy_deadline(service: &Service) -> Option<Time> {
         Some(domain) => domain.next_deadline(),
         None => None,
     };
-    for deadline in [service.llm.next_deadline(), service.machine.next_deadline()] {
+    for deadline in [service.llm.next_deadline(), service.machine.next_deadline(), service.live.deadline()] {
         earliest = match deadline {
             Some(next) => match earliest {
                 Some(old) => Some(old.min(next)),
@@ -2584,6 +2587,7 @@ mod tests {
             file_entries: 2,
             file_bytes: 512,
             file_timeout: Duration::from_secs(1),
+            live_interval: crate::profile::standard().policy.live_interval,
             queue: domain::max_out(&smith_agent_world::LIMITS).max(256),
             routes: io::operations(&io).expect("bounded test IO").checked_add(2).expect("file routes fit"),
             memory: u64::MAX,

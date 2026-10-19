@@ -89,6 +89,13 @@ pub fn peer_for(anthropic: bool) -> llm::Peer {
     if anthropic { configured_anthropic(scripts, credential) } else { configured(scripts, credential, Duration::ZERO) }
 }
 
+/// Write the supplied turns through the scenario's provider dialect.
+#[must_use]
+pub fn scripted(turns: Box<[api::Turn]>, credential: skein_llm::Credential, anthropic: bool) -> llm::Peer {
+    let scripts = Box::new([api::Script { cue: Box::new([]), turns }]);
+    if anthropic { configured_anthropic(scripts, credential) } else { configured(scripts, credential, Duration::ZERO) }
+}
+
 /// Build a seeded plaintext loopback peer for a local scenario.
 #[must_use]
 pub fn configured(scripts: Box<[api::Script]>, credential: skein_llm::Credential, latency: Duration) -> llm::Peer {

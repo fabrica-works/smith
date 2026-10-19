@@ -32,6 +32,7 @@ struct Parent {
     next: u64,
     acknowledge_turns: bool,
     acknowledged: u32,
+    frames_at_release: usize,
 }
 
 impl Parent {
@@ -87,6 +88,7 @@ impl Parent {
             next: 0,
             acknowledge_turns: matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
             acknowledged: 0,
+            frames_at_release: 0,
         };
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
@@ -346,10 +348,24 @@ impl Host for Parent {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ReleaseName {
+    bytes: [u8; 64],
+    length: usize,
+}
+
+impl ReleaseName {
+    fn new(name: &[u8]) -> Self {
+        let mut bytes = [0; 64];
+        bytes.get_mut(..name.len()).expect("hold-name bound").copy_from_slice(name);
+        Self { bytes, length: name.len() }
+    }
+}
+
 enum Proc {
     Parent(Box<Parent>),
     Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>, crate::AgentErrors),
-    Peer(Box<skein_fake_peers::llm::Peer>),
+    Peer(Box<skein_fake_peers::llm::Peer>, Option<ReleaseName>),
     Tracing(Box<crate::tracing::Tracing>),
 }
 impl Proc {
@@ -357,7 +373,7 @@ impl Proc {
         match self {
             Self::Parent(p) => p.as_ref(),
             Self::Agent(p, _) => p.as_ref(),
-            Self::Peer(p) => p.as_ref(),
+            Self::Peer(p, _) => p.as_ref(),
             Self::Tracing(p) => p.as_ref(),
         }
     }
@@ -365,7 +381,7 @@ impl Proc {
         match self {
             Self::Parent(p) => p.as_mut(),
             Self::Agent(p, _) => p.as_mut(),
-            Self::Peer(p) => p.as_mut(),
+            Self::Peer(p, _) => p.as_mut(),
             Self::Tracing(p) => p.as_mut(),
         }
     }
@@ -376,6 +392,11 @@ impl Host for Proc {
     }
 
     fn iterate(&mut self, now: Time, wall: Wall) {
+        if let Self::Peer(peer, pending) = self
+            && let Some(name) = pending.take()
+        {
+            peer.release(&name.bytes[..name.length]).expect("named release fits the peer");
+        }
         self.host_mut().iterate(now, wall);
     }
     fn completions(&mut self) -> &mut Queue<kernel::Complete> {
@@ -385,7 +406,7 @@ impl Host for Proc {
         self.host_mut().submissions()
     }
     fn work_pending(&self, now: Time) -> bool {
-        self.host().work_pending(now)
+        matches!(self, Self::Peer(_, Some(_))) || self.host().work_pending(now)
     }
     fn next_deadline(&self) -> Option<Time> {
         self.host().next_deadline()
@@ -562,7 +583,17 @@ enum HangUp {
     MidCall,
 }
 
+#[derive(Clone)]
+struct Release {
+    name: Box<[u8]>,
+    queries: usize,
+    after: Duration,
+    at: Option<Time>,
+    released: bool,
+}
+
 struct Referee {
+    release: Option<Release>,
     cancel: bool,
     provider_rejected: bool,
     after_answer: u32,
@@ -576,13 +607,33 @@ struct Referee {
     expected: skein_world::Expectations<Proc, Terminal>,
 }
 impl skein_world::Referee<Proc> for Referee {
-    fn act(&mut self, _now: Time, procs: &mut [Proc]) {
+    fn act(&mut self, now: Time, procs: &mut [Proc]) {
+        let mut release = None;
+        if let Some(waiting) = &mut self.release {
+            let queries = procs
+                .iter()
+                .find_map(|proc| match proc {
+                    Proc::Peer(peer, _) => Some(fake::queries(peer).count()),
+                    Proc::Parent(_) | Proc::Agent(..) | Proc::Tracing(_) => None,
+                })
+                .unwrap_or(0);
+            if queries >= waiting.queries && waiting.at.is_none() {
+                waiting.at = Some(now.saturating_add(waiting.after));
+            }
+            if !waiting.released && waiting.at.is_some_and(|at| at <= now) {
+                waiting.released = true;
+                release = Some(waiting.name.as_ref());
+            }
+        }
         let admitted = procs.iter().any(|p| matches!(p, Proc::Parent(parent) if parent.admitted()));
         let exited = procs.iter().any(|p| matches!(p, Proc::Parent(parent) if parent.status.is_some()));
-        let calling = procs.iter().any(|p| matches!(p, Proc::Peer(peer) if fake::queries(peer).count() > 0));
+        let calling = procs.iter().any(|p| matches!(p, Proc::Peer(peer, _) if fake::queries(peer).count() > 0));
         for proc in procs {
             match proc {
                 Proc::Parent(parent) => {
+                    if release.is_some() {
+                        parent.frames_at_release = parent.peer.observed().len();
+                    }
                     if matches!(self.hang_up, HangUp::MidCall)
                         && calling
                         && let Some(input) = parent.input.take()
@@ -596,7 +647,10 @@ impl skein_world::Referee<Proc> for Referee {
                         parent.signal = parent.signal.max(self.after_answer);
                     }
                 }
-                Proc::Peer(peer) => {
+                Proc::Peer(peer, pending) => {
+                    if let Some(name) = release {
+                        *pending = Some(ReleaseName::new(name));
+                    }
                     if exited {
                         peer.shutdown();
                     }
@@ -613,7 +667,7 @@ impl skein_world::Referee<Proc> for Referee {
             parent.peer.observed().iter().filter(|frame| frame.kind == 0x0106).count() <= 1,
             "one admission for one Start"
         );
-        let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
+        let peer = procs.iter().find_map(|p| if let Proc::Peer(p, _) = p { Some(p) } else { None }).expect("peer");
         assert!(fake::queries(peer).count() <= self.maximum_queries, "bounded completion scenario");
         if matches!(self.hang_up, HangUp::Never) && parent.status.is_some() {
             if matches!(self.tracing, Some((TraceCase::Refused, _))) {
@@ -621,7 +675,7 @@ impl skein_world::Referee<Proc> for Referee {
             } else {
                 assert!(parent.admitted(), "the host observed admission; answer={:?}", parent.peer.observed());
             }
-            let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
+            let peer = procs.iter().find_map(|p| if let Proc::Peer(p, _) = p { Some(p) } else { None }).expect("peer");
             if matches!(self.tracing, Some((TraceCase::Parked, _))) {
                 assert_eq!(fake::queries(peer).count(), 0, "empty zero-waiting work parks without a provider request");
             } else if self.provider_rejected || matches!(self.tracing, Some((TraceCase::ProviderRejected, _))) {
@@ -692,7 +746,8 @@ impl skein_world::Referee<Proc> for Referee {
         self.expected.observe(now, procs);
     }
     fn next_deadline(&self) -> Option<Time> {
-        self.expected.next_deadline()
+        let release = self.release.as_ref().filter(|release| !release.released).and_then(|release| release.at);
+        self.expected.next_deadline().into_iter().chain(release).min()
     }
     fn overdue(&self, now: Time) -> Option<String> {
         self.expected.overdue(now)
@@ -907,6 +962,8 @@ pub struct World {
     anthropic: bool,
     private_grant: bool,
     live: Option<smith_channel::LiveAsk>,
+    script: Option<Box<[skein_fake_llm_domain::api::Turn]>>,
+    release: Option<Release>,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -934,7 +991,25 @@ impl World {
             anthropic: false,
             private_grant: false,
             live: None,
+            script: None,
+            release: None,
         }
+    }
+
+    /// Supply the provider's turns in place of the scenario's default script.
+    pub fn script(&mut self, turns: Box<[skein_fake_llm_domain::api::Turn]>) {
+        self.script = Some(turns);
+    }
+
+    /// Release one named hold after the given query has waited in virtual time.
+    pub fn release_after(&mut self, name: &[u8], queries: usize, after: Duration) {
+        self.release = Some(Release { name: name.into(), queries, after, at: None, released: false });
+    }
+
+    /// Channel frames the host had read when the held reply was released.
+    #[must_use]
+    pub fn frames_at_release(&self) -> &[skein_fake_channel::Observed] {
+        self.observed().get(..self.parent().frames_at_release).expect("the observed prefix at release remains")
     }
 
     /// Put the host's live-content ask in its actual Start.
@@ -951,7 +1026,17 @@ impl World {
     /// Decode the live records on the parent's channel.
     #[must_use]
     pub fn pieces(&self) -> Vec<smith_channel::Live> {
-        self.observed()
+        Self::decode_pieces(self.observed())
+    }
+
+    /// Decode the pieces already read before releasing the reply.
+    #[must_use]
+    pub fn pieces_at_release(&self) -> Vec<smith_channel::Live> {
+        Self::decode_pieces(self.frames_at_release())
+    }
+
+    fn decode_pieces(frames: &[skein_fake_channel::Observed]) -> Vec<smith_channel::Live> {
+        frames
             .iter()
             .filter(|frame| frame.kind == 0x0112)
             .map(|frame| {
@@ -1160,7 +1245,7 @@ impl World {
     }
 
     fn maximum_queries(&self) -> usize {
-        if matches!(self.tracing, Some((TraceCase::ThreeChildren, _))) {
+        let scenario = if matches!(self.tracing, Some((TraceCase::ThreeChildren, _))) {
             5
         } else if matches!(self.tracing, Some((TraceCase::ChildAnswered | TraceCase::StoppedReasoning, _))) {
             3
@@ -1168,7 +1253,8 @@ impl World {
             2
         } else {
             1
-        }
+        };
+        scenario.max(self.release.as_ref().map_or(0, |release| release.queries))
     }
     fn hang_up_case(&self) -> HangUp {
         match (self.hang_up, self.hang_up_mid_call) {
@@ -1180,6 +1266,7 @@ impl World {
 
     fn referee(&self) -> Referee {
         Referee {
+            release: self.release.clone(),
             cancel: self.cancel,
             provider_rejected: self.provider_rejected,
             after_answer: self.after_answer,
@@ -1238,7 +1325,13 @@ impl World {
             Proc::Parent(Box::new(parent))
         });
         world.spawn(|| {
-            let peer = if self.environment {
+            let peer = if let Some(turns) = &self.script {
+                fake::scripted(
+                    turns.clone(),
+                    crate::scenario_credential(self.anthropic, self.private_grant),
+                    self.anthropic,
+                )
+            } else if self.environment {
                 environment_peer()
             } else if self.full_completion {
                 fake::configured(
@@ -1282,7 +1375,7 @@ impl World {
             } else {
                 fake::peer()
             };
-            Proc::Peer(Box::new(self.hold_peer(peer)))
+            Proc::Peer(Box::new(self.hold_peer(peer)), None)
         });
 
         let mut outcome = world.run();
@@ -1305,7 +1398,7 @@ impl World {
             .expect("settled world")
             .procs
             .iter()
-            .find_map(|p| if let Proc::Peer(p) = p { Some(p.as_ref()) } else { None })
+            .find_map(|p| if let Proc::Peer(p, _) = p { Some(p.as_ref()) } else { None })
             .expect("peer survives")
     }
     /// Validated frames seen by the scripted host.

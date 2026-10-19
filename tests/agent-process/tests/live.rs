@@ -1,4 +1,6 @@
 //! Live channel text through the hosted agent and independent byte provider.
+use skein_fake_llm_domain::api;
+use skein_lib::Duration;
 use skein_world::domain::heap::Counting;
 use smith_agent_process_world::{TraceCase, World, charter};
 use smith_agent_service::sinks::Capture;
@@ -73,4 +75,48 @@ fn a_sub_agents_completion_gives_no_piece() {
         }
     }
     assert_eq!(deltas, b"actual child answer", "the event owner's child deltas remain observable");
+}
+
+const HOLD: &[u8] = b"h";
+const FIRST: &[u8] = b"Hel";
+const LAST: &[u8] = b"lo";
+// The fixture releases one second after its first query, beyond the 100 ms interval.
+const RELEASE_AFTER: Duration = Duration::from_secs(1);
+const FIRST_QUERY: usize = 1;
+// Byte offsets of the literal prefix "Hel".
+const FIRST_BYTES: u64 = 3;
+
+fn held_after(first: &[u8], hold: &[u8], last: &[u8]) -> Box<[api::Turn]> {
+    Box::new([api::Turn {
+        lines: Box::new([api::Line::Pieces {
+            pieces: Box::new([
+                api::Piece { text: first.into(), hold: None },
+                api::Piece { text: last.into(), hold: Some(hold.into()) },
+            ]),
+        }]),
+        finish: api::Finish::Stop,
+        tokens: 1,
+    }])
+}
+
+fn held_world(queries: usize) -> World {
+    let mut world = world(TraceCase::Failed);
+    world.ask(true, false, false);
+    world.script(held_after(FIRST, HOLD, LAST));
+    world.release_after(HOLD, queries, RELEASE_AFTER);
+    world
+}
+
+fn positions(pieces: &[smith_channel::Live]) -> Vec<(u32, u64, &[u8])> {
+    pieces.iter().map(|piece| (piece.retry(), piece.offset(), piece.bytes())).collect()
+}
+
+#[test]
+fn a_held_reply_shows_its_first_piece_at_the_intervals_end() {
+    let mut world = held_world(FIRST_QUERY);
+    assert!(world.settle());
+    let before = world.pieces_at_release();
+    assert_eq!(positions(&before), [(0, 0, FIRST)]);
+    let pieces = world.pieces();
+    assert_eq!(positions(&pieces), [(0, 0, FIRST), (0, FIRST_BYTES, LAST)]);
 }

@@ -131,6 +131,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         file_entries: domain.session.tools.list_entries,
         file_bytes: domain.session.tools.file_bytes,
         file_timeout: domain.session.tools.file_timeout,
+        live_interval: policy.live_interval,
         queue,
         routes,
         memory,

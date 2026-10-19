@@ -837,3 +837,12 @@ fn pathname_translation_copies_are_counted_only_for_one_step() {
     // while the two pathname translation copies belong to one step.
     assert_eq!(pathname_growth(8) - pathname_growth(1), 28_672);
 }
+
+#[test]
+fn a_zero_live_interval_is_refused() {
+    let mut selected = profile();
+    selected.policy.live_interval = Duration::ZERO;
+    let refusal = super::derive(&selected, &declarations()).expect_err("zero live interval");
+    assert_eq!(refusal.check(), Some(Check::Deadlines));
+    assert_eq!(words(&refusal).as_ref(), b"deadlines: policy.live_interval=0 ns; policy.deadline_minimum=0 ns");
+}

@@ -106,6 +106,8 @@ pub struct Policy {
     pub cancel_grace: Duration,
     /// Spawned agent exit grace.
     pub exit_grace: Duration,
+    /// Longest hold before projecting live bytes (protocol/limits.md 2.3).
+    pub live_interval: Duration,
 }
 
 /// The named declarations and policies supplied by the shell to derivation.
@@ -203,6 +205,7 @@ pub const fn standard() -> Profile {
             write_deadline: Duration::from_secs(30),
             cancel_grace: Duration::from_secs(10),
             exit_grace: Duration::from_secs(45),
+            live_interval: Duration::from_millis(100),
         },
     }
 }
