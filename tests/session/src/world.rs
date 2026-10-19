@@ -1710,6 +1710,9 @@ impl World {
                 self.serving.end(call);
                 self.send(Delivery::Answer { call, result });
             }
+            other @ (provider::Request::Piece { .. } | provider::Request::Hold { .. }) => {
+                panic!("typed provider expected a terminal reply, got {other:?}")
+            }
         }
     }
 
@@ -1754,7 +1757,11 @@ impl World {
                 }
                 Delivery::Query { call, query } => {
                     self.serving.open(call, ());
-                    self.provider_stage.push(provider::Event::Call { reply_to: ReplyTo::new(Token::new(call)), query });
+                    self.provider_stage.push(provider::Event::Call {
+                        reply_to: ReplyTo::new(Token::new(call)),
+                        call: Token::new(call),
+                        query,
+                    });
                     self.stats.provider_calls += 1;
                 }
                 Delivery::Answer { call, result } => {

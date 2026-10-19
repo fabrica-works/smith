@@ -1083,7 +1083,12 @@ impl World {
                 provider::fire(&mut self.provider, &self.provider_env, &mut self.provider_out);
             }
             while let Some(reply) = self.provider_out.pop() {
-                let provider::Request::Reply { to, result } = reply;
+                let (to, result) = match reply {
+                    provider::Request::Reply { to, result } => (to, result),
+                    other @ (provider::Request::Piece { .. } | provider::Request::Hold { .. }) => {
+                        panic!("typed provider expected a terminal reply, got {other:?}")
+                    }
+                };
                 let owner = to.into_token();
                 let (grants, served, asker) = self.pending.remove(&owner).expect("one provider terminal per call");
                 let event = if self.cancelled.remove(&owner) {
@@ -1627,7 +1632,7 @@ impl World {
                 provider::step(
                     &mut self.provider,
                     &self.provider_env,
-                    provider::Event::Call { reply_to: ReplyTo::new(owner), query },
+                    provider::Event::Call { reply_to: ReplyTo::new(owner), call: owner, query },
                     &mut self.provider_out,
                 );
             }

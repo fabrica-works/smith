@@ -418,6 +418,7 @@ impl World {
                             &self.provider_env,
                             provider::Event::Call {
                                 reply_to: ReplyTo::new(callback),
+                                call: callback,
                                 query: smith_agent_world::translate::query(prompt),
                             },
                             &mut self.provider_out,
@@ -494,7 +495,13 @@ impl World {
     }
 
     fn provider_replies(&mut self) {
-        while let Some(provider::Request::Reply { to, result }) = self.provider_out.pop() {
+        while let Some(request) = self.provider_out.pop() {
+            let (to, result) = match request {
+                provider::Request::Reply { to, result } => (to, result),
+                other @ (provider::Request::Piece { .. } | provider::Request::Hold { .. }) => {
+                    panic!("typed provider expected a terminal reply, got {other:?}")
+                }
+            };
             let callback = to.into_token();
             let binding = self.bindings.remove(&callback).expect("one fake terminal");
             self.lower.end(callback);

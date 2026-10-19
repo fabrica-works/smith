@@ -262,7 +262,13 @@ impl Composition {
         while self.provider_stage.has_room() && self.provider.is_due(now) {
             provider::fire(&mut self.provider, &self.provider_stage.env, &mut self.provider_stage.out);
         }
-        while let Some(provider::Request::Reply { to, result }) = self.provider_stage.out.pop() {
+        while let Some(request) = self.provider_stage.out.pop() {
+            let (to, result) = match request {
+                provider::Request::Reply { to, result } => (to, result),
+                other @ (provider::Request::Piece { .. } | provider::Request::Hold { .. }) => {
+                    panic!("typed provider expected a terminal reply, got {other:?}")
+                }
+            };
             let (index, to) = self.provider_routes.remove(&to.into_token()).expect("one native provider reply route");
             self.bindings[index]
                 .wire
@@ -292,7 +298,11 @@ impl Composition {
                 }
                 returned
             };
-            for provider::Event::Call { reply_to, query } in core::mem::take(&mut wire.peer.pending) {
+            for event in core::mem::take(&mut wire.peer.pending) {
+                let (reply_to, query) = match event {
+                    provider::Event::Call { reply_to, call: _, query } => (reply_to, query),
+                    other @ provider::Event::Release { .. } => panic!("wire provider expected a call, got {other:?}"),
+                };
                 let route = Token::new(u64::try_from(index).expect("finite physical bindings"));
                 assert!(
                     self.provider_routes.insert(route, (index, reply_to)).is_none(),
@@ -301,7 +311,7 @@ impl Composition {
                 provider::step(
                     &mut self.provider,
                     &self.provider_stage.env,
-                    provider::Event::Call { reply_to: ReplyTo::new(route), query },
+                    provider::Event::Call { reply_to: ReplyTo::new(route), call: route, query },
                     &mut self.provider_stage.out,
                 );
                 progress.immediate = true;

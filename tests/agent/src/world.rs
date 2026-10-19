@@ -1124,7 +1124,12 @@ impl World {
         loop {
             let reply = match &mut self.backend {
                 Backend::Typed { stage, calls, .. } => stage.out.pop().map(|request| {
-                    let provider::Request::Reply { to, result } = request;
+                    let (to, result) = match request {
+                        provider::Request::Reply { to, result } => (to, result),
+                        other @ (provider::Request::Piece { .. } | provider::Request::Hold { .. }) => {
+                            panic!("typed provider expected a terminal reply, got {other:?}")
+                        }
+                    };
                     let owner = to.into_token();
                     let (grants, served, asker) = calls.end(owner);
                     (owner, grants, served, asker, result)
@@ -1297,7 +1302,7 @@ impl World {
                         self.messages_seen
                             .push((self.now, crate::messages_referee::Seen::Prompt { query: query.clone() }));
                         self.prompts.push(query.clone());
-                        stage.push(provider::Event::Call { reply_to: ReplyTo::new(owner), query });
+                        stage.push(provider::Event::Call { reply_to: ReplyTo::new(owner), call: owner, query });
                     }
                 }
                 self.observe(Seen::Prompt { owner, query: self.prompts.last().expect("actual typed request").clone() });
