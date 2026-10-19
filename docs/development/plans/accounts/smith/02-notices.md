@@ -86,7 +86,10 @@ Files: `crates/smith-domain/src/{llm,boundary,route,peer,translate}.rs`,
   `crates/smith-local-service/src/service.rs`,
   `crates/smith-host-protocol/src/tests.rs`, `tests/local/src/world.rs`,
   `tests/channel/tests/stories.rs`, `tests/host/src/inline.rs`,
-  `tests/run/src/partner.rs`.
+  `tests/run/src/partner.rs`, `tests/run/src/child_final_referee.rs`
+  (`judge`'s `FactKind::Ended { end: End::Budget(Exhausted::Turns), ..
+  }` takes `EndKind`), `tests/agent/src/memory.rs` (its `Event::Failed`
+  literal; ruling 122).
 Shape: the session's `llm::Failure` gains `Refused` and `Unsupported`,
   and `Exhausted`'s `retry_after` is an `Option<Duration>`; `llm::Report
   { code, request, field }` (new) holds skein's report, each part empty
@@ -211,7 +214,7 @@ Files: `crates/smith-domain/src/{boundary,route,tests}.rs`;
   `tests/protocol-llm/src/world.rs`, `tests/host/src/{lib,inline}.rs`;
   `tests/host/tests/{memory,simulation}.rs`;
   `tests/protocol-llm/tests/root_memory.rs`;
-  `tests/channel/tests/stories.rs`.
+  `tests/channel/tests/{stories,composed}.rs`.
 Shape: the domain's `Request::Rejected` and `Exhausted` become
   `Unauthorized { grant }`, `Limited { account, reset }` (an
   `Option<Duration>`) and `Refused { account, code, reason }` (new):
@@ -235,15 +238,20 @@ Test shape: unit tests each under 20 ms, in smith-domain's `tests.rs`:
   `an_unsupported_request_raises_no_notice`. In host-domain's
   `tests.rs`: `a_notice_for_an_account_not_lent_is_refused_as_rules`,
   rows unauthorized, limited, refused, and an account lent but held by
-  no admitted agent. Channel world, under 0.1 s, `stories.rs`
-  (`World`, `CEILINGS`): `account_notices_reach_the_host_without_values`
-  gains the agent's side, a row per notice.
-Proof: world, `account_notices_reach_the_host_without_values`: each of
+  no admitted agent. Channel world, under 0.1 s: `stories.rs`'
+  `account_notices_reach_the_host_without_values` already drives the
+  agent's side to host-protocol's `OpenEvent` (smith 01.2), and keeps
+  it; `composed.rs`, over the setup of
+  `the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_domain`,
+  gains `account_notices_reach_the_host_domain_without_values`, a row
+  per notice, from the agent domain's raise to host-domain's `Up`
+  (ruling 122).
+Proof: world, `account_notices_reach_the_host_domain_without_values`: each of
   unauthorized, limited and refused crosses both real halves into the
   host domain with its account and no value; under 0.1 s.
 Don't: send a refused notice for unsupported or for an LLM's own
   refusal; let a host retry on another account.
-Size: about 250 lines.
+Size: about 290 lines.
 Removes: `Rejected` and `Exhausted` in the domain's, the host's and
   the parent's requests; smith 01.2's `to_host_event` mapping.
 
@@ -269,7 +277,9 @@ Shape: `host::ModelFault` is `Completion { .., report }`, `Limited {
   optional reset; `host::Report` (new, re-exported by `lib.rs`) mirrors
   the run's. `ModelFault` and `RunFailure` lose `Copy` and keep `Clone`
   (`CompletionFailure` stays `Copy`); `terminal.rs` passes a reference.
-  `answer.rs` decodes each version 4 fault, ending smith 01.2's mapping;
+  `answer.rs` decodes each version 4 fault, ending smith 01.2's mapping
+  and its comment "smith 02.1 gives the two new classes their domain
+  form", which now names 02.3;
   inline-agent's `model_fault` maps the run's, the reset measured at the
   answer, ending 02.1's. `end.rs`'s `answer_status`: `Limited`,
   `Program` and `Completion { Unsupported }` exit 1; `Refused` and

@@ -726,6 +726,30 @@ commits is this plan's.
      A further user of what 09 changes is refreshed the same way and listed
      in the commit body.
 
+122. **smith 02's Shapes against main** (re-check of smith-02.1).
+     The re-check of smith-02.1 against skein 11565f3 and smith 09be081e,
+     on what moved since its ready check, found `smith/02-notices.md` short
+     of the code; it now says, checked by `git grep` on smith origin/main
+     5bd8fab8:
+     - 02.1 Files take `tests/run/src/child_final_referee.rs` (`judge`:
+       `FactKind::Ended { conversation, end: End::Budget(Exhausted::Turns),
+       .. } =>`), whose pattern takes `EndKind`, and `tests/agent/src/memory.rs`
+       (`Event::Failed {`), whose literal 02.1 changes as the listed files'.
+     - 02.2: `tests/channel/tests/stories.rs`' `fn
+       account_notices_reach_the_host_without_values()` already drives the
+       agent's side (`world.agent_reports_unauthorized(3, 4)`) and stops at
+       host-protocol (`Observation::HostUnauthorized { account: 3, generation:
+       4 }`); `tests/channel/tests/composed.rs` composes both domains (`fn
+       the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_domain()`).
+       The proof, that each notice "crosses both real halves into the host
+       domain", is a new `account_notices_reach_the_host_domain_without_values`
+       in `composed.rs`, which joins 02.2's Files; Size about 290.
+     - 02.3: `crates/smith-host-protocol/src/answer.rs`' comment "// smith
+       02.1 gives the two new classes their domain form." names 02.3, which
+       gives them.
+     A further user of what 02 changes is refreshed the same way and listed
+     in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
