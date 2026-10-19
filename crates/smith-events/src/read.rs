@@ -5,14 +5,15 @@
 //! protocol/limits.md, section 3, rule 1.
 
 use crate::records::{
-    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
-    CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
-    ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Forced, Form, JobEnded,
-    Level, LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice,
-    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
-    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
-    Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding, Capture,
+    CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion,
+    CompletionFailure, Containment, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
+    Cpu, Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase,
+    Family, Field, Forced, Form, JobEnded, Level, LimitValue, Loss, Message, MessageRead, MessageReceived,
+    MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record,
+    Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded,
+    SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted,
+    ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -622,6 +623,8 @@ fn read_failure_class(tokens: &[Token], limits: &Limits) -> Result<FailureClass,
         b"overloaded" => FailureClass::Overloaded,
         b"rate_limited" => FailureClass::RateLimited,
         b"exhausted" => FailureClass::Exhausted,
+        b"refused" => FailureClass::Refused,
+        b"unsupported" => FailureClass::Unsupported,
         b"unavailable" => FailureClass::Unavailable,
         b"timed_out" => FailureClass::TimedOut,
         b"context_too_long" => FailureClass::ContextTooLong,
@@ -747,7 +750,7 @@ fn read_versions(tokens: &[Token], _limits: &Limits) -> Result<Versions, Error> 
 #[cfg(test)]
 #[test]
 fn the_product_announces_its_chat_store_version() {
-    let wire = b"{\"v\":3,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":3,\"channel\":2,\"charter\":2,\"transcript\":5,\"chat_store\":1},\"limits\":{}}\n";
+    let wire = b"{\"v\":4,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":4,\"channel\":2,\"charter\":2,\"transcript\":5,\"chat_store\":1},\"limits\":{}}\n";
     let limits = Limits { string: 32, content: 1024, items: 16 };
     let record = read(wire, &limits).unwrap().unwrap();
     let Event::SessionStarted(started) = &record.event else { panic!("startup record") };
@@ -787,6 +790,21 @@ fn read_peak_rss(tokens: &[Token], _limits: &Limits) -> Result<PeakRss, Error> {
 fn read_model(tokens: &[Token], limits: &Limits) -> Result<Model, Error> {
     object(tokens)?;
     Ok(Model {
+        account: match required(tokens, b"account")? {
+            [Token::Null] => None,
+            item => Some(match u32::try_from(unsigned(item)?) {
+                Ok(account) => account,
+                Err(_) => return Err(Error::Shape),
+            }),
+        },
+        backend: {
+            let name = text(required(tokens, b"backend")?, limits.string)?;
+            match name.as_ref() {
+                b"direct" => Backend::Direct,
+                b"claude_code" => Backend::ClaudeCode,
+                _ => Backend::Unknown(name),
+            }
+        },
         endpoint: text(required(tokens, b"endpoint")?, limits.string)?,
         model: text(required(tokens, b"model")?, limits.string)?,
         window_tokens: unsigned(required(tokens, b"window_tokens")?)?,
@@ -837,6 +855,7 @@ fn read_budget(tokens: &[Token], _limits: &Limits) -> Result<Budget, Error> {
 fn read_tools(tokens: &[Token], limits: &Limits) -> Result<Tools, Error> {
     object(tokens)?;
     Ok(Tools {
+        withheld: read_list_family(required(tokens, b"withheld")?, limits)?,
         families: read_list_family(required(tokens, b"families")?, limits)?,
         wait: boolean(required(tokens, b"wait")?)?,
         deliver: boolean(required(tokens, b"deliver")?)?,
@@ -859,6 +878,18 @@ fn read_failure_phase(tokens: &[Token], limits: &Limits) -> Result<FailurePhase,
 fn read_completion_failure(tokens: &[Token], limits: &Limits) -> Result<CompletionFailure, Error> {
     object(tokens)?;
     Ok(CompletionFailure {
+        request_id: match field(tokens, b"request_id")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        code: match field(tokens, b"code")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        field: match field(tokens, b"field")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
         class: read_failure_class(required(tokens, b"class")?, limits)?,
         evidence: read_evidence(required(tokens, b"evidence")?, limits)?,
         phase: match field(tokens, b"phase")? {

@@ -2,14 +2,15 @@
 //! Contract: protocol/events.md, sections 5.3 and 6.
 
 use crate::records::{
-    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
-    CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
-    ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Forced, Form, JobEnded, Level,
-    LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice,
-    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
-    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
-    Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Backend, Block, Budget, BudgetStage, BudgetStanding, Capture,
+    CheckCompleted, CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure,
+    Containment, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered,
+    Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Forced, Form,
+    JobEnded, Level, LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode,
+    Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
+    SharePart, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict,
+    Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -317,6 +318,8 @@ fn write_failure_class(json: &mut Encoder, value: &FailureClass, _capture: &Capt
         FailureClass::Overloaded => json.string(b"overloaded"),
         FailureClass::RateLimited => json.string(b"rate_limited"),
         FailureClass::Exhausted => json.string(b"exhausted"),
+        FailureClass::Refused => json.string(b"refused"),
+        FailureClass::Unsupported => json.string(b"unsupported"),
         FailureClass::Unavailable => json.string(b"unavailable"),
         FailureClass::TimedOut => json.string(b"timed_out"),
         FailureClass::ContextTooLong => json.string(b"context_too_long"),
@@ -462,6 +465,17 @@ fn write_model(json: &mut Encoder, value: &Model, _capture: &Capture) {
         }
         None => json.null(),
     }
+    json.key(b"account");
+    match value.account {
+        Some(account) => json.unsigned(u64::from(account)),
+        None => json.null(),
+    }
+    json.key(b"backend");
+    json.string(match &value.backend {
+        Backend::Direct => b"direct",
+        Backend::ClaudeCode => b"claude_code",
+        Backend::Unknown(name) => name,
+    });
     json.object_end();
 }
 
@@ -522,6 +536,8 @@ fn write_tools(json: &mut Encoder, value: &Tools, capture: &Capture) {
     json.object_start();
     json.key(b"families");
     write_list_family(json, &value.families, capture);
+    json.key(b"withheld");
+    write_list_family(json, &value.withheld, capture);
     json.key(b"wait");
     json.boolean(value.wait);
     json.key(b"deliver");
@@ -564,6 +580,18 @@ fn write_completion_failure(json: &mut Encoder, value: &CompletionFailure, captu
     if let Some(item) = value.status {
         json.key(b"status");
         json.unsigned(item);
+    }
+    if let Some(item) = &value.field {
+        json.key(b"field");
+        json.string(item);
+    }
+    if let Some(item) = &value.code {
+        json.key(b"code");
+        json.string(item);
+    }
+    if let Some(item) = &value.request_id {
+        json.key(b"request_id");
+        json.string(item);
     }
     match capture {
         Capture::None | Capture::Unknown(_) => {}
@@ -1055,6 +1083,8 @@ fn validate_failure_class(value: &FailureClass, limits: &Limits) -> Result<(), E
         FailureClass::Overloaded
         | FailureClass::RateLimited
         | FailureClass::Exhausted
+        | FailureClass::Refused
+        | FailureClass::Unsupported
         | FailureClass::Unavailable
         | FailureClass::TimedOut
         | FailureClass::ContextTooLong
@@ -1131,6 +1161,10 @@ fn validate_count(value: &Count, limits: &Limits) -> Result<(), Error> {
 fn validate_model(value: &Model, limits: &Limits) -> Result<(), Error> {
     check_text(&value.endpoint, limits.string)?;
     check_text(&value.model, limits.string)?;
+    match &value.backend {
+        Backend::Direct | Backend::ClaudeCode => {}
+        Backend::Unknown(name) => check_text(name, limits.string)?,
+    }
 
     if let Some(item) = &value.effort {
         check_text(item, limits.string)?;
@@ -1140,6 +1174,7 @@ fn validate_model(value: &Model, limits: &Limits) -> Result<(), Error> {
 
 fn validate_tools(value: &Tools, limits: &Limits) -> Result<(), Error> {
     validate_list_family(&value.families, limits)?;
+    validate_list_family(&value.withheld, limits)?;
 
     validate_list_text(&value.host, limits)?;
     Ok(())
@@ -1147,6 +1182,9 @@ fn validate_tools(value: &Tools, limits: &Limits) -> Result<(), Error> {
 
 fn validate_completion_failure(value: &CompletionFailure, limits: &Limits) -> Result<(), Error> {
     validate_failure_class(&value.class, limits)?;
+    for item in [&value.field, &value.code, &value.request_id].into_iter().flatten() {
+        check_text(item, limits.string)?;
+    }
     validate_evidence(&value.evidence, limits)?;
     if let Some(phase) = &value.phase {
         match phase {

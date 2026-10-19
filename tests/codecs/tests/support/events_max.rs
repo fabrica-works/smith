@@ -43,6 +43,8 @@ fn max_peak_rss(_limits: &smith_events::Limits) -> PeakRss {
 
 fn max_model(limits: &smith_events::Limits) -> Model {
     Model {
+        account: Some(u32::MAX),
+        backend: smith_events::Backend::Unknown(payload(limits.string)),
         endpoint: payload(limits.string),
         model: payload(limits.string),
         window_tokens: u64::MAX,
@@ -71,11 +73,20 @@ fn max_budget(_limits: &smith_events::Limits) -> Budget {
 }
 
 fn max_tools(limits: &smith_events::Limits) -> Tools {
-    Tools { families: max_list_family(limits), wait: false, deliver: false, host: max_list_text(limits) }
+    Tools {
+        withheld: max_list_family(limits),
+        families: max_list_family(limits),
+        wait: false,
+        deliver: false,
+        host: max_list_text(limits),
+    }
 }
 
 fn max_completion_failure(limits: &smith_events::Limits) -> CompletionFailure {
     CompletionFailure {
+        field: Some(payload(limits.string)),
+        code: Some(payload(limits.string)),
+        request_id: Some(payload(limits.string)),
         phase: Some(smith_events::FailurePhase::Unknown(payload(limits.string))),
         limit: Some(smith_events::FailureLimit { which: payload(limits.string), bound: u64::MAX }),
         status: Some(u64::MAX),

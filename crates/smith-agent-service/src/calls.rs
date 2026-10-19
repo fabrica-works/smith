@@ -529,8 +529,10 @@ mod tests {
                 call: None,
                 thread: 0,
                 model: smith_events::Model {
-                    endpoint: b"actual-endpoint".as_slice().into(),
-                    model: b"actual-model".as_slice().into(),
+                    account: None,
+                    backend: smith_events::Backend::Direct,
+                    endpoint: b"endpoint-7".as_slice().into(),
+                    model: b"model-7".as_slice().into(),
                     window_tokens: 4096,
                     output_tokens: 32,
                     effort: None,

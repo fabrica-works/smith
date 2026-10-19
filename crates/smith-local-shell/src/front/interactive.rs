@@ -279,6 +279,8 @@ mod tests {
 
     fn model() -> Model {
         Model {
+            account: None,
+            backend: smith_events::Backend::Direct,
             endpoint: b"fake".as_slice().into(),
             model: b"small".as_slice().into(),
             window_tokens: 1024,
@@ -361,6 +363,7 @@ mod tests {
                 reserve: smith_events::Reserve { turns: 0, time_ms: 0, spend: 0 },
             },
             tools: smith_events::Tools {
+                withheld: skein_lib::List::with_capacity(0),
                 families: skein_lib::List::with_capacity(0),
                 wait: false,
                 deliver: false,

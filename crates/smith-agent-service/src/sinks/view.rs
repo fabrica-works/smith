@@ -119,13 +119,15 @@ impl View {
     #[must_use]
     pub fn worst_case(text_bytes: u32) -> Option<u64> {
         let string = u64::try_from(smith_events::DETAIL_BYTES).ok()?;
-        let model = string.checked_mul(3)?;
+        let model = string.checked_mul(4)?;
         let tool = string.checked_mul(2)?;
         let notice = string.checked_mul(3)?;
         // Answer class, endpoint, model, completion class/evidence/phase/limit,
-        // and answer which/reason are nine independently bounded strings.
-        let failure =
-            string.checked_mul(9)?.checked_add(string)?.checked_add(u64::try_from(size_of::<AnswerFailure>()).ok()?)?;
+        // and answer which/reason and provider field/code/request are twelve independently bounded strings.
+        let failure = string
+            .checked_mul(12)?
+            .checked_add(string)?
+            .checked_add(u64::try_from(size_of::<AnswerFailure>()).ok()?)?;
         let payload = u64::from(text_bytes).max(model).max(tool).max(notice).max(failure);
         u64::try_from(size_of::<Self>()).ok()?.checked_add(payload)
     }
@@ -141,6 +143,12 @@ fn optional(value: Option<&[u8]>) -> Option<Box<[u8]>> {
 
 fn model(value: &Model) -> Model {
     Model {
+        account: value.account,
+        backend: match &value.backend {
+            smith_events::Backend::Direct => smith_events::Backend::Direct,
+            smith_events::Backend::ClaudeCode => smith_events::Backend::ClaudeCode,
+            smith_events::Backend::Unknown(name) => smith_events::Backend::Unknown(smith_events::clip(name).into()),
+        },
         endpoint: smith_events::clip(&value.endpoint).into(),
         model: smith_events::clip(&value.model).into(),
         window_tokens: value.window_tokens,
@@ -168,6 +176,9 @@ fn completion_failure(value: &CompletionFailure) -> CompletionFailure {
         limit = Some(smith_events::FailureLimit { which: smith_events::clip(&value.which).into(), bound: value.bound });
     }
     CompletionFailure {
+        field: optional(value.field.as_deref()),
+        code: optional(value.code.as_deref()),
+        request_id: optional(value.request_id.as_deref()),
         class: match &value.class {
             smith_events::FailureClass::Unknown(text) => {
                 smith_events::FailureClass::Unknown(smith_events::clip(text).into())
@@ -175,6 +186,8 @@ fn completion_failure(value: &CompletionFailure) -> CompletionFailure {
             smith_events::FailureClass::Overloaded
             | smith_events::FailureClass::RateLimited
             | smith_events::FailureClass::Exhausted
+            | smith_events::FailureClass::Refused
+            | smith_events::FailureClass::Unsupported
             | smith_events::FailureClass::Unavailable
             | smith_events::FailureClass::TimedOut
             | smith_events::FailureClass::ContextTooLong

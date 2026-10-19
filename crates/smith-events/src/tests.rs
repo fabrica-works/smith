@@ -9,7 +9,7 @@ use crate::{Capture, Error, Event, Limits, read, write};
 #[expect(clippy::disallowed_macros, reason = "an independent frozen wire fixture reproduces the reader defect")]
 fn provider_failure_metadata_and_capture_detail_survive_the_reader() {
     let limits = Limits { string: 256, content: 1024, items: 16 };
-    let original = core::str::from_utf8(include_bytes!("../golden/v3/outcome_failed.jsonl")).unwrap();
+    let original = core::str::from_utf8(include_bytes!("../golden/v4/outcome_failed.jsonl")).unwrap();
     let source = original.replace(
         "\"class\":\"overloaded\"",
         "\"class\":\"invalid\",\"status\":404,\"phase\":\"head\",\"limit\":{\"which\":\"response_head\",\"bound\":1935},\"detail\":\"unknown model 🌍\"",
@@ -69,7 +69,7 @@ fn joint_line_ceiling_is_inclusive_and_one_more_byte_refuses_in_both_paths() {
 #[test]
 fn joint_line_bound_never_relaxes_string_content_or_list_caps() {
     let limits = Limits { string: 32, content: 8, items: 1 };
-    let base = "{\"v\":3,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":8,\"label\":\"LABEL\",\"text\":\"12345678\"}\n";
+    let base = "{\"v\":4,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":8,\"label\":\"LABEL\",\"text\":\"12345678\"}\n";
     let at_cap = base.replace("LABEL", &"x".repeat(32));
     assert!(crate::read_with_ceiling(at_cap.as_bytes(), &limits, 1024).expect("semantic boundaries").is_some());
     let metadata_over = base.replace("LABEL", &"x".repeat(33));
@@ -92,10 +92,10 @@ fn joint_line_bound_never_relaxes_string_content_or_list_caps() {
 #[test]
 fn another_version_is_named() {
     let limits = Limits { string: 64, content: 1024, items: 4 };
-    assert_eq!(read(b"{\"v\":4,\"type\":\"future\",\"t_ms\":0}\n", &limits), Err(Error::Version(4)));
+    assert_eq!(read(b"{\"v\":5,\"type\":\"future\",\"t_ms\":0}\n", &limits), Err(Error::Version(5)));
 }
 
-const END_WITH_UNREAD_USAGE: &[u8] = b"{\"v\":3,\"type\":\"session.ended\",\"t_ms\":7,\"exit\":0,\"answered\":true,\"aborted\":false,\"teardown_ms\":2,\"emitted\":{\"session.ended\":1},\"loss\":{\"events\":0,\"channel\":null},\"cpu_ms\":null,\"peak_rss_bytes\":null}\n";
+const END_WITH_UNREAD_USAGE: &[u8] = b"{\"v\":4,\"type\":\"session.ended\",\"t_ms\":7,\"exit\":0,\"answered\":true,\"aborted\":false,\"teardown_ms\":2,\"emitted\":{\"session.ended\":1},\"loss\":{\"events\":0,\"channel\":null},\"cpu_ms\":null,\"peak_rss_bytes\":null}\n";
 
 #[test]
 fn joint_writer_ceiling_round_trips_and_never_weakens_semantic_caps() {
@@ -109,7 +109,7 @@ fn joint_writer_ceiling_round_trips_and_never_weakens_semantic_caps() {
         assert_eq!(crate::write_with_ceiling(&record, &capture, &limits, ceiling - 1), Err(Error::Limits));
         assert_eq!(crate::write_with_ceiling(&record, &capture, &limits, 0), Err(Error::Limits));
     }
-    let input = b"{\"v\":3,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":2,\"label\":\"abc\",\"text\":\"ab\"}\n";
+    let input = b"{\"v\":4,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":2,\"label\":\"abc\",\"text\":\"ab\"}\n";
     let message = crate::read_with_ceiling(input, &limits, 1024).unwrap().unwrap();
     for restrictive in [Limits { string: 2, ..limits }, Limits { content: 1, ..limits }] {
         assert_eq!(crate::write_with_ceiling(&message, &Capture::Everything, &restrictive, 1024), Err(Error::Limits));
@@ -213,6 +213,9 @@ fn every_provider_class_has_its_words() {
     for (class, expected) in cases {
         let mut failure = word_failure(crate::AnswerClass::Model);
         failure.completion = Some(crate::CompletionFailure {
+            field: None,
+            code: None,
+            request_id: None,
             class,
             evidence: crate::Evidence::Response,
             retry_after_ms: None,
@@ -276,6 +279,9 @@ fn a_rejected_credential_names_its_account_in_the_shared_words() {
     let mut failure = word_failure(crate::AnswerClass::Model);
     failure.account = Some(7);
     failure.completion = Some(crate::CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
         class: crate::FailureClass::Unauthorized,
         evidence: crate::Evidence::Response,
         retry_after_ms: None,

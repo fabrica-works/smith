@@ -297,6 +297,10 @@ pub enum FailureClass {
     RateLimited,
     /// The `exhausted` classification.
     Exhausted,
+    /// The provider refused the account what the request asked.
+    Refused,
+    /// The provider does not support a request field.
+    Unsupported,
     /// The `unavailable` classification.
     Unavailable,
     /// The `timed_out` classification.
@@ -445,7 +449,18 @@ pub struct PeakRss {
     pub children: u64,
 }
 
-/// The endpoint, model and charter window/output allowances the service records for a conversation.
+/// What a model's completions ran on, as its producer names it.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Backend {
+    /// Completions go directly to the provider.
+    Direct,
+    /// Claude Code runs the completions.
+    ClaudeCode,
+    /// A program name this reader does not know.
+    Unknown(Box<[u8]>),
+}
+
+/// The endpoint and allowances recorded for a conversation's model.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Model {
     pub endpoint: Box<[u8]>,
@@ -453,6 +468,8 @@ pub struct Model {
     pub window_tokens: u64,
     pub output_tokens: u64,
     pub effort: Option<Box<[u8]>>,
+    pub account: Option<u32>,
+    pub backend: Backend,
 }
 
 /// Provider-reported token counts the service records, with unknown counts kept nullable.
@@ -562,6 +579,7 @@ pub struct BudgetStanding {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Tools {
     pub families: List<Family>,
+    pub withheld: List<Family>,
     pub wait: bool,
     pub deliver: bool,
     pub host: List<Box<[u8]>>,
@@ -594,6 +612,9 @@ pub struct FailureLimit {
 /// The provider failure classification and transport evidence the service records.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CompletionFailure {
+    pub field: Option<Box<[u8]>>,
+    pub code: Option<Box<[u8]>>,
+    pub request_id: Option<Box<[u8]>>,
     pub class: FailureClass,
     pub evidence: Evidence,
     pub retry_after_ms: Option<u64>,

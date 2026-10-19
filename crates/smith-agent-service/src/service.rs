@@ -1529,7 +1529,7 @@ fn llm_events_up(service: &mut Service) {
                 match &mut service.events {
                     Some(events) => {
                         events.sinks.attempt_ready(owner);
-                        events.sinks.failed(owner, failure, evidence, &detail);
+                        events.sinks.failed(owner, failure, evidence, &detail, &report);
                     }
                     None => {}
                 }
@@ -2969,7 +2969,7 @@ mod tests {
                 profile: b"test".as_slice().into(),
                 capture: smith_events::Capture::Calls,
                 delivery: smith_events::Delivery::Complete,
-                versions: smith_events::Versions { events: 3, channel: 4, charter: 3, transcript: 6, chat_store: None },
+                versions: smith_events::Versions { events: 4, channel: 4, charter: 3, transcript: 6, chat_store: None },
                 limits: List::with_capacity(0),
             },
         );

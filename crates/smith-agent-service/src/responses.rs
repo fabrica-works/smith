@@ -281,10 +281,14 @@ impl Book {
         evidence: llm::Evidence,
         detail: &[u8],
         capture: crate::sinks::Capture,
+        report: &llm::Report,
     ) {
         let owner = self.owner_for(request_owner).expect("failure belongs to an actual request");
         let conversation = self.conversations.get_mut(&owner).expect("found above");
         let mut observed = completion_failure(failure, evidence);
+        observed.field = provider_field(&report.field);
+        observed.code = provider_field(&report.code);
+        observed.request_id = provider_field(&report.request);
         observed.detail = match capture {
             crate::sinks::Capture::None => None,
             crate::sinks::Capture::Calls | crate::sinks::Capture::Everything => Some(detail.into()),
@@ -532,6 +536,8 @@ impl Book {
                     None => None,
                 };
                 let model = Model {
+                    account: conversation.model.account,
+                    backend: conversation.model.backend.clone(),
                     endpoint: conversation.model.endpoint.clone(),
                     model: Box::from(
                         model.get(..usize::try_from(model_bytes).expect("bounded model")).expect("admitted model"),
@@ -906,9 +912,9 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         llm::Failure::Unavailable => (smith_events::FailureClass::Unavailable, None),
         llm::Failure::TimedOut { .. } => (smith_events::FailureClass::TimedOut, None),
         llm::Failure::ContextTooLong => (smith_events::FailureClass::ContextTooLong, None),
-        // smith 05.1 writes these classes with events version 4.
-        llm::Failure::Refused => (smith_events::FailureClass::Unknown(Box::from(b"refused".as_slice())), None),
-        llm::Failure::Unsupported | llm::Failure::Invalid => (smith_events::FailureClass::Invalid, None),
+        llm::Failure::Refused => (smith_events::FailureClass::Refused, None),
+        llm::Failure::Unsupported => (smith_events::FailureClass::Unsupported, None),
+        llm::Failure::Invalid => (smith_events::FailureClass::Invalid, None),
         llm::Failure::Unauthorized => (smith_events::FailureClass::Unauthorized, None),
         llm::Failure::RateLimited { retry_after } => {
             (smith_events::FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
@@ -973,7 +979,18 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::RateLimited { .. }
         | llm::Failure::Exhausted { .. } => None,
     };
-    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status, detail: None }
+    CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
+        class,
+        evidence,
+        retry_after_ms,
+        phase,
+        limit,
+        status,
+        detail: None,
+    }
 }
 
 fn limit_name(which: llm::Limit) -> &'static [u8] {
@@ -1022,6 +1039,9 @@ fn end_failure(mut projected: CompletionFailure, observed: CompletionFailure) ->
                     || observed.class == smith_events::FailureClass::Limit && request_limit)
             {
                 projected.evidence = observed.evidence;
+                projected.field = observed.field;
+                projected.code = observed.code;
+                projected.request_id = observed.request_id;
                 projected.status = observed.status;
                 projected.detail = observed.detail;
             }
@@ -1067,6 +1087,10 @@ pub(crate) fn worst_case(conversations: u32, string: u32, detail: u32) -> Option
         .checked_add(u64::from(string).checked_mul(4)?.checked_add(u64::from(detail))?)
 }
 
+fn provider_field(value: &[u8]) -> Option<Box<[u8]>> {
+    if value.is_empty() { None } else { Some(value.into()) }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     #![allow(
@@ -1096,8 +1120,10 @@ pub(crate) mod tests {
             share: None,
             clamped: List::with_capacity(0),
             model: Model {
-                endpoint: b"actual-endpoint".to_vec().into(),
-                model: b"actual-model".to_vec().into(),
+                account: None,
+                backend: smith_events::Backend::Direct,
+                endpoint: b"endpoint-7".to_vec().into(),
+                model: b"model-7".to_vec().into(),
                 window_tokens: 123,
                 output_tokens: 7,
                 effort: Some(b"medium".to_vec().into()),
@@ -1112,7 +1138,7 @@ pub(crate) mod tests {
             endpoint: llm::Endpoint(0),
             affinity: llm::Affinity { key: [0; 16], thread },
             asker: llm::Asker::Main,
-            model: b"actual-model".to_vec().into(),
+            model: b"model-7".to_vec().into(),
             system: Box::new([]),
             tools: smith_domain::tools::Grants { inspect: false, modify: false, shell: false },
             namespace: smith_domain::tools::Namespace::NoWorkspace,
@@ -1172,12 +1198,7 @@ pub(crate) mod tests {
         assert!(book.fact(Time::ZERO, &failed).is_empty());
         let records = book.fact(
             Time::ZERO,
-            &fact(
-                6,
-                session::FactKind::compaction_started(owner, 1, b"actual-model", 123, 7, Some(b"medium")),
-                1,
-                None,
-            ),
+            &fact(6, session::FactKind::compaction_started(owner, 1, b"model-7", 123, 7, Some(b"medium")), 1, None),
         );
         let Event::ResponseCompleted(ended) = &records.get(0).expect("failure terminal").event else {
             panic!("response closes")
@@ -1671,7 +1692,14 @@ pub(crate) mod tests {
         } else {
             llm::Failure::Invalid
         };
-        book.failed(request, failure, llm::Evidence::Response { status: Some(status) }, detail, capture);
+        book.failed(
+            request,
+            failure,
+            llm::Evidence::Response { status: Some(status) },
+            detail,
+            capture,
+            &llm::Report::none(),
+        );
         assert!(
             book.fact(
                 Time::ZERO,
@@ -1830,6 +1858,9 @@ mod window_failure_tests {
     #[test]
     fn an_unsent_window_check_does_not_take_an_earlier_transient_failure_as_its_cause() {
         let projected = CompletionFailure {
+            field: None,
+            code: None,
+            request_id: None,
             class: FailureClass::Limit,
             evidence: Evidence::Unsent,
             limit: Some(FailureLimit { which: b"window".as_slice().into(), bound: 6_144 }),
@@ -1839,6 +1870,9 @@ mod window_failure_tests {
             retry_after_ms: None,
         };
         let observed = CompletionFailure {
+            field: None,
+            code: None,
+            request_id: None,
             class: FailureClass::RateLimited,
             evidence: Evidence::Response,
             limit: None,

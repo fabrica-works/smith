@@ -287,6 +287,7 @@ impl Producer {
                 },
             },
             tools: smith_events::Tools {
+                withheld: List::with_capacity(0),
                 families,
                 wait: charter.grants.wait,
                 deliver: charter.grants.deliver.is_some(),

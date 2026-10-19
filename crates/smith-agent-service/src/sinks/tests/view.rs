@@ -8,6 +8,8 @@ static HEAP: skein_heap::Counting = skein_heap::Counting;
 
 fn model() -> smith_events::Model {
     smith_events::Model {
+        account: None,
+        backend: smith_events::Backend::Direct,
         endpoint: vec![b'e'; 64].into(),
         model: vec![b'm'; 64].into(),
         effort: Some(vec![b'l'; 64].into()),
@@ -41,6 +43,9 @@ fn request() -> Record {
 
 fn completion_failure() -> smith_events::CompletionFailure {
     smith_events::CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
         class: smith_events::FailureClass::Unknown(vec![b'c'; 64].into()),
         evidence: smith_events::Evidence::Unknown(vec![b'e'; 64].into()),
         retry_after_ms: Some(20),
@@ -83,7 +88,7 @@ fn usage() -> smith_events::Usage {
 fn shown() -> Vec<Record> {
     let opened = crate::responses::tests::opened(2, 0);
     vec![
-        golden(include_bytes!("../../../../smith-events/golden/v3/run_started_none.jsonl"), &limits(0)),
+        golden(include_bytes!("../../../../smith-events/golden/v4/run_started_none.jsonl"), &limits(0)),
         request(),
         Record { t_ms: 0, event: Event::ConversationOpened(opened) },
         Record {

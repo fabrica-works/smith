@@ -1445,6 +1445,8 @@ mod tests {
                     attempt: u64::MAX,
                     window: u64::MAX,
                     model: smith_events::Model {
+                        account: None,
+                        backend: smith_events::Backend::Direct,
                         endpoint: b"codex".as_slice().into(),
                         model: native.model.clone(),
                         window_tokens: 272_000,

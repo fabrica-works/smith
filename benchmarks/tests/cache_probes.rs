@@ -178,7 +178,7 @@ fn sequential_children_wait_for_the_parent_return_and_require_both_returns() {
             value.conversation = child;
         }
         let mut returned =
-            common::events::record(include_str!("../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"));
+            common::events::record(include_str!("../../crates/smith-events/golden/v4/tool_completed_everything.jsonl"));
         if let Event::ToolCompleted(value) = &mut returned.event {
             value.run = 0;
             value.conversation = 0;

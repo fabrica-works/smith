@@ -52,6 +52,8 @@ pub(super) fn failure(value: &FailureClass) -> &[u8] {
         FailureClass::Overloaded => b"overloaded",
         FailureClass::RateLimited => b"rate_limited",
         FailureClass::Exhausted => b"exhausted",
+        FailureClass::Refused => b"refused",
+        FailureClass::Unsupported => b"unsupported",
         FailureClass::Unavailable => b"unavailable",
         FailureClass::TimedOut => b"timed_out",
         FailureClass::ContextTooLong => b"context_too_long",

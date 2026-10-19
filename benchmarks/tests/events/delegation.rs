@@ -31,9 +31,9 @@ pub(super) fn a_clamped_share_names_its_part_and_bound() {
 
 fn span(call: &str, time: u64, started: bool) -> Record {
     let mut record = if started {
-        record(include_str!("../../../crates/smith-events/golden/v3/tool_started_everything.jsonl"))
+        record(include_str!("../../../crates/smith-events/golden/v4/tool_started_everything.jsonl"))
     } else {
-        record(include_str!("../../../crates/smith-events/golden/v3/tool_completed_everything.jsonl"))
+        record(include_str!("../../../crates/smith-events/golden/v4/tool_completed_everything.jsonl"))
     };
     record.t_ms = time;
     if let Event::ToolStarted(value) = &mut record.event {

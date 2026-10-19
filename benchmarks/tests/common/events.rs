@@ -87,6 +87,8 @@ fn text_blocks(text: &[u8]) -> skein_lib::List<smith_events::Block> {
 
 fn model() -> smith_events::Model {
     smith_events::Model {
+        account: None,
+        backend: smith_events::Backend::Direct,
         endpoint: Box::from(&b"endpoint"[..]),
         model: Box::from(&b"model"[..]),
         window_tokens: 10_000,
@@ -121,14 +123,14 @@ fn build_balanced() -> Vec<Record> {
     // sweep still reads every unmodified maximum-value codec record.
     let model = model();
     let mut values = vec![
-        record(include_str!("../../../crates/smith-events/golden/v3/session_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/run_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/conversation_opened_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/response_started_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/response_completed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/conversation_closed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/run_completed_everything.jsonl")),
-        record(include_str!("../../../crates/smith-events/golden/v3/session_ended_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/session_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/run_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/conversation_opened_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/response_started_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/response_completed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/conversation_closed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/run_completed_everything.jsonl")),
+        record(include_str!("../../../crates/smith-events/golden/v4/session_ended_everything.jsonl")),
     ];
     for (index, record) in values.iter_mut().enumerate() {
         record.t_ms = u64::try_from(index).expect("small index");

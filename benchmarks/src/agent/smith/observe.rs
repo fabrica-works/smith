@@ -249,6 +249,9 @@ mod tests {
             reasoning_tokens: None,
         };
         value.failure = Some(CompletionFailure {
+            field: None,
+            code: None,
+            request_id: None,
             class: FailureClass::Invalid,
             evidence: Evidence::Response,
             status: Some(400),
@@ -285,7 +288,7 @@ mod tests {
         assert!(!rejected_responses(std::slice::from_ref(&session), 1));
         let mut session = rejection();
         session.records.push(test_events::record(include_str!(
-            "../../../../crates/smith-events/golden/v3/text_delta_everything.jsonl"
+            "../../../../crates/smith-events/golden/v4/text_delta_everything.jsonl"
         )));
         assert!(!rejected_responses(std::slice::from_ref(&session), 1));
         session.records.pop();

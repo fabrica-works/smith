@@ -44,7 +44,7 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
     assert!(matches!(empty.check(&EventCheck::NoRequest, "task").passed, Measure::Unavailable { .. }));
     assert_eq!(empty.check(&EventCheck::NoRun, "task").passed, Measure::Observed { value: true });
     assert!(matches!(empty.classify(Exit::Code(2), Forced::No).end, End::HarnessError { .. }));
-    empty.feed(b"{\"v\":3,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown native record");
+    empty.feed(b"{\"v\":4,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown native record");
     empty.finish().expect("complete unknown line");
     assert_eq!(empty.check(&EventCheck::NoRun, "task").passed, Measure::Observed { value: false });
 }
@@ -101,6 +101,9 @@ fn provider_failure_uses_typed_status_and_retained_bounded_detail() {
     let check = EventCheck::ProviderFailure { status_at_least: 400, status_at_most: 499, detail_bytes_at_most: 1024 };
     let mut records = common::events::balanced();
     let mut failure = smith_events::CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
         class: smith_events::FailureClass::Invalid,
         evidence: smith_events::Evidence::Response,
         retry_after_ms: None,

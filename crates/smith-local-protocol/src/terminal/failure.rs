@@ -34,6 +34,8 @@ pub(super) fn run(
                 | FailureClass::Overloaded
                 | FailureClass::RateLimited
                 | FailureClass::Exhausted
+                | FailureClass::Refused
+                | FailureClass::Unsupported
                 | FailureClass::Unavailable
                 | FailureClass::TimedOut
                 | FailureClass::ContextTooLong
@@ -378,7 +380,18 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
         host::CompletionEvidence::Unknown => Evidence::MaybeSent,
         host::CompletionEvidence::Response { .. } => Evidence::Response,
     };
-    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status, detail: None }
+    CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
+        class,
+        evidence,
+        retry_after_ms,
+        phase,
+        limit,
+        status,
+        detail: None,
+    }
 }
 
 fn limit_name(which: host::Limit) -> &'static [u8] {

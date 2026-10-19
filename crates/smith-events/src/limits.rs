@@ -130,7 +130,7 @@ fn heap_model(limits: &Limits) -> Option<u64> {
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
-    Some(length)
+    length.checked_add(u64::from(limits.string))
 }
 
 fn heap_tools(limits: &Limits) -> Option<u64> {
@@ -143,11 +143,14 @@ fn heap_tools(limits: &Limits) -> Option<u64> {
         List::<Box<[u8]>>::worst_case(limits.items)?
             .checked_add((u64::from(limits.string)).checked_mul(u64::from(limits.items))?)?,
     )?;
-    Some(length)
+    length.checked_add(
+        List::<Family>::worst_case(limits.items)?
+            .checked_add(u64::from(limits.string).checked_mul(u64::from(limits.items))?)?,
+    )
 }
 
 fn heap_completion_failure(limits: &Limits) -> Option<u64> {
-    u64::from(limits.string).checked_mul(4)?.checked_add(u64::from(limits.content))
+    u64::from(limits.string).checked_mul(7)?.checked_add(u64::from(limits.content))
 }
 
 fn heap_answer_failure(limits: &Limits) -> Option<u64> {
@@ -511,7 +514,11 @@ fn size_model(_capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(17)?.checked_add(20_u64)?;
     length = length.checked_add(17)?.checked_add(20_u64)?;
     length = length.checked_add(10)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(4))?;
-    Some(length)
+    length
+        .checked_add(11)?
+        .checked_add(10)?
+        .checked_add(11)?
+        .checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(13))
 }
 
 fn size_usage(_capture: &Capture, _limits: &Limits) -> Option<u64> {
@@ -547,7 +554,9 @@ fn size_tools(capture: &Capture, limits: &Limits) -> Option<u64> {
             .checked_mul(u64::from(limits.items))?
             .checked_add(2)?,
     )?;
-    Some(length)
+    length.checked_add(12)?.checked_add(
+        size_family(capture, limits)?.checked_add(1)?.checked_mul(u64::from(limits.items))?.checked_add(2)?,
+    )
 }
 
 fn size_completion_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
@@ -564,7 +573,9 @@ fn size_completion_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
             length = length.checked_add(10)?.checked_add(u64::from(limits.content).checked_mul(6)?.checked_add(2)?)?;
         }
     }
-    Some(length)
+    length
+        .checked_add(9 + 8 + 14)?
+        .checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?.checked_mul(3)?)
 }
 
 fn size_answer_failure(capture: &Capture, limits: &Limits) -> Option<u64> {

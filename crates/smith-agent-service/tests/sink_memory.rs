@@ -85,6 +85,8 @@ mod tests {
                 attempt: 0,
                 window: 1,
                 model: smith_events::Model {
+                    account: None,
+                    backend: smith_events::Backend::Direct,
                     endpoint: b"codex".as_slice().into(),
                     model: b"gpt-6-luna".as_slice().into(),
                     window_tokens: 272_000,

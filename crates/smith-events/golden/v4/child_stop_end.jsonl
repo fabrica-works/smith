@@ -1,0 +1,1 @@
+{"v":4,"type":"tool.completed","t_ms":1999,"run":1,"conversation":1,"call":"c","tool":"sub_agent","verdict":"result","bytes":1,"omitted_bytes":0,"clamped":false,"duration_ms":1999,"child":{"conversation":2,"stop":"end","turns":1,"time_ms":1999,"spent":3,"usage":{"input_tokens":4,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":5,"reasoning_tokens":null}}}

@@ -245,7 +245,18 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
         host::CompletionEvidence::Unknown => Evidence::MaybeSent,
         host::CompletionEvidence::Response { .. } => Evidence::Response,
     };
-    CompletionFailure { class, evidence, retry_after_ms, phase: None, limit: None, status: None, detail: None }
+    CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
+        class,
+        evidence,
+        retry_after_ms,
+        phase: None,
+        limit: None,
+        status: None,
+        detail: None,
+    }
 }
 
 const USAGE: skein_lib::Token = skein_lib::Token::new(u64::MAX - 1);

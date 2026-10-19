@@ -203,9 +203,19 @@ fn invalid_name(invalid: run::Invalid) -> &'static [u8] {
 fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
     match why {
         run::Failure::Model(fault) => match fault {
-            run::Fault::Completion { failure: why, evidence, model: _, attempts: _, report: _ } => {
+            run::Fault::Completion { failure: why, evidence, model: _, attempts: _, report } => {
                 let mut result = failure(AnswerClass::Model, None);
-                result.completion = Some(completion(why, evidence));
+                let mut completed = completion(why, evidence);
+                if !report.field.is_empty() {
+                    completed.field = Some(report.field);
+                }
+                if !report.code.is_empty() {
+                    completed.code = Some(report.code);
+                }
+                if !report.request.is_empty() {
+                    completed.request_id = Some(report.request);
+                }
+                result.completion = Some(completed);
                 result
             }
             run::Fault::Limited { account, reset_at } => {
@@ -272,9 +282,9 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
         run::CompletionFailure::Unavailable => (FailureClass::Unavailable, None),
         run::CompletionFailure::TimedOut { .. } => (FailureClass::TimedOut, None),
         run::CompletionFailure::ContextTooLong => (FailureClass::ContextTooLong, None),
-        // smith 05.2 writes the distinct classes in events version 4.
-        run::CompletionFailure::Unsupported | run::CompletionFailure::Invalid => (FailureClass::Invalid, None),
-        run::CompletionFailure::Refused => (FailureClass::Unknown(Box::from(b"refused".as_slice())), None),
+        run::CompletionFailure::Unsupported => (FailureClass::Unsupported, None),
+        run::CompletionFailure::Invalid => (FailureClass::Invalid, None),
+        run::CompletionFailure::Refused => (FailureClass::Refused, None),
         run::CompletionFailure::Unauthorized => (FailureClass::Unauthorized, None),
         run::CompletionFailure::RateLimited { retry_after } => {
             (FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
@@ -339,7 +349,18 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
         run::CompletionEvidence::Unknown => Evidence::MaybeSent,
         run::CompletionEvidence::Response { .. } => Evidence::Response,
     };
-    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status, detail: None }
+    CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
+        class,
+        evidence,
+        retry_after_ms,
+        phase,
+        limit,
+        status,
+        detail: None,
+    }
 }
 
 fn limit_name(which: run::Limit) -> &'static [u8] {
@@ -505,6 +526,9 @@ mod tests {
         assert_eq!(
             why.completion,
             Some(CompletionFailure {
+                field: None,
+                code: None,
+                request_id: None,
                 phase: None,
                 limit: None,
                 status: None,

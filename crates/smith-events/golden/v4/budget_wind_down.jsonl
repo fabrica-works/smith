@@ -1,0 +1,1 @@
+{"v":4,"type":"budget","t_ms":750,"run":1,"stage":"wind_down","turns":{"used":2,"limit":10},"spend":{"used":3,"limit":100},"time_ms":{"used":750,"limit":1999},"reserve":{"turns":1,"time_ms":750,"spend":10}}

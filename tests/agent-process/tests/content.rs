@@ -337,3 +337,37 @@ fn no_grant_value_reaches_a_turn_fact_or_trace() {
         world.assert_agent_clean();
     }
 }
+
+#[test]
+fn a_runs_model_names_its_account_and_backend() {
+    let mut world = World::new(37, &charter());
+    world.observe_facts(TraceCase::ChildAnswered, 4);
+    let settled = world.settle();
+    let models = world
+        .records()
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::RunStarted(started) => Some((started.main.account, started.main.backend.clone())),
+            Event::Budget(_)
+            | Event::SessionStarted(_)
+            | Event::SessionEnded(_)
+            | Event::RunCompleted(_)
+            | Event::ConversationOpened(_)
+            | Event::ConversationClosed(_)
+            | Event::ResponseStarted(_)
+            | Event::ResponseCompleted(_)
+            | Event::TextDelta(_)
+            | Event::ToolStarted(_)
+            | Event::ToolCompleted(_)
+            | Event::JobEnded(_)
+            | Event::CheckStarted(_)
+            | Event::CheckCompleted(_)
+            | Event::MessageReceived(_)
+            | Event::MessageRead(_)
+            | Event::MessageUnread(_)
+            | Event::Notice(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!((settled, models), (true, vec![(Some(0), smith_events::Backend::Direct)]));
+    world.assert_agent_clean();
+}

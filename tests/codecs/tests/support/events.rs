@@ -326,6 +326,8 @@ fn value_peak_rss(_name: &str, _spelling: &str) -> PeakRss {
 
 fn value_model(_name: &str, _spelling: &str) -> Model {
     Model {
+        account: None,
+        backend: smith_events::Backend::Direct,
         endpoint: Box::from("sample\n\"🌍".as_bytes()),
         model: Box::from("sample\n\"🌍".as_bytes()),
         window_tokens: u64::MAX,
@@ -354,11 +356,20 @@ fn value_budget(_name: &str, _spelling: &str) -> Budget {
 }
 
 fn value_tools(name: &str, spelling: &str) -> Tools {
-    Tools { families: list_family(name, spelling), wait: true, deliver: true, host: list_text(name, spelling) }
+    Tools {
+        withheld: skein_lib::List::with_capacity(0),
+        families: list_family(name, spelling),
+        wait: true,
+        deliver: true,
+        host: list_text(name, spelling),
+    }
 }
 
 fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
     CompletionFailure {
+        field: None,
+        code: None,
+        request_id: None,
         phase: None,
         limit: None,
         status: None,
@@ -1564,6 +1575,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         response.tool_choice = choice;
         samples.push((name, Record { t_ms: u64::MAX, event: Event::ResponseStarted(response) }, Capture::Everything));
     }
+    samples.extend(accounts_samples());
     samples.extend(failure_samples());
     samples.extend(end_samples());
     samples.extend(answer_field_samples());
@@ -1714,6 +1726,8 @@ fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
                 call: Some(Box::from(b"c".as_slice())),
                 thread: 2,
                 model: Model {
+                    account: None,
+                    backend: smith_events::Backend::Direct,
                     endpoint: Box::from(b"e".as_slice()),
                     model: Box::from(b"m".as_slice()),
                     window_tokens: 1000,
@@ -2091,6 +2105,53 @@ fn job_samples() -> Vec<(&'static str, Record, Capture)> {
             },
             Capture::Everything,
         ));
+    }
+    samples
+}
+
+fn accounts_samples() -> Vec<(&'static str, Record, Capture)> {
+    struct ModelSample {
+        name: &'static str,
+        account: Option<u32>,
+        backend: smith_events::Backend,
+    }
+    struct FailureSample {
+        name: &'static str,
+        class: FailureClass,
+    }
+    let mut samples = Vec::new();
+    for sample in [
+        ModelSample { name: "model_account", account: Some(u32::MAX), backend: smith_events::Backend::Direct },
+        ModelSample { name: "model_claude_code", account: None, backend: smith_events::Backend::ClaudeCode },
+        ModelSample {
+            name: "model_unknown_backend",
+            account: None,
+            backend: smith_events::Backend::Unknown(b"future".as_slice().into()),
+        },
+    ] {
+        let mut value = value_response_started("", "");
+        value.model.account = sample.account;
+        value.model.backend = sample.backend;
+        samples.push((sample.name, Record { t_ms: 0, event: Event::ResponseStarted(value) }, Capture::Everything));
+    }
+    let mut value = value_run_started("", "");
+    value.tools.withheld = List::with_capacity(1);
+    value.tools.withheld.push(Family::SubAgents).expect("withheld family fits");
+    samples.push(("tools_withheld", Record { t_ms: 0, event: Event::RunStarted(value) }, Capture::Everything));
+    for sample in [
+        FailureSample { name: "failure_class_refused", class: FailureClass::Refused },
+        FailureSample { name: "failure_class_unsupported", class: FailureClass::Unsupported },
+    ] {
+        let mut value = value_response_completed("", "");
+        let mut failure = value_completion_failure("", "");
+        failure.class = sample.class;
+        failure.retry_after_ms = None;
+        failure.field = Some(b"effort".as_slice().into());
+        failure.code = Some(b"not_allowed".as_slice().into());
+        failure.request_id = Some(b"request-7".as_slice().into());
+        value.outcome = Outcome::Failed;
+        value.failure = Some(failure);
+        samples.push((sample.name, Record { t_ms: 0, event: Event::ResponseCompleted(value) }, Capture::Everything));
     }
     samples
 }
