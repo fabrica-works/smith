@@ -145,7 +145,10 @@ Test shape: unit, `route.rs` (its own `paths()`), under 20 ms:
   `a_token_the_issuer_revoked_stays_accepted_by_the_llm_peer`. Its
   helpers: `signed_in_and_refreshed()` queues a sign-in and a refresh,
   takes `granted()`, signs in and refreshes, and returns `granted` with
-  the client's two access tokens; `exchange(granted, carried)` is an
+  the client's two access tokens, as `(Box<[Token]>, Vec<Token>)` over
+  a file-level `type Token = Box<[u8]>;` (the bare
+  `(Box<[Box<[u8]>]>, Vec<Box<[u8]>>)` fails clippy's
+  `type_complexity`, and `allow_attributes` is denied; ruling 137); `exchange(granted, carried)` is an
   `Exchange::prepared` on `Endpoint::openai()` and
   `limits_for(Provider::OpenAi)`, its Client's call carrying
   `Credential::bearer(granted[carried])`, the peer holding `granted[0]`

@@ -1195,6 +1195,28 @@ commits is this plan's.
      asked`, `:86 fn refused`; smith f4560988 `credentials.rs` has none of
      `match ends`, `match asked`, `fn refused`.
 
+137. **skein 11.1's Shapes against main** (ready check of skein-11.1).
+     skein 11.1's Shapes against main, from its re-check at skein e07d306
+     (it started after 04.4 landed; its ready check ran at 8564196 and could
+     not compile the joint `tests/oauth/tests/issuer_tokens.rs`). In
+     `skein/11-fake-loopback.md`, 11.1's helper `signed_in_and_refreshed()`
+     returns `(Box<[Token]>, Vec<Token>)` over a file-level
+     `type Token = Box<[u8]>;`: the bare `(Box<[Box<[u8]>]>, Vec<Box<[u8]>>)`
+     fails clippy's `type_complexity` under `-D warnings`, and an `#[allow]`
+     is denied. Nothing else in 11.1 moved.
+
+     Checked: the re-check's prototype in a scratch worktree at skein e07d306,
+     through `heavy`: `cargo clippy -p skein-fake-peers -p skein-oauth-world
+     -p skein-llm-world --all-targets -- -D warnings` failed on
+     `type_complexity` at that helper and was clean with the alias; nextest
+     default over skein-fake-peers, skein-oauth-world,
+     skein-oauth-accounts-world and skein-llm-world, 320 of 320 passed;
+     fuzzy, 11 of 11; `the_issuers_granted_tokens_are_the_llm_peers_bearers`
+     passed in 0.01 s. skein's `Cargo.toml` (`git show origin/main:Cargo.toml
+     | grep -n allow_attributes`): `34:allow_attributes = "deny"`. origin/main
+     moved to 8062b9f meanwhile, which only reorders rows in
+     `tests/llm/tests/fake_credentials.rs`.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
