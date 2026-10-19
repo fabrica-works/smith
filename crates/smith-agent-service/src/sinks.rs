@@ -422,8 +422,10 @@ impl Sinks {
                 self.responses.completion(owner, completion);
             }
             smith_protocol_llm::Measure::Delta { at, owner, block, text } => {
-                let record = self.responses.delta(at, origin, owner, block, text);
-                self.record(&record);
+                if self.responses.observed(owner) {
+                    let record = self.responses.delta(at, origin, owner, block, text);
+                    self.record(&record);
+                }
             }
         }
     }

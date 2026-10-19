@@ -97,6 +97,7 @@ struct Started {
     conversation: u64,
     at: Time,
     owner: Token,
+    observed: bool,
     received: Option<Received>,
     completion: Option<smith_events::Completion>,
     measures: Option<smith_protocol_llm::Measures>,
@@ -231,6 +232,7 @@ impl Book {
             conversation: response_conversation,
             at: now,
             owner: request_owner,
+            observed: false,
             received: None,
             completion: None,
             measures: None,
@@ -338,12 +340,25 @@ impl Book {
         failure.completion = Some(observed.failure);
     }
 
-    pub(crate) fn observation(&self, request_owner: Token) -> smith_protocol_llm::Observation {
+    pub(crate) fn observation(&mut self, request_owner: Token) -> smith_protocol_llm::Observation {
         let owner = self.owner_for(request_owner).expect("actual request retains its conversation");
-        let conversation = self.conversations.get(&owner).expect("found above");
+        let conversation = self.conversations.get_mut(&owner).expect("found above");
+        if let Attempt::Started(started) = &mut conversation.attempt {
+            started.observed = true;
+        }
         match conversation.recorded {
-            Some(messages) => smith_protocol_llm::Observation { first: false, messages, live_text: true },
-            None => smith_protocol_llm::Observation { first: true, messages: 0, live_text: true },
+            Some(messages) => smith_protocol_llm::Observation { first: false, messages },
+            None => smith_protocol_llm::Observation { first: true, messages: 0 },
+        }
+    }
+
+    pub(crate) fn observed(&self, request_owner: Token) -> bool {
+        let Some(owner) = self.owner_for(request_owner) else {
+            return false;
+        };
+        match &self.conversations.get(&owner).expect("found above").attempt {
+            Attempt::Started(started) => started.observed,
+            Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => false,
         }
     }
 

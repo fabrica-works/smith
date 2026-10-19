@@ -198,11 +198,8 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             bounds: limits().receiving,
             outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
             deliver: None,
-            observation: observed.then_some(smith_protocol_llm::Observation {
-                first: true,
-                messages: 0,
-                live_text: true,
-            }),
+            deltas: observed,
+            observation: observed.then_some(smith_protocol_llm::Observation { first: true, messages: 0 }),
         },
         &mut up,
         &mut io,

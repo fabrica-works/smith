@@ -138,6 +138,7 @@ fn complete(owner: u64, generation: u64, bounds: Receiving) -> FromDomain {
         outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
         deliver: None,
         observation: None,
+        deltas: false,
     }
 }
 
@@ -383,8 +384,9 @@ fn an_observed_request_is_native_validated_before_its_payload_is_copied() {
             .grant(GrantName { account: 0, generation: 1 }, credential(b"private-grant"), Time::from_nanos(100))
             .expect("valid private grant");
         let mut request = complete(7, 1, limits.receiving);
-        if let FromDomain::Complete { prompt, observation, .. } = &mut request {
-            *observation = Some(smith_protocol_llm::Observation { first: true, messages: 0, live_text: true });
+        if let FromDomain::Complete { prompt, observation, deltas, .. } = &mut request {
+            *deltas = true;
+            *observation = Some(smith_protocol_llm::Observation { first: true, messages: 0 });
             if malformed {
                 prompt.system = vec![0xff].into();
             }

@@ -77,6 +77,7 @@ pub struct Peer {
     pub measures: Vec<smith_protocol_llm::Measure>,
     /// Plaintext request bytes independently received on the peer's sockets.
     pub request_bytes: u64,
+    deltas: Option<bool>,
 }
 
 impl Peer {
@@ -140,7 +141,13 @@ impl Peer {
             terminals: Vec::new(),
             measures: Vec::new(),
             request_bytes: 0,
+            deltas: None,
         }
+    }
+
+    /// Select delta handover independently of prompt and completion capture.
+    pub fn deltas(&mut self, wanted: bool) {
+        self.deltas = Some(wanted);
     }
 
     /// Admit one actual call with caller-selected model and whole deadlines.
@@ -155,7 +162,7 @@ impl Peer {
             head,
             idle,
             whole,
-            Some(smith_protocol_llm::Observation { first: true, messages: 0, live_text: true }),
+            Some(smith_protocol_llm::Observation { first: true, messages: 0 }),
         );
     }
 
@@ -217,6 +224,7 @@ impl Peer {
                     failure: None,
                 },
                 deliver: None,
+                deltas: self.deltas.unwrap_or(observation.is_some()),
                 observation,
             },
             &mut self.above,

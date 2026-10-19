@@ -47,6 +47,7 @@ impl Parent {
         capture: smith_agent_service::sinks::Capture,
         anthropic: bool,
         credential: &skein_llm::Credential,
+        live: Option<smith_channel::LiveAsk>,
     ) -> Self {
         let mut peer = if matches!(tracing, Some((TraceCase::StoppedReasoning, _))) {
             crate::host_with_limits(crate::reasoning_configuration().limits.channel)
@@ -61,6 +62,7 @@ impl Parent {
                 matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
                 message,
                 credential,
+                live,
             ));
         }
         let mut parent = Self {
@@ -771,7 +773,7 @@ impl TraceCase {
                     tokens: 1,
                 },
             ],
-            Self::Failed | Self::Refused | Self::Cancelled => return fake::peer(),
+            Self::Failed | Self::Refused | Self::Cancelled => return fake::peer_for(anthropic),
             Self::ProviderRejected => return fake::rejected(),
             Self::ChildAnswered | Self::ThreeChildren | Self::StoppedReasoning => {
                 unreachable!("selected actual child scripts above")
@@ -904,6 +906,7 @@ pub struct World {
     capture: smith_agent_service::sinks::Capture,
     anthropic: bool,
     private_grant: bool,
+    live: Option<smith_channel::LiveAsk>,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -930,7 +933,32 @@ impl World {
             capture: smith_agent_service::sinks::Capture::Everything,
             anthropic: false,
             private_grant: false,
+            live: None,
         }
+    }
+
+    /// Put the host's live-content ask in its actual Start.
+    pub fn ask(&mut self, text: bool, reasoning: bool, input: bool) {
+        self.live = Some(
+            smith_channel::LiveAsk::new(
+                &smith_channel::CEILINGS,
+                smith_channel::LiveAskParts { text, reasoning, input },
+            )
+            .expect("live ask"),
+        );
+    }
+
+    /// Decode the live records on the parent's channel.
+    #[must_use]
+    pub fn pieces(&self) -> Vec<smith_channel::Live> {
+        self.observed()
+            .iter()
+            .filter(|frame| frame.kind == 0x0112)
+            .map(|frame| {
+                smith_channel::Live::decode(&smith_channel::CEILINGS, &mut skein_lib::Reader::new(&frame.body))
+                    .expect("host's live record")
+            })
+            .collect()
     }
 
     /// Keep the host's input open until the agent's exit is observed.
@@ -1204,6 +1232,7 @@ impl World {
                 self.capture,
                 self.anthropic,
                 &crate::scenario_credential(self.anthropic, self.private_grant),
+                self.live.clone(),
             );
             parent.hold_channel = self.hold_channel;
             Proc::Parent(Box::new(parent))

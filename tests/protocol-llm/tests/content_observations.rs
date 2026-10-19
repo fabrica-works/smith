@@ -85,3 +85,37 @@ fn actual_transport_latency_and_event_gap_use_the_peer_clock_without_content_cap
     assert_eq!(measures.first_byte, Some(skein_lib::Duration::from_secs(5)));
     assert_eq!(measures.largest_gap, Some(skein_lib::Duration::from_secs(3)));
 }
+
+#[test]
+fn deltas_are_handed_over_only_when_asked() {
+    const OWNER: u64 = 7;
+    const SOCKET: u64 = 100;
+    const DEADLINE: u64 = 60;
+    let body = concat!(
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"item\",\"role\":\"assistant\",\"content\":[]}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"reply\"}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"item\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"reply\"}]}}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
+    );
+    let head = format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n", body.len());
+    for (observed, deltas, expected) in
+        [(false, false, b"".as_slice()), (false, true, b"reply"), (true, false, b""), (true, true, b"reply")]
+    {
+        let mut peer = Peer::configured(1, 1);
+        peer.deltas(deltas);
+        if observed {
+            peer.start_observed(OWNER, DEADLINE, DEADLINE, DEADLINE);
+        } else {
+            peer.start(OWNER, DEADLINE, DEADLINE, DEADLINE);
+        }
+        peer.bytes(SOCKET, head.as_bytes());
+        peer.bytes(SOCKET, body.as_bytes());
+        let mut text = Vec::new();
+        for measure in &peer.measures {
+            if let Measure::Delta { text: delta, .. } = measure {
+                text.extend_from_slice(delta);
+            }
+        }
+        assert_eq!(text, expected, "observed={observed}, deltas={deltas}");
+    }
+}

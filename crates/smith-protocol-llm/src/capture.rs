@@ -19,8 +19,6 @@ pub struct Observation {
     pub first: bool,
     /// Already recorded history messages, including completed assistant messages.
     pub messages: u32,
-    /// The owner asks to receive text and refusal deltas as they arrive.
-    pub live_text: bool,
 }
 
 /// A bounded protocol observation, drained by the service before its terminal.
@@ -134,9 +132,8 @@ mod tests {
             affinity: None,
             max_output_tokens: Some(10),
         };
-        let captured =
-            prompt(&input, Observation { first: true, messages: 0, live_text: true }, &skein_llm_world::limits())
-                .expect("bounded translated prompt");
+        let captured = prompt(&input, Observation { first: true, messages: 0 }, &skein_llm_world::limits())
+            .expect("bounded translated prompt");
         assert_eq!(captured.system.as_deref(), Some(b"system instructions".as_slice()));
         assert_eq!(captured.tools.expect("first request carries its names").len(), 0);
         assert_eq!(captured.messages.get(0).expect("actual task").role, Role::User);
@@ -205,7 +202,7 @@ mod tests {
             max_output_tokens: None,
         };
         let limits = skein_llm_world::limits();
-        let first = prompt(&input, Observation { first: true, messages: 0, live_text: true }, &limits).unwrap();
+        let first = prompt(&input, Observation { first: true, messages: 0 }, &limits).unwrap();
         assert_eq!(first.system.as_deref(), Some(b"actual system".as_slice()));
         assert_eq!(first.tools.unwrap().len(), 0);
         assert_eq!(first.messages.len(), 1);
@@ -225,7 +222,7 @@ mod tests {
             .into(),
         });
         input.messages = messages.into();
-        let next = prompt(&input, Observation { first: false, messages: 2, live_text: true }, &limits).unwrap();
+        let next = prompt(&input, Observation { first: false, messages: 2 }, &limits).unwrap();
         assert_eq!(next.system, None);
         assert_eq!(next.tools, None);
         assert_eq!(
@@ -245,13 +242,10 @@ mod tests {
                 }
             }]
         );
-        let retry = prompt(&input, Observation { first: false, messages: 3, live_text: true }, &limits).unwrap();
+        let retry = prompt(&input, Observation { first: false, messages: 3 }, &limits).unwrap();
         assert!(retry.messages.is_empty());
         assert_eq!(retry.system, None);
         assert_eq!(retry.tools, None);
-        assert_eq!(
-            prompt(&input, Observation { first: false, messages: 4, live_text: false }, &limits),
-            Err(Error::Invalid)
-        );
+        assert_eq!(prompt(&input, Observation { first: false, messages: 4 }, &limits), Err(Error::Invalid));
     }
 }

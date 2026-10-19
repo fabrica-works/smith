@@ -26,6 +26,8 @@ pub enum FromDomain {
         deliver: Option<run::outcome::ChangeSpec>,
         /// Content selected by the event owner; absent when nothing asks for it.
         observation: Option<crate::Observation>,
+        /// Hand this completion's text deltas over as `Measure::Delta`.
+        deltas: bool,
     },
     /// Cancel one outstanding completion.
     Cancel { owner: Token },

@@ -57,6 +57,7 @@ struct Active {
     outcome: run::outcome::OutcomeSpec,
     deliver: Option<run::outcome::ChangeSpec>,
     observation: Option<crate::Observation>,
+    deltas: bool,
 }
 
 // One translated request waits while its owner encodes the observed new part.
@@ -254,8 +255,21 @@ impl Component {
     ) {
         assert!(self.measures.is_empty(), "the owner drains observations before another entrance");
         match request {
-            FromDomain::Complete { owner, grant, prompt, deadlines, bounds, outcome, deliver, observation } => {
-                self.start(env, owner, grant, prompt, deadlines, bounds, outcome, deliver, observation, to_domain, io);
+            FromDomain::Complete { owner, grant, prompt, deadlines, bounds, outcome, deliver, observation, deltas } => {
+                self.start(
+                    env,
+                    owner,
+                    grant,
+                    prompt,
+                    deadlines,
+                    bounds,
+                    outcome,
+                    deliver,
+                    observation,
+                    deltas,
+                    to_domain,
+                    io,
+                );
             }
             FromDomain::Cancel { owner } => {
                 self.next.remove(&owner);
@@ -347,6 +361,7 @@ impl Component {
         outcome: run::outcome::OutcomeSpec,
         deliver: Option<run::outcome::ChangeSpec>,
         observation: Option<crate::Observation>,
+        deltas: bool,
         to_domain: &mut Queue<ToDomain>,
         io: &mut Queue<IoRequest>,
     ) {
@@ -418,7 +433,7 @@ impl Component {
                 return;
             }
         };
-        match self.active.insert(owner, Active { context, outcome, deliver, observation }) {
+        match self.active.insert(owner, Active { context, outcome, deliver, observation, deltas }) {
             Ok(None) => {}
             Ok(Some(_)) | Err(_) => {
                 Self::local_failure(owner, llm::Failure::ApplicationLimit, bounds.max_failure_bytes, to_domain);
@@ -576,10 +591,7 @@ impl Component {
                 let count = u32::try_from(text.len()).expect("the client admitted a u32 text bound");
                 to_domain.push(ToDomain::Text { owner: call, bytes: count });
                 let live = match self.active.get(&call) {
-                    Some(active) => match active.observation {
-                        Some(observation) => observation.live_text,
-                        None => false,
-                    },
+                    Some(active) => active.deltas,
                     None => false,
                 };
                 if live {

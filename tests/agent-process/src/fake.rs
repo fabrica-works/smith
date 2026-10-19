@@ -70,18 +70,23 @@ pub fn limits() -> Limits {
 /// The one-turn agent fixture's provider response, sent on plaintext loopback.
 #[must_use]
 pub fn peer() -> llm::Peer {
-    configured(
-        Box::new([api::Script {
-            cue: Box::new([]),
-            turns: Box::new([api::Turn {
-                lines: Box::new([api::Line::Text { text: b"Hello".as_slice().into() }]),
-                finish: api::Finish::Stop,
-                tokens: 1,
-            }]),
+    peer_for(false)
+}
+
+/// The same one-turn text response in the selected provider dialect.
+#[must_use]
+pub fn peer_for(anthropic: bool) -> llm::Peer {
+    let scripts = Box::new([api::Script {
+        cue: Box::new([]),
+        turns: Box::new([api::Turn {
+            lines: Box::new([api::Line::Text { text: b"Hello".as_slice().into() }]),
+            finish: api::Finish::Stop,
+            tokens: 1,
         }]),
-        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
-        Duration::ZERO,
-    )
+    }]);
+    let credential =
+        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() };
+    if anthropic { configured_anthropic(scripts, credential) } else { configured(scripts, credential, Duration::ZERO) }
 }
 
 /// Build a seeded plaintext loopback peer for a local scenario.

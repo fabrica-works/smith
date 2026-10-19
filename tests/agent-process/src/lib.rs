@@ -297,7 +297,7 @@ pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
 }
 
 pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> skein_channel::Frame {
-    start_workspace_message(charter, turns, workspace, false, None, &scenario_credential(false, false))
+    start_workspace_message(charter, turns, workspace, false, None, &scenario_credential(false, false), None)
 }
 
 pub(crate) fn start_workspace_message(
@@ -307,6 +307,7 @@ pub(crate) fn start_workspace_message(
     absolute: bool,
     message: Option<&smith_channel::Message>,
     credential: &skein_llm::Credential,
+    live: Option<smith_channel::LiveAsk>,
 ) -> skein_channel::Frame {
     let limits = smith_channel::CEILINGS;
     let window = smith_channel::Window::new(&limits, smith_channel::WindowParts { turns, bytes: 1_000_000_000 })
@@ -337,7 +338,7 @@ pub(crate) fn start_workspace_message(
     let record = smith_channel::Start::new(
         &limits,
         smith_channel::StartParts {
-            live: None,
+            live,
             messages,
             identity: None,
             activation: 1,

@@ -124,6 +124,7 @@ pub struct Service {
     usage_unread: bool,
     domain: Option<domain::Domain>,
     channel: Option<channel::Component>,
+    live: crate::live::Live,
     llm: llm::Component,
     machine: machine::Component,
     io: Option<io::Io>,
@@ -530,6 +531,7 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
     parts_worst_case(limits, endpoints, true)?
         .checked_add(domain::worst_case_drained_content(&limits.domain, limits.llm.receiving.max_completion_bytes)?)?
         .checked_add(channel::worst_case(&limits.channel)?)?
+        .checked_add(crate::live::worst_case()?)?
         .checked_add(io_worst_case(limits)?)
 }
 
@@ -620,6 +622,7 @@ impl Service {
             usage_unread: false,
             domain,
             channel,
+            live: crate::live::Live::new(None),
             llm,
             machine,
             io,
@@ -1365,6 +1368,29 @@ fn llm_io(service: &Service, event: &io::Event) -> bool {
     }
 }
 
+fn live_step(service: &mut Service, action: crate::live::Action<'_>) {
+    let Some(channel) = &mut service.channel else {
+        return;
+    };
+    let ending = match &action {
+        crate::live::Action::End { .. } => true,
+        crate::live::Action::Open { .. } | crate::live::Action::Delta { .. } | crate::live::Action::Pump => false,
+    };
+    let mut room = crate::live::Connection {
+        channel,
+        above: &mut service.channel_events,
+        below: &mut service.channel_below,
+        next: &mut service.next_send,
+        failed: false,
+        maximum: channel::max_out(&service.limits.channel),
+        ending,
+    };
+    service.live.act(action, &mut room);
+    if room.failed {
+        service.mark_failed(Failure::Send);
+    }
+}
+
 fn llm_measures(service: &mut Service) {
     let routed = llm::MAX_OUT.above.checked_mul(2).expect("content and transport measures per routed event");
     let maximum = routed.checked_add(1).expect("one start plus the bounded routed batch");
@@ -1381,11 +1407,14 @@ fn llm_measures(service: &mut Service) {
             llm::Measure::Prompt { owner, .. } => Some(*owner),
             llm::Measure::Completion { .. } | llm::Measure::Delta { .. } | llm::Measure::Terminal { .. } => None,
         };
+        if let llm::Measure::Delta { owner, text, .. } = &measure {
+            live_step(service, crate::live::Action::Delta { owner: *owner, bytes: text });
+        }
         match &mut service.events {
             Some(events) => events.sinks.measure(events.origin(), measure),
             None => match measure {
-                llm::Measure::Terminal { .. } => {}
-                llm::Measure::Prompt { .. } | llm::Measure::Completion { .. } | llm::Measure::Delta { .. } => {
+                llm::Measure::Terminal { .. } | llm::Measure::Delta { .. } => {}
+                llm::Measure::Prompt { .. } | llm::Measure::Completion { .. } => {
                     unreachable!("only an event owner selects component content")
                 }
             },
@@ -1405,6 +1434,7 @@ fn component_up(service: &mut Service) {
     {
         channel.fire(&mut service.channel_events, &mut service.channel_below);
     }
+    live_step(service, crate::live::Action::Pump);
     let llm_due = match service.llm.next_deadline() {
         Some(at) => at <= service.llm_env.now,
         None => false,
@@ -1516,6 +1546,7 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
     match event {
         channel::OpenEvent::Opened { version: _ } => {}
         channel::OpenEvent::Start { start } => {
+            service.live.ask(start.live.clone());
             let count = match &start.mounts {
                 Some(mounts) => u32::try_from(mounts.len()).unwrap_or(u32::MAX),
                 None => 0,
@@ -1814,6 +1845,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             }
         }
         domain::Request::Turn { host_run: _, number, position: _, read, spent, opens_window, turn } => {
+            live_step(service, crate::live::Action::End { turn: number });
             let token = service.next_send();
             if service
                 .channel
@@ -1967,7 +1999,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
         }
         domain::Request::Complete {
             owner,
-            name: _,
+            name,
             grant,
             prompt,
             deadlines,
@@ -1980,6 +2012,11 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 Some(events) => events.request(service.domain_env.now, owner, &prompt),
                 None => None,
             };
+            let wanted = service.live.wants(&prompt);
+            if wanted {
+                live_step(service, crate::live::Action::Open { owner, retry: name.retry });
+            }
+            let deltas = observation.is_some() || wanted;
             let outcome = service.outcome.clone().expect("an admitted Start retains its result contract");
             let request = llm::FromDomain::Complete {
                 owner,
@@ -1995,6 +2032,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 outcome,
                 deliver: service.delivery.clone(),
                 observation,
+                deltas,
             };
             service.llm.from_domain(&service.llm_env, request, &mut service.llm_events, &mut service.llm_below);
         }
