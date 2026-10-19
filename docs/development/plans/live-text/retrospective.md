@@ -538,11 +538,11 @@ For smith's `docs/development/tech-debt.md`, which lists none of these, and for 
 
 | Proposal | Decision | Where |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
-| 5 | open | |
-| 6 | open | |
-| 7 | open | |
-| 8 | open | |
+| 1 | adopted: client-api's proposals 2 to 9 are the first it holds back, so real-loop and browser-1 are claimed once they are applied | |
+| 2 | adopted | |
+| 3 | adopted: the coordinator alone runs without the graph, as 37c676e meant | |
+| 4 | adopted | |
+| 5 | adopted | |
+| 6 | adopted, with the tools retrospective's proposal 5 (one metric) | |
+| 7 | adopted | |
+| 8 | adopted | |
