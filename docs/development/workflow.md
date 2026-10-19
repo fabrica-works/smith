@@ -31,7 +31,7 @@ A branch that changes only Markdown files (the documents under `docs/`,
 tested, and lands with `land --docs`. Doc comments in `.rs` files are not
 documentation in this sense: they are code, and clippy checks them.
 
-Dependencies on skein use `https://github.com/forgetic/skein.git` without
+Dependencies on skein use `https://github.com/fabrig-dev/skein.git` without
 `rev`, `branch` or `tag`; `Cargo.lock` pins the revision. smith, jig and
 temper must resolve the same skein revision when composed. Changes to
 shared mechanisms land in skein first; smith and its consumers then take
