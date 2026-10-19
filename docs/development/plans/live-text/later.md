@@ -13,3 +13,4 @@ does not do, and when it should be done.
 | The live bytes not projected in the event stream: a field beside `loss.channel` | smith `protocol/channel.md` 7, `protocol/events.md` 3.2 and 6 (answer 1) | after the designer's next pass, outside the accounts' version 4 |
 | A scripted failure after a reply's pieces (decisions.md 5.2) | skein `fake-llm.md` 2.3 | the LLM accounts' skein part |
 | jig's and temper's repins of smith: `live: None` in the start's 5 struct literals, and an arm for `OpenEvent::Live` in both `worker_route.rs` (A32) | development.md 5.7 (answer 4) | the tools plan's closing jig-repin and temper-repin, or their next repin of smith |
+| A world that releases a hold checking its memory: skein's `Peer::release` copies the hold's name in the referee's `act`, outside every process meter, so smith 02's two release stories call no `check_memory` (ruling 104) | skein `fake-llm.md` 2.2 | skein's next plan that touches `skein-fake-peers`' LLM peer |

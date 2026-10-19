@@ -298,6 +298,19 @@ plan's run.
 
      The type's struct literals on smith's `main` are those two; the other `service::Limits { .. }` literals (`smith-local-shell/src/startup.rs`, `tests/local-process/src/process/configuration.rs`) build `smith_local_service::Limits` and stay as they are. jig, temper and hearth build none: temper's `agent_limits()` calls `profile::derive`. Refresh any further literal of `smith_agent_service::Limits` you meet the same way, and list it in the commit body.
 
+104. **smith-02's Shapes against main, re-check** (ready check of smith-02.1).
+     smith-02's re-check against skein 5c8ae96 and smith 9da8ce13 (01.3 landed), in a scratch worktree with 02.1 and 02.2 applied: clippy and fmt pass, `smith-agent-service` 152 of 152, the workspace 2381 of 2382 (the one, `smith-bench`'s probe, refuses the scratch's dirty tree), fuzzy 43 of 43, and both `tests/agent-process/tests/live.rs` stories pass. `smith/02-best-effort.md` is corrected to what compiled:
+     - 02.1's A30 arms: `let .. else { panic!(..) }`, a `match` names `Piece { .. } | Hold { .. }` (a wildcard arm fails `clippy::wildcard_enum_match_arm`), and `wire.rs`' `for` lets-else each event inside the loop (`Event::Release` makes it refutable).
+     - 02.1's live module: `now` also reaches `Action::{Delta, Pump}`, `Live::act` and `live_step`; `open` and `end` take none; `deadline()` returns a stored due time (`Option::map` is disallowed); the settling is `settled()` in `service.rs`, so `src/teardown.rs` leaves Files; the effective list's `service` destructure names `live_interval: _` (a user ruling 103 missed).
+     - A past live deadline with no channel room keeps no work pending: the held bytes wait for room (channel.md 7), and the service does not spin.
+     - 01.3's three tests that send a short piece at once pump at the interval's end after their delta.
+     - The sketch uses `crate::profile::standard()`, `ask(true, false, false)`, `Room::new(true)`, `open(.., &mut room)`, `Time::ZERO` and `room.offsets()`.
+     - The world keeps `frames_at_release` in an `Rc<RefCell<..>>` the `World` holds, and `maximum_queries` is the larger of `release_after`'s queries and the case's bound.
+     - The two release stories call no `check_memory`: skein's `Peer::release` copies the hold's name outside every process meter; 02.1's Proof drops "within the checked memory", and later.md has the row.
+     - 02.2's sketch reads `retry()`, `offset()` and `bytes()`, and `held_after` puts the hold on the piece that waits ("lo").
+
+     Not checked by it: the `tests/hosts` story (grepped only), the profile test's reason string, the bound and no-room unit stories. A further site the same change breaks gets the same correction, listed in the commit body.
+
 ## For the user
 
 Each is a choice that outlasts the run; a `Decision:` line under it

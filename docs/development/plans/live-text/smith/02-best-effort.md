@@ -66,54 +66,70 @@ Files: `Cargo.lock` (the repin); the A30 sites, `tests/agent/src/
   inline.rs`; `smith-agent-service` (`src/profile.rs`,
   `src/profile/quantities.rs`,
   `src/profile/validate.rs`, `src/profile/effective/list.rs`,
-  `src/profile/tests.rs`, `src/live.rs`, `src/service.rs`,
-  `src/teardown.rs`);
+  `src/profile/tests.rs`, `src/live.rs`, `src/service.rs`);
   `tests/agent-process` (`src/world.rs`, `src/fake.rs`, `tests/live.rs`).
 Shape: first, its own commit: `heavy cargo update -p
   skein-lib` moves the pin to skein's `origin/main`; each
-  irrefutable `let provider::Request::Reply { .. }` and `for provider::
-  Event::Call { .. } in` becomes a `match` whose other arms panic with
-  what came, and each `while let Some(provider::Request::Reply { .. })`
-  keeps its loop and panics on another request, so none stops silently
-  (A30); each `provider::Event::Call { .. }` the worlds build, and
-  `tests/protocol-llm/src/wire.rs`' `for` pattern, takes skein 01.1's
-  `call: Token`, a token that names the call among the world's calls in
+  irrefutable `let provider::Request::Reply { .. }` becomes a `let ..
+  else { panic!(..) }` that prints what came, a `match` such as
+  `tests/session/src/world.rs`' `provider_request` names `Piece { .. } |
+  Hold { .. }` in an arm that panics (a wildcard arm fails
+  `clippy::wildcard_enum_match_arm`), `tests/protocol-llm/src/wire.rs`'
+  `for` over the pending events binds each event and lets-else it inside
+  the loop (`Event::Release` makes the pattern refutable), and each
+  `while let Some(provider::Request::Reply { .. })` keeps its loop and
+  panics on another request, so none stops silently (A30); each `provider::Event::Call { .. }` the worlds build, and
+  `tests/protocol-llm/src/wire.rs`' event, takes skein 01.1's
+  `call: Token` (`Token::new(call)` where a world counts its calls), a token that names the call among the world's calls in
   flight (skein's `provider.rs` passes `call: id.token()`). Then `Policy` gains `live_interval: Duration` (sketch),
   `standard()` 100 ms; `policy_deadlines` checks it like its neighbours;
   the effective list's destructure names it and writes its line;
   `service::Limits` gains `pub live_interval: Duration`, which
   `profile::derive` sets from `policy.live_interval`, the service passes
   `limits.live_interval` to `Live::new`, and `service.rs`' test
-  `limits()` sets the standard's (ruling 103). The
+  `limits()` sets the standard's (ruling 103); the effective list's
+  `service` destructure of `crate::Limits` names `live_interval: _`, its
+  line being the policy's. The
   live module keeps the time its oldest unsent byte arrived; `pump(now,
   ..)` sends a piece when the held bytes reach 4096 or `now` is at or
   past that time plus the interval, and the turn's end sends what is
   held whatever the time. `live::deadline()` is that time plus the
-  interval while bytes are held; the service's `next_deadline`,
-  `next_policy_deadline` and `work_pending` include it, and `teardown`'s
-  settling waits for no held bytes. 02.1 adds the interval to
-  `Live::new` and `now` to `delta` and `pump`, and gives the tests'
-  `Room` stub `Default` if 01.3's has none; 01.3's unit tests take the
-  new parameters, and those that send a short piece at once pass a time
-  at the interval's end. `skein_lib::Time` has no `Add` or `Sub`: write
-  `AT_ZERO.saturating_add(interval)`, and `Time::from_nanos(end.
-  as_nanos() - 1)` for the instant before `end`.
+  interval while bytes are held, kept as a field set when the oldest
+  held byte arrives and returned as it is (`Option::map` is disallowed);
+  the service's `next_deadline`, `next_policy_deadline` and
+  `work_pending` include it, and `settled()` in `service.rs` waits for no
+  held bytes. Held bytes that a channel with no room cannot take wait
+  for its room (channel.md 7): a live deadline already past then keeps
+  no work pending, so the service does not spin on it, and 02.2's no-room
+  story settles. 02.1 adds the interval to `Live::new` and `now` to
+  `delta`, `pump`, `Action::{Delta, Pump}`, `Live::act` and the service's
+  `live_step` (`llm_env.now`); `open` and `end` take none. 01.3's unit
+  tests take the new parameters, with `Room::new(true)` (`open` takes
+  the room); the three that send a short piece at once
+  (`a_delta_past_the_piece_bound_goes_in_several_pieces`,
+  `a_new_retry_starts_again_at_offset_zero`,
+  `a_stream_past_the_held_bytes_drops_the_newest_and_counts_them`) pump
+  at the interval's end after their delta: a delta at that time sends
+  nothing, its byte arriving then. `skein_lib::Time` has no `Add` or
+  `Sub`: write `Time::ZERO.saturating_add(interval)`, and
+  `Time::from_nanos(end.as_nanos() - 1)` for the instant before `end`.
 Test shape: `smith-agent-service/src/live.rs`' tests, as 01.3's, with
-  `quantities::standard().policy.live_interval`, reference:
+  `crate::profile::standard().policy.live_interval` (`quantities` is
+  private), reference:
   ```rust
   #[test]
   fn a_short_piece_goes_at_the_intervals_end() {
-      let interval = quantities::standard().policy.live_interval;
-      let mut live = Live::new(Some(ask_text()), interval);
-      live.open(OWNER, 1, 0);
-      let mut room = Room { takes: true, ..Room::default() };
-      live.delta(OWNER, b"Hel", AT_ZERO, &mut room);
-      let end = AT_ZERO.saturating_add(interval);
+      let interval = crate::profile::standard().policy.live_interval;
+      let mut live = Live::new(Some(ask(true, false, false)), interval);
+      let mut room = Room::new(true);
+      live.open(OWNER, 1, 0, &mut room);
+      live.delta(OWNER, b"Hel", Time::ZERO, &mut room);
+      let end = Time::ZERO.saturating_add(interval);
       live.pump(Time::from_nanos(end.as_nanos() - 1), &mut room);
       assert!(room.sent.is_empty(), "held before the interval ends");
       assert_eq!(live.deadline(), Some(end));
       live.pump(end, &mut room);
-      assert_eq!(room.sent.iter().map(|piece| &*piece.bytes).collect::<Vec<_>>(), [b"Hel"]);
+      assert_eq!(room.offsets().as_slice(), [(0, 3)]);
       assert_eq!(live.deadline(), None);
   }
   ```
@@ -128,11 +144,12 @@ Test shape: `smith-agent-service/src/live.rs`' tests, as 01.3's, with
   place, and `release_after(name, queries, after)`: its referee calls
   `Peer::release` once the peer has taken `queries` queries and `after`
   has passed since, and keeps the host's frames observed then
-  (`frames_at_release`). The referee's `next_deadline` in
+  (`frames_at_release`) in an `Rc<RefCell<..>>` the `World` holds, not
+  in the referee's `Parent`, where they fail `check_memory`. The referee's `next_deadline` in
   `tests/agent-process/src/world.rs` returns the release's instant while
   it waits, so that the world's clock reaches it, and its `act` reads
-  its `now` (`_now` today). `World::maximum_queries` is at least
-  `release_after`'s `queries`, so that the referee's `fake::queries(peer)
+  its `now` (`_now` today). `World::maximum_queries` is the larger of
+  `release_after`'s `queries` and the case's bound, so that the referee's `fake::queries(peer)
   .count() <= self.maximum_queries` holds for 02.2's retry (2 queries). In `tests/live.rs`:
   `a_held_reply_shows_its_first_piece_at_the_intervals_end` (a turn of
   `Line::Pieces` "Hel", hold `h`, "lo"; `release_after(b"h", 1, 1 s)`,
@@ -141,8 +158,11 @@ Test shape: `smith-agent-service/src/live.rs`' tests, as 01.3's, with
 Proof: world, `a_held_reply_shows_its_first_piece_at_the_intervals_end`:
   the agent process against the byte peer, which holds its reply after
   "Hel", sends a piece of "Hel" at offset 0 before the release, then
-  "lo" at offset 3 and the turn's record after it; within the checked
-  memory; under 0.5 s.
+  "lo" at offset 3 and the turn's record after it; under 0.5 s. The two
+  release stories (this and 02.2's retry) call no `check_memory`:
+  skein's `Peer::release` copies the hold's name in the referee's `act`,
+  outside every process meter, and the peer's check misses by that
+  name's length (later.md).
 Don't: adapt in the repin's commit anything the move does not break;
   name `live_interval` in a shell's settings; send a piece on a timer of
   its own outside the service's deadlines.
@@ -173,8 +193,9 @@ Test shape: in `tests/agent-process/tests/live.rs`, reference:
       world.script(held_after(b"Hel", b"h", b"lo"));
       world.release_after(b"h", 2, Duration::from_secs(1));
       assert!(world.settle());
-      let pieces: Vec<_> = world.pieces().iter().map(|piece| (piece.retry, piece.offset, &*piece.bytes)).collect();
-      assert_eq!(pieces, [(0, 0, &b"Hel"[..]), (1, 0, b"Hel"), (1, 3, b"lo")]);
+      let pieces: Vec<_> =
+          world.pieces().iter().map(|piece| (piece.retry(), piece.offset(), piece.bytes().to_vec())).collect();
+      assert_eq!(pieces, [(0, 0, b"Hel".to_vec()), (1, 0, b"Hel".to_vec()), (1, 3, b"lo".to_vec())]);
       let kinds: Vec<u16> = world.observed().iter().map(|frame| frame.kind).collect();
       let last_piece = kinds.iter().rposition(|&kind| kind == 0x0112);
       assert!(last_piece < kinds.iter().position(|&kind| kind == 0x0109), "no piece follows its turn");
@@ -182,7 +203,10 @@ Test shape: in `tests/agent-process/tests/live.rs`, reference:
   ```
   (try 0 waits at the hold past the world's 3 s idle deadline, times
   out, and is retried; the world releases try 1. `held_after` builds the
-  one turn of `Line::Pieces`; `ask` and `pieces` are 01.3's.) Beside it:
+  one turn of `Line::Pieces`, the hold on the piece that waits:
+  `Piece { text: "Hel", hold: None }`, `Piece { text: "lo", hold:
+  Some("h") }`; `pieces` gives `smith_channel::Live`, read through
+  `retry()`, `offset()` and `bytes()`; `ask` and `pieces` are 01.3's.) Beside it:
   `a_channel_with_no_room_drops_the_newest_and_leaves_a_gap`
   (`observe_facts` with one frame, pieces past 16 KiB; `channel_loss`
   and `lost_live_bytes` agree, the next piece's offset past the gap,
