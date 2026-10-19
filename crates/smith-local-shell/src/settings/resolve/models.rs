@@ -8,14 +8,14 @@ use toml::Value;
 
 #[derive(Clone)]
 /// One active model's resolved declaration and rates, translated for the native owners.
-pub(super) struct Model {
+pub(in crate::settings) struct Model {
     pub full: String,
     pub endpoint: String,
     pub declared: profile::Model,
     pub prices: run::Prices,
 }
 
-pub(super) fn resolve(settings: &mut Settings, active: &[String]) -> Result<Vec<Model>, Refusal> {
+pub(in crate::settings) fn resolve(settings: &mut Settings, active: &[String]) -> Result<Vec<Model>, Refusal> {
     let main = text(settings, "model")?.to_string();
     let mut names = super::catalog(settings);
     names.remove(&main);
@@ -71,7 +71,7 @@ pub(super) fn resolve(settings: &mut Settings, active: &[String]) -> Result<Vec<
         let prefix = format!("endpoints.{}", super::super::name(endpoint));
         let dialect = text(settings, &format!("{prefix}.dialect"))?.to_string();
         let default_idle = match dialect.as_str() {
-            "codex" => 300,
+            "openai" | "codex" => 300,
             "anthropic" => 120,
             _ => return Err(input::refuse(settings, &format!("{prefix}.dialect"), "unsupported dialect")),
         };

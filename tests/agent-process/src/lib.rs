@@ -191,7 +191,7 @@ fn configuration_for(provider: skein_llm::Provider) -> agent::Config {
 fn configuration_with_limits(provider: skein_llm::Provider, limits: &agent::Limits) -> agent::Config {
     let mut endpoints = List::with_capacity(1);
     endpoints
-        .push(channel::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 })
+        .push(channel::Endpoint { name: Box::default(), number: 0, dialect: 1, account: 0 })
         .expect("one endpoint");
     let llm_endpoints = llm::Endpoints::new(
         Box::new([llm::ConfiguredEndpoint {

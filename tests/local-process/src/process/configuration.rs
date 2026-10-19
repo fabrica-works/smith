@@ -174,7 +174,7 @@ fn local_policy(lower: &agent::Config, change: bool, tools: bool) -> (local::Con
                 output: 10_000_000,
                 unit: 1_000_000,
             },
-            dialect: 0,
+            dialect: 1,
             account: 0,
             endpoint: charter::Endpoint(0),
             model: b"fake".as_slice().into(),
@@ -336,7 +336,7 @@ pub fn agent_document(launch: &Launch) -> serde_json::Value {
         model["efforts"] = serde_json::json!(["low"]);
         models.push(model);
     }
-    let mut endpoint = serde_json::json!({"name":if launch.choices {"main"} else {"fake"},"number":0,"dialect":0,
+    let mut endpoint = serde_json::json!({"name":if launch.choices {"main"} else {"fake"},"number":0,"dialect":1,
         "account":0,"provider":"codex","connect":1000,"handshake":1000,"models":models,
         "identity":"plain","address":format!("{}:{}", smith_agent_process_world::fake::loopback(), if launch.tls {34_443} else {443}),
         "transport":if launch.tls {"tls"} else {"plaintext"},

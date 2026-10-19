@@ -623,17 +623,20 @@ fn effort_settings(extra: &str) -> Result<super::resolve::Resolved, super::Refus
 }
 
 fn effort_settings_shared(extra: &str, shared: &Shared) -> Result<super::resolve::Resolved, super::Refusal> {
+    let decoded = effort_settings_input(extra, shared)?;
+    super::resolve::resolve(
+        &decoded,
+        &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
+    )
+}
+
+fn effort_settings_input(extra: &str, shared: &Shared) -> Result<super::Settings, super::Refusal> {
     let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
     let base = format!(
         "model='test/model'\n[accounts.test]\nsource='env'\nvariable='SYNTHETIC'\n[endpoints.test]\ndialect='codex'\nconnect=10\nhandshake=10\naccount='test'\naddress='127.0.0.1:443'\nserver_name='example.test'\ntrust.system=false\ntrust.der=['{certificate}']\n[models.\"test/model\"]\nwindow=262144\noutput=32768\ninput_price=1.0\ncached_price=1.0\noutput_price=1.0\n"
     );
     let extra = extra.replace("codex/gpt-6-luna", "test/model");
-    let decoded =
-        merge(shared, PathBuf::from("/workspace"), &[source(Layer::User, &base), source(Layer::User, &extra)])?;
-    super::resolve::resolve(
-        &decoded,
-        &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
-    )
+    merge(shared, PathBuf::from("/workspace"), &[source(Layer::User, &base), source(Layer::User, &extra)])
 }
 
 #[test]
@@ -723,4 +726,31 @@ fn explicit_instructions_replace_the_shells_default_task_role() {
     let resolved = composed("instructions='Custom instructions'\n").unwrap_or_else(|why| panic!("{}", why.line()));
     assert_eq!(resolved.local.instructions.as_ref(), b"Custom instructions");
     assert_eq!(resolved.agent.declarations.role_bound, None);
+}
+
+#[test]
+fn an_openai_endpoint_is_written_with_its_number() {
+    // shell.md 6.2 gives OpenAI the 300-second idle bound and dialect 3.
+    const IDLE_MILLIS: u64 = 300_000;
+    #[derive(Debug, PartialEq)]
+    struct WrittenEndpoint<'a> {
+        provider: Option<&'a str>,
+        dialect: Option<u64>,
+        idle: Option<u64>,
+    }
+    let input = effort_settings_input("[endpoints.test]\ndialect='openai'\n", &Shared::default())
+        .expect("public endpoint settings");
+    let super::resolve::Selection { models, accounts, mut settings } =
+        super::resolve::select(&input).expect("selected public endpoint");
+    let models = super::resolve::models::resolve(&mut settings, &models).expect("public model defaults");
+    let document = super::resolve::document::endpoints(&settings, &models, &accounts).expect("agent endpoints");
+    let endpoint = &document[0];
+    assert_eq!(
+        WrittenEndpoint {
+            provider: endpoint["provider"].as_str(),
+            dialect: endpoint["dialect"].as_u64(),
+            idle: endpoint["models"][0]["idle"].as_u64()
+        },
+        WrittenEndpoint { provider: Some("openai"), dialect: Some(3), idle: Some(IDLE_MILLIS) }
+    );
 }

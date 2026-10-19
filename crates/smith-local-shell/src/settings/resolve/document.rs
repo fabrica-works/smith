@@ -74,7 +74,11 @@ pub(super) fn environment(settings: &Settings) -> Result<Vec<Value>, Refusal> {
     Ok(values.into_iter().map(|(name, value)| json!({"name":name,"value":value})).collect())
 }
 
-pub(super) fn endpoints(settings: &Settings, models: &[Model], accounts: &[Account]) -> Result<Vec<Value>, Refusal> {
+pub(in crate::settings) fn endpoints(
+    settings: &Settings,
+    models: &[Model],
+    accounts: &[Account],
+) -> Result<Vec<Value>, Refusal> {
     let names: std::collections::BTreeSet<_> = models.iter().map(|model| model.endpoint.as_str()).collect();
     let mut endpoints = Vec::new();
     for (index, name) in names.into_iter().enumerate() {
@@ -86,6 +90,7 @@ pub(super) fn endpoints(settings: &Settings, models: &[Model], accounts: &[Accou
             .ok_or_else(|| input::refuse(settings, &format!("{prefix}account"), "account is not configured"))?;
         let provider = input::text(settings, &format!("{prefix}dialect"))?;
         let dialect = match provider {
+            "openai" => 3,
             "codex" => 1,
             "anthropic" => 2,
             _ => return Err(input::refuse(settings, &format!("{prefix}dialect"), "unsupported dialect")),

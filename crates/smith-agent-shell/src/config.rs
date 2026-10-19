@@ -805,12 +805,15 @@ fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, Conf
 fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, ConfigurationRefusal> {
     let number = endpoint.number;
     let models = &endpoint.models;
-    let provider = match endpoint.provider.as_str() {
-        "openai" => shared::Provider::OpenAi,
-        "codex" => shared::Provider::OpenAiCodex,
-        "anthropic" => shared::Provider::Anthropic,
+    let (provider, dialect) = match endpoint.provider.as_str() {
+        "openai" => (shared::Provider::OpenAi, 3),
+        "codex" => (shared::Provider::OpenAiCodex, 1),
+        "anthropic" => (shared::Provider::Anthropic, 2),
         _ => return Err("endpoint provider must be openai, codex or anthropic".into()),
     };
+    if endpoint.dialect != dialect {
+        return Err("endpoint dialect does not match provider".into());
+    }
     let identity = endpoint_identity(endpoint.identity.as_deref())?;
     let option_bytes = llm::endpoint_own(identity).map_err(|_| {
         ConfigurationRefusal::Profile(Refusal::Derived {
@@ -1093,6 +1096,24 @@ mod tests {
     }
 
     #[test]
+    fn a_dialect_name_and_number_must_match() {
+        let rows = [
+            ("openai", 3, None),
+            ("anthropic", 2, None),
+            ("codex", 1, None),
+            ("openai", 1, Some("endpoint dialect does not match provider")),
+            ("anthropic", 3, Some("endpoint dialect does not match provider")),
+        ];
+        for (index, (provider, dialect, expected)) in rows.into_iter().enumerate() {
+            let mut endpoint = document().endpoints.remove(0);
+            endpoint.provider = provider.into();
+            endpoint.dialect = dialect;
+            let refusal = build_models(&endpoint).err().map(ConfigurationRefusal::detail);
+            assert_eq!(refusal.as_deref(), expected, "row {index}");
+        }
+    }
+
+    #[test]
     fn an_openai_endpoint_takes_the_public_route() {
         let mut document = document();
         let name = document.endpoints[0].number;
@@ -1186,7 +1207,7 @@ mod tests {
     fn shaped_document() -> serde_json::Value {
         serde_json::json!({
             "profile":{"name":"standard","declared":{"memory":2_147_483_648_u64,"tool_payload":256,"read_window":256}},
-            "endpoints":[{"name":"local","number":0,"dialect":0,"account":0,"provider":"codex",
+            "endpoints":[{"name":"local","number":0,"dialect":1,"account":0,"provider":"codex",
                 "address":"127.0.0.1:8080","transport":"plaintext","connect":10000,"handshake":10000,
                 "models":[{"name":"test","window":65536,"output":512,"reasoning_item":64,"prices":{"input":1,"cached":1,"output":1,"unit":1},"head":60000,"idle":30000}]}],
             "environment":[]

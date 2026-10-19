@@ -4,11 +4,11 @@
 use super::{Settings, Sourced};
 use std::collections::{BTreeMap, BTreeSet};
 
-mod document;
+pub(super) mod document;
 mod inherit;
 mod input;
 mod local;
-mod models;
+pub(super) mod models;
 pub(super) mod relationships;
 
 /// Main first, followed by eligible child models, with their needed accounts.
