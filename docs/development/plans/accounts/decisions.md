@@ -381,6 +381,20 @@ commits is this plan's.
      further v4 field that holds a credential, a token or a key is a
      `secret N` too; no other field of the schema holds one.
 
+108. **skein 02's Shapes against main** (re-check of skein-02.1).
+     skein 02's re-check after 02.1's start, against skein 9fbda6b (02.1
+     landed as 489df9e), corrects 02.3 in `skein/02-public-route.md`. Since
+     01.2, `client.rs` `headers` and `head_length` choose `x-api-key` or
+     `Authorization: Bearer` from `Credential.scheme`, and `measure_headers`
+     refuses `Scheme::Key` on Codex alone: 02.3's "`Authorization: Bearer`
+     for either scheme" on `OpenAi` goes through them as well as
+     `provider_headers`. `tests/llm/tests/credentials.rs` `input` empties the
+     account id only `if provider == Provider::Anthropic`, so a public call
+     would carry "account-test": 02.3 makes it `provider !=
+     Provider::OpenAiCodex`. The 800-line baseline of `client.rs` is 1744 at
+     9fbda6b, not 1716. A further site that picks a header by scheme or
+     route takes the same arm, listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

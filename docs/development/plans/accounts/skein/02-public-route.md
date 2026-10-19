@@ -44,7 +44,7 @@ values (01.3, 01.4).
 
 - A test's expected class, code and field are literals of the design's
   tables; none comes from `classify`.
-- `client.rs` (1716 lines), `openai/response.rs` (1307), `translate.rs`
+- `client.rs` (1744 lines at skein 9fbda6b), `openai/response.rs` (1307), `translate.rs`
   (1291) and `openai/tests.rs` (1569) grow by at most ~100 an increment;
   the worlds go in new files.
 - No credential value in a test's output (code-organization.md, 7): a
@@ -229,7 +229,10 @@ Files: `crates/skein-llm/src/{client,translate,dialect}.rs`,
   `openai/{response,identity}.rs`; `tests/llm/src/lib.rs`;
   `tests/llm/tests/` `public_route.rs` (new), `credentials.rs`,
   `replay.rs`.
-Shape: `provider_headers` on `OpenAi`: `Authorization: Bearer` for
+Shape: `provider_headers` on `OpenAi`, and in `client.rs` `headers`
+  and `head_length`, which choose `x-api-key` or `Authorization:
+  Bearer` from `Credential.scheme` since 01.2 (`measure_headers`
+  refuses `Scheme::Key` on Codex alone): `Authorization: Bearer` for
   either scheme, none without a credential, no `chatgpt-account-id`, no
   `session-id` or `thread-id`; affinity renders in the body's
   `prompt_cache_key` alone. Admission refuses an account id as
@@ -271,7 +274,10 @@ Test shape: world, `tests/llm/tests/public_route.rs`, its cases labelled
   `each_terminal_event_ends_the_call_as_the_route_says`, rows
   completed, incomplete for its output, incomplete for content,
   `response.done` (`Protocol`), no terminal (`Protocol`);
-  `the_public_request_id_reaches_the_report`. In `credentials.rs`, rows
+  `the_public_request_id_reaches_the_report`. In `credentials.rs`,
+  `input` empties the account id on every route but `OpenAiCodex`
+  (`provider != Provider::OpenAiCodex`, where it reads `==
+  Provider::Anthropic`), so a public row carries none, and rows
   for the public route join `a_credential_its_route_refuses_is_invalid`
   (an account id) and
   `an_endpoint_header_naming_a_credential_field_is_refused`
