@@ -1369,6 +1369,13 @@ commits is this plan's.
 
      The check's suites, with these corrections applied as stubs in a scratch worktree: clippy `--workspace --all-targets -D warnings` clean; smith-events, smith-codecs-world and smith-agent-service 249 of 249 (default), 2 of 2 (fuzzy); smith-bench's events binaries 115 of 116, the one failure the refusal feed above; `smith_check_json_shows_each_value_with_its_layer` passed. A further copy or match the session finds is changed the same way and named in the commit body.
 
+144. **skein 10.1's Shapes against main** (ready check of skein-10.1).
+     skein 10.1's re-check after 09.3 (at skein f50f77d; 10.1 landed meanwhile as 1cc0c65) found ten points; 1cc0c65 took nine of them in itself (the lock deadline in `exchange.rs`, the abort and `has_work` exceptions, `Event::Unlock` for a late `Held` in `names.rs`, `Failure::AnotherSubject`, the world's lock ledger). One remains, and a new step fixes it: skein-10.s1, "A held grant ends when no record is under the lock", in skein/10-driver-lock.md, session skein 10, after 10.1.
+
+     10.1's Shape says "no record under the lock: the account holds none, a refresh fails its grant as expired". At 1cc0c65, `component/lock.rs` `read_locked`'s `None` arm sets `*slot = State::Empty;` and then calls `self.fail_exchange(env, id, Failure::Expired, up, io)`; `fail_exchange` (component.rs) emits `Event::Failed { ends: Ends::Refresh, .. }` when `!exchange.pending_grant && !held(slot)` and fails the grant (`failed`, `Ends::Grant`) only when `exchange.pending_grant || … held(slot)`, so with the slot cleared first a held grant ends as a refresh failure. The another-subject arm above it already fails first, then clears. The unit test `no_record_under_the_lock_ends_each_write` reads `Seen::Failed(failure)` from `Event::Failed { failure, .. }`, ignoring `ends`, so it does not see this. The re-check's probe failed before the reorder and passed after.
+
+     skein-10.s1 is skein's, so `smith-repin` waits on it as on every skein step; no closing repin has landed, so none is added again. jig's `classify` (`crates/jig-protocol-accounts/src/translate.rs`) already lacks `Busy` and `NotGranted`, and `AnotherSubject` is a third: `jig-repin` takes all three, `AnotherSubject` as sign in again (decision 16), as 10.1's Downstream says.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

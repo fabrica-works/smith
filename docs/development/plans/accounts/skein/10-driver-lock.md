@@ -263,3 +263,23 @@ rg -c -w 'origins' crates/skein-oauth-accounts/src/accounts.rs
 each print a count of at least 1. The long-file command of
 code-organization.md 8 prints no file past 100 lines of growth, and no
 new file past 800 lines.
+
+### 10.s1 A held grant ends when no record is under the lock
+Scope: 10.1's Shape, "no record under the lock: the account holds none,
+  a refresh fails its grant as expired" (ruling 144).
+Needs: 10.1.
+Files: `crates/skein-oauth-accounts/src/component/lock.rs`
+  (`read_locked`'s `None` arm), `src/shared_tests.rs`.
+Shape: `read_locked`'s `None` arm calls `fail_exchange` before it sets
+  the slot `State::Empty`, as its another-subject arm does, so that
+  `fail_exchange` still sees the held grant (`held(slot)`) and ends it
+  `Failed { ends: Grant, failure: Expired }`; today it ends as
+  `Ends::Refresh` and the held grant is never answered.
+Test shape: unit, `src/shared_tests.rs`, under 20 ms:
+  `no_record_under_the_lock_fails_the_held_grant`, a grant held while
+  the refresh reads under the lock, with no pending grant, asserting the
+  whole event with `assert_event`; it fails before the fix.
+Proof: unit, that test, failing before the fix and passing after.
+Don't: change the other arms; widen `Seen::Failed`, which ignores `ends`.
+Size: about 25 lines.
+Removes: nothing.
