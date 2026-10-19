@@ -1081,6 +1081,33 @@ commits is this plan's.
      the colocated path stay as they are; a retained charter would hold the
      whole start, prompts and tools included, for one lookup.
 
+134. **skein-oauth-accounts' test library and rows** (steer of 2026-10-19T18:41:31Z).
+     The hourly check of 2026-10-19T18:41:31Z found skein 08.4's
+     `crates/skein-oauth-accounts/src/ports_tests.rs` short of the README's
+     rules; checked by `git grep` on skein origin/main a08c87a:
+     - `ports_tests.rs:23` `fn owner(accounts: impl IntoIterator<Item = Account>, profile: &Limits) -> Owner`
+       retypes the `Owner` literal of `private_tests.rs`' `Owner::new` (18),
+       a third copy beside `accounts_tests.rs:32` `fn owner(configuration: Account) -> Owner`;
+       its `fn fire(owner: &mut Owner)` (39) skips `Owner::fire`'s
+       `MAX_OUT_FIRE` asserts (`private_tests.rs` 63-65); `socket`,
+       `take_listen`, `listen`, `listening`, `visit` and `query` (42-73) are a
+       driver of about 70 lines. Ruling 110's rule named only skein-llm's
+       worlds: the README's "A test helper is written once" now names
+       `private_tests.rs`' `Owner` as this crate's test library, and these
+       helpers move there with the first session that needs one in another
+       file or edits their file, not as work added to skein 09.1, which heads
+       the chain toward the repins (ruling 129).
+     - `two_sign_ins_on_a_varying_redirect_own_two_ports` branches on the row
+       (`if account == 0 {` at 329), and `a_fixed_redirect_with_port_zero_is_unusable`
+       holds a `fn` in each row: "A table test's rows are data" now says a
+       row's difference is a column, never a branch or a `fn`.
+     - `a_redirects_client_id_reaches_the_machine` (209) sets
+       `issued_client_bytes = 6` (163) and hand-types `&client_id=123456` and
+       `&client_id=1234567`, against ruling 125's derived sizes; and
+       `a_redirect_is_matched_against_the_bound_uri` checks two functions in
+       one test. The rules already say both; the landed tests stay, as ruling
+       125 keeps files a change does not otherwise touch.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

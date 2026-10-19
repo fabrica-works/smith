@@ -222,6 +222,14 @@ downstream repin.
   from `anthropic_admission.rs`, one returning `Option<Error>`, the
   other `Error`) and its twice-written `World::new` / `Start` / `run`
   lines are the first: skein 01 moves them at its next increment.
+  In skein-oauth-accounts the test library is `private_tests.rs`'
+  `Owner`: a component driver is a method there, built on `Owner::new`
+  and `Owner::fire` (with its `MAX_OUT_FIRE` asserts), and a test file
+  calls it, never a retyped `Owner` literal or a `fire` past those
+  asserts. `ports_tests.rs`' `owner`, `fire`, `socket`, `take_listen`,
+  `listen`, `listening`, `visit` and `query`, and `accounts_tests.rs`'
+  `owner`, move there with the first session that needs one in another
+  file or edits their file (ruling 134).
 - **A known timing flake** (ruling 116): skein's
   `tests/world/tests/real.rs`
   `a_keep_time_after_the_last_word_fails_the_world_naming_the_process`
@@ -238,7 +246,10 @@ downstream repin.
   never inside an arm. A match or a helper turns what it saw into a
   value (a `Result`, or a small struct) and asserts nothing. Rows that
   need different code are tests of their own, each calling one function
-  with what differs. skein 05.4's `issued.rs` and 05.5's `revoke.rs`,
+  with what differs. A row's difference is a column of the row, never a
+  branch on the row in the body (`if account == 0 { 41000 } else {
+  41001 }`) nor a `fn` in the row (ruling 134). skein 05.4's `issued.rs`
+  and 05.5's `revoke.rs`,
   where it was seen twice, stay as they landed.
 - **A test's outcome is named, and its sizes derived** (testing-strategy.md,
   10, "Named fixtures and sizes"; ruling 125): a test reads an outcome of
