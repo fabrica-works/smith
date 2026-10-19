@@ -654,6 +654,43 @@ commits is this plan's.
      rows that need different code are tests of their own. The landed tests
      stay as they are. A script cannot test the rule, so it adds no gate step.
 
+120. **smith 03's Shapes against main** (ready check of smith-03.1).
+     The ready check of smith-03.1 (skein 11565f3, smith f3857e50, jig
+     bfc3a82f, hearth 61ab3d1, temper ec08ab265) found 03's Shapes short of
+     main; `smith/03-records.md` now says, checked on smith origin/main
+     09be081e with the Rules' own `rg` and `G`:
+     - The Rules' counts: charter v2 20 (with `tests/channel/tests/live.rs`),
+       `Kind::First`/`Window` 21 (with `tests/channel/src/lib.rs`),
+       `Refusal::(Endpoint|Dialect)` 18 (with
+       `smith-agent-service/src/answers.rs`, `smith-local-service/src/stream.rs`,
+       `tests/agent/tests/feedback_table.rs`, now named in 03.3's Files).
+     - 03.1: `guard.rs`'s `measure` and `check` take `credential: &Credential`
+       and pass `Some(credential)` to skein's `client::measure`: they take the
+       option; `domain.rs`'s `IssuedCompletion` has `pub(crate) grant:
+       GrantName`: it becomes an option, its `failed()` arms handling none;
+       the full `session::Spec` literals of `tests/session`
+       (`tests/{memory,simulation}.rs`, `src/{world,recorded}.rs`) take
+       `account`.
+     - 03.1's world: `tests/agent/tests/models.rs` has a private `fn
+       world(settings: &Settings, charter: run::Charter) -> World`, which
+       moves into `tests/agent/src/world.rs` with the granted accounts a
+       parameter (README, "A test helper is written once").
+     - 03.3: `crates/smith-host-domain/src/channel.rs`' `pub enum
+       TranscriptRefusal` has `Endpoint` and `Dialect`, which go too.
+     - Downstream: jig's `crates/jig-protocol-charter/src/{lib,tests,result}.rs`,
+       `examples/ops/domain/src/{tests,limits}.rs` and
+       `tests/ops/src/conformance/{scripts,config}.rs` name
+       `smith_charter::v2` (`git grep -l` on jig origin/main), and temper's
+       `crates/temper-service/src/tests/workers.rs`: the closing repins take
+       them; `crates/jig-protocol-transcript/tests/data/README.md` ("Smith
+       transcript-v5 goldens copied from smith revision") is refreshed with
+       its `.bin` files.
+     - The sketch: `record::Turn.dialect` and `Transcript.dialect` are `pub
+       dialect: u32` at the base (`crates/smith-domain-session/src/record.rs`);
+       only the codec's is text.
+     No suite ran in the check (the queue held its run); a further user of
+     what 03 changes is refreshed the same way and listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

@@ -50,15 +50,15 @@ Needs at start: smith 04.1's grant value union and 02.2's notices on
   channel's `{charter,translate,turn,transcript,tests}.rs` alias a
   codec as `wire`, so Files names them:
   ```sh
-  rg -l 'smith_charter::v2|charter-v2|charter/golden/v2' G  # 19
+  rg -l 'smith_charter::v2|charter-v2|charter/golden/v2' G  # 20
   rg -l -U '(?s)\bLlm \{.{0,700}?\n\s+account: ' G  # 23
   rg -l -U 'Endpoint \{[^}]*\baccount:' G  # 16
   rg -l -U -P '\bEndpoints::new\((?:[^(),]|(\((?:[^()]|(?1))*\)))*,' G  # 10, the llm's
   rg -l -U '(?s)Complete \{[^}]{0,500}\bgrant\b' G  # 12
   rg -l 'smith_transcript::v5|transcript-v5|transcript/golden/v5' G  # 13
-  rg -l -U 'Kind::(First|Window)\s*\{[^}.]*\}' G  # 20, none with `..`
+  rg -l -U 'Kind::(First|Window)\s*\{[^}.]*\}' G  # 21, none with `..`
   rg -l -U '(?s)\b(Turn|Transcript) \{[^}]{0,600}\bdialect:' G  # 20
-  rg -l 'Refusal::(Endpoint|Dialect)\b' G  # 20
+  rg -l 'Refusal::(Endpoint|Dialect)\b' G  # 18
   rg -n '\b(charter: 2|transcript: 5)\b' G  # 7 literals
   ```
 
@@ -80,7 +80,7 @@ Files: `crates/smith-charter/`: `schema/charter-v3.schema` (new),
   `smith-agent-shell/src/{agent_shell,config}.rs`,
   `smith-domain-run/src/{charter,tests}.rs`,
   `smith-domain-session/src/{boundary,session,tests}.rs`,
-  `smith-domain/src/{boundary,peer,route,tests,translate,
+  `smith-domain/src/{boundary,domain,peer,route,tests,translate,
   translation_tests}.rs`, `smith-host-domain/src/tests.rs`,
   `smith-host-protocol/src/{answer,component,limits,tests,
   translate}.rs`, `smith-inline-agent/src/{boundary,translate}.rs`,
@@ -91,12 +91,12 @@ Files: `crates/smith-charter/`: `schema/charter-v3.schema` (new),
   settings/resolve/models,startup}.rs`,
   `smith-protocol-channel/src/{charter,component,limits,result,tests,
   tests/jobs,translate}.rs`, `smith-protocol-llm/src/{boundary,
-  component,endpoints,grants,tests}.rs`;
+  component,endpoints,grants,guard,tests}.rs`;
   in `tests/`: `agent-process/src/{lib,tracing}.rs`,
   `agent/src/{memory/fixture,world}.rs`, `agent/tests/{brief,
-  budget}.rs`, `channel/src/lib.rs`, `channel/tests/{composed,
-  composed/long,fuzzy_stream_cuts,memory,referee,stories,
-  stories/limits}.rs`, `codecs/tests/{charter,drift,fuzzy_decode,
+  budget,models}.rs`, `channel/src/lib.rs`, `channel/tests/{composed,
+  composed/long,fuzzy_stream_cuts,live,memory,referee,stories,
+  stories/limits}.rs` (`live.rs` reads `golden/v3`), `codecs/tests/{charter,drift,fuzzy_decode,
   memory}.rs`, `end-to-end/end_to_end.rs` (formats line),
   `host/src/lib.rs`, `local-process/src/{process,
   process/configuration}.rs`, `local/src/world.rs`,
@@ -104,7 +104,10 @@ Files: `crates/smith-charter/`: `schema/charter-v3.schema` (new),
   `protocol-llm/tests/{brief,budget,component_boundary,component_peer,
   endpoints_grants,production_render,root_memory}.rs`,
   `run/src/host.rs`, `run/tests/memory.rs`,
-  `session/tests/window_room.rs`, `agent/tests/accounts.rs` (new).
+  `session/tests/{window_room,memory,simulation}.rs`,
+  `session/src/{world,recorded}.rs` (their full `session::Spec`
+  literals, found by reading: ruling 120), `agent/tests/accounts.rs`
+  (new).
 Shape: the schema's `record Llm` gains `account: option u32`;
   `FORMAT_VERSION` 3. `run::charter::Llm.account` is `Option<u32>`,
   taken by `translate.rs`'s `llm()` from the wire LLM, not the
@@ -122,7 +125,12 @@ Shape: the schema's `record Llm` gains `account: option u32`;
   charter's LLM in `route.rs`) are `Option<u32>`; with none,
   `Request::Complete` and `FromDomain::Complete` carry `grant: None`
   and the component calls `Grants::credential(None, now)` (new):
-  `credential: None`, no table read. With `grant` an option, `complete`
+  `credential: None`, no table read; `guard.rs`'s `check` and `measure`
+  take `Option<&Credential>`, handed as it is to skein's
+  `client::measure`, which takes an option already. `domain.rs`'s
+  `IssuedCompletion.grant` is `Option<GrantName>`, and `route.rs`'s
+  `failed()` arms for `Unauthorized` and `Exhausted` handle none (no
+  grant to name). Every full `session::Spec` literal takes `account`. With `grant` an option, `complete`
   in `route.rs` would reach 101 lines (the limit is 100), so its
   unsent-unauthorized path becomes a helper fn. `backoff` in
   `session.rs` ends an unauthorized call with no account at its first
@@ -152,8 +160,10 @@ Test shape: codecs, `tests/codecs/tests/charter.rs` (goldens from
   {Limited, Refused, Unauthorized}`; smith-agent-shell `config.rs`:
   `an_endpoints_account_is_read_and_ignored`. Agent world, each under
   0.1 s, `tests/agent/tests/accounts.rs` (new; seeds from 1501;
-  `models.rs`'s `world` with the granted accounts a parameter,
-  `Settings::calm`, `scripted_charter`):
+  `models.rs`'s private `world` moved into `tests/agent/src/world.rs`
+  with the granted accounts a parameter, `world(settings, charter,
+  granted: &[u32])`, which `models.rs` calls too (README, "A test
+  helper is written once"); `Settings::calm`, `scripted_charter`):
   `a_start_without_an_accounts_grant_is_invalid`, rows main's account,
   a sub-agent's, one of two; `llms_sharing_an_account_share_its_grant`;
   `a_held_grant_serves_a_later_start`;
@@ -183,10 +193,15 @@ Proof: world, `a_start_without_an_accounts_grant_is_invalid`: a start
 Downstream: jig-repin: `tests/channel/src/fixtures.rs`,
   `testing/jig-test-service/src/tests/{fixtures,worker}.rs`,
   `crates/jig-protocol-charter/src/{encode,charter}.rs`
-  (`name.account == value.account`, `account: model.account`),
+  (`name.account == value.account`, `account: model.account`), and the
+  further files naming `smith_charter::v2` (`v2::` in `result.rs`):
+  `crates/jig-protocol-charter/src/{lib,tests,result}.rs`,
+  `examples/ops/domain/src/{tests,limits}.rs`,
+  `tests/ops/src/conformance/{scripts,config}.rs`,
   `testing/jig-test-worker/src/tests/fixtures.rs` (`SMALLEST: [u8;
   119]`). temper repin: `crates/temper-service/src/workers.rs`,
-  `crates/temper-service/src/tests/{fixtures,fixtures/agent}.rs`,
+  `crates/temper-service/src/tests/{fixtures,fixtures/agent,
+  workers}.rs`,
   `tests/one-process/src/fixtures.rs`, `tests/worker/domain/src/
   protocol.rs` (`Endpoint { .., account: 0 }`), `crates/temper-engine-
   smith/src/start.rs` (`account: model.account`) and `crates/temper-
@@ -272,7 +287,8 @@ Proof: world, `a_domain_turn_round_trips_its_account_and_backend`: a
 Downstream: jig's contract keeps `dialect` text and takes the dialect
   number's decimal digits (decision 16). jig-repin: `crates/jig-
   protocol-transcript` (`src/{lib,summary,tests}.rs`, `tests/data/
-  record_turn_{smallest,full}.bin`); the `TurnParts` literals of
+  record_turn_{smallest,full}.bin` and that directory's `README.md`,
+  which names the smith revision they were copied from); the `TurnParts` literals of
   `tests/client-protocol/src/fixtures.rs`, `tests/client/src/joint/
   fixture.rs`, `tests/ops/src/conformance/scripts.rs` and `crates/
   jig-client-protocol-link/src/tests/fixtures/turns.rs`; the nine other
@@ -296,7 +312,11 @@ Files: in `crates/`: `smith-domain-session/src/{record,session,
   tests/{recorded,compaction}.rs`; `tests/agent/tests/{compaction,
   messages}.rs`; `tests/protocol-llm/tests/native_root_restore.rs`;
   every file of the lists above for `Refusal::Endpoint` or `Dialect`
-  (20) and `Turn` and `Transcript` literals with `dialect:` (20).
+  (18, among them `smith-agent-service/src/answers.rs`,
+  `smith-local-service/src/stream.rs` and
+  `tests/agent/tests/feedback_table.rs`) and `Turn` and `Transcript`
+  literals with `dialect:` (20); `smith-host-domain/src/channel.rs`
+  (`host::TranscriptRefusal`).
 Shape: `record::Turn.endpoint` and `record::Transcript.endpoint` are
   `Option<Endpoint>`. `decode_transcript` resolves an endpoint name the
   configuration does not name to none, takes the dialect from the
@@ -312,7 +332,8 @@ Shape: `record::Turn.endpoint` and `record::Transcript.endpoint` are
   `resumed_model` gives no window LLM for a carried window: a model
   change compacts on the window's model only on the same endpoint,
   dialect, account and backend. `record::Refusal::{Endpoint, Dialect}`
-  go, with `run::TranscriptRefusal`'s, their words in `feedback.rs` and
+  go, with `run::TranscriptRefusal`'s and `host::TranscriptRefusal`'s
+  (`smith-host-domain/src/channel.rs`), their words in `feedback.rs` and
   their mappings in `translate.rs`, protocol-channel's `translate.rs`
   and `component.rs`; `encode_turn` fails a told turn of an unnamed
   endpoint as malformed. Downstream: the `record::Turn` literals'
@@ -344,8 +365,8 @@ Don't: send an opaque block or replay to a dialect that did not write
   it; compact a carried window on its own model or account; keep an
   endpoint or dialect refusal under another name.
 Size: about 280 lines.
-Removes: `Refusal::{Endpoint, Dialect}` in the domain, the run and the
-  protocol, and their words; 01.2's interim mapping of them to
+Removes: `Refusal::{Endpoint, Dialect}` in the domain, the run, the
+  host and the protocol, and their words; 01.2's interim mapping of them to
   `malformed`.
 
 ## Interface sketches
@@ -368,7 +389,8 @@ pub enum Kind {
 /// Why a transcript cannot be used; anything else is carried over (Copy).
 pub enum Refusal { Version, Malformed, Unresolved, TooLarge }
 // Transcript { version, endpoint: Option<Endpoint>, dialect: u32, turns }
-// (its `dialect: u32` is 03.2's)
+// (the domain's `dialect` is a `u32` at the base; the codec's text
+// `dialect` becomes the number in 03.2)
 ```
 
 ## Done when
