@@ -16,9 +16,18 @@ pub struct Message {
     pub text: Box<[u8]>,
 }
 
+/// The host asks for live content, one boolean per kind (protocol/channel.md, section 3).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LiveAsk {
+    pub text: bool,
+    pub reasoning: bool,
+    pub input: bool,
+}
+
 /// Parent start moved to the first channel Send; process spawn has its own deadline.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Start {
+    pub live: Option<LiveAsk>,
     /// Run identity retained across activations, or absent for agent admission to draw.
     pub identity: Option<smith_domain::run::Identity>,
     /// At most the inbox, each fitting the rendered message bound.

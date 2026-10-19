@@ -16,6 +16,7 @@ fn bytes(length: u64) -> Box<[u8]> {
 }
 fn maximum_start(limits: Limits) -> Start {
     Start {
+        live: None,
         messages: Box::default(),
         logical_run: Token::new(7),
         identity: None,

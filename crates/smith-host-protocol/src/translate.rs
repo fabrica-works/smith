@@ -95,9 +95,17 @@ pub fn encode_start(
         }
     }
     let window = wire::Window::new(limits, wire::WindowParts { turns: window.turns, bytes: window.bytes })?;
+    let live = match start.live {
+        Some(ask) => Some(wire::LiveAsk::new(
+            limits,
+            wire::LiveAskParts { text: ask.text, reasoning: ask.reasoning, input: ask.input },
+        )?),
+        None => None,
+    };
     let record = wire::Start::new(
         limits,
         wire::StartParts {
+            live,
             messages,
             activation: start.activation,
             identity: match start.identity {

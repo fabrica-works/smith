@@ -261,7 +261,7 @@ fn tls_limits() -> tls::client::Limits {
 
 fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
     let schema = smith_channel::schema(bodies).or(Err(derived(Layer::Channel, "output_bytes")))?;
-    let version = schema.version(2).ok_or(derived(Layer::Channel, "version"))?;
+    let version = schema.version(3).ok_or(derived(Layer::Channel, "version"))?;
     let mut largest = 0;
     for kind in &version.kinds {
         match kind.direction {
@@ -397,7 +397,7 @@ fn channel_limits(
             skip: channel_start_bytes(&bodies)?.max(output_bytes),
             output_bytes,
             output_frames,
-            kinds: u32::try_from(smith_channel::V2.len()).or(Err(derived(Layer::Channel, "kinds")))?,
+            kinds: u32::try_from(smith_channel::V3.len()).or(Err(derived(Layer::Channel, "kinds")))?,
         },
         endpoints: ENDPOINTS,
         calls: domain.run.calls,

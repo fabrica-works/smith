@@ -2448,7 +2448,7 @@ mod tests {
         let decoded_call_bytes = 4096;
         let channel_bodies = smith_channel::CEILINGS;
         let schema = smith_channel::schema(&channel_bodies).expect("bounded channel schema");
-        let version = schema.version(2).expect("v2");
+        let version = schema.version(3).expect("v3");
         let mut largest = 0;
         for kind in &version.kinds {
             largest = largest.max(kind.largest);
@@ -2876,7 +2876,7 @@ mod tests {
                 profile: b"test".as_slice().into(),
                 capture: smith_events::Capture::Calls,
                 delivery: smith_events::Delivery::Complete,
-                versions: smith_events::Versions { events: 3, channel: 2, charter: 2, transcript: 5, chat_store: None },
+                versions: smith_events::Versions { events: 3, channel: 3, charter: 2, transcript: 5, chat_store: None },
                 limits: List::with_capacity(0),
             },
         );

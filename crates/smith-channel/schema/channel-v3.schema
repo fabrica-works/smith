@@ -1,4 +1,4 @@
-family smith-channel 2
+family smith-channel 3
 
 # The receiving host/agent additionally checks aggregate ownership and counts
 # against its configured domain Limits. Bytes carried from other codec families
@@ -47,6 +47,7 @@ record AnsweredCall { name: CallName tool: text 64 reply: SavedReply }
 # Start has all values required to resume; the transcript consists of the
 # exact opaque versioned turn bytes told on earlier activations.
 record Message { name: u64 label: text 1024 text: text 1048576 }
+record LiveAsk { text: bool reasoning: bool input: bool }
 record Start {
     identity: option fixed 16
     activation: u64
@@ -57,6 +58,7 @@ record Start {
     grants: list 64 Grant
     window: Window
     messages: list 128 Message
+    live: option LiveAsk
 }
 record HostAnswer { name: CallName reply: Reply }
 record Acknowledge { number: u32 }

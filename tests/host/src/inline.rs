@@ -75,6 +75,7 @@ pub fn start(seed: u64, job: smith_agent_world::Job) -> host::Start {
     charter.grants.agents = false;
     charter.models = Box::default();
     host::Start {
+        live: None,
         messages: Box::default(),
         logical_run: Token::new(seed),
         identity: None,

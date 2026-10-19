@@ -8,8 +8,8 @@ fn the_halves_open_on_the_highest_version_both_speak() {
     for mode in [StreamMode::One, StreamMode::Two] {
         let mut world = World::new(CEILINGS, CEILINGS, mode);
         world.settle();
-        assert!(world.observations().contains(&Observation::HostOpened(2)));
-        assert!(world.observations().contains(&Observation::AgentOpened(2)));
+        assert!(world.observations().contains(&Observation::HostOpened(3)));
+        assert!(world.observations().contains(&Observation::AgentOpened(3)));
     }
 }
 
@@ -19,7 +19,7 @@ fn no_version_in_common_ends_the_channel_before_a_start() {
     world.agent_hears_foreign_version();
     world.settle();
     assert!(world.observations().contains(&Observation::AgentEnded(Closed::RefusedHere(1))));
-    assert!(!world.observations().contains(&Observation::AgentOpened(2)));
+    assert!(!world.observations().contains(&Observation::AgentOpened(3)));
 }
 
 #[test]
@@ -505,6 +505,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     two.settle();
     two.send_domain_start(
         smith_host_domain::Start {
+            live: None,
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
             identity: Some(identity),
@@ -925,6 +926,7 @@ fn a_host_tool_answered_as_the_channel_is_lost_is_asked_again_under_its_name() {
     second.settle();
     second.send_domain_start(
         smith_host_domain::Start {
+            live: None,
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
             identity: None,

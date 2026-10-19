@@ -145,6 +145,7 @@ fn a_parent_drop_after_the_answer_preserves_that_answer() {
 
 fn start() -> Start {
     Start {
+        live: None,
         messages: Box::default(),
         logical_run: Token::new(1),
         identity: None,

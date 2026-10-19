@@ -86,6 +86,7 @@ pub(crate) fn prepare_start(
         }
     }
     Ok(host::Start {
+        live: None,
         messages: source.messages,
         logical_run: skein_lib::Token::new(1),
         identity: Some(source.identity),

@@ -47,6 +47,7 @@ fn start() -> host::Start {
     charter.grants.agents = false;
     charter.grants.tools = run::charter::Tools { inspect: false, modify: false, shell: false };
     host::Start {
+        live: None,
         messages: Box::default(),
         logical_run: Token::new(7),
         identity: None,

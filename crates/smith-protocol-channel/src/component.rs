@@ -647,7 +647,7 @@ impl Component {
             match event {
                 Some(Event::Opening { credential, lowest: _, highest }) => {
                     if credential.is_empty() {
-                        self.machine.down(Request::Accept { version: highest.min(2) }, &mut self.events, below);
+                        self.machine.down(Request::Accept { version: highest.min(3) }, &mut self.events, below);
                     } else {
                         self.machine.down(
                             Request::Refuse { reason: UNAUTHORIZED, text: Box::from(*b"credential on pipe") },

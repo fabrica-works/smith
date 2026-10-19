@@ -400,7 +400,7 @@ pub fn test_endpoints() -> agent::Endpoints {
 
 fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
     let schema = smith_channel::schema(&bodies).expect("bounded bodies");
-    let version = schema.version(2).expect("v2");
+    let version = schema.version(3).expect("v3");
     let largest = version.kinds.iter().map(|kind| kind.largest).max().expect("kinds");
     skein_channel::Limits {
         chunk: 4096,
@@ -534,6 +534,21 @@ impl World {
         transcript: Option<Box<[Box<[u8]>]>>,
         identity: Option<smith_domain::run::Identity>,
     ) {
+        self.send_start_with_ask(charter, transcript, identity, None);
+    }
+
+    /// Send a Start carrying the host's ask for live content.
+    pub fn send_start_asking(&mut self, charter: Box<[u8]>, live: Option<smith_host_domain::channel::LiveAsk>) {
+        self.send_start_with_ask(charter, None, None, live);
+    }
+
+    fn send_start_with_ask(
+        &mut self,
+        charter: Box<[u8]>,
+        transcript: Option<Box<[Box<[u8]>]>>,
+        identity: Option<smith_domain::run::Identity>,
+        live: Option<smith_host_domain::channel::LiveAsk>,
+    ) {
         let typed_charter = typed_charter(&charter);
         let typed_transcript = agent::decode_transcript(
             &agent::transcript_piece(transcript.as_deref().unwrap_or(&[])).expect("fixture piece"),
@@ -547,6 +562,7 @@ impl World {
         .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"));
         self.host.raw_start = Some(RawStart { charter, transcript });
         let start = smith_host_domain::channel::Start {
+            live,
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
             identity,
@@ -612,6 +628,7 @@ impl World {
         .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"));
         self.host.raw_start = Some(RawStart { charter, transcript });
         let start = smith_host_domain::channel::Start {
+            live: None,
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
             identity: None,

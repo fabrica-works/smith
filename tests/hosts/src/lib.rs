@@ -136,6 +136,7 @@ fn io_limits() -> io::Limits {
 
 fn start() -> host::Start {
     host::Start {
+        live: None,
         messages: Box::default(),
         logical_run: Token::new(1),
         identity: None,

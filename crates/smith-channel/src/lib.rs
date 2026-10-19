@@ -1,4 +1,4 @@
-//! Bounded channel records and the version-two kind table. This crate keeps no
+//! Bounded channel records and the version-three kind table. This crate keeps no
 //! runtime state and knows no domain, credentials or host policy. Generated
 //! constructors, encoders and decoders handle bodies; [`schema`] advertises
 //! their largest permitted encodings. Contracts: `protocol/channel.md`,
@@ -10,18 +10,18 @@
 extern crate alloc;
 
 #[rustfmt::skip]
-#[path = "generated/v2.rs"]
-pub mod v2;
+#[path = "generated/v3.rs"]
+pub mod v3;
 
 mod kinds;
 
-pub use kinds::{KindRule, Overflow, V2, peer_terms_gap, schema};
-pub use v2::{
+pub use kinds::{KindRule, Overflow, V3, peer_terms_gap, schema};
+pub use v3::{
     Cap, CompletionLimit, CompletionPhase, LimitFailure, LimitFailureParts, PathCap, PathCapParts, PoolLimit,
     PoolLimitParts, ResponseEvidence, ResponseEvidenceParts, TimeoutFailure, TimeoutFailureParts,
 };
 
-pub use v2::{
+pub use v3::{
     Accepted, AcceptedParts, Acknowledge, AcknowledgeParts, Admitted, AdmittedParts, Answer, AnswerParts, AnsweredCall,
     AnsweredCallParts, Ask, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetChecks,
     BudgetChecksParts, BudgetCompletion, BudgetCompletionParts, BudgetFailure, BudgetFailureValue,
@@ -33,12 +33,12 @@ pub use v2::{
     DeliveryReplyParts, Directory, DirectoryParts, Effect, Exhausted, ExhaustedParts, Fact, FactKind, FactParts,
     Failed, FailedParts, Field, FieldParts, Grant, GrantParts, GrantRefresh, GrantRefreshParts, GrantValue,
     GrantValueParts, HostAnswer, HostAnswerParts, HostAsk, HostAskParts, HostReply, HostReplyParts, InvalidStart,
-    InvalidStartValue, InvalidStartValueParts, Limits, Long, LongDone, LongDoneParts, LongParts, Marker, MarkerParts,
-    Message, MessageParts, MessageRefusal, MessageRefused, MessageRefusedParts, ModelFault, ModelFaultValue,
-    ModelFaultValueParts, Operation, Overflow as BudgetOverflow, OverflowValue, OverflowValueParts, PolicyFailure,
-    PolicyFailureParts, PriceRate, PriceRateValue, PriceRateValueParts, Receipt, ReceiptParts, ReceivingLimit,
-    ReceivingLimitValue, ReceivingLimitValueParts, Refused, RefusedParts, Rejected, RejectedParts, Reply, RunFailure,
-    RunResult, SavedReply, Start, StartParts, StartRefusal, TranscriptRefusal, TranscriptRefusalValue,
-    TranscriptRefusalValueParts, Turn, TurnParts, Waiting, WaitingParts, Window, WindowBound, WindowBoundParts,
-    WindowParts, Withdraw, WithdrawParts, Workspace, WorkspaceParts,
+    InvalidStartValue, InvalidStartValueParts, Limits, LiveAsk, LiveAskParts, Long, LongDone, LongDoneParts, LongParts,
+    Marker, MarkerParts, Message, MessageParts, MessageRefusal, MessageRefused, MessageRefusedParts, ModelFault,
+    ModelFaultValue, ModelFaultValueParts, Operation, Overflow as BudgetOverflow, OverflowValue, OverflowValueParts,
+    PolicyFailure, PolicyFailureParts, PriceRate, PriceRateValue, PriceRateValueParts, Receipt, ReceiptParts,
+    ReceivingLimit, ReceivingLimitValue, ReceivingLimitValueParts, Refused, RefusedParts, Rejected, RejectedParts,
+    Reply, RunFailure, RunResult, SavedReply, Start, StartParts, StartRefusal, TranscriptRefusal,
+    TranscriptRefusalValue, TranscriptRefusalValueParts, Turn, TurnParts, Waiting, WaitingParts, Window, WindowBound,
+    WindowBoundParts, WindowParts, Withdraw, WithdrawParts, Workspace, WorkspaceParts,
 };

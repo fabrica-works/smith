@@ -283,7 +283,7 @@ fn host_with_limits(mut limits: channel::Limits) -> ScriptedPeer {
         }
     }
     limits.channel.output_bytes = largest.checked_add(8).expect("host frame");
-    ScriptedPeer::new(schema, Role::Initiator, limits.channel, 2, Box::new([])).expect("scripted host")
+    ScriptedPeer::new(schema, Role::Initiator, limits.channel, 3, Box::new([])).expect("scripted host")
 }
 
 /// One activation Start sent by the scripted host, ending with an Answer.
@@ -337,6 +337,7 @@ pub(crate) fn start_workspace_message(
     let record = smith_channel::Start::new(
         &limits,
         smith_channel::StartParts {
+            live: None,
             messages,
             identity: None,
             activation: 1,
