@@ -279,6 +279,8 @@ pub(super) fn context_failure(failure: Failure) -> bool {
         | Failure::RateLimited { .. }
         | Failure::Unavailable
         | Failure::TimedOut { .. }
+        | Failure::Refused
+        | Failure::Unsupported
         | Failure::Invalid
         | Failure::Unauthorized
         | Failure::Exhausted { .. } => false,

@@ -724,6 +724,7 @@ impl Partner {
                     evidence: smith_domain_run::CompletionEvidence::Unsent,
                     model: 0,
                     attempts: 0,
+                    report: smith_domain_run::Report::none(),
                 }
             };
             self.tally.faults += 1;

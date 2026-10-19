@@ -834,7 +834,7 @@ fn end_turn(conversation: Token) -> Event {
 #[test]
 fn an_llm_whose_last_stop_shows_a_fault_fails_the_run_with_it() {
     let faults =
-        [(Stop::MaxTokens, Fault::Truncated), (Stop::Refusal, Fault::Refused), (Stop::NoCalls, Fault::Malformed)];
+        [(Stop::MaxTokens, Fault::Truncated), (Stop::Refusal, Fault::Declined), (Stop::NoCalls, Fault::Malformed)];
     for (stop, fault) in faults {
         let mut h = Harness::new(Limits { nudges: 0, ..LIMITS });
         let (_, conversation) = h.running(1, 100);
@@ -939,6 +939,7 @@ fn what_an_end_counts_beyond_the_turns_used_is_charged() {
         evidence: crate::CompletionEvidence::Unsent,
         model: 0,
         attempts: 0,
+        report: crate::Report::none(),
     });
     let emitted = h.step(Event::Ended { conversation, end, spend: spend(30), detail: Box::default() });
     assert_eq!(
@@ -951,6 +952,7 @@ fn what_an_end_counts_beyond_the_turns_used_is_charged() {
                     evidence: crate::CompletionEvidence::Unsent,
                     model: 0,
                     attempts: 0,
+                    report: crate::Report::none(),
                 }),
                 Spend { units: 10, ..spend(30) }
             )
@@ -2136,7 +2138,7 @@ fn pending_children_cannot_reserve_the_same_last_ordinary_turn() {
     let [Request::Return { call, result: Returned::Unanswered { end, .. }, .. }] = second_return.as_ref() else {
         panic!("one settled child return: {second_return:?}");
     };
-    assert_eq!((*call, *end), (Token::new(8), End::Budget(Exhausted::Turns)));
+    assert_eq!((*call, end.clone()), (Token::new(8), End::Budget(Exhausted::Turns)));
     let first_return =
         harness.step(Event::Ended { conversation: first, end: End::Closed, spend: spend(1), detail: Box::default() });
     let [
@@ -2146,7 +2148,7 @@ fn pending_children_cannot_reserve_the_same_last_ordinary_turn() {
     else {
         panic!("last child releases main: {first_return:?}");
     };
-    assert_eq!((*call, *end, *conversation), (Token::new(7), End::Budget(Exhausted::Turns), main));
+    assert_eq!((*call, end.clone(), *conversation), (Token::new(7), End::Budget(Exhausted::Turns), main));
     let note = super::prompt::wind_down_note(crate::charter::Reserve { turns: 1, time: Duration::ZERO });
     assert_eq!(
         crate::completion_permit(&mut harness.domain, main, harness.env.now, 0),
@@ -2187,7 +2189,7 @@ fn ordinary_time_closes_a_child_then_main_receives_its_final_permit() {
     else {
         panic!("last child releases main: {returned:?}");
     };
-    assert_eq!((*end, *conversation), (End::Budget(Exhausted::Time), main));
+    assert_eq!((end.clone(), *conversation), (End::Budget(Exhausted::Time), main));
     let note = super::prompt::wind_down_note(crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) });
     assert_eq!(
         crate::completion_permit(&mut harness.domain, main, harness.env.now, 0),
@@ -2445,7 +2447,7 @@ fn a_run_tells_what_it_did_as_content_free_facts() {
                 reserve_spend: 2,
             },
         },
-        Fact::Ended { run, conversation: child, end: End::Closed },
+        Fact::Ended { run, conversation: child, end: crate::facts::EndKind::Closed },
         Fact::Budget {
             run,
             call: Some(Token::new(7)),
@@ -2471,7 +2473,7 @@ fn a_run_tells_what_it_did_as_content_free_facts() {
         },
         Fact::Called { run, conversation: main, call: Token::new(8), ask: Asked::Finish },
         Fact::Returned { run, call: Token::new(8), result: Return::Accepted },
-        Fact::Ended { run, conversation: main, end: End::Closed },
+        Fact::Ended { run, conversation: main, end: crate::facts::EndKind::Closed },
         Fact::Answered { run, answer: Answered::Accepted },
     ];
     assert_eq!(&*told, &expected);
@@ -2488,7 +2490,10 @@ fn a_minimum_fact_reserve_keeps_the_admitted_terminal_and_every_prior_fact() {
     assert_eq!(answered(emitted), (1, cancelled()));
     let observed = facts(&mut h);
     assert_eq!(observed.len(), 5);
-    assert_eq!(observed.last(), Some(&Fact::Answered { run, answer: Answered::Failed(Failure::Cancelled) }));
+    assert_eq!(
+        observed.last(),
+        Some(&Fact::Answered { run, answer: Answered::Failed(crate::facts::FailureKind::Cancelled) })
+    );
 }
 
 #[test]

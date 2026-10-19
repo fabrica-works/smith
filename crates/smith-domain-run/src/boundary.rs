@@ -720,7 +720,7 @@ pub enum Stop {
 }
 
 /// How a conversation ended.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum End {
     /// Session price cannot be added; prior charges remain exact.
     PriceOverflow,
@@ -864,6 +864,10 @@ pub enum CompletionFailure {
     /// Provider rejected the request shape.
     Invalid,
 
+    /// The provider refused the account.
+    Refused,
+    /// The provider will not take a request field.
+    Unsupported,
     /// Provider rejected the credential.
     Unauthorized,
 
@@ -876,7 +880,7 @@ pub enum CompletionFailure {
     /// Provider account allowance requires the retained cooldown.
     Exhausted {
         /// Exact lower cooldown, without scheduling or recovery policy.
-        retry_after: Duration,
+        retry_after: Option<Duration>,
     },
 }
 
@@ -894,8 +898,27 @@ pub enum CompletionEvidence {
     Response { status: Option<u16> },
 }
 
+/// Bounded provider evidence, kept outside history and content-free facts (domain/run.md, section 10).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Report {
+    pub code: Box<[u8]>,
+    pub request: Box<[u8]>,
+    pub field: Box<[u8]>,
+}
+
+impl Report {
+    /// Three provider fields, each at the vocabulary's 128-byte bound (protocol/limits.md, 2.4).
+    pub const BYTES: u64 = 3 * 128;
+
+    /// No provider evidence was supplied.
+    #[must_use]
+    pub fn none() -> Self {
+        Self { code: Box::default(), request: Box::default(), field: Box::default() }
+    }
+}
+
 /// What kept an LLM from going on.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Fault {
     /// Full neutral failure and evidence after session retry policy.
     /// This is distinct from local model stopping rules and requested run Cancel.
@@ -908,15 +931,18 @@ pub enum Fault {
         /// Charter LLM index, resolved by `Charter::model`.
         model: u32,
         attempts: u32,
+        report: Report,
     },
 
-    /// The account spent its provider allowance. The engine retries after cooldown.
-    Exhausted { account: u32, retry_at: Option<Time> },
+    /// The account spent its provider allowance, ending the run.
+    Limited { account: u32, reset_at: Option<Time> },
+    /// The provider refused the account, ending the run with its bounded code.
+    Refused { account: u32, code: Box<[u8]> },
     /// Its provider failed for good: unreachable, overloaded past the
     /// retries, or refusing the call or its credentials.
     Provider,
     /// It kept declining to answer.
-    Refused,
+    Declined,
     /// It kept running out of tokens mid-answer.
     Truncated,
     /// It kept asking for tools and naming none.
@@ -1024,7 +1050,7 @@ pub enum Invalid {
 }
 
 /// Why a run ended without an outcome: what the host acts on.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Failure {
     /// Exact transient history refusal; never silently starts fresh.
     Transcript(

@@ -183,7 +183,7 @@ fn render(text: &mut Text, returned: &Returned) {
         }
         Returned::Unanswered { end, used, left } => {
             text.put(b"unanswered end=");
-            render_end(text, *end);
+            render_end(text, end.clone());
             let budget = match end {
                 run::End::Budget(_) => true,
                 run::End::PriceOverflow
@@ -444,7 +444,7 @@ fn render_end(text: &mut Text, end: run::End) {
 
 fn render_fault(text: &mut Text, fault: run::Fault) {
     match fault {
-        run::Fault::Completion { failure, evidence, model: _, attempts: _ } => {
+        run::Fault::Completion { failure, evidence, model: _, attempts: _, report: _ } => {
             text.put(b"completion:");
             render_completion_failure(text, failure);
             text.put(b" evidence=");
@@ -454,9 +454,10 @@ fn render_fault(text: &mut Text, fault: run::Fault) {
                 run::CompletionEvidence::Response { .. } => b"response",
             });
         }
-        run::Fault::Exhausted { .. } => text.put(b"exhausted"),
+        run::Fault::Limited { .. } => text.put(b"limited"),
+        run::Fault::Refused { .. } => text.put(b"account-refused"),
         run::Fault::Provider => text.put(b"provider"),
-        run::Fault::Refused => text.put(b"refused"),
+        run::Fault::Declined => text.put(b"refused"),
         run::Fault::Truncated => text.put(b"truncated"),
         run::Fault::Malformed => text.put(b"malformed"),
     }
@@ -473,14 +474,19 @@ fn render_completion_failure(text: &mut Text, failure: run::CompletionFailure) {
         run::CompletionFailure::TimedOut { .. } => text.put(b"timed-out"),
         run::CompletionFailure::ContextTooLong => text.put(b"context-too-long"),
         run::CompletionFailure::Invalid => text.put(b"invalid"),
+        run::CompletionFailure::Refused => text.put(b"refused"),
+        run::CompletionFailure::Unsupported => text.put(b"unsupported"),
         run::CompletionFailure::Unauthorized => text.put(b"unauthorized"),
         run::CompletionFailure::RateLimited { retry_after } => {
             text.put(b"rate-limited retry-after-ns=");
             text.number(retry_after.as_nanos());
         }
         run::CompletionFailure::Exhausted { retry_after } => {
-            text.put(b"exhausted retry-after-ns=");
-            text.number(retry_after.as_nanos());
+            text.put(b"exhausted");
+            if let Some(reset) = retry_after {
+                text.put(b" retry-after-ns=");
+                text.number(reset.as_nanos());
+            }
         }
     }
 }

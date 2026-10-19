@@ -119,7 +119,7 @@ impl Book {
         self.children.received(owner, usage);
     }
 
-    pub(crate) fn child_ended(&mut self, owner: Token, end: smith_domain::run::End, at: Time) {
+    pub(crate) fn child_ended(&mut self, owner: Token, end: smith_domain::run::facts::EndKind, at: Time) {
         self.children.ended(owner, end, at);
     }
 
@@ -788,35 +788,35 @@ mod tests {
                 (
                     run::facts::Return::Answered { used, cut: 17 },
                     session::Yield::Done,
-                    run::End::Closed,
+                    run::facts::EndKind::Closed,
                     smith_events::ChildStop::End,
                     17,
                 ),
                 (
                     run::facts::Return::Answered { used, cut: 17 },
                     session::Yield::Budget,
-                    run::End::Closed,
+                    run::facts::EndKind::Closed,
                     smith_events::ChildStop::Budget,
                     17,
                 ),
                 (
                     run::facts::Return::Unanswered { used },
                     session::Yield::Done,
-                    run::End::Budget(run::Exhausted::Turns),
+                    run::facts::EndKind::Budget(run::Exhausted::Turns),
                     smith_events::ChildStop::Failed,
                     0,
                 ),
                 (
                     run::facts::Return::Cancelled,
                     session::Yield::Done,
-                    run::End::Closed,
+                    run::facts::EndKind::Closed,
                     smith_events::ChildStop::Closed,
                     0,
                 ),
                 (
                     run::facts::Return::TimedOut,
                     session::Yield::Done,
-                    run::End::Closed,
+                    run::facts::EndKind::Closed,
                     smith_events::ChildStop::Closed,
                     0,
                 ),

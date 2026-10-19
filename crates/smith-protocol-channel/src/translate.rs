@@ -620,7 +620,7 @@ fn model_fault(
     limits: &channel::Limits,
 ) -> Result<channel::ModelFault, Error> {
     let value = match fault {
-        run::Fault::Completion { failure, evidence, model, attempts } => {
+        run::Fault::Completion { failure, evidence, model, attempts, report } => {
             let (failure, retry_after) = match failure {
                 run::CompletionFailure::Limit { which, bound } => (
                     channel::CompletionFailure::Limit(channel::LimitFailure::new(
@@ -643,12 +643,14 @@ fn model_fault(
                 ),
                 run::CompletionFailure::ContextTooLong => (channel::CompletionFailure::ContextTooLong, None),
                 run::CompletionFailure::Invalid => (channel::CompletionFailure::Invalid, None),
+                run::CompletionFailure::Refused => (channel::CompletionFailure::Refused, None),
+                run::CompletionFailure::Unsupported => (channel::CompletionFailure::Unsupported, None),
                 run::CompletionFailure::Unauthorized => (channel::CompletionFailure::Unauthorized, None),
                 run::CompletionFailure::RateLimited { retry_after } => {
                     (channel::CompletionFailure::RateLimited, Some(retry_after))
                 }
                 run::CompletionFailure::Exhausted { retry_after } => {
-                    (channel::CompletionFailure::Exhausted, Some(retry_after))
+                    (channel::CompletionFailure::Exhausted, retry_after)
                 }
             };
             let evidence = match evidence {
@@ -660,31 +662,34 @@ fn model_fault(
             };
             channel::ModelFault::Completion(channel::CompletionFault::new(
                 limits,
-                // smith 02.1 fills the provider report fields.
                 channel::CompletionFaultParts {
                     failure,
                     evidence,
                     retry_after,
                     model,
                     attempts,
-                    code: Box::default(),
-                    request_id: Box::default(),
-                    field: Box::default(),
+                    code: report.code,
+                    request_id: report.request,
+                    field: report.field,
                 },
             )?)
         }
-        run::Fault::Exhausted { account, retry_at } => channel::ModelFault::Limited(channel::LimitedFault::new(
+        run::Fault::Limited { account, reset_at } => channel::ModelFault::Limited(channel::LimitedFault::new(
             limits,
             channel::LimitedFaultParts {
                 account,
-                reset: match retry_at {
+                reset: match reset_at {
                     Some(at) => Some(at.saturating_since(now)),
                     None => None,
                 },
             },
         )?),
+        run::Fault::Refused { account, code } => channel::ModelFault::Refused(channel::RefusedFault::new(
+            limits,
+            channel::RefusedFaultParts { account, code },
+        )?),
         run::Fault::Provider => channel::ModelFault::Provider,
-        run::Fault::Refused => channel::ModelFault::Declined,
+        run::Fault::Declined => channel::ModelFault::Declined,
         run::Fault::Truncated => channel::ModelFault::Truncated,
         run::Fault::Malformed => channel::ModelFault::Malformed,
     };

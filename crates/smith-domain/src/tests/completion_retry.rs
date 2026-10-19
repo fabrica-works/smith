@@ -23,6 +23,7 @@ fn retry(harness: &mut Harness, owner: Token) -> CompletionName {
                 failure: Failure::Unavailable,
                 evidence: Evidence::Unknown,
                 detail: bytes(b"failed provider"),
+                report: crate::llm::Report::none(),
             })
             .is_empty()
     );
@@ -165,6 +166,7 @@ fn retry_exhaustion_ends_the_run_without_another_start_or_content() {
         failure: Failure::Unavailable,
         evidence: Evidence::Unknown,
         detail: bytes(b"failed again"),
+        report: crate::llm::Report::none(),
     });
     let [Request::Answer { answer: run::Answer::Failed { .. }, .. }] = &*emitted else {
         panic!("retry exhaustion ends the run, got {emitted:?}");
@@ -243,4 +245,71 @@ fn a_restored_prefix_names_the_next_source_sequence_without_changing_the_retry()
     assert_eq!(*name, CompletionName { sequence, retry: 0 });
     let retried = retry(&mut restored, *owner);
     assert_eq!(retried, CompletionName { sequence, retry: 1 });
+}
+
+fn account_failure(failure: Failure, report: crate::llm::Report, now: Time, later: Time) -> Option<run::Failure> {
+    let mut harness = Harness::new();
+    let (_, owner, _) = harness.admit(7, charter());
+    harness.env.now = now;
+    let emitted = harness.step(Event::Failed {
+        owner,
+        failure,
+        report,
+        evidence: Evidence::Response { status: Some(403) },
+        detail: bytes(b"provider reason"),
+    });
+    harness.env.now = later;
+    for request in &*emitted {
+        if let Request::Answer { answer: run::Answer::Failed { failure, .. }, .. } = request {
+            return Some(failure.clone());
+        }
+    }
+    None
+}
+
+#[test]
+fn a_limited_account_ends_the_run_with_its_reset() {
+    let notice = Time::from_nanos(20_000_000);
+    for (reset, later, expected) in [
+        (Some(Duration::from_millis(80)), notice, Some(Time::from_nanos(100_000_000))),
+        (Some(Duration::ZERO), notice, Some(notice)),
+        (None, notice, None),
+        (Some(Duration::from_millis(80)), Time::from_nanos(50_000_000), Some(Time::from_nanos(100_000_000))),
+    ] {
+        let terminal =
+            account_failure(Failure::Exhausted { retry_after: reset }, crate::llm::Report::none(), notice, later);
+        assert_eq!(
+            terminal,
+            Some(run::Failure::Model(run::Fault::Limited { account: 0, reset_at: expected })),
+            "{reset:?} at {later:?}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_account_ends_the_run_with_its_code() {
+    let report = crate::llm::Report { code: bytes(b"not-eligible"), request: bytes(b"request"), field: Box::default() };
+    let terminal = account_failure(Failure::Refused, report, Time::ZERO, Time::ZERO);
+    assert_eq!(terminal, Some(run::Failure::Model(run::Fault::Refused { account: 0, code: bytes(b"not-eligible") })));
+}
+
+#[test]
+fn an_unsupported_request_ends_the_run_naming_its_field() {
+    let report =
+        crate::llm::Report { code: bytes(b"unsupported"), request: bytes(b"request"), field: bytes(b"temperature") };
+    let terminal = account_failure(Failure::Unsupported, report, Time::ZERO, Time::ZERO);
+    assert_eq!(
+        terminal,
+        Some(run::Failure::Model(run::Fault::Completion {
+            failure: run::CompletionFailure::Unsupported,
+            evidence: run::CompletionEvidence::Response { status: Some(403) },
+            model: 0,
+            attempts: 1,
+            report: run::Report {
+                code: bytes(b"unsupported"),
+                request: bytes(b"request"),
+                field: bytes(b"temperature")
+            }
+        }))
+    );
 }

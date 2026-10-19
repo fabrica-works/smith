@@ -16,7 +16,7 @@ fn unanswered(end: run::End) -> run::Returned {
     }
 }
 
-fn rendered(returned: run::Returned, expected: &str, error: bool) {
+fn expected_rendering(expected: &str, error: bool) -> (Box<[u8]>, bool) {
     let expected = if expected.starts_with("unanswered ") || expected == "child" {
         let budget = if expected.starts_with("unanswered end=budget:") { "yes" } else { "no" };
         format!(
@@ -25,9 +25,12 @@ fn rendered(returned: run::Returned, expected: &str, error: bool) {
     } else {
         expected.to_owned()
     };
+    (expected.as_bytes().into(), error)
+}
+
+fn rendering(returned: run::Returned) -> (Box<[u8]>, bool) {
     let result = feedback(returned, 4096).expect("bounded complete feedback");
-    assert_eq!(result.text.as_ref(), expected.as_bytes());
-    assert_eq!(result.error, error);
+    (result.text, result.error)
 }
 
 #[test]
@@ -89,7 +92,7 @@ fn every_run_call_terminal_has_canonical_feedback() {
         (run::Returned::Refused { refusal: run::AskRefusal::NotGranted }, "refused reason=not-granted", true),
     ];
     for (returned, expected, error) in rows {
-        rendered(returned, expected, error);
+        assert_eq!(rendering(returned), expected_rendering(expected, error));
     }
 }
 
@@ -100,7 +103,10 @@ fn host_and_ask_refusal_variants_keep_their_names() {
         (run::HostProblem::Effect, "effect"),
         (run::HostProblem::TooLarge, "too-large"),
     ] {
-        rendered(run::Returned::HostRejected(problem), &format!("host-rejected reason={label}"), true);
+        assert_eq!(
+            rendering(run::Returned::HostRejected(problem)),
+            expected_rendering(&format!("host-rejected reason={label}"), true)
+        );
     }
     for (refusal, label) in [
         (run::AskRefusal::Name, "name"),
@@ -110,7 +116,10 @@ fn host_and_ask_refusal_variants_keep_their_names() {
         (run::AskRefusal::Unworkable, "unworkable"),
         (run::AskRefusal::Over, "over"),
     ] {
-        rendered(run::Returned::Refused { refusal }, &format!("refused reason={label}"), true);
+        assert_eq!(
+            rendering(run::Returned::Refused { refusal }),
+            expected_rendering(&format!("refused reason={label}"), true)
+        );
     }
 }
 
@@ -140,10 +149,9 @@ fn every_contract_problem_renders_its_values_and_field_scope() {
         ),
     ];
     for (problem, expected) in rows {
-        rendered(
-            run::Returned::Rejected { problems: Problems { listed: Box::new([problem]), more: 0 } },
-            &format!("rejected more=0\nproblem {expected}"),
-            true,
+        assert_eq!(
+            rendering(run::Returned::Rejected { problems: Problems { listed: Box::new([problem]), more: 0 } }),
+            expected_rendering(&format!("rejected more=0\nproblem {expected}"), true)
         );
     }
 }
@@ -162,16 +170,16 @@ fn every_delivery_reason_and_check_exit_is_visible() {
         (run::DeliveryReason::Cancelled, "cancelled"),
         (run::DeliveryReason::Unknown, "unknown"),
     ] {
-        rendered(
-            run::Returned::DeliveryFailed { failure: run::DeliveryFailure::new(0, reason) },
-            &format!("delivery-failed directory=0 reason={label} cut=0 tail=\"\""),
-            true,
+        assert_eq!(
+            rendering(run::Returned::DeliveryFailed { failure: run::DeliveryFailure::new(0, reason) }),
+            expected_rendering(&format!("delivery-failed directory=0 reason={label} cut=0 tail=\"\""), true)
         );
     }
-    rendered(
-        run::Returned::DeliveryFailed { failure: run::DeliveryFailure::new(2, run::DeliveryReason::Unreachable) },
-        "delivery-failed directory=2 reason=unreachable cut=0 tail=\"\"",
-        true,
+    assert_eq!(
+        rendering(run::Returned::DeliveryFailed {
+            failure: run::DeliveryFailure::new(2, run::DeliveryReason::Unreachable)
+        }),
+        expected_rendering("delivery-failed directory=2 reason=unreachable cut=0 tail=\"\"", true)
     );
     for (exit, label) in [
         (run::Exit::Code { code: 7 }, "code:7"),
@@ -180,10 +188,12 @@ fn every_delivery_reason_and_check_exit_is_visible() {
         (run::Exit::Unstarted, "unstarted"),
         (run::Exit::Cancelled, "cancelled"),
     ] {
-        rendered(
-            run::Returned::ChecksFailed { repository: bytes(b"r"), ran: run::Ran { exit, output: bytes(b""), cut: 0 } },
-            &format!("checks-failed repository=\"r\" exit={label} cut=0 tail=\"\""),
-            true,
+        assert_eq!(
+            rendering(run::Returned::ChecksFailed {
+                repository: bytes(b"r"),
+                ran: run::Ran { exit, output: bytes(b""), cut: 0 }
+            }),
+            expected_rendering(&format!("checks-failed repository=\"r\" exit={label} cut=0 tail=\"\""), true)
         );
     }
 }
@@ -205,7 +215,7 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
         (run::End::Budget(run::Exhausted::Time), "budget:time"),
     ];
     for (end, label) in rows {
-        rendered(unanswered(end), &format!("unanswered end={label}"), true);
+        assert_eq!(rendering(unanswered(end)), expected_rendering(&format!("unanswered end={label}"), true));
     }
     for (reason, label) in [
         (run::TranscriptRefusal::Version, "version"),
@@ -215,10 +225,9 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
         (run::TranscriptRefusal::Unresolved, "unresolved"),
         (run::TranscriptRefusal::TooLarge, "too-large"),
     ] {
-        rendered(
-            unanswered(run::End::TranscriptRefused { reason }),
-            &format!("unanswered end=transcript-refused:{label}"),
-            true,
+        assert_eq!(
+            rendering(unanswered(run::End::TranscriptRefused { reason })),
+            expected_rendering(&format!("unanswered end=transcript-refused:{label}"), true)
         );
     }
 }
@@ -226,13 +235,17 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
 #[test]
 fn every_model_fault_and_completion_failure_keeps_its_evidence() {
     for (fault, label) in [
-        (run::Fault::Exhausted { account: 0, retry_at: None }, "exhausted"),
+        (run::Fault::Limited { account: 0, reset_at: None }, "limited"),
+        (run::Fault::Refused { account: 0, code: Box::default() }, "account-refused"),
         (run::Fault::Provider, "provider"),
-        (run::Fault::Refused, "refused"),
+        (run::Fault::Declined, "refused"),
         (run::Fault::Truncated, "truncated"),
         (run::Fault::Malformed, "malformed"),
     ] {
-        rendered(unanswered(run::End::Fault(fault)), &format!("unanswered end=fault:{label}"), true);
+        assert_eq!(
+            rendering(unanswered(run::End::Fault(fault))),
+            expected_rendering(&format!("unanswered end=fault:{label}"), true)
+        );
     }
     let cooldown = Duration::from_nanos(19);
     for (failure, label) in [
@@ -244,19 +257,26 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
         (run::CompletionFailure::TimedOut { phase: run::Phase::Whole }, "timed-out"),
         (run::CompletionFailure::ContextTooLong, "context-too-long"),
         (run::CompletionFailure::Invalid, "invalid"),
+        (run::CompletionFailure::Refused, "refused"),
+        (run::CompletionFailure::Unsupported, "unsupported"),
         (run::CompletionFailure::Unauthorized, "unauthorized"),
         (run::CompletionFailure::RateLimited { retry_after: cooldown }, "rate-limited retry-after-ns=19"),
-        (run::CompletionFailure::Exhausted { retry_after: cooldown }, "exhausted retry-after-ns=19"),
+        (run::CompletionFailure::Exhausted { retry_after: Some(cooldown) }, "exhausted retry-after-ns=19"),
     ] {
         for (evidence, evidence_label) in [
             (run::CompletionEvidence::Unsent, "unsent"),
             (run::CompletionEvidence::Unknown, "unknown"),
             (run::CompletionEvidence::Response { status: None }, "response"),
         ] {
-            rendered(
-                unanswered(run::End::Fault(run::Fault::Completion { failure, evidence, model: 0, attempts: 1 })),
-                &format!("unanswered end=fault:completion:{label} evidence={evidence_label}"),
-                true,
+            assert_eq!(
+                rendering(unanswered(run::End::Fault(run::Fault::Completion {
+                    failure,
+                    evidence,
+                    model: 0,
+                    attempts: 1,
+                    report: run::Report::none(),
+                }))),
+                expected_rendering(&format!("unanswered end=fault:completion:{label} evidence={evidence_label}"), true)
             );
         }
     }
@@ -284,13 +304,19 @@ fn failure_fields() -> Vec<(smith_domain::llm::Failure, run::CompletionFailure)>
             run::CompletionFailure::TimedOut { phase: run::Phase::Head },
         ),
         (llm::Failure::Invalid, run::CompletionFailure::Invalid),
+        (llm::Failure::Refused, run::CompletionFailure::Refused),
+        (llm::Failure::Unsupported, run::CompletionFailure::Unsupported),
         (llm::Failure::Unauthorized, run::CompletionFailure::Unauthorized),
         (llm::Failure::RateLimited { retry_after }, run::CompletionFailure::RateLimited { retry_after }),
-        (llm::Failure::Exhausted { retry_after }, run::CompletionFailure::Exhausted { retry_after }),
         (
-            llm::Failure::Exhausted { retry_after: Duration::ZERO },
-            run::CompletionFailure::Exhausted { retry_after: Duration::ZERO },
+            llm::Failure::Exhausted { retry_after: Some(retry_after) },
+            run::CompletionFailure::Exhausted { retry_after: Some(retry_after) },
         ),
+        (
+            llm::Failure::Exhausted { retry_after: Some(Duration::ZERO) },
+            run::CompletionFailure::Exhausted { retry_after: Some(Duration::ZERO) },
+        ),
+        (llm::Failure::Exhausted { retry_after: None }, run::CompletionFailure::Exhausted { retry_after: None }),
     ]
 }
 
@@ -308,23 +334,33 @@ fn completion_answer_fields() {
         settings.limits.session.retries = 0;
         let charter = smith_agent_world::scripted_charter(&settings);
         let mut world = World::with_failure(settings, source, llm::Evidence::Response { status: Some(503) });
+        world.failure_report(smith_domain::llm::Report {
+            code: Box::from(b"provider-code".as_slice()),
+            request: Box::from(b"request-id".as_slice()),
+            field: Box::from(b"request-field".as_slice()),
+        });
         world.run(20_000);
         let fault = expected_fault(expected, &world);
+        let resolved =
+            if let run::Answer::Failed { failure: run::Failure::Model(run::Fault::Completion { model, .. }), .. } =
+                world.answer()
+            {
+                charter.model(*model).map(|value| (&value.endpoint, &value.model))
+            } else {
+                None
+            };
+        let expected_model = if let run::Fault::Completion { .. } = &fault {
+            Some((&charter.llm.endpoint, &charter.llm.model))
+        } else {
+            None
+        };
         assert_eq!(
-            world.answer(),
-            &run::Answer::Failed { failure: run::Failure::Model(fault), spent: run::Spend::ZERO, turns: 0 }
+            (world.answer(), resolved),
+            (
+                &run::Answer::Failed { failure: run::Failure::Model(fault), spent: run::Spend::ZERO, turns: 0 },
+                expected_model
+            )
         );
-        match fault {
-            run::Fault::Completion { model, .. } => {
-                let resolved = charter.model(model).expect("parent resolves the failed completion's model");
-                assert_eq!(resolved.endpoint, charter.llm.endpoint);
-                assert_eq!(resolved.model, charter.llm.model);
-            }
-            run::Fault::Exhausted { .. } => {}
-            run::Fault::Provider | run::Fault::Refused | run::Fault::Truncated | run::Fault::Malformed => {
-                unreachable!()
-            }
-        }
     }
 }
 
@@ -332,12 +368,13 @@ fn expected_fault(expected: run::CompletionFailure, world: &smith_agent_world::W
     match expected {
         run::CompletionFailure::Exhausted { retry_after } => {
             let at = world.completions()[0].terminal.expect("provider failed").0;
-            run::Fault::Exhausted {
-                account: 0,
-                retry_at: if retry_after == Duration::ZERO { None } else { Some(at.saturating_add(retry_after)) },
-            }
+            run::Fault::Limited { account: 0, reset_at: retry_after.map(|reset| at.saturating_add(reset)) }
         }
-        run::CompletionFailure::Limit { .. }
+        run::CompletionFailure::Refused => {
+            run::Fault::Refused { account: 0, code: Box::from(b"provider-code".as_slice()) }
+        }
+        run::CompletionFailure::Unsupported
+        | run::CompletionFailure::Limit { .. }
         | run::CompletionFailure::ApplicationLimit
         | run::CompletionFailure::Protocol
         | run::CompletionFailure::Cancelled
@@ -352,6 +389,11 @@ fn expected_fault(expected: run::CompletionFailure, world: &smith_agent_world::W
             evidence: run::CompletionEvidence::Response { status: Some(503) },
             model: 0,
             attempts: 1,
+            report: run::Report {
+                code: Box::from(b"provider-code".as_slice()),
+                request: Box::from(b"request-id".as_slice()),
+                field: Box::from(b"request-field".as_slice()),
+            },
         },
     }
 }
@@ -364,5 +406,8 @@ fn budget_answer_fields() {
     let mut world = World::new(settings);
     world.run(20_000);
     let run::Answer::Failed { failure, .. } = world.answer() else { panic!("shared turns spent") };
-    assert_eq!(*failure, run::Failure::Budget { exhausted: run::Exhausted::Turns, used: Some(7), bound: Some(8) });
+    assert_eq!(
+        failure.clone(),
+        run::Failure::Budget { exhausted: run::Exhausted::Turns, used: Some(7), bound: Some(8) }
+    );
 }

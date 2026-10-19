@@ -223,11 +223,11 @@ fn a_connect_deadline_keeps_timed_out_failure_evidence() {
 fn shared_failure_cases() -> [(shared::Failure, llm::Failure); 18] {
     let retry = Duration::from_secs(7);
     [
-        (shared::Failure::Refused, llm::Failure::Invalid),
-        (shared::Failure::Unsupported, llm::Failure::Invalid),
-        (shared::Failure::Exhausted { retry_after: None }, llm::Failure::Exhausted { retry_after: Duration::ZERO }),
+        (shared::Failure::Refused, llm::Failure::Refused),
+        (shared::Failure::Unsupported, llm::Failure::Unsupported),
+        (shared::Failure::Exhausted { retry_after: None }, llm::Failure::Exhausted { retry_after: None }),
         (shared::Failure::Unauthorized, llm::Failure::Unauthorized),
-        (shared::Failure::Exhausted { retry_after: Some(retry) }, llm::Failure::Exhausted { retry_after: retry }),
+        (shared::Failure::Exhausted { retry_after: Some(retry) }, llm::Failure::Exhausted { retry_after: Some(retry) }),
         (shared::Failure::RateLimited { retry_after: retry }, llm::Failure::RateLimited { retry_after: retry }),
         (shared::Failure::Overloaded, llm::Failure::Overloaded),
         (shared::Failure::Unavailable, llm::Failure::Unavailable),
@@ -256,6 +256,19 @@ fn shared_failure_cases() -> [(shared::Failure, llm::Failure); 18] {
     ]
 }
 
+fn prepared_failure(limits: &ComponentLimits) -> adapter::Prepared {
+    let input = adapter::Input {
+        owner: Token::new(71),
+        prompt: prompt(),
+        endpoint_name: llm::Endpoint(42),
+        endpoint: shared::Endpoint::codex(),
+        credential: credential(b"secret"),
+        application: Box::new([]),
+        receiving: limits.receiving,
+    };
+    adapter::prepare(input, &limits.adapter).expect("bounded preparation")
+}
+
 #[test]
 fn every_shared_failure_class_keeps_each_evidence_and_detail() {
     let limits = limits();
@@ -266,29 +279,29 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
     ];
     for (source, expected) in shared_failure_cases() {
         for (sent, expected_sent) in evidence {
-            let input = adapter::Input {
-                owner: Token::new(71),
-                prompt: prompt(),
-                endpoint_name: llm::Endpoint(42),
-                endpoint: shared::Endpoint::codex(),
-                credential: credential(b"secret"),
-                application: Box::new([]),
-                receiving: limits.receiving,
+            let prepared = prepared_failure(&limits);
+            let event = adapter::failed(
+                prepared.context,
+                Token::new(71),
+                source,
+                sent,
+                b"literal detail".as_slice().into(),
+                shared::Report::none(),
+            )
+            .expect("matching terminal");
+            let smith_domain::Event::Failed { owner, failure, evidence, detail, report } = event else {
+                panic!("failed event")
             };
-            let prepared = adapter::prepare(input, &limits.adapter).expect("bounded preparation");
-            let event =
-                adapter::failed(prepared.context, Token::new(71), source, sent, b"literal detail".as_slice().into())
-                    .expect("matching terminal");
-            assert!(
-                matches!(
-                    event,
-                    smith_domain::Event::Failed { owner, failure, evidence, detail }
-                        if owner == Token::new(71)
-                            && failure == expected
-                            && evidence == expected_sent
-                            && detail.as_ref() == b"literal detail"
-                ),
-                "source={source:?}, evidence={sent:?}"
+            let observed = Some((owner, failure, evidence, detail, report));
+            assert_eq!(
+                observed,
+                Some((
+                    Token::new(71),
+                    expected,
+                    expected_sent,
+                    Box::from(b"literal detail".as_slice()),
+                    llm::Report::none()
+                ))
             );
         }
     }
@@ -445,9 +458,51 @@ fn a_response_failure_keeps_its_status_in_the_evidence() {
         shared::Failure::Unavailable,
         shared::client::Evidence::Response { status: 503 },
         Box::default(),
+        shared::Report::none(),
     )
     .expect("matching terminal");
     let smith_domain::Event::Failed { failure, evidence, .. } = terminal else { panic!("failure terminal") };
     assert_eq!(failure, llm::Failure::Unavailable);
     assert_eq!(evidence, llm::Evidence::Response { status: Some(503) });
+}
+
+#[test]
+fn skeins_report_reaches_the_session_whole() {
+    let limits = limits();
+    for (code, request, field, expected) in [
+        (
+            b"code".as_slice(),
+            b"".as_slice(),
+            b"".as_slice(),
+            llm::Report { code: b"code".as_slice().into(), request: Box::default(), field: Box::default() },
+        ),
+        (
+            b"".as_slice(),
+            b"request".as_slice(),
+            b"".as_slice(),
+            llm::Report { code: Box::default(), request: b"request".as_slice().into(), field: Box::default() },
+        ),
+        (
+            b"".as_slice(),
+            b"".as_slice(),
+            b"field".as_slice(),
+            llm::Report { code: Box::default(), request: Box::default(), field: b"field".as_slice().into() },
+        ),
+        (b"".as_slice(), b"".as_slice(), b"".as_slice(), llm::Report::none()),
+    ] {
+        let prepared = prepared_failure(&limits);
+        let report = shared::Report { code: code.into(), request: request.into(), field: field.into() };
+        let terminal = adapter::failed(
+            prepared.context,
+            Token::new(71),
+            shared::Failure::Unsupported,
+            shared::client::Evidence::Unsent,
+            Box::default(),
+            report,
+        )
+        .expect("matching terminal");
+        let smith_domain::Event::Failed { report, .. } = terminal else { panic!("failed event") };
+        let received = Some(report);
+        assert_eq!(received, Some(expected));
+    }
 }

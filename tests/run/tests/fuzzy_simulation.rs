@@ -100,30 +100,7 @@ fn random_worlds_settle_with_every_start_answered_once() {
         lost += stats.relay_lost;
         answered += stats.relay_answered;
         for answer in answers(&world) {
-            let kind = match answer {
-                Answer::Parked { .. } => "parked",
-                Answer::Accepted { .. } => "accepted",
-                Answer::Refused(Refusal::Busy) => "busy",
-                Answer::Refused(Refusal::Invalid(Invalid::Conversation)) => "conversation invalid",
-                Answer::Refused(Refusal::Invalid(_)) => "invalid",
-                Answer::Failed { failure, .. } => match failure {
-                    Failure::Model(Fault::Completion { .. } | Fault::Provider | Fault::Exhausted { .. }) => "fault",
-                    Failure::Model(Fault::Truncated | Fault::Refused | Fault::Malformed) => "stopped",
-                    Failure::Budget { exhausted: Exhausted::Turns, .. } => "turns",
-                    Failure::Budget { exhausted: Exhausted::Time, .. } => "time",
-                    Failure::Budget { exhausted: Exhausted::Spend, .. } => "spend",
-                    Failure::Budget { exhausted: Exhausted::Overflow(_), .. } => {
-                        panic!("bounded random partner usage and prices remain representable")
-                    }
-                    Failure::Budget { exhausted: Exhausted::Tokens(_), .. } => {
-                        panic!("source random partner has no receiving refusal")
-                    }
-                    Failure::Policy(Policy::Unfinished { .. }) => "unfinished",
-                    Failure::Cancelled => "cancelled",
-                    Failure::Stale => "stale",
-                    Failure::Transcript(_) => panic!("source random partner does not restore history"),
-                },
-            };
+            let kind = answer_kind(answer);
             seen.insert(kind);
         }
     }
@@ -448,5 +425,34 @@ fn deadlines_find_runs_in_every_state_they_run_in_over_many_seeds() {
         "wind-down",
     ] {
         assert!(deadlines.get(cell).is_some_and(|count| *count > 0), "no deadline found a run {cell}: {deadlines:?}");
+    }
+}
+
+fn answer_kind(answer: &Answer) -> &'static str {
+    match answer {
+        Answer::Parked { .. } => "parked",
+        Answer::Accepted { .. } => "accepted",
+        Answer::Refused(Refusal::Busy) => "busy",
+        Answer::Refused(Refusal::Invalid(Invalid::Conversation)) => "conversation invalid",
+        Answer::Refused(Refusal::Invalid(_)) => "invalid",
+        Answer::Failed { failure, .. } => match failure {
+            Failure::Model(
+                Fault::Completion { .. } | Fault::Provider | Fault::Limited { .. } | Fault::Refused { .. },
+            ) => "fault",
+            Failure::Model(Fault::Truncated | Fault::Declined | Fault::Malformed) => "stopped",
+            Failure::Budget { exhausted: Exhausted::Turns, .. } => "turns",
+            Failure::Budget { exhausted: Exhausted::Time, .. } => "time",
+            Failure::Budget { exhausted: Exhausted::Spend, .. } => "spend",
+            Failure::Budget { exhausted: Exhausted::Overflow(_), .. } => {
+                panic!("bounded random partner usage and prices remain representable")
+            }
+            Failure::Budget { exhausted: Exhausted::Tokens(_), .. } => {
+                panic!("source random partner has no receiving refusal")
+            }
+            Failure::Policy(Policy::Unfinished { .. }) => "unfinished",
+            Failure::Cancelled => "cancelled",
+            Failure::Stale => "stale",
+            Failure::Transcript(_) => panic!("source random partner does not restore history"),
+        },
     }
 }

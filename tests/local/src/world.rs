@@ -1104,6 +1104,7 @@ impl World {
                             failure: translate::failure(error.error),
                             evidence: agent::llm::Evidence::Unknown,
                             detail: Box::new([]),
+                            report: smith_domain::llm::Report::none(),
                         }),
                     }
                 };
@@ -1604,6 +1605,7 @@ impl World {
                         failure: agent::llm::Failure::Invalid,
                         evidence: agent::llm::Evidence::Response { status: Some(400) },
                         detail: b"model does not exist\nsecond line is private".as_slice().into(),
+                        report: smith_domain::llm::Report::none(),
                     }));
                     return;
                 }
@@ -1611,9 +1613,10 @@ impl World {
                     self.first_failure = FirstFailure::Used;
                     self.events.push_back(self.below(Below::Failed {
                         owner,
-                        failure: agent::llm::Failure::Exhausted { retry_after: Duration::from_secs(60) },
+                        failure: agent::llm::Failure::Exhausted { retry_after: Some(Duration::from_secs(60)) },
                         evidence: agent::llm::Evidence::Response { status: None },
                         detail: Box::new([]),
+                        report: smith_domain::llm::Report::none(),
                     }));
                     return;
                 }
@@ -1624,6 +1627,7 @@ impl World {
                         failure: agent::llm::Failure::Unauthorized,
                         evidence: agent::llm::Evidence::Response { status: None },
                         detail: Box::new([]),
+                        report: smith_domain::llm::Report::none(),
                     }));
                     return;
                 }

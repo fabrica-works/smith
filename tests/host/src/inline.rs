@@ -523,7 +523,13 @@ impl World {
                             smith_agent_world::translate::failure(error.error),
                             smith::llm::Evidence::Response { status: None },
                         ));
-                        Below::Failed { owner: binding.owner, failure, evidence, detail: Box::default() }
+                        Below::Failed {
+                            owner: binding.owner,
+                            failure,
+                            evidence,
+                            detail: Box::default(),
+                            report: smith_domain::llm::Report::none(),
+                        }
                     }
                 }
             };

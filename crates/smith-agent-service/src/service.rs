@@ -1513,7 +1513,7 @@ fn llm_events_up(service: &mut Service) {
                 }
                 service.domain_events.push(domain::Event::Completed { owner, completion });
             }
-            llm::ToDomain::Failed { owner, failure, evidence, detail } => {
+            llm::ToDomain::Failed { owner, failure, evidence, detail, report } => {
                 match &mut service.events {
                     Some(events) => {
                         events.sinks.attempt_ready(owner);
@@ -1521,7 +1521,7 @@ fn llm_events_up(service: &mut Service) {
                     }
                     None => {}
                 }
-                service.domain_events.push(domain::Event::Failed { owner, failure, evidence, detail });
+                service.domain_events.push(domain::Event::Failed { owner, failure, evidence, detail, report });
             }
             llm::ToDomain::Cancelled { owner } => {
                 match &mut service.events {
@@ -2067,14 +2067,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_limited(
-                    account,
-                    // smith 02.1 gives an unsaid reset its own domain representation.
-                    if retry_after == Duration::ZERO { None } else { Some(retry_after) },
-                    token,
-                    &mut service.channel_events,
-                    &mut service.channel_below,
-                )
+                .send_limited(account, retry_after, token, &mut service.channel_events, &mut service.channel_below)
                 .is_err()
             {
                 service.mark_failed(Failure::Send);

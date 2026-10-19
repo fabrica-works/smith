@@ -13,7 +13,13 @@ pub enum Below {
     /// A provider supplied its bounded completion; ends one Complete.
     Completed { owner: Token, completion: smith::llm::Completion },
     /// A provider failed with actual transport evidence; ends one Complete.
-    Failed { owner: Token, failure: smith::llm::Failure, evidence: smith::llm::Evidence, detail: Box<[u8]> },
+    Failed {
+        owner: Token,
+        failure: smith::llm::Failure,
+        evidence: smith::llm::Evidence,
+        detail: Box<[u8]>,
+        report: smith::llm::Report,
+    },
     /// A tool IO terminal sent by the machine; ends one Io.
     Done { owner: Token, done: smith::tools::Done },
     /// A guide read terminal sent by the machine; ends one Read.

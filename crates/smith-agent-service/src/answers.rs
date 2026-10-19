@@ -32,7 +32,7 @@ pub fn last(service: &crate::Service) -> Option<Last> {
     if !answered {
         return Some(Last::Unanswered(crate::failure(service).expect("an unanswered end keeps its first cause")));
     }
-    let failure = match service.final_failure {
+    let failure = match service.final_failure.clone() {
         Some(why) => failed(why, service.final_answer_at),
         None => match service.final_refusal {
             Some(why) => refused(why),
@@ -46,7 +46,7 @@ pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer, detai
     service.final_detail = detail;
     service.final_answer_at = now;
     match answer {
-        run::Answer::Failed { failure, .. } => service.final_failure = Some(*failure),
+        run::Answer::Failed { failure, .. } => service.final_failure = Some(failure.clone()),
         run::Answer::Refused(refusal) => service.final_refusal = Some(*refusal),
         run::Answer::Accepted { .. } | run::Answer::Parked { .. } => {}
     }
@@ -84,7 +84,7 @@ pub fn answer_record(meta: AnswerMeta, answer: &run::Answer, capture: Capture) -
             (Status::Accepted, None, Some(accepted(outcome, capture)), *turns, *spent)
         }
         run::Answer::Failed { failure, spent, turns } => {
-            (Status::Failed, Some(failed(*failure, meta.now)), None, *turns, *spent)
+            (Status::Failed, Some(failed(failure.clone(), meta.now)), None, *turns, *spent)
         }
     };
     RunCompleted {
@@ -203,22 +203,23 @@ fn invalid_name(invalid: run::Invalid) -> &'static [u8] {
 fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
     match why {
         run::Failure::Model(fault) => match fault {
-            run::Fault::Completion { failure: why, evidence, model: _, attempts: _ } => {
+            run::Fault::Completion { failure: why, evidence, model: _, attempts: _, report: _ } => {
                 let mut result = failure(AnswerClass::Model, None);
                 result.completion = Some(completion(why, evidence));
                 result
             }
-            run::Fault::Exhausted { account, retry_at } => {
+            run::Fault::Limited { account, reset_at } => {
                 let mut result = failure(AnswerClass::Model, None);
                 result.account = Some(u64::from(account));
-                result.retry_after_ms = match retry_at {
+                result.retry_after_ms = match reset_at {
                     Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
                     None => None,
                 };
                 result
             }
             run::Fault::Provider => failure(AnswerClass::Model, Some(b"provider")),
-            run::Fault::Refused => failure(AnswerClass::Model, Some(b"refused")),
+            // smith 05.2 replaces version 3's nearest class for account refusal.
+            run::Fault::Refused { .. } | run::Fault::Declined => failure(AnswerClass::Model, Some(b"refused")),
             run::Fault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             run::Fault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
@@ -271,14 +272,20 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
         run::CompletionFailure::Unavailable => (FailureClass::Unavailable, None),
         run::CompletionFailure::TimedOut { .. } => (FailureClass::TimedOut, None),
         run::CompletionFailure::ContextTooLong => (FailureClass::ContextTooLong, None),
-        run::CompletionFailure::Invalid => (FailureClass::Invalid, None),
+        // smith 05.2 writes the distinct classes in events version 4.
+        run::CompletionFailure::Unsupported | run::CompletionFailure::Invalid => (FailureClass::Invalid, None),
+        run::CompletionFailure::Refused => (FailureClass::Unknown(Box::from(b"refused".as_slice())), None),
         run::CompletionFailure::Unauthorized => (FailureClass::Unauthorized, None),
         run::CompletionFailure::RateLimited { retry_after } => {
             (FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
         }
-        run::CompletionFailure::Exhausted { retry_after } => {
-            (FailureClass::Exhausted, Some(retry_after.as_nanos() / 1_000_000))
-        }
+        run::CompletionFailure::Exhausted { retry_after } => (
+            FailureClass::Exhausted,
+            match retry_after {
+                Some(reset) => Some(reset.as_nanos() / 1_000_000),
+                None => None,
+            },
+        ),
     };
     let status = match evidence {
         run::CompletionEvidence::Unsent | run::CompletionEvidence::Unknown => None,
@@ -302,6 +309,8 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
         | run::CompletionFailure::Overloaded
         | run::CompletionFailure::Unavailable
         | run::CompletionFailure::ContextTooLong
+        | run::CompletionFailure::Refused
+        | run::CompletionFailure::Unsupported
         | run::CompletionFailure::Invalid
         | run::CompletionFailure::Unauthorized
         | run::CompletionFailure::RateLimited { .. }
@@ -318,6 +327,8 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
         | run::CompletionFailure::Unavailable
         | run::CompletionFailure::TimedOut { .. }
         | run::CompletionFailure::ContextTooLong
+        | run::CompletionFailure::Refused
+        | run::CompletionFailure::Unsupported
         | run::CompletionFailure::Invalid
         | run::CompletionFailure::Unauthorized
         | run::CompletionFailure::RateLimited { .. }
@@ -438,6 +449,7 @@ mod tests {
                         evidence: run::CompletionEvidence::Response { status: None },
                         model: 0,
                         attempts: 1,
+                        report: run::Report::none(),
                     }),
                     spent,
                     turns: 2,
@@ -486,6 +498,7 @@ mod tests {
                 evidence: run::CompletionEvidence::Response { status: None },
                 model: 0,
                 attempts: 1,
+                report: run::Report::none(),
             }),
             meta().now,
         );
@@ -508,25 +521,24 @@ mod tests {
     }
 
     #[test]
-    fn an_exhausted_accounts_wait_is_measured_at_the_answer() {
-        for (retry_at, expected) in [
-            (Some(skein_lib::Time::from_nanos(100_000_000)), Some(80)),
-            (Some(skein_lib::Time::ZERO), Some(0)),
-            (None, None),
+    fn a_limited_accounts_reset_is_measured_at_the_answer() {
+        for (reset_at, answer_at, expected) in [
+            (Some(skein_lib::Time::from_nanos(100_000_000)), 20_000_000, Some(80)),
+            (Some(skein_lib::Time::ZERO), 20_000_000, Some(0)),
+            (None, 20_000_000, None),
+            (Some(skein_lib::Time::from_nanos(100_000_000)), 60_000_000, Some(40)),
         ] {
             let mut meta = meta();
-            meta.now = skein_lib::Time::from_nanos(20_000_000);
+            meta.now = skein_lib::Time::from_nanos(answer_at);
             meta.elapsed = Duration::from_secs(999);
             let answer = run::Answer::Failed {
-                failure: run::Failure::Model(run::Fault::Exhausted { account: 23, retry_at }),
+                failure: run::Failure::Model(run::Fault::Limited { account: 23, reset_at }),
                 spent: run::Spend::ZERO,
                 turns: 0,
             };
             let record = answer_record(meta, &answer, Capture::None);
             let failure = record.failure.expect("failed answer");
-            assert_eq!(failure.account, Some(23));
-            assert_eq!(failure.retry_after_ms, expected);
-            assert!(failure.completion.is_none());
+            assert_eq!((failure.account, failure.retry_after_ms, failure.completion), (Some(23), expected, None));
         }
     }
 

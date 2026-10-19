@@ -96,7 +96,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let tickets = run_limits
         .run_bytes
         .checked_add(Map::<u64, Ask>::worst_case(peer::asks(session_limits))?)?
-        .checked_add(limits.decoded_call_bytes)?;
+        .checked_add(limits.decoded_call_bytes)?
+        .checked_add(crate::llm::Report::BYTES)?;
     let held = Slab::<Peer>::worst_case(peers)?.checked_add(u64::from(peers).checked_mul(tickets)?)?;
     let found = Map::<Token, Id<Peer>>::worst_case(peers)?.checked_mul(2)?;
     let flights = Map::<Token, Flight>::worst_case(flights(limits)?)?

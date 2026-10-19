@@ -200,7 +200,13 @@ pub(crate) fn spend(turns: u32, usage: llm::Usage) -> Spend {
 /// How the session ended, as the run hears it: a failed call is its
 /// provider's fault, but for a conversation too long for the model, which is
 /// a full context, as is a transcript past the session's limits.
-pub(crate) fn end(end: session::End, model: u32, account: u32, retry_at: Option<skein_lib::Time>) -> run::End {
+pub(crate) fn end(
+    end: session::End,
+    model: u32,
+    account: u32,
+    retry_at: Option<skein_lib::Time>,
+    report: llm::Report,
+) -> run::End {
     match end {
         session::End::TranscriptRefused { reason } => {
             run::End::TranscriptRefused { reason: transcript_refusal(reason) }
@@ -211,16 +217,20 @@ pub(crate) fn end(end: session::End, model: u32, account: u32, retry_at: Option<
         session::End::Invalid => run::End::Invalid,
         session::End::Closed => run::End::Closed,
         session::End::Failed { failure: llm::Failure::Exhausted { .. }, .. } => {
-            run::End::Fault(run::Fault::Exhausted { account, retry_at })
+            run::End::Fault(run::Fault::Limited { account, reset_at: retry_at })
+        }
+        session::End::Failed { failure: llm::Failure::Refused, .. } => {
+            run::End::Fault(run::Fault::Refused { account, code: report.code })
         }
         session::End::Failed { failure, evidence, attempts } => run::End::Fault(run::Fault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
             model,
             attempts,
+            report: run::Report { code: report.code, request: report.request, field: report.field },
         }),
         session::End::NoSummary { fault } => run::End::Fault(match fault {
-            session::NoSummary::Refused => run::Fault::Refused,
+            session::NoSummary::Refused => run::Fault::Declined,
             session::NoSummary::Truncated => run::Fault::Truncated,
             session::NoSummary::Malformed => run::Fault::Malformed,
         }),
@@ -288,6 +298,8 @@ fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
         llm::Failure::TimedOut { phase } => run::CompletionFailure::TimedOut { phase: completion_phase(phase) },
         llm::Failure::ContextTooLong => run::CompletionFailure::ContextTooLong,
         llm::Failure::Invalid => run::CompletionFailure::Invalid,
+        llm::Failure::Refused => run::CompletionFailure::Refused,
+        llm::Failure::Unsupported => run::CompletionFailure::Unsupported,
         llm::Failure::Unauthorized => run::CompletionFailure::Unauthorized,
         llm::Failure::RateLimited { retry_after } => run::CompletionFailure::RateLimited { retry_after },
         llm::Failure::Exhausted { retry_after } => run::CompletionFailure::Exhausted { retry_after },

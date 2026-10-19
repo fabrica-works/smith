@@ -70,7 +70,7 @@ pub enum FactKind {
         run: Token,
         conversation: Token,
         /// Terminal classification after everything started beneath this entity has settled.
-        end: End,
+        end: EndKind,
     },
     /// A conversation made the call `call` of the run.
     Called {
@@ -207,6 +207,81 @@ pub enum Return {
     Refused,
 }
 
+/// A conversation terminal's content-free kind (domain/run.md, section 11).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum EndKind {
+    /// Price arithmetic failed.
+    PriceOverflow,
+    /// Usage arithmetic failed.
+    UsageOverflow,
+    /// A receiving bound fired.
+    Receiving(crate::ReceivingLimit),
+    /// The supplied transcript was refused.
+    TranscriptRefused { reason: crate::TranscriptRefusal },
+    /// The opener closed the conversation.
+    Closed,
+    /// The conversation had no room.
+    Busy,
+    /// The opening did not fit.
+    Invalid,
+    /// The model failed; its diagnostic belongs to the answer.
+    Fault,
+    /// The conversation used its budget.
+    Budget(crate::Exhausted),
+}
+
+impl End {
+    /// Classifies the terminal without copying diagnostic content into a fact.
+    #[must_use]
+    pub const fn kind(&self) -> EndKind {
+        match self {
+            Self::PriceOverflow => EndKind::PriceOverflow,
+            Self::UsageOverflow => EndKind::UsageOverflow,
+            Self::Receiving(which) => EndKind::Receiving(*which),
+            Self::TranscriptRefused { reason } => EndKind::TranscriptRefused { reason: *reason },
+            Self::Closed => EndKind::Closed,
+            Self::Busy => EndKind::Busy,
+            Self::Invalid => EndKind::Invalid,
+            Self::Fault(_) => EndKind::Fault,
+            Self::Budget(which) => EndKind::Budget(*which),
+        }
+    }
+}
+
+/// A failed answer's content-free kind (domain/run.md, section 11).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum FailureKind {
+    /// The transcript could not be resumed.
+    Transcript(crate::TranscriptRefusal),
+    /// The model failed; its report stays with the answer.
+    Model,
+    /// The run used its budget.
+    Budget { exhausted: crate::Exhausted, used: Option<u64>, bound: Option<u64> },
+    /// The model broke the charter's policy.
+    Policy(crate::Policy),
+    /// The host cancelled the run.
+    Cancelled,
+    /// The delivery context changed.
+    Stale,
+}
+
+impl Failure {
+    /// Classifies the failure without copying its report into a fact.
+    #[must_use]
+    pub const fn kind(&self) -> FailureKind {
+        match self {
+            Self::Transcript(why) => FailureKind::Transcript(*why),
+            Self::Model(_) => FailureKind::Model,
+            Self::Budget { exhausted, used, bound } => {
+                FailureKind::Budget { exhausted: *exhausted, used: *used, bound: *bound }
+            }
+            Self::Policy(why) => FailureKind::Policy(*why),
+            Self::Cancelled => FailureKind::Cancelled,
+            Self::Stale => FailureKind::Stale,
+        }
+    }
+}
+
 /// How a run answered.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Answered {
@@ -217,7 +292,7 @@ pub enum Answered {
     /// The run accepted its declared result.
     Accepted,
     /// One failed terminal with bounded diagnostics.
-    Failed(Failure),
+    Failed(FailureKind),
 }
 
 /// The facts not yet drained and the run the step
@@ -377,7 +452,7 @@ fn answered(answer: &Answer) -> Answered {
         Answer::Parked { .. } => Answered::Parked,
         Answer::Refused(refusal) => Answered::Refused(*refusal),
         Answer::Accepted { .. } => Answered::Accepted,
-        Answer::Failed { failure, .. } => Answered::Failed(*failure),
+        Answer::Failed { failure, .. } => Answered::Failed(failure.kind()),
     }
 }
 

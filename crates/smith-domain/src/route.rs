@@ -86,8 +86,8 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         Event::Checked { owner, ran } => run::Event::Checked { owner, ran },
         Event::Aborted { owner } => run::Event::Aborted { owner },
         Event::Completed { owner, completion } => return completed(domain, env, owner, completion),
-        Event::Failed { owner, failure, evidence, detail } => {
-            return failed(domain, env, owner, failure, evidence, detail);
+        Event::Failed { owner, failure, evidence, detail, report } => {
+            return failed(domain, env, owner, failure, evidence, detail, report);
         }
         Event::Cancelled { owner } => {
             crate::operation::completion_done(domain, owner);
@@ -118,10 +118,13 @@ fn failed(
     failure: crate::llm::Failure,
     evidence: crate::llm::Evidence,
     detail: Box<[u8]>,
+    report: crate::llm::Report,
 ) {
     let grant = crate::operation::completion_done(domain, owner).grant;
     let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
-    let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
+    let peer = domain.peers.get_mut(id).expect("a peer lives as its session");
+    let conversation = peer.conversation;
+    peer.report = report;
     assert!(run::settle_reservation(&mut domain.run, conversation, owner, 0), "failed call held its reservation");
     match failure {
         crate::llm::Failure::Unauthorized => {
@@ -134,8 +137,10 @@ fn failed(
         }
         crate::llm::Failure::Exhausted { retry_after } => {
             let peer = domain.peers.get_mut(id).expect("failed completion retains its peer");
-            peer.retry_at =
-                if retry_after == Duration::ZERO { None } else { Some(env.now.saturating_add(retry_after)) };
+            peer.retry_at = None;
+            if let Some(reset) = retry_after {
+                peer.retry_at = Some(env.now.saturating_add(reset));
+            }
             domain.notices.push(Request::Exhausted { account: grant.account, retry_after });
         }
         crate::llm::Failure::Overloaded
@@ -144,6 +149,8 @@ fn failed(
         | crate::llm::Failure::TimedOut { .. }
         | crate::llm::Failure::ContextTooLong
         | crate::llm::Failure::Invalid
+        | crate::llm::Failure::Refused
+        | crate::llm::Failure::Unsupported
         | crate::llm::Failure::Limit { .. }
         | crate::llm::Failure::ApplicationLimit
         | crate::llm::Failure::Protocol
@@ -433,13 +440,14 @@ fn ended_session(
     let model = peer.model;
     let account = peer.account;
     let retry_at = peer.retry_at;
+    let report = peer.report.clone();
     if domain.peers.get(id).expect("session retains peer").is_main() {
         domain.pending.remove(&run);
     }
     free(domain, id);
     run::Event::Ended {
         conversation: opener,
-        end: translate::end(end, model, account, retry_at),
+        end: translate::end(end, model, account, retry_at, report),
         spend: translate::spend(turns, reported),
         detail,
     }

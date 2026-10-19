@@ -299,6 +299,7 @@ impl Driver {
                         failure: Failure::Overloaded,
                         evidence: smith_domain::llm::Evidence::Unknown,
                         detail: Box::default(),
+                        report: smith_domain::llm::Report::none(),
                     }
                 } else {
                     let completion = self.completion(limits, finish, agents, receiving);

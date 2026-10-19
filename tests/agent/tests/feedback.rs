@@ -129,7 +129,7 @@ fn child_scalar_receiving_and_unknown_prefix_ends_remain_distinct_literal_feedba
             "{expected}\n\nChild usage: used 0 turns and 0 seconds; stopped for budget: {budget}; ordinary left 0 turns and 0 seconds."
         );
         let received = feedback(
-            run::Returned::Unanswered { end, used: USED, left: LEFT },
+            run::Returned::Unanswered { end: end.clone(), used: USED, left: LEFT },
             u64::try_from(expected.len()).expect("bounded bytes"),
         )
         .expect("exact complete cap");

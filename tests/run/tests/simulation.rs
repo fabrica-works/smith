@@ -345,7 +345,7 @@ fn failure(answer: &Answer) -> Failure {
         Answer::Failed { failure: Failure::Budget { exhausted, .. }, .. } => {
             Failure::Budget { exhausted: *exhausted, used: None, bound: None }
         }
-        Answer::Failed { failure, .. } => *failure,
+        Answer::Failed { failure, .. } => failure.clone(),
         Answer::Refused(refusal) => panic!("the run was refused: {refusal:?}"),
         Answer::Parked { .. } => panic!("this source partner never requests waiting"),
         Answer::Accepted { outcome, .. } => panic!("the run finished with {outcome:?}"),
@@ -380,6 +380,7 @@ fn an_llm_that_fails_fails_its_run_with_the_fault() {
                     evidence: smith_domain_run::CompletionEvidence::Unsent,
                     model: 0,
                     attempts: 0,
+                    report: smith_domain::run::Report::none(),
                 })
             ]
             .contains(&failure(answer)),
@@ -394,7 +395,7 @@ fn an_llm_whose_last_stop_shows_a_fault_fails_the_run_with_it() {
     let calm = Settings::calm(3);
     let script = Script { yields: 1000, odd_stops: 1000, ..calm.partner };
     let world = settled(&Settings { run: Limits { nudges: 0, ..calm.run }, partner: script, ..calm });
-    let faults = [Fault::Truncated, Fault::Refused, Fault::Malformed].map(Failure::Model);
+    let faults = [Fault::Truncated, Fault::Declined, Fault::Malformed].map(Failure::Model);
     for answer in answers(&world) {
         assert!(faults.contains(&failure(answer)), "{answer:?}");
     }
@@ -875,7 +876,7 @@ fn a_child_that_reaches_its_final_turn_answers_for_its_budget() {
         kind: run::facts::FactKind::Ended {
             run: opened.0,
             conversation: opened.1,
-            end: run::End::Budget(Exhausted::Turns),
+            end: run::facts::EndKind::Budget(Exhausted::Turns),
         },
     });
     assert!(

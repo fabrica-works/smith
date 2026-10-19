@@ -474,7 +474,7 @@ impl Sinks {
     }
 
     /// Keep an actual root terminal until the gathered session facts have drained.
-    pub fn conversation_ended(&mut self, at: Time, owner: Token, end: smith_domain::run::End) {
+    pub fn conversation_ended(&mut self, at: Time, owner: Token, end: smith_domain::run::facts::EndKind) {
         self.responses.root_ended(at, owner, end);
     }
 

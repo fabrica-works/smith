@@ -66,7 +66,7 @@ struct Conversation {
     spent: u64,
     reported: crate::observations::Reported,
     admitted: bool,
-    root_end: Option<(Time, run::End)>,
+    root_end: Option<(Time, run::facts::EndKind)>,
     recorded: Option<u32>,
     main: bool,
     attempts: u64,
@@ -459,7 +459,7 @@ impl Book {
         self.reported.usage()
     }
 
-    pub(crate) fn root_ended(&mut self, at: Time, owner: Token, end: run::End) {
+    pub(crate) fn root_ended(&mut self, at: Time, owner: Token, end: run::facts::EndKind) {
         // SessionEnded can have already closed a child in a previous drain.
         if let Some(conversation) = self.conversations.get_mut(&owner) {
             conversation.root_end = Some((at, end));
@@ -480,14 +480,14 @@ impl Book {
         let conversation = self.conversations.remove(&owner).expect("selected above");
         let (at, end) = conversation.root_end.expect("selected above");
         let end = match end {
-            run::End::Busy | run::End::Invalid => ConversationEnd::Refused,
-            run::End::TranscriptRefused { .. } => ConversationEnd::Transcript,
-            run::End::PriceOverflow
-            | run::End::UsageOverflow
-            | run::End::Receiving(_)
-            | run::End::Closed
-            | run::End::Fault(_)
-            | run::End::Budget(_) => {
+            run::facts::EndKind::Busy | run::facts::EndKind::Invalid => ConversationEnd::Refused,
+            run::facts::EndKind::TranscriptRefused { .. } => ConversationEnd::Transcript,
+            run::facts::EndKind::PriceOverflow
+            | run::facts::EndKind::UsageOverflow
+            | run::facts::EndKind::Receiving(_)
+            | run::facts::EndKind::Closed
+            | run::facts::EndKind::Fault
+            | run::facts::EndKind::Budget(_) => {
                 unreachable!("other conversation ends follow a session admission or its Ended fact")
             }
         };
@@ -906,14 +906,20 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         llm::Failure::Unavailable => (smith_events::FailureClass::Unavailable, None),
         llm::Failure::TimedOut { .. } => (smith_events::FailureClass::TimedOut, None),
         llm::Failure::ContextTooLong => (smith_events::FailureClass::ContextTooLong, None),
-        llm::Failure::Invalid => (smith_events::FailureClass::Invalid, None),
+        // smith 05.1 writes these classes with events version 4.
+        llm::Failure::Refused => (smith_events::FailureClass::Unknown(Box::from(b"refused".as_slice())), None),
+        llm::Failure::Unsupported | llm::Failure::Invalid => (smith_events::FailureClass::Invalid, None),
         llm::Failure::Unauthorized => (smith_events::FailureClass::Unauthorized, None),
         llm::Failure::RateLimited { retry_after } => {
             (smith_events::FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
         }
-        llm::Failure::Exhausted { retry_after } => {
-            (smith_events::FailureClass::Exhausted, Some(retry_after.as_nanos() / 1_000_000))
-        }
+        llm::Failure::Exhausted { retry_after } => (
+            smith_events::FailureClass::Exhausted,
+            match retry_after {
+                Some(reset) => Some(reset.as_nanos() / 1_000_000),
+                None => None,
+            },
+        ),
     };
     let status = match evidence {
         llm::Evidence::Unsent | llm::Evidence::Unknown => None,
@@ -942,6 +948,8 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::Overloaded
         | llm::Failure::Unavailable
         | llm::Failure::ContextTooLong
+        | llm::Failure::Refused
+        | llm::Failure::Unsupported
         | llm::Failure::Invalid
         | llm::Failure::Unauthorized
         | llm::Failure::RateLimited { .. }
@@ -958,6 +966,8 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::Unavailable
         | llm::Failure::TimedOut { .. }
         | llm::Failure::ContextTooLong
+        | llm::Failure::Refused
+        | llm::Failure::Unsupported
         | llm::Failure::Invalid
         | llm::Failure::Unauthorized
         | llm::Failure::RateLimited { .. }
@@ -1438,7 +1448,7 @@ pub(crate) mod tests {
         let mut book = Book::new(1);
         let owner = Token::new(11);
         book.opened(at(1), Token::new(11), &opened(11, 0));
-        book.root_ended(at(5), owner, run::End::Invalid);
+        book.root_ended(at(5), owner, run::facts::EndKind::Invalid);
         let Event::ConversationClosed(refused) = book.facts_drained(Time::ZERO).unwrap().event else {
             panic!("refusal closes opening");
         };
@@ -1464,7 +1474,7 @@ pub(crate) mod tests {
         );
         // The same capacity can now admit another refused opening.
         book.opened(at(6), Token::new(12), &opened(12, 1));
-        book.root_ended(at(7), Token::new(12), run::End::Busy);
+        book.root_ended(at(7), Token::new(12), run::facts::EndKind::Busy);
         assert!(book.facts_drained(Time::ZERO).is_some());
     }
     #[test]

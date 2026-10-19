@@ -241,6 +241,7 @@ fn a_model_failure_keeps_transport_evidence_and_cooldown() {
             evidence: smith_domain::run::CompletionEvidence::Response { status: None },
             model: 0,
             attempts: 1,
+            report: smith_domain::run::Report::none(),
         }),
         spent: smith_domain::run::Spend::ZERO,
         turns: 2,
@@ -280,6 +281,7 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
             evidence: smith_domain::run::CompletionEvidence::Response { status: None },
             model: 0,
             attempts: 1,
+            report: smith_domain::run::Report::none(),
         }),
         spent: smith_domain::run::Spend::ZERO,
         turns: 0,
@@ -297,7 +299,7 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
                         failure: smith_host_domain::channel::CompletionFailure::RateLimited { retry_after },
                         evidence: smith_host_domain::channel::CompletionEvidence::Response { status: None },
                         model: 0,
-                        attempts: 1
+                        attempts: 1,
                     },
                 ),
             },
@@ -1254,3 +1256,49 @@ fn a_host_resumes_from_its_last_window_turn_alone() {
 
 #[path = "stories/limits.rs"]
 mod limits;
+
+fn account_fault_record(fault: smith_domain::run::Fault) -> smith_channel::Answer {
+    let answer = smith_domain::run::Answer::Failed {
+        failure: smith_domain::run::Failure::Model(fault),
+        spent: smith_domain::run::Spend::ZERO,
+        turns: 0,
+    };
+    smith_protocol_channel::answer_record(
+        skein_lib::Time::from_nanos(20_000_000),
+        answer,
+        None,
+        &CEILINGS,
+        &smith_charter::CEILINGS,
+    )
+    .expect("bounded failure")
+}
+
+#[test]
+fn a_limited_account_is_written_with_its_reset_at_the_answer() {
+    let now = skein_lib::Time::from_nanos(20_000_000);
+    for (reset_at, expected) in [
+        (Some(skein_lib::Time::from_nanos(100_000_000)), Some(skein_lib::Duration::from_millis(80))),
+        (Some(now), Some(skein_lib::Duration::ZERO)),
+        (None, None),
+    ] {
+        let record = account_fault_record(smith_domain::run::Fault::Limited { account: 7, reset_at });
+        let smith_channel::RunResult::Failed(failed) = record.result() else { panic!("failed answer") };
+        let smith_channel::RunFailure::Model(model) = failed.reason() else { panic!("model failure") };
+        let smith_channel::ModelFault::Limited(limited) = model.value() else { panic!("limited account") };
+        let received = Some((limited.account(), *limited.reset()));
+        assert_eq!(received, Some((7, expected)), "{reset_at:?}");
+    }
+}
+
+#[test]
+fn a_refused_account_is_written_with_its_code() {
+    for (code, expected) in [(b"not-eligible".as_slice(), b"not-eligible".as_slice()), (b"".as_slice(), b"".as_slice())]
+    {
+        let record = account_fault_record(smith_domain::run::Fault::Refused { account: 7, code: code.into() });
+        let smith_channel::RunResult::Failed(failed) = record.result() else { panic!("failed answer") };
+        let smith_channel::RunFailure::Model(model) = failed.reason() else { panic!("model failure") };
+        let smith_channel::ModelFault::Refused(refused) = model.value() else { panic!("refused account") };
+        let received = Some((refused.account(), refused.code()));
+        assert_eq!(received, Some((7, expected)), "code length {}", code.len());
+    }
+}

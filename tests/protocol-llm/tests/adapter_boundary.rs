@@ -239,14 +239,15 @@ fn failed_owner_class_evidence_and_detail_survive_only_the_matching_context() {
     for configuration in &wire::configurations() {
         for wrong_owner in [false, true] {
             let (context, mut peer, terminal) = failed(configuration);
-            let client::Event::Failed { owner, failure, evidence, report: _, detail } = terminal else {
+            let client::Event::Failed { owner, failure, evidence, report, detail } = terminal else {
                 panic!("actual byte-peer failure established above");
             };
-            let returned = adapter::failed(context, if wrong_owner { OTHER } else { owner }, failure, evidence, detail);
+            let returned =
+                adapter::failed(context, if wrong_owner { OTHER } else { owner }, failure, evidence, detail, report);
             if wrong_owner {
                 assert!(matches!(returned, Err(adapter::Error::Invalid)));
             } else {
-                let Ok(Event::Failed { owner, failure, evidence, detail }) = returned else {
+                let Ok(Event::Failed { owner, failure, evidence, detail, .. }) = returned else {
                     panic!("failure translates once");
                 };
                 assert_eq!(owner, OWNER);

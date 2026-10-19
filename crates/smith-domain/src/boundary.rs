@@ -184,6 +184,7 @@ pub enum Event {
     Failed {
         owner: Token,
         failure: Failure,
+        report: crate::llm::Report,
 
         /// Exact content-free transport evidence carried by the terminal.
         evidence: crate::llm::Evidence,
@@ -366,8 +367,8 @@ pub enum Request {
     Exhausted {
         /// Configured credential account, compared as an opaque numeric name.
         account: u32,
-        /// Optional provider cooldown, retained in the representation of this boundary.
-        retry_after: Duration,
+        /// The reset, absent when the provider did not say.
+        retry_after: Option<Duration>,
     },
     /// Abandon the `Complete` in flight for `owner`. Its terminal event still
     /// comes: `Cancelled`, or whichever outcome won the race.

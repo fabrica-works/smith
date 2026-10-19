@@ -486,6 +486,25 @@ pub enum Phase {
     Whole,
 }
 
+/// Bounded provider evidence, kept outside history and content-free facts (domain/session.md, section 4).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Report {
+    pub code: Box<[u8]>,
+    pub request: Box<[u8]>,
+    pub field: Box<[u8]>,
+}
+
+impl Report {
+    /// Three provider fields, each at the vocabulary's 128-byte bound (protocol/limits.md, 2.4).
+    pub const BYTES: u64 = 3 * 128;
+
+    /// No provider evidence was supplied.
+    #[must_use]
+    pub fn none() -> Self {
+        Self { code: Box::default(), request: Box::default(), field: Box::default() }
+    }
+}
+
 /// Why a call produced no message, as the protocol layer classifies the
 /// provider's answer, or the lack of one.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -524,9 +543,13 @@ pub enum Failure {
     Invalid,
     /// The provider refused our credentials (HTTP 401, 403).
     Unauthorized,
-    /// The account has spent its allowance; the engine waits for its reset.
+    /// The provider refused the account; this call is never retried.
+    Refused,
+    /// The provider will not take a request field; this call is never retried.
+    Unsupported,
+    /// The account has spent its allowance; this call is never retried.
     Exhausted {
         /// Optional provider cooldown, retained in the representation of this boundary.
-        retry_after: Duration,
+        retry_after: Option<Duration>,
     },
 }

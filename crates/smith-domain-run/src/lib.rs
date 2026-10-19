@@ -66,8 +66,8 @@ mod workspace;
 
 pub use boundary::{
     Answer, Ask, AskRefusal, Cap, CompletionEvidence, CompletionFailure, End, Event, Exit, Failure, Fault, FinalTurn,
-    Invalid, Limit, Message, MessageRefusal, Opening, Phase, Place, Policy, Ran, Read, Refusal, Request, Returned,
-    Stop, TranscriptRefusal, Window,
+    Invalid, Limit, Message, MessageRefusal, Opening, Phase, Place, Policy, Ran, Read, Refusal, Report, Request,
+    Returned, Stop, TranscriptRefusal, Window,
 };
 pub use budget::{
     Budget, BudgetRefusal, Ceiling, CompletionPermit, Exhausted, Granted, Overflow, Part, Prices, Rate, ReceivingLimit,

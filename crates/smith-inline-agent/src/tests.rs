@@ -555,11 +555,11 @@ fn a_dropped_slot_keeps_a_command_right_until_its_terminal() {
 
 #[test]
 fn the_inline_answer_measures_the_exhausted_accounts_wait() {
-    for (retry_at, expected) in
+    for (reset_at, expected) in
         [(Some(Time::from_nanos(100_000_000)), Some(80)), (Some(Time::ZERO), Some(0)), (None, None)]
     {
         let answer = run::Answer::Failed {
-            failure: run::Failure::Model(run::Fault::Exhausted { account: 23, retry_at }),
+            failure: run::Failure::Model(run::Fault::Limited { account: 23, reset_at }),
             spent: run::Spend::ZERO,
             turns: 0,
         };

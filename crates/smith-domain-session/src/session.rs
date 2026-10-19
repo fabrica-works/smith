@@ -1833,6 +1833,8 @@ fn call_failed(
         | Failure::Unavailable
         | Failure::TimedOut { .. }
         | Failure::ContextTooLong
+        | Failure::Refused
+        | Failure::Unsupported
         | Failure::Invalid
         | Failure::Unauthorized
         | Failure::Exhausted { .. } => failure,
@@ -2366,6 +2368,8 @@ fn retry_decision(failure: Failure, attempt: u32, now: Time, expiry: Time, limit
         | Failure::Unauthorized
         | Failure::RateLimited { .. }
         | Failure::ContextTooLong
+        | Failure::Refused
+        | Failure::Unsupported
         | Failure::Invalid
         | Failure::Exhausted { .. }
         | Failure::Limit { .. }
@@ -2386,6 +2390,8 @@ fn backoff(failure: Failure, attempt: u32, limits: &Limits, rng: &mut Rng) -> Op
         Failure::Overloaded | Failure::Unavailable | Failure::TimedOut { .. } | Failure::Unauthorized => Duration::ZERO,
         Failure::RateLimited { retry_after } => retry_after,
         Failure::ContextTooLong
+        | Failure::Refused
+        | Failure::Unsupported
         | Failure::Invalid
         | Failure::Exhausted { .. }
         | Failure::Limit { .. }

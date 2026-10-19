@@ -551,13 +551,12 @@ impl Component {
                         None => {}
                     }
                 }
-                // Transitional until smith 02.1 forwards the bounded provider report.
-                connection::Event::Failed { call, failure, evidence, report: _, detail, measures } => {
+                connection::Event::Failed { call, failure, evidence, report, detail, measures } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => {
                             self.measures.push(crate::Measure::Terminal { owner: call, measures });
-                            match crate::failed(active.context, call, failure, evidence, detail) {
+                            match crate::failed(active.context, call, failure, evidence, detail, report) {
                                 Ok(event) => Self::domain_event(event, to_domain),
                                 Err(error) => {
                                     Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
@@ -672,8 +671,8 @@ impl Component {
     fn domain_event(event: DomainEvent, to_domain: &mut Queue<ToDomain>) {
         match event {
             DomainEvent::Completed { owner, completion } => to_domain.push(ToDomain::Completed { owner, completion }),
-            DomainEvent::Failed { owner, failure, evidence, detail } => {
-                to_domain.push(ToDomain::Failed { owner, failure, evidence, detail });
+            DomainEvent::Failed { owner, failure, evidence, detail, report } => {
+                to_domain.push(ToDomain::Failed { owner, failure, evidence, detail, report });
             }
             DomainEvent::Cancelled { owner } => to_domain.push(ToDomain::Cancelled { owner }),
             DomainEvent::HostReturned { .. }
@@ -702,6 +701,7 @@ impl Component {
             owner,
             failure,
             evidence: llm::Evidence::Unsent,
+            report: llm::Report::none(),
             detail: bytes::copy_of(detail.get(..length).expect("clipped fixed local diagnostic")),
         });
     }

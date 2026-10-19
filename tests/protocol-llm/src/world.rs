@@ -1010,6 +1010,7 @@ impl World {
                         failure: translate::failure(error.error),
                         evidence: smith_domain::llm::Evidence::Unknown,
                         detail: Box::default(),
+                        report: smith_domain::llm::Report::none(),
                     },
                 };
                 self.send(Family::Completion, owner, event);
@@ -1967,7 +1968,7 @@ fn copy_answer(answer: &run::Answer) -> run::Answer {
         run::Answer::Refused(refusal) => run::Answer::Refused(*refusal),
         run::Answer::Parked { spent, turns } => run::Answer::Parked { spent: *spent, turns: *turns },
         run::Answer::Failed { failure, spent, turns } => {
-            run::Answer::Failed { failure: *failure, spent: *spent, turns: *turns }
+            run::Answer::Failed { failure: failure.clone(), spent: *spent, turns: *turns }
         }
         run::Answer::Accepted { outcome, spent, turns } => {
             let outcome = match outcome {

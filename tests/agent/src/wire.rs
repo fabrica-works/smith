@@ -409,11 +409,11 @@ impl Wire {
                             .expect("actual admitted Client completion and explicit application codec fit receiving"),
                     );
                 }
-                client::Event::Failed { owner, failure, evidence, report: _, detail } => {
+                client::Event::Failed { owner, failure, evidence, report, detail } => {
                     self.observed.push(Observed::Failed(owner));
                     let context = self.context.take().expect("one actual Client terminal owns the context");
                     returned.push(
-                        adapter::failed(context, owner, failure, evidence, detail).expect(
+                        adapter::failed(context, owner, failure, evidence, detail, report).expect(
                             "actual admitted failure retains owner, class, evidence and full bounded diagnostic",
                         ),
                     );

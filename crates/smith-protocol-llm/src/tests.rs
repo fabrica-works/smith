@@ -860,11 +860,11 @@ fn skein_failures_map_to_the_sessions_classes() {
     let retry = Duration::from_secs(7);
     for (source, expected) in [
         (Source::Unauthorized, Failure::Unauthorized),
-        (Source::Exhausted { retry_after: Some(retry) }, Failure::Exhausted { retry_after: retry }),
-        (Source::Exhausted { retry_after: None }, Failure::Exhausted { retry_after: Duration::ZERO }),
+        (Source::Exhausted { retry_after: Some(retry) }, Failure::Exhausted { retry_after: Some(retry) }),
+        (Source::Exhausted { retry_after: None }, Failure::Exhausted { retry_after: None }),
         (Source::RateLimited { retry_after: retry }, Failure::RateLimited { retry_after: retry }),
-        (Source::Refused, Failure::Invalid),
-        (Source::Unsupported, Failure::Invalid),
+        (Source::Refused, Failure::Refused),
+        (Source::Unsupported, Failure::Unsupported),
         (Source::Overloaded, Failure::Overloaded),
         (Source::Unavailable, Failure::Unavailable),
         (Source::ContextTooLong, Failure::ContextTooLong),

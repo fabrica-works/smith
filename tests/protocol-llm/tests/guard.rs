@@ -57,7 +57,7 @@ fn refusal(peer: &Peer) -> &[u8] {
     let [ToDomain::Failed { failure, evidence, detail, .. }] = peer.terminals.as_slice() else {
         panic!("one unsent failure: {:?}", peer.terminals);
     };
-    assert_eq!(*failure, llm::Failure::ContextTooLong);
+    assert_eq!(failure.clone(), llm::Failure::ContextTooLong);
     assert_eq!(*evidence, llm::Evidence::Unsent);
     detail
 }

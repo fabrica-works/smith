@@ -20,6 +20,7 @@ pub fn failed(
     failure: shared::Failure,
     evidence: client::Evidence,
     detail: Box<[u8]>,
+    report: shared::Report,
 ) -> Result<Event, Error> {
     if owner != context.owner {
         return Err(Error::Invalid);
@@ -33,10 +34,16 @@ pub fn failed(
         client::Evidence::Unknown => llm::Evidence::Unknown,
         client::Evidence::Response { status } => llm::Evidence::Response { status: Some(status) },
     };
-    Ok(Event::Failed { owner, failure, evidence, detail })
+    Ok(Event::Failed {
+        owner,
+        failure,
+        evidence,
+        detail,
+        report: llm::Report { code: report.code, request: report.request, field: report.field },
+    })
 }
 
-/// The session's classes, including the mappings withdrawn by smith 02.1.
+/// Each shared failure keeps its session class (domain/session.md, section 4).
 pub(crate) fn class(failure: shared::Failure) -> llm::Failure {
     match failure {
         shared::Failure::Overloaded => llm::Failure::Overloaded,
@@ -52,12 +59,11 @@ pub(crate) fn class(failure: shared::Failure) -> llm::Failure {
             },
         },
         shared::Failure::ContextTooLong => llm::Failure::ContextTooLong,
-        // Transitional until smith 02.1 gives the account classes their own mapping.
-        shared::Failure::Refused | shared::Failure::Unsupported | shared::Failure::Invalid => llm::Failure::Invalid,
+        shared::Failure::Refused => llm::Failure::Refused,
+        shared::Failure::Unsupported => llm::Failure::Unsupported,
+        shared::Failure::Invalid => llm::Failure::Invalid,
         shared::Failure::Unauthorized => llm::Failure::Unauthorized,
-        shared::Failure::Exhausted { retry_after } => {
-            llm::Failure::Exhausted { retry_after: retry_after.unwrap_or(skein_lib::Duration::ZERO) }
-        }
+        shared::Failure::Exhausted { retry_after } => llm::Failure::Exhausted { retry_after },
         shared::Failure::Limit { which, bound } => llm::Failure::Limit { which: llm::Limit::Path(cap(which)), bound },
         shared::Failure::Protocol => llm::Failure::Protocol,
         shared::Failure::Cancelled => llm::Failure::Cancelled,
@@ -88,7 +94,7 @@ pub fn refusal(owner: Token, error: Error, max_failure_bytes: u32) -> Event {
     };
     let length = text.len().min(usize::try_from(max_failure_bytes).expect("u32 fits usize"));
     let detail = bytes::copy_of(text.get(..length).expect("clipped fixed local diagnostic"));
-    Event::Failed { owner, failure, evidence: llm::Evidence::Unsent, detail }
+    Event::Failed { owner, failure, evidence: llm::Evidence::Unsent, detail, report: llm::Report::none() }
 }
 
 pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, Error> {

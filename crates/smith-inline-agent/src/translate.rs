@@ -135,7 +135,7 @@ const fn refusal(value: run::Refusal) -> host::Refusal {
     }
 }
 
-const fn failure(value: run::Failure, now: skein_lib::Time) -> host::RunFailure {
+fn failure(value: run::Failure, now: skein_lib::Time) -> host::RunFailure {
     match value {
         run::Failure::Transcript(value) => host::RunFailure::Transcript(transcript_refusal(value)),
         run::Failure::Model(value) => host::RunFailure::Model(model_fault(value, now)),
@@ -150,23 +150,24 @@ const fn failure(value: run::Failure, now: skein_lib::Time) -> host::RunFailure 
     }
 }
 
-const fn model_fault(value: run::Fault, now: skein_lib::Time) -> host::ModelFault {
+fn model_fault(value: run::Fault, now: skein_lib::Time) -> host::ModelFault {
     match value {
-        run::Fault::Completion { failure, evidence, model, attempts } => host::ModelFault::Completion {
+        run::Fault::Completion { failure, evidence, model, attempts, report: _ } => host::ModelFault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
             model,
             attempts,
         },
-        run::Fault::Exhausted { account, retry_at } => host::ModelFault::Exhausted {
+        run::Fault::Limited { account, reset_at } => host::ModelFault::Exhausted {
             account,
-            retry_after_ms: match retry_at {
+            retry_after_ms: match reset_at {
                 Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
                 None => None,
             },
         },
+        // smith 02.3 gives account refusals their typed host fault.
+        run::Fault::Refused { .. } | run::Fault::Declined => host::ModelFault::Refused,
         run::Fault::Provider => host::ModelFault::Provider,
-        run::Fault::Refused => host::ModelFault::Refused,
         run::Fault::Truncated => host::ModelFault::Truncated,
         run::Fault::Malformed => host::ModelFault::Malformed,
     }
@@ -260,10 +261,18 @@ const fn completion_failure(value: run::CompletionFailure) -> host::CompletionFa
             host::CompletionFailure::TimedOut { phase: completion_phase(phase) }
         }
         run::CompletionFailure::ContextTooLong => host::CompletionFailure::ContextTooLong,
-        run::CompletionFailure::Invalid => host::CompletionFailure::Invalid,
+        // smith 02.3 gives both classes their own host vocabulary.
+        run::CompletionFailure::Refused | run::CompletionFailure::Unsupported | run::CompletionFailure::Invalid => {
+            host::CompletionFailure::Invalid
+        }
         run::CompletionFailure::Unauthorized => host::CompletionFailure::Unauthorized,
         run::CompletionFailure::RateLimited { retry_after } => host::CompletionFailure::RateLimited { retry_after },
-        run::CompletionFailure::Exhausted { retry_after } => host::CompletionFailure::Exhausted { retry_after },
+        run::CompletionFailure::Exhausted { retry_after } => host::CompletionFailure::Exhausted {
+            retry_after: match retry_after {
+                Some(reset) => reset,
+                None => skein_lib::Duration::ZERO,
+            },
+        },
     }
 }
 
@@ -467,8 +476,13 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                 account: grant.account,
                 generation: grant.generation,
             })),
+            // smith 02.2 carries the optional reset through the host notice.
             smith::Request::Exhausted { account, retry_after } => {
-                out.push(Output::Parent(parent::Request::Exhausted { client, account, retry_after }));
+                out.push(Output::Parent(parent::Request::Exhausted {
+                    client,
+                    account,
+                    retry_after: retry_after.unwrap_or(skein_lib::Duration::ZERO),
+                }));
             }
             smith::Request::Long { host_run, operation, until } => {
                 assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");

@@ -1283,8 +1283,8 @@ fn namespace_submit(submit: kernel::Submit, bit: u64) -> kernel::Submit {
 fn to_below(event: agent::Event) -> inline::Below {
     match event {
         agent::Event::Completed { owner, completion } => inline::Below::Completed { owner, completion },
-        agent::Event::Failed { owner, failure, evidence, detail } => {
-            inline::Below::Failed { owner, failure, evidence, detail }
+        agent::Event::Failed { owner, failure, evidence, detail, report } => {
+            inline::Below::Failed { owner, failure, evidence, detail, report }
         }
         agent::Event::Cancelled { owner } => inline::Below::Cancelled { owner },
         agent::Event::Done { owner, done } => inline::Below::Done { owner, done },

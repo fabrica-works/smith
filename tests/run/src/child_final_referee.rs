@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use skein_lib::Token;
 use skein_world::domain::{Expectations, Judge, Referee, Verdict};
 use smith_domain_run::{
-    End, Exhausted,
-    facts::{Fact, FactKind, Kind},
+    Exhausted,
+    facts::{EndKind, Fact, FactKind, Kind},
 };
 
 /// Effective child turn shares observed at their actual openings.
@@ -27,7 +27,7 @@ impl Expectations for Meeting {
             FactKind::Opened { conversation, kind: Kind::Child { granted, .. }, .. } => {
                 self.children.insert(conversation, granted.turns);
             }
-            FactKind::Ended { conversation, end: End::Budget(Exhausted::Turns), .. } => {
+            FactKind::Ended { conversation, end: EndKind::Budget(Exhausted::Turns), .. } => {
                 judge.check(
                     self.children.get(&conversation).is_none_or(|turns| *turns < 2),
                     "a child with at least two turns answers before its own turn share ends",

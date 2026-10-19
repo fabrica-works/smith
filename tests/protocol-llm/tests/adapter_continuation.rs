@@ -517,8 +517,8 @@ fn failure_evidence(
     evidence: llm::Evidence,
     detail: &[u8],
 ) -> bool {
-    matches!(event, Event::Failed { owner: actual, failure: actual_failure, evidence: actual_evidence, detail: actual_detail }
-        if *actual == owner && *actual_failure == failure && *actual_evidence == evidence && actual_detail.as_ref() == detail)
+    matches!(event, Event::Failed { owner: terminal_owner, failure: terminal_failure, evidence: terminal_evidence, detail: terminal_detail, ..}
+        if *terminal_owner == owner && *terminal_failure == failure && *terminal_evidence == evidence && terminal_detail.as_ref() == detail)
 }
 
 fn failure_corruptions(event: &mut Event, owner: Token, failure: llm::Failure, evidence: llm::Evidence, detail: &[u8]) {
@@ -560,18 +560,19 @@ fn observe_failure(
     detail: &[u8],
 ) {
     let client::Event::Failed {
-        owner: actual,
-        failure: actual_failure,
-        evidence: actual_evidence,
-        detail: actual_detail,
-        report: _,
+        owner: terminal_owner,
+        failure: terminal_failure,
+        evidence: terminal_evidence,
+        detail: terminal_detail,
+        report,
     } = take_terminal(peer)
     else {
-        panic!("actual failure entrance")
+        panic!("provider failure entrance")
     };
-    assert_eq!(actual, owner);
-    let mut event = adapter::failed(context, actual, actual_failure, actual_evidence, actual_detail)
-        .expect("actual failure consumes retained Context");
+    assert_eq!(terminal_owner, owner);
+    let mut event =
+        adapter::failed(context, terminal_owner, terminal_failure, terminal_evidence, terminal_detail, report)
+            .expect("provider failure consumes retained Context");
     failure_corruptions(&mut event, owner, failure, evidence, detail);
     if peer.machine.waiting() != client::Waiting::Nothing {
         assert_eq!(peer.machine.waiting(), client::Waiting::Closing);

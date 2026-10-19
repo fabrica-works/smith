@@ -173,7 +173,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.messages).checked_mul(u64::from(limits.message_bytes))?)?
         .checked_add(guides)?
         .checked_add(checks)?
-        .checked_add(limits.outcome_bytes.max(crate::Delivered::worst_case()))?;
+        .checked_add(limits.outcome_bytes.max(crate::Delivered::worst_case()).max(crate::Report::BYTES))?;
     let held = u64::from(limits.runs).checked_mul(run)?;
     // A call landing a change holds it; a sub-agent's call, its answer.
     let host = limits.run_bytes.checked_add(u64::from(limits.host_input_bytes))?;
@@ -186,7 +186,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(crate::prompt::SUMMARY.len().try_into().ok()?)?
         .checked_add(crate::prompt::PREAMBLE.len().try_into().ok()?)?
         .checked_add(crate::prompt::CHILD_FINAL.len().try_into().ok()?)?;
-    let call = limits.outcome_bytes.max(u64::from(limits.answer_bytes)).max(host);
+    let call = limits.outcome_bytes.max(u64::from(limits.answer_bytes)).max(host).max(crate::Report::BYTES);
     // The lease admits one writing child per run. Only that child's call
     // retains an opening while its parent's jobs settle; other calls keep
     // their ordinary payload. Replace one payload per run by the larger one.

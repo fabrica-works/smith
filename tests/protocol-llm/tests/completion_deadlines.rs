@@ -111,7 +111,7 @@ fn session_with_time(seconds: u64) -> World {
 }
 
 fn deliver_failure(peer: &mut Peer, world: &mut World) {
-    let ToDomain::Failed { owner, failure, evidence, detail } = peer.terminals.remove(0) else {
+    let ToDomain::Failed { owner, failure, evidence, detail, .. } = peer.terminals.remove(0) else {
         panic!("one native failed attempt")
     };
     assert_eq!(world.completing, Some(owner));

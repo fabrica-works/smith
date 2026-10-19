@@ -108,9 +108,9 @@ pub(crate) fn terminal(slot: &mut Slot, terminal: Below) -> Option<smith::Event>
             slot.completions.remove(&owner)?;
             Some(smith::Event::Completed { owner, completion })
         }
-        Below::Failed { owner, failure, evidence, detail } => {
+        Below::Failed { owner, failure, evidence, detail, report } => {
             slot.completions.remove(&owner)?;
-            Some(smith::Event::Failed { owner, failure, evidence, detail })
+            Some(smith::Event::Failed { owner, failure, evidence, detail, report })
         }
         Below::Cancelled { owner } => {
             slot.completions.remove(&owner)?;

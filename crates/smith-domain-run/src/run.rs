@@ -1270,7 +1270,7 @@ fn child_ready(run: &Run, out: &mut Queue<Request>) {
     }
 }
 
-fn terminal_failure(end: End) -> Option<Failure> {
+fn terminal_failure(end: &End) -> Option<Failure> {
     match end {
         End::PriceOverflow => {
             Some(Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Spend), used: None, bound: None })
@@ -1325,14 +1325,14 @@ pub(crate) fn ended(
         spend: conversation.spent.units,
     };
     facts.about(run_id.token());
-    facts.push(FactKind::Ended { run: run_id.token(), conversation: id.token(), end });
+    facts.push(FactKind::Ended { run: run_id.token(), conversation: id.token(), end: end.kind() });
     conversations.retire(id);
     let run = runs.get_mut(run_id).expect("a run lives until its conversations have ended");
     run.spent = run.spent.accumulate(unaccounted).expect("terminal usage was checked before it was reported");
     let changed = account_state(run, ready, run_id, facts.now());
     let snapshot = standing(run, facts.now());
-    let failure = terminal_failure(end);
-    if let (Some(failure), Some(_)) = (failure, asker) {
+    let failure = terminal_failure(&end);
+    if let (Some(failure), Some(_)) = (failure.clone(), asker) {
         let state = mem::replace(&mut run.state, State::Closed);
         run.state = hard_stop(state, conversations, failure, out);
     }
@@ -2272,7 +2272,7 @@ fn unfinished(stop: Stop, nudges: u32, rejected: u32) -> Failure {
         Stop::Budget => unreachable!("main has no session-owned final turn"),
         Stop::EndTurn => Failure::Policy(Policy::Unfinished { nudges, rejected }),
         Stop::MaxTokens => Failure::Model(Fault::Truncated),
-        Stop::Refusal => Failure::Model(Fault::Refused),
+        Stop::Refusal => Failure::Model(Fault::Declined),
         Stop::NoCalls => Failure::Model(Fault::Malformed),
     }
 }

@@ -686,7 +686,7 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
     match answer {
         run::Answer::Failed { failure, spent, turns } => {
             assert_eq!(
-                (*failure, *spent, *turns),
+                (failure.clone(), *spent, *turns),
                 (run::Failure::Transcript(run::TranscriptRefusal::TooLarge), run::Spend::ZERO, 0)
             );
         }
@@ -820,7 +820,8 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
             owner,
             failure: crate::llm::Failure::Unauthorized,
             evidence: crate::llm::Evidence::Unknown,
-            detail: Box::default()
+            detail: Box::default(),
+            report: crate::llm::Report::none(),
         }),
         &[Request::Rejected { grant: crate::GrantName { account: 0, generation: 0 } }]
     );
@@ -833,7 +834,8 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
             owner,
             failure: crate::llm::Failure::Unauthorized,
             evidence: crate::llm::Evidence::Unknown,
-            detail: Box::default()
+            detail: Box::default(),
+            report: crate::llm::Report::none(),
         }),
         &[Request::Rejected { grant: next.name }]
     );
@@ -844,7 +846,8 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
             owner,
             failure: crate::llm::Failure::Unauthorized,
             evidence: crate::llm::Evidence::Unknown,
-            detail: Box::default()
+            detail: Box::default(),
+            report: crate::llm::Report::none(),
         })
         .is_empty()
     );
@@ -878,20 +881,21 @@ fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
     let retry_after = Duration::from_secs(30);
     let emitted = h.step(Event::Failed {
         owner,
-        failure: crate::llm::Failure::Exhausted { retry_after },
+        failure: crate::llm::Failure::Exhausted { retry_after: Some(retry_after) },
         evidence: crate::llm::Evidence::Unknown,
         detail: Box::default(),
+        report: crate::llm::Report::none(),
     });
     let Some(Request::Exhausted { account: 0, retry_after: span }) = emitted.first() else {
         panic!("exhaustion notice")
     };
-    assert_eq!(*span, retry_after);
+    assert_eq!(*span, Some(retry_after));
     let mut failed = false;
     for request in &emitted {
         if let Request::Answer {
             answer:
                 run::Answer::Failed {
-                    failure: run::Failure::Model(run::Fault::Exhausted { account: 0, retry_at: Some(_) }),
+                    failure: run::Failure::Model(run::Fault::Limited { account: 0, reset_at: Some(_) }),
                     ..
                 },
             ..
@@ -1957,7 +1961,8 @@ fn scalar_reservation_denies_before_any_provider_call_or_credential_lookup() {
             failure: run::CompletionFailure::Limit { which: run::Limit::Window, bound: 8 },
             evidence: run::CompletionEvidence::Unsent,
             model: 0,
-            attempts: 0
+            attempts: 0,
+            report: run::Report::none(),
         })
     );
     assert_eq!((spent.units, spent.turns, *turns), (0, 0, 0));

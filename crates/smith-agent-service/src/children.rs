@@ -124,21 +124,21 @@ impl Book {
         }
     }
 
-    pub(crate) fn ended(&mut self, owner: Token, end: run::End, at: Time) {
+    pub(crate) fn ended(&mut self, owner: Token, end: run::facts::EndKind, at: Time) {
         if let Some(child) = self.children.get_mut(&owner) {
             assert!(!child.ended, "one actual settled root terminal");
             child.ended = true;
             child.time_ms = at.saturating_since(child.opened).as_nanos() / 1_000_000;
             child.stop = match end {
-                run::End::Closed => smith_events::ChildStop::Closed,
-                run::End::PriceOverflow
-                | run::End::UsageOverflow
-                | run::End::Receiving(_)
-                | run::End::TranscriptRefused { .. }
-                | run::End::Busy
-                | run::End::Invalid
-                | run::End::Fault(_)
-                | run::End::Budget(_) => smith_events::ChildStop::Failed,
+                run::facts::EndKind::Closed => smith_events::ChildStop::Closed,
+                run::facts::EndKind::PriceOverflow
+                | run::facts::EndKind::UsageOverflow
+                | run::facts::EndKind::Receiving(_)
+                | run::facts::EndKind::TranscriptRefused { .. }
+                | run::facts::EndKind::Busy
+                | run::facts::EndKind::Invalid
+                | run::facts::EndKind::Fault
+                | run::facts::EndKind::Budget(_) => smith_events::ChildStop::Failed,
             };
         }
     }

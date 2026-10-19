@@ -78,6 +78,7 @@ pub(crate) fn check(
         failure: llm::Failure::ContextTooLong,
         evidence: llm::Evidence::Unsent,
         detail: detail(guard, measured, max_failure_bytes),
+        report: llm::Report::none(),
     })
 }
 

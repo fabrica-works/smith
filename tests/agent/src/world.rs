@@ -377,6 +377,7 @@ pub struct World {
     writing_opened: BTreeSet<u32>,
     settings: Settings,
     failure: Option<(agent::llm::Failure, agent::llm::Evidence)>,
+    failure_report: agent::llm::Report,
     now: Time,
     rng: Rng,
     agent: agent::Domain,
@@ -503,6 +504,11 @@ impl World {
         let mut world = Self::new(settings);
         world.failure = Some((failure, evidence));
         world
+    }
+
+    /// Installs the bounded report accompanying scripted provider failures.
+    pub fn failure_report(&mut self, report: agent::llm::Report) {
+        self.failure_report = report;
     }
 
     /// Typed V2 entrance from saved turns, with no later answers supplied.
@@ -720,6 +726,7 @@ impl World {
             stimuli,
             terminals: 0,
             failure: None,
+            failure_report: agent::llm::Report::none(),
         }
     }
 
@@ -1144,7 +1151,13 @@ impl World {
                     Err(error) => {
                         let (failure, evidence) =
                             self.failure.unwrap_or((translate::failure(error.error), agent::llm::Evidence::Unknown));
-                        Event::Failed { owner, failure, evidence, detail: Box::default() }
+                        Event::Failed {
+                            owner,
+                            failure,
+                            evidence,
+                            detail: Box::default(),
+                            report: self.failure_report.clone(),
+                        }
                     }
                 };
                 self.send(Family::Completion, owner, event);
@@ -2150,7 +2163,7 @@ fn copy_answer(answer: &run::Answer) -> run::Answer {
         run::Answer::Refused(refusal) => run::Answer::Refused(*refusal),
         run::Answer::Parked { spent, turns } => run::Answer::Parked { spent: *spent, turns: *turns },
         run::Answer::Failed { failure, spent, turns } => {
-            run::Answer::Failed { failure: *failure, spent: *spent, turns: *turns }
+            run::Answer::Failed { failure: failure.clone(), spent: *spent, turns: *turns }
         }
         run::Answer::Accepted { outcome, spent, turns } => {
             let outcome = match outcome {

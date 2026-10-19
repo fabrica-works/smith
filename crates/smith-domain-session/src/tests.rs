@@ -1262,17 +1262,17 @@ fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
     );
     assert_eq!(h.domain.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(5))));
 
-    let (owner, _) = h.open(1);
-    let end = h.step(Event::Failed {
-        owner,
-        failure: Failure::Invalid,
-        evidence: crate::llm::Evidence::Unknown,
-        detail: Box::default(),
-    });
-    assert_eq!(
-        end,
-        Some(ended(End::Failed { failure: Failure::Invalid, evidence: crate::llm::Evidence::Unknown, attempts: 1 }, 0))
-    );
+    for failure in [Failure::Invalid, Failure::Refused, Failure::Unsupported] {
+        let mut h = Harness::new(&LIMITS);
+        let (owner, _) = h.open(1);
+        let terminal =
+            h.step(Event::Failed { owner, failure, evidence: crate::llm::Evidence::Unknown, detail: Box::default() });
+        assert_eq!(
+            terminal,
+            Some(ended(End::Failed { failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 }, 0)),
+            "{failure:?}"
+        );
+    }
 }
 
 #[test]
