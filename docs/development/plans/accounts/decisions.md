@@ -1379,6 +1379,11 @@ commits is this plan's.
 145. **jig's client race to later.md** (steer of 2026-10-19T21:14:02Z).
      jig-repin.s1 spent ruling 139's second budget without a cause: its commit 1b0fdc68 records 20 focused browser runs through `heavy`, all passed (`client-race-{1..20}.log`), and a first gate after the rebase that failed only the same wait for `Cancelled` (`logs/20261019T201905-140.log`); it landed under the README's "A known timing flake" as ruling 139 amended it. Ruling 139, outcome 3, leaves the race to `later.md`: its row now names the story, the symptom, where to look first, and when it is taken up, as jig's (development.md, section 5.7); the designer's next landing adds it to jig's `STATUS.md`. The README's flake rule for that story stands until the race's fix lands.
 
+146. **Landed tests short of the rules, to later.md** (steer of 2026-10-19T22:41:55Z).
+     The hourly check of 2026-10-19T22:27:32Z found tests and code that skein 10.2 (f715e00) and smith 05.2 (9bd292ba) landed short of the README's "A test helper is written once" and "A test's outcome is named, and its sizes derived" (rulings 110, 125, 134), in files no step left in this plan touches: skein-10.s1 changes only `read_locked`'s `None` arm and adds one test, and the repins change the repositories downstream. They are not rewritten in this run; `later.md` holds them, for the next plan that changes those crates. The steer of this check sends the sizes rule again to 10.s1's test and to every repin's test lines.
+
+     Checked at skein and smith origin/main: `crates/skein-oauth-accounts/src/openid_tests.rs:78 fn signed_in_names_the_records_subject()`, 31001/31002 written 6 times there; `tests/oauth-accounts/src/sign_in/owner.rs:154 if matches!(self.story, Story::OpenIdAgain | Story::IssuedClientId) {`; `component/accounts.rs:346 pub(super) fn endpoint`, `:387 fn given(uri: &[u8], registration: &oauth::Registration, origins: &List<crate::Origin>) -> bool`; `exchange.rs` 5 lines with `Method::Post`; smith `crates/smith-agent-service/src/tests/accounts.rs:16 … Request::Limited { account: 7, reset: Some(Duration::from_millis(73)) } …`.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
