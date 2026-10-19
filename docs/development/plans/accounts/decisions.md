@@ -851,6 +851,34 @@ commits is this plan's.
      the rules the same way, and listed in the commit body; copies in files
      no step touches stay as they landed.
 
+126. **skein 04's Shapes against main** (re-check of skein-04.1).
+     The re-check of skein-04.1, on what moved since its ready check (skein
+     b481ad9 to 8564196, temper efe462a to c896c4287), found
+     `skein/04-fake-credentials.md` short of the code and of fake-llm.md 3;
+     04.1 has since landed (skein fb4fc28). Checked by `git grep` on skein
+     origin/main fb4fc28 and temper 859e9f166, it now says:
+     - 04.2's `Presented` is what fake-llm.md 3 says in its own words: "an
+       accepted credential, by its scheme and its index; a credential that
+       matched none, by the scheme its field shows (a key in `x-api-key`,
+       else a bearer) and no index; or no credential field at all, as the
+       scheme none and no index". 04.4's reference test (an accepted key at
+       index 0 on the public route, `Some(Scheme::Key)`) stands; its
+       `a_credential_the_peer_does_not_hold_is_unauthorized` rows expect, on
+       the public route, `Bearer` with no index for both a key and a bearer.
+     - 04.2: the observation count is `run_configured`'s (`observations:
+       calls * 5,` in `tests/llm-connection/src/simulated.rs`, which
+       `run_with_shutdown` calls), not `run_with_shutdown`'s; `make_on`
+       derives the `documents::Provider` and the path from `endpoint`.
+     - Downstream of jig, its `tests/real-loop/src/llm.rs` builds a
+       `provider::Config` literal in `scripted` and calls `Peer::new` in
+       `peer` (04.1's entry change, for its repin), and takes
+       `smith_agent_process_world::fake::limits()` directly (`limits:
+       smith_agent_process_world::fake::limits(),`); its
+       `tests/one-process` takes it through `fake::configured`: both join
+       04.2's worlds counted against 42.
+     A further user of what 04.2 to 04.4 change is refreshed the same way and
+     listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

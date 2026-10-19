@@ -107,7 +107,9 @@ Shape: `start`, `up`, `down` and `resume` take `credentials:
   `tests/protocol-llm/tests/component_peer.rs` `run` and
   `tests/agent-process/src/fake.rs` `configured_bounds`, jig
   `tests/channel/src/processes.rs` `window_provider`, and the repository
-  downstream of jig, its sign-in support's `llm()`.
+  downstream of jig, its sign-in support's `llm()` and its
+  `tests/real-loop/src/llm.rs` (`scripted`'s `provider::Config` literal;
+  `peer`'s `Peer::new`), which its repin refreshes (ruling 126).
 Test shape: units in `credentials.rs`'s tests, each under 20 ms, literal
   field bytes, `fields(authorization, api_key) -> Fields` new there:
   `each_route_authorizes_its_schemes_in_their_fields`, rows public (a
@@ -157,7 +159,11 @@ Files: `testing/skein-fake-llm-protocol/src/provider.rs`,
   `tests/llm/tests/fake.rs`; `tests/llm-connection/src/simulated.rs`.
 Shape: `provider::Event::Head { headers, presented: Presented }`.
   `Presented { route, scheme: Option<Scheme>, index: Option<u32> }`
-  (new) is what the request presented; `headers` leaves out
+  (new) is what the request presented, as fake-llm.md 3 says: an
+  accepted credential by its own scheme and its index; one that matched
+  none by the scheme its field shows (`x-api-key` a key, else a bearer,
+  so that on the public route it is a bearer) and no index; no
+  credential field, `None` and no index; `headers` leaves out
   `authorization`, `x-api-key` and `chatgpt-account-id`.
   `credentials.rs` defines `Presented` and `MAX_CREDENTIALS` (new, 16);
   `provider.rs` re-exports both with `route`. `Peer` holds `credentials:
@@ -172,12 +178,14 @@ Shape: `provider::Event::Head { headers, presented: Presented }`.
   prices the list as `http.head` bytes, as today, plus `MAX_CREDENTIALS`
   entries; each request adds one observation. In skein: `simulated.rs`
   `observe` matches the new arm and asserts `Credential { index:
-  Some(0), .. }`, not the `authorization` field; `run_with_shutdown`
-  counts `calls * 6` observations, its `large` runs use the largest list
+  Some(0), .. }`, not the `authorization` field; `run_configured`, which
+  `run_with_shutdown` calls, counts `calls * 6` observations where it
+  counts `calls * 5`, its `large` runs use the largest list
   the head cap admits; `take` of `tests/llm/src/fake.rs` takes
   `presented`, and its existing `observe_head` gains `presented`; the heads test of `tests/llm/tests/fake.rs` expects the
   reader's head less the three fields; the peers' `make` becomes
-  `make_on(endpoint, credential, address, transport)`, and `make` calls
+  `make_on(endpoint, credential, address, transport)`, which derives the
+  `documents::Provider` and the path from `endpoint`, and `make` calls
   it with the Codex call. Downstream: smith
   `tests/agent-process/src/fake.rs` `queries` adds `Credential { .. }`
   to its `None` arm. Its `limits()` (256 observations) now holds 42
@@ -185,7 +193,9 @@ Shape: `provider::Event::Head { headers, presented: Presented }`.
   `tests/local-process`, `tests/hosts`, `tests/end-to-end`,
   `crates/smith-local-service` and `-shell` tests; jig `tests/channel`
   (`src/processes.rs` `window_provider`) and `tests/one-process`; the
-  repository downstream of jig, its sign-in support's `llm()`. Each
+  repository downstream of jig, its sign-in support's `llm()`, its
+  `tests/real-loop` (`src/llm.rs`' `scripted` takes `fake::limits()`)
+  and its `tests/one-process` (through `fake::configured`). Each
   repin counts its worlds' requests on one peer against 42 and, past it,
   raises `observations` in smith's `limits()`; the memory ceilings price
   each observation and move with it, and their gates check them again
@@ -344,7 +354,8 @@ Test shape: worlds, `fake_credentials.rs`, each under 0.5 s (the real
   configured peer (answered) and one holding a key (unauthorized), on
   public and Anthropic;
   `a_credential_the_peer_does_not_hold_is_unauthorized`, rows a key and
-  a bearer (their scheme, no index);
+  a bearer on Anthropic (each its own scheme, no index) and on public
+  (each `Bearer`, the scheme its field shows, no index; fake-llm.md 3);
   `no_observation_holds_a_credentials_value`, over the rows above;
   `an_issuers_tokens_are_accepted_as_bearers_before_serving`, three
   bearers given at start, a call with each answered at its index,
