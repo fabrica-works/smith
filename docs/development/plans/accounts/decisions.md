@@ -1310,6 +1310,30 @@ commits is this plan's.
      step 9's wait for `Cancelled` with the snapshot `Live` and "Behind",
      may be gated again at most twice more on the same tree (ruling 139).
 
+140. **skein 09.2 exposes missing_scopes** (cross-session scope, skein 09's block of 2026-10-19T19:34:12Z).
+     Yes. oauth.md section 2.2 says "Granted scopes are reported, not enforced
+     here. A sign-in that was granted fewer scopes than the registration
+     requires still returns its record, and `Tokens` names the missing ones;
+     the caller decides (section 6.3)": the driver is that caller, and 09.2's
+     Don't forbids it a parser of its own. skein-oauth's
+     `redirect::missing_scopes(registration: &Registration, record:
+     &SavedToken) -> Box<[u8]>` is the comparison `Tokens`' missing scopes
+     already come from (`machine.rs`), and the driver holds both arguments
+     (`Account::SignIn { registration, .. }` and the kept record).
+
+     1. In `crates/skein-oauth/src/redirect.rs`, `missing_scopes` becomes
+        `pub`, its signature and body unchanged, with a one-line doc comment
+        naming oauth.md section 2.2; `lib.rs` re-exports it in the existing
+        `pub use redirect::{…}` line. No new predicate beside it.
+     2. Each lend in the driver, a grant's answer and a refresh's `Granted`,
+        calls `skein_oauth::missing_scopes(&registration, &record)`; a
+        non-empty answer ends the grant as `Failed { ends: Grant, failure:
+        NotGranted }`, nothing lent, as 09.2's Shape says.
+     3. The new public item is 09.2's, in its commit; its line count goes to
+        09.2's size. A further caller of a crate-private helper that 09.2 finds
+        it needs is exposed the same way, unchanged, and named in the commit
+        body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

@@ -196,7 +196,9 @@ Scope: oauth.md 6.3, "Granted scopes"; 2.2's scopes.
 Needs: skein 08's named accounts; skein 05's terms (the scopes that
   must be granted), its record's granted scopes and `Tokens`' missing
   ones; skein 06's declined scopes for the worlds.
-Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
+Files: `crates/skein-oauth/src/redirect.rs` and `lib.rs` (`missing_scopes`
+  made `pub` and re-exported beside `validate_registration`, its body
+  unchanged; ruling 140); `crates/skein-oauth-accounts/src/`: `component.rs`,
   `component/sign_in.rs`, `component/private.rs` (the exhaustive
   `match failure` that sets `sign_in_allowed` takes `NotGranted`),
   `exchange.rs` (`Stage::Keeping` holds `missing`), `boundary.rs`,
@@ -227,7 +229,9 @@ Proof: world, `required_scopes_declined_then_a_grant_is_refused`: a
   sign-in whose scopes the issuer declined ends `SignedIn` naming them,
   and the next grant ends `Failed` as not granted, nothing lent; under
   0.5 s.
-Don't: no scope parsed by the driver: skein 05's record and terms say.
+Don't: no scope parsed by the driver: skein 05's record and terms say;
+  each lend calls `skein_oauth::missing_scopes(&registration, &record)`
+  with the account's `Registration` and its record (ruling 140).
 Size: about 110 lines.
 Removes: nothing.
 
