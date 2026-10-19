@@ -418,6 +418,17 @@ commits is this plan's.
      helpers are private. A further site that hard-codes a scheme or a count
      the plan names is corrected the same way, and listed in the commit body.
 
+110. **A test helper is written once** (steer of the check of 2026-10-19T13:13:32Z).
+     The hourly check of 2026-10-19T13:13:32Z found `tests/llm/tests/credentials.rs`
+     (skein 01.2) retyping `header` and `rejection` of `anthropic_admission.rs`
+     and writing the `World::new` / `Request::Start` / `run` lines twice,
+     against testing-strategy.md, section 10, "A setup written once". The
+     README's "Rules of this plan" gains "A test helper is written once": a
+     helper a second test file of a crate needs moves to the crate's test
+     library (`tests/llm/src/lib.rs` for skein-llm's worlds) and both files
+     call it; skein 01 moves the first copies at its next increment. A further
+     retyped helper moves the same way, named in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

@@ -207,6 +207,15 @@ downstream repin.
 - **No credential value in a test's output** (code-organization.md, 7):
   tests compare routes, schemes and indices; a key's value appears only
   in its fixture.
+- **A test helper is written once** (testing-strategy.md, 10, "A setup
+  written once"; ruling 110): a helper that a second test file of a
+  crate needs moves to that crate's test library (for skein-llm's
+  worlds, `tests/llm/src/lib.rs`, beside `fields_holding`), and both
+  files call it; the session writing the second copy moves the first.
+  `tests/llm/tests/credentials.rs` `header` and `rejection` (retyped
+  from `anthropic_admission.rs`, one returning `Option<Error>`, the
+  other `Error`) and its twice-written `World::new` / `Start` / `run`
+  lines are the first: skein 01 moves them at its next increment.
 
 ## Live services
 
