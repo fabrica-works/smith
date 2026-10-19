@@ -42,9 +42,10 @@ Needs at start: smith 04.1's grant value union and 02.2's notices on
   formats line in `tests/end-to-end/end_to_end.rs`; the old version
   goes with it.
 - Files over 800 lines grow by at most ~100 per increment (code-
-  organization.md 8): `session.rs` (3665), `service.rs` (2920),
-  smith-agent-shell's `config.rs` (1658), `route.rs` (1076),
-  protocol-channel's `component.rs` (1002).
+  organization.md 8): `session.rs` (3671), `service.rs` (3002),
+  smith-agent-shell's `config.rs` (1694), `route.rs` (1087),
+  protocol-channel's `component.rs` (1033), at smith b638629f (ruling
+  131).
 - The files a change breaks, found at the base, `G` being `--glob
   '*.rs' --glob '!**/generated/**' crates tests benchmarks`; protocol-
   channel's `{charter,translate,turn,transcript,tests}.rs` alias a
@@ -80,8 +81,8 @@ Files: `crates/smith-charter/`: `schema/charter-v3.schema` (new),
   `smith-agent-shell/src/{agent_shell,config}.rs`,
   `smith-domain-run/src/{charter,tests}.rs`,
   `smith-domain-session/src/{boundary,session,tests}.rs`,
-  `smith-domain/src/{boundary,domain,peer,route,tests,translate,
-  translation_tests}.rs`, `smith-host-domain/src/tests.rs`,
+  `smith-domain/src/{boundary,domain,peer,route,tests,
+  tests/completion_retry,translate,translation_tests}.rs`, `smith-host-domain/src/tests.rs`,
   `smith-host-protocol/src/{answer,component,limits,tests,
   translate}.rs`, `smith-inline-agent/src/{boundary,translate}.rs`,
   `smith-local-domain/src/{config,end,person,tests}.rs`,
@@ -93,6 +94,7 @@ Files: `crates/smith-charter/`: `schema/charter-v3.schema` (new),
   tests/jobs,translate}.rs`, `smith-protocol-llm/src/{boundary,
   component,endpoints,grants,guard,tests}.rs`;
   in `tests/`: `agent-process/src/{lib,tracing}.rs`,
+  `agent-process/tests/grants.rs` (ruling 131),
   `agent/src/{memory/fixture,world}.rs`, `agent/tests/{brief,
   budget,models}.rs`, `channel/src/lib.rs`, `channel/tests/{composed,
   composed/long,fuzzy_stream_cuts,live,memory,referee,stories,
@@ -119,9 +121,12 @@ Shape: the schema's `record Llm` gains `account: option u32`;
   dropped. `takes_grants` takes the charter: every account of
   `charter.llm` and `charter.models` needs a grant, in the start or
   held, else `Invalid::Grants`; LLMs naming one account share its
-  grant; the count rule stays. 04.1's install check reads the dialect
-  of the charter's LLM naming the grant's account (`service.rs`), not
-  the endpoint's. `Peer.account` and `Spec.account` (new, from the
+  grant; the count rule stays. 04.1's install check, smith-protocol-llm's
+  `Component::grant` (`component.rs`: its loop over `self.options`
+  that matches `options.account == name.account` and judges the scheme
+  by `options.provider`, else `GrantError::Scheme`), reads the dialect
+  of the charter's LLM naming the grant's account, not the endpoint's
+  (ruling 131). `Peer.account` and `Spec.account` (new, from the
   charter's LLM in `route.rs`) are `Option<u32>`; with none,
   `Request::Complete` and `FromDomain::Complete` carry `grant: None`
   and the component calls `Grants::credential(None, now)` (new):
@@ -129,7 +134,8 @@ Shape: the schema's `record Llm` gains `account: option u32`;
   take `Option<&Credential>`, handed as it is to skein's
   `client::measure`, which takes an option already. `domain.rs`'s
   `IssuedCompletion.grant` is `Option<GrantName>`, and `route.rs`'s
-  `failed()` arms for `Unauthorized` and `Exhausted` handle none (no
+  `failed()` arms for `Unauthorized`, `Exhausted` and `Refused` handle
+  none (no
   grant to name). Every full `session::Spec` literal takes `account`. With `grant` an option, `complete`
   in `route.rs` would reach 101 lines (the limit is 100), so its
   unsent-unauthorized path becomes a helper fn. `backoff` in
@@ -153,12 +159,15 @@ Test shape: codecs, `tests/codecs/tests/charter.rs` (goldens from
   `src/tests.rs` (`Harness::new(&LIMITS)`, `h.open`, `h.step(Event::
   Failed { .. })`, `ended`): `an_unauthorized_call_is_retried_only_for_
   an_account`, rows account (retried), none (`Failed { Unauthorized,
-  attempts: 1 }`); smith-domain `src/tests.rs`, beside 02.1's
-  `a_limited_account_ends_the_run_with_its_reset`: `an_unaccounted_llms_
+  attempts: 1 }`); smith-domain `src/tests/completion_retry.rs`, beside 02.1's
+  `a_limited_account_ends_the_run_with_its_reset` (its `account_failure`
+  takes the LLM's account, `Option<u32>`, where its charter fixes 0): `an_unaccounted_llms_
   account_failure_names_no_account`, rows limited, refused,
   unauthorized: `Fault::Completion` of that class, no `Request::
   {Limited, Refused, Unauthorized}`; smith-agent-shell `config.rs`:
-  `an_endpoints_account_is_read_and_ignored`. Agent world, each under
+  `an_endpoints_account_is_read_and_ignored`, built from `document()`,
+  whose endpoint's dialect matches its provider (`build_models` refuses
+  one that does not, since smith cbcecbbd). Agent world, each under
   0.1 s, `tests/agent/tests/accounts.rs` (new; seeds from 1501;
   `models.rs`'s private `world` moved into `tests/agent/src/world.rs`
   with the granted accounts a parameter, `world(settings, charter,
@@ -167,9 +176,12 @@ Test shape: codecs, `tests/codecs/tests/charter.rs` (goldens from
   `a_start_without_an_accounts_grant_is_invalid`, rows main's account,
   a sub-agent's, one of two; `llms_sharing_an_account_share_its_grant`;
   `a_held_grant_serves_a_later_start`;
-  `an_llm_with_no_account_is_admitted_with_no_grant`, rows no grant; a
-  `Withdrawn` value with an id on an `openai` LLM, refused as `Grants`
-  (the dialect is `charter.llm`'s or `models`', not the endpoint's).
+  `an_llm_with_no_account_is_admitted_with_no_grant`. Process world:
+  `tests/agent-process/tests/grants.rs`'s
+  `an_uninstallable_grant_refuses_the_start_as_grants`, whose rows set
+  `world.openai()`, gains the row of a `withdrawn` value with an id on
+  an `openai` LLM, refused as `Grants` (the dialect is `charter.llm`'s
+  or `models`', not the endpoint's; ruling 131).
   Reference test:
   ```rust
   #[test]

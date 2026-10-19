@@ -1002,6 +1002,36 @@ commits is this plan's.
      way. Any further match on smith's `Refused` notice downstream takes the
      same arm, listed in its commit body.
 
+131. **smith 03's Shapes against main** (re-check of smith-03.1).
+     The re-check of smith-03.1 (smith afe685d3, then cbcecbbd; skein c8466bf6)
+     found `smith/03-records.md` short of main in five places; checked by
+     `git grep` on smith origin/main b638629f, and the session file now says:
+     - 04.1's install check is smith-protocol-llm's `Component::grant` in
+       `component.rs` (its loop over `self.options` matching `options.account
+       == name.account`, judging the scheme by `options.provider`, else
+       `GrantError::Scheme`), not `service.rs`: 03.1 switches it from the
+       endpoint to the charter's LLM naming the grant's account.
+     - `route.rs`'s `failed()` has three account arms, `Unauthorized`,
+       `Exhausted` and `Refused` (02.2), and each handles no grant.
+     - The account-failure tests are in `smith-domain/src/tests/completion_retry.rs`
+       (`a_limited_account_ends_the_run_with_its_reset`,
+       `a_refused_account_ends_the_run_with_its_code`, over `account_failure`,
+       whose charter fixes account 0), now in Files, and
+       `an_unaccounted_llms_account_failure_names_no_account` goes beside them.
+     - The `withdrawn` value with an id on an `openai` LLM cannot be set up in
+       the agent world: it is a row of `tests/agent-process/tests/grants.rs`'s
+       `an_uninstallable_grant_refuses_the_start_as_grants`, whose rows set
+       `world.openai()`; that file joins Files.
+     - smith cbcecbbd's `build_models` refuses an endpoint whose dialect does
+       not match its provider, so `an_endpoints_account_is_read_and_ignored`
+       builds from `document()`.
+     - The Rules' sizes are main's: `session.rs` 3671, `service.rs` 3002,
+       `config.rs` 1694, `route.rs` 1087, `component.rs` 1033; `complete()`
+       in `route.rs` is at clippy's 100 lines, so the Shape's helper fn comes
+       first.
+     A further fixture that writes an endpoint with a dialect other than its
+     provider's is built the same way, and listed in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
