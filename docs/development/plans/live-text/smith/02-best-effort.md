@@ -63,7 +63,8 @@ Needs: skein 01's release [01.3] on skein's `origin/main`; smith 01's
 Files: `Cargo.lock` (the repin); the A30 sites, `tests/agent/src/
   world.rs`, `tests/local/src/world.rs`, `tests/protocol-llm/src/
   {world,wire}.rs`, `tests/session/src/world.rs`, `tests/host/src/
-  inline.rs`; `smith-agent-service` (`src/profile/quantities.rs`,
+  inline.rs`; `smith-agent-service` (`src/profile.rs`,
+  `src/profile/quantities.rs`,
   `src/profile/validate.rs`, `src/profile/effective/list.rs`,
   `src/profile/tests.rs`, `src/live.rs`, `src/service.rs`,
   `src/teardown.rs`);
@@ -79,7 +80,11 @@ Shape: first, its own commit: `heavy cargo update -p
   `call: Token`, a token that names the call among the world's calls in
   flight (skein's `provider.rs` passes `call: id.token()`). Then `Policy` gains `live_interval: Duration` (sketch),
   `standard()` 100 ms; `policy_deadlines` checks it like its neighbours;
-  the effective list's destructure names it and writes its line. The
+  the effective list's destructure names it and writes its line;
+  `service::Limits` gains `pub live_interval: Duration`, which
+  `profile::derive` sets from `policy.live_interval`, the service passes
+  `limits.live_interval` to `Live::new`, and `service.rs`' test
+  `limits()` sets the standard's (ruling 103). The
   live module keeps the time its oldest unsent byte arrived; `pump(now,
   ..)` sends a piece when the held bytes reach 4096 or `now` is at or
   past that time plus the interval, and the turn's end sends what is
@@ -202,6 +207,13 @@ Removes: nothing.
 pub struct Policy {
     // .. as now.
     /// The longest the agent holds live bytes before sending them as a piece (limits.md 2.3).
+    pub live_interval: Duration,
+}
+
+// crates/smith-agent-service/src/service.rs
+pub struct Limits {
+    // .. as now.
+    /// The policy's `live_interval`, which `profile::derive` copies for `Live::new`.
     pub live_interval: Duration,
 }
 

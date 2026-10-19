@@ -293,6 +293,11 @@ plan's run.
 102. **Test shape before a reference test, README rule 7** (steer of 2026-10-19T10:26:53Z).
      The README gains rule 7, "Test shape: testing-strategy.md section 10 before a reference test", from the check of 2026-10-19T10:14:18Z: from smith 01.3's next increment to the run's end, a test keeps section 10's rules (one behaviour per test, rows carry data, a setup written once, named fixtures and sizes, a bound's two sides) where a session file's reference test breaks them, with the splits, the table and the named constants it lists. Landed tests stay as they are. Checked: `git -C smith grep -n 'sent > 0 && sent < 8\|first()\|get(1)' origin/main -- tests/channel/tests/live.rs` prints lines 61, 72 and 127; `Observation::HostLive` appears there 5 times.
 
+103. **service::Limits carries live_interval** (cross-session scope, smith-02's block of 2026-10-19T10:33:00Z).
+     A plan defect: 02.1's Shape says "02.1 adds the interval to `Live::new`", but the service builds its `Live` from `service::Limits` alone, which `profile::derive` fills in `src/profile.rs`, a file 02.1's Files missed. Your proposal is the plan's path: `smith_agent_service::Limits` gains `pub live_interval: Duration`; `profile::derive` sets it from `policy.live_interval`; the service passes `limits.live_interval` to `Live::new`; `service.rs`' test `limits()` sets `quantities::standard().policy.live_interval`. No new constructor or configuration API. 02.1's Files gain `smith-agent-service/src/profile.rs`, and its Shape and sketches say this (ruling 103).
+
+     The type's struct literals on smith's `main` are those two; the other `service::Limits { .. }` literals (`smith-local-shell/src/startup.rs`, `tests/local-process/src/process/configuration.rs`) build `smith_local_service::Limits` and stay as they are. jig, temper and hearth build none: temper's `agent_limits()` calls `profile::derive`. Refresh any further literal of `smith_agent_service::Limits` you meet the same way, and list it in the commit body.
+
 ## For the user
 
 Each is a choice that outlasts the run; a `Decision:` line under it
