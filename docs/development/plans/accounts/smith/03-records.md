@@ -236,7 +236,8 @@ Scope: transcript.md 2, 3, 4 (the codec's list), 6, 8; agent.md 4;
   question 13.
 Needs: 03.1's charter account and `Spec.account`; smith 04.2's dialect
   numbers, `openai` 3.
-Files: `crates/smith-transcript/`: `schema/transcript-v6.schema` (new),
+Files: `crates/smith-agent-shell/src/config.rs` (the memory floor, the
+  README's rule; ruling 141); `crates/smith-transcript/`: `schema/transcript-v6.schema` (new),
   `src/{lib,generated/v6}.rs`, `golden/v6/` (new); the files of the
   Rules' lists for the transcript's v5, `Kind::First` and `Window`
   patterns without `..`, `Turn` and `Transcript` literals with

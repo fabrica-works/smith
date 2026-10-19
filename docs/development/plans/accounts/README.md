@@ -265,6 +265,16 @@ downstream repin.
   08.3 brings 08.2's `accounts_tests.rs`, where it was seen, to it; other
   copies landed, in files a change does not otherwise touch, stay as
   they are.
+- **The memory floor is 460,000,000 bytes** (ruling 141): smith
+  agent-shell's
+  `product_values_pass_every_startup_check_and_fit_complete_memory`
+  asserts `limits.memory - complete >= 460_000_000`, live-text's floor
+  of 490,000,000 lowered once for the transcript's version 6 (smith
+  03.2), whose opening `Turn` grows every bounded queue of turns. Its
+  `complete <= limits.memory` assertion and the declared memory stay.
+  Each later smith increment that changes the sum gives that test's
+  `PRODUCT_COMPLETE` line in its report; one below the floor is a
+  question, never a lower floor.
 
 ## Live services
 

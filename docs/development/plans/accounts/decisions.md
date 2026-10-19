@@ -1334,6 +1334,29 @@ commits is this plan's.
         it needs is exposed the same way, unchanged, and named in the commit
         body.
 
+141. **smith 03.2's memory floor** (plan defect, smith 03's block of 2026-10-19T20:01:06Z).
+     Yes, the floor becomes 460,000,000. The 490,000,000 is no design bound:
+     live-text's plan named it as a floor against creep ("The plan names a
+     floor of 490,000,000 bytes", its decisions.md 3.7), from a margin of
+     492,823,045 at its base. The design's bound is the declared memory, which
+     the test's `complete <= limits.memory` assertion keeps, and it holds:
+     03.2's complete worst case is 1,745,377,487 bytes against 2,214,592,512,
+     a margin of 469,215,025. The growth, about 23 MB, is the Shape's own
+     (`Kind::First` and `Kind::Window` gain account and backend, and `Turn`
+     grows with its `Kind`), so boxing a production turn to recover it would
+     change the public field for no bound the design names.
+
+     1. In `crates/smith-agent-shell/src/config.rs`,
+        `product_values_pass_every_startup_check_and_fit_complete_memory`
+        asserts `limits.memory - complete >= 460_000_000`; nothing else in
+        that test changes. It is 03.2's, in its commit, outside its line
+        count; the commit body gives the `PRODUCT_COMPLETE` line before and
+        after and names this ruling.
+     2. The README's new rule, "The memory floor is 460,000,000 bytes", holds
+        for the rest of the run: each later smith increment that changes the
+        sum gives that test's `PRODUCT_COMPLETE` line in its report, and a
+        margin below the floor is a question, never a lower floor.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
