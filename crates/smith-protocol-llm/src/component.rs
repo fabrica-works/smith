@@ -551,6 +551,7 @@ impl Component {
                         None => {}
                     }
                 }
+                // Transitional until smith 02.1 forwards the bounded provider report.
                 connection::Event::Failed { call, failure, evidence, report: _, detail, measures } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {

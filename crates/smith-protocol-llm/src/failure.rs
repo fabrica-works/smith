@@ -27,7 +27,18 @@ pub fn failed(
     if detail.len() > usize::try_from(context.receiving.max_failure_bytes).expect("u32 fits usize") {
         return Err(Error::Limit);
     }
-    let failure = match failure {
+    let failure = class(failure);
+    let evidence = match evidence {
+        client::Evidence::Unsent => llm::Evidence::Unsent,
+        client::Evidence::Unknown => llm::Evidence::Unknown,
+        client::Evidence::Response { status } => llm::Evidence::Response { status: Some(status) },
+    };
+    Ok(Event::Failed { owner, failure, evidence, detail })
+}
+
+/// The session's classes, including the mappings withdrawn by smith 02.1.
+pub(crate) fn class(failure: shared::Failure) -> llm::Failure {
+    match failure {
         shared::Failure::Overloaded => llm::Failure::Overloaded,
         shared::Failure::RateLimited { retry_after } => llm::Failure::RateLimited { retry_after },
         shared::Failure::Unavailable => llm::Failure::Unavailable,
@@ -50,13 +61,7 @@ pub fn failed(
         shared::Failure::Limit { which, bound } => llm::Failure::Limit { which: llm::Limit::Path(cap(which)), bound },
         shared::Failure::Protocol => llm::Failure::Protocol,
         shared::Failure::Cancelled => llm::Failure::Cancelled,
-    };
-    let evidence = match evidence {
-        client::Evidence::Unsent => llm::Evidence::Unsent,
-        client::Evidence::Unknown => llm::Evidence::Unknown,
-        client::Evidence::Response { status } => llm::Evidence::Response { status: Some(status) },
-    };
-    Ok(Event::Failed { owner, failure, evidence, detail })
+    }
 }
 
 /// Translates the actual shared cancellation terminal after real lower settlement.

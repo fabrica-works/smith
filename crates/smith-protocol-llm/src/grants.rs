@@ -95,10 +95,12 @@ impl Grants {
         if entry.lapses <= now {
             return Err(GrantError::Lapsed);
         }
-        Ok(Credential {
-            value: bytes::copy_of(&entry.credential.value),
-            account_id: bytes::copy_of(&entry.credential.account_id),
-            scheme: skein_llm::Scheme::Bearer,
+        let value = bytes::copy_of(&entry.credential.value);
+        // Transitional until smith 04.1 gives the table its scheme tags.
+        Ok(if entry.credential.account_id.is_empty() {
+            Credential::bearer(value)
+        } else {
+            Credential::codex(value, bytes::copy_of(&entry.credential.account_id))
         })
     }
 

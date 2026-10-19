@@ -220,11 +220,12 @@ fn a_connect_deadline_keeps_timed_out_failure_evidence() {
     ));
 }
 
-#[test]
-fn every_shared_failure_class_keeps_each_evidence_and_detail() {
-    let limits = limits();
+fn shared_failure_cases() -> [(shared::Failure, llm::Failure); 18] {
     let retry = Duration::from_secs(7);
-    let cases = [
+    [
+        (shared::Failure::Refused, llm::Failure::Invalid),
+        (shared::Failure::Unsupported, llm::Failure::Invalid),
+        (shared::Failure::Exhausted { retry_after: None }, llm::Failure::Exhausted { retry_after: Duration::ZERO }),
         (shared::Failure::Unauthorized, llm::Failure::Unauthorized),
         (shared::Failure::Exhausted { retry_after: Some(retry) }, llm::Failure::Exhausted { retry_after: retry }),
         (shared::Failure::RateLimited { retry_after: retry }, llm::Failure::RateLimited { retry_after: retry }),
@@ -252,13 +253,18 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
             shared::Failure::TimedOut { phase: shared::Phase::Whole },
             llm::Failure::TimedOut { phase: llm::Phase::Whole },
         ),
-    ];
+    ]
+}
+
+#[test]
+fn every_shared_failure_class_keeps_each_evidence_and_detail() {
+    let limits = limits();
     let evidence = [
         (shared::client::Evidence::Unsent, llm::Evidence::Unsent),
         (shared::client::Evidence::Unknown, llm::Evidence::Unknown),
         (shared::client::Evidence::Response { status: 429 }, llm::Evidence::Response { status: Some(429) }),
     ];
-    for (source, expected) in cases {
+    for (source, expected) in shared_failure_cases() {
         for (sent, expected_sent) in evidence {
             let input = adapter::Input {
                 owner: Token::new(71),
@@ -273,14 +279,17 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
             let event =
                 adapter::failed(prepared.context, Token::new(71), source, sent, b"literal detail".as_slice().into())
                     .expect("matching terminal");
-            assert!(matches!(
-                event,
-                smith_domain::Event::Failed { owner, failure, evidence, detail }
-                    if owner == Token::new(71)
-                        && failure == expected
-                        && evidence == expected_sent
-                        && detail.as_ref() == b"literal detail"
-            ));
+            assert!(
+                matches!(
+                    event,
+                    smith_domain::Event::Failed { owner, failure, evidence, detail }
+                        if owner == Token::new(71)
+                            && failure == expected
+                            && evidence == expected_sent
+                            && detail.as_ref() == b"literal detail"
+                ),
+                "source={source:?}, evidence={sent:?}"
+            );
         }
     }
 }

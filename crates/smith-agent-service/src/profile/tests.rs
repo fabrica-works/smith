@@ -846,3 +846,12 @@ fn a_zero_live_interval_is_refused() {
     assert_eq!(refusal.check(), Some(Check::Deadlines));
     assert_eq!(words(&refusal).as_ref(), b"deadlines: policy.live_interval=0 ns; policy.deadline_minimum=0 ns");
 }
+
+#[test]
+fn a_credential_value_cap_is_worded_credential_value() {
+    let refusal = Refusal::Connection(skein_llm_connection::EndpointError::Client(skein_llm::Error::Limit {
+        which: skein_llm::Cap::Value,
+        bound: 7,
+    }));
+    assert!(words(&refusal).ends_with(b"request-head: credential-value bound=7"));
+}

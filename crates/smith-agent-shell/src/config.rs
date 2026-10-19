@@ -180,6 +180,7 @@ struct Endpoint {
     number: u32,
     dialect: u32,
     account: u32,
+    /// Provider route: openai, anthropic, or the withdrawn codex route.
     provider: String,
     address: String,
     #[serde(default = "tls_transport")]
@@ -459,9 +460,10 @@ fn build_endpoints(
         let address = resolve(&endpoint.address)?;
         let transport = endpoint_transport(&endpoint, address)?;
         let mut llm_endpoint = match endpoint.provider.as_str() {
+            "openai" => shared::Endpoint::openai(),
             "codex" => shared::Endpoint::codex(),
             "anthropic" => shared::Endpoint::anthropic(),
-            _ => return Err("endpoint provider must be codex or anthropic".into()),
+            _ => return Err("endpoint provider must be openai, codex or anthropic".into()),
         };
         if let Some(authority) = endpoint.authority {
             if authority.is_empty() || authority.contains(['\r', '\n']) {
@@ -807,9 +809,10 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
     let number = endpoint.number;
     let models = &endpoint.models;
     let provider = match endpoint.provider.as_str() {
+        "openai" => shared::Provider::OpenAi,
         "codex" => shared::Provider::OpenAiCodex,
         "anthropic" => shared::Provider::Anthropic,
-        _ => return Err("endpoint provider must be codex or anthropic".into()),
+        _ => return Err("endpoint provider must be openai, codex or anthropic".into()),
     };
     let identity = endpoint_identity(endpoint.identity.as_deref())?;
     let option_bytes = llm::endpoint_own(identity).map_err(|_| {
@@ -1090,6 +1093,19 @@ mod tests {
         });
         let configuration = build(document).expect("resolved endpoint");
         service::Service::new(configuration.service, 1).expect("LLM and channel endpoints");
+    }
+
+    #[test]
+    fn an_openai_endpoint_takes_the_public_route() {
+        let mut document = document();
+        let name = document.endpoints[0].number;
+        document.endpoints[0].provider = "openai".into();
+        document.endpoints[0].dialect = 3;
+        let configured = build(document).expect("public endpoint derives");
+        let options = configured.service.llm_endpoints.resolve(domain::llm::Endpoint(name)).expect("endpoint");
+        assert_eq!(options.provider, shared::Provider::OpenAi);
+        assert_eq!(options.endpoint.authority.as_ref(), b"api.openai.com");
+        assert_eq!(options.endpoint.target.as_ref(), b"/v1/responses");
     }
 
     #[test]

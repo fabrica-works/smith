@@ -106,13 +106,13 @@ fn a_refresh_preserves_the_first_call_then_evicts_the_oldest_generation() {
     grants.grant(first, credential(b"first", b"account-id"), Time::from_nanos(100)).expect("first grant");
     let started = grants.read(first, Time::from_nanos(10)).expect("call reads its starting value");
     grants.grant(second, credential(b"second", b"account-id"), Time::from_nanos(200)).expect("refresh");
-    assert_eq!(started.value.as_ref(), b"first");
-    assert_eq!(grants.read(second, Time::from_nanos(20)).expect("next call").value.as_ref(), b"second");
-    assert_eq!(grants.read(first, Time::from_nanos(20)).expect("overlapping first").value.as_ref(), b"first");
+    assert!(started.value.as_ref() == b"first");
+    assert!(grants.read(second, Time::from_nanos(20)).expect("next call").value.as_ref() == b"second");
+    assert!(grants.read(first, Time::from_nanos(20)).expect("overlapping first").value.as_ref() == b"first");
     grants.grant(third, credential(b"third", b"account-id"), Time::from_nanos(300)).expect("next refresh");
     assert!(matches!(grants.read(first, Time::from_nanos(20)), Err(GrantError::Missing)));
     assert!(matches!(grants.read(second, Time::from_nanos(201)), Err(GrantError::Lapsed)));
-    assert_eq!(grants.read(third, Time::from_nanos(201)).expect("new value").value.as_ref(), b"third");
+    assert!(grants.read(third, Time::from_nanos(201)).expect("new value").value.as_ref() == b"third");
     assert!(matches!(grants.grant(second, credential(b"stale", b""), Time::from_nanos(400)), Err(GrantError::Stale)));
     assert!(Grants::worst_case(1, 64).expect("bounded footprint") >= 128);
     assert!(!format!("{grants:?}").contains("third"), "debug hides bearer values");
@@ -155,4 +155,16 @@ fn reasoning_drop_is_selected_per_declared_model() {
     assert!(options.drop_reasoning(b"optional"));
     assert!(!options.drop_reasoning(b"undeclared"));
     assert!(!options.drop_reasoning(b"strict"));
+}
+
+#[test]
+fn a_withdrawn_pair_keeps_the_bearer_in_value() {
+    let mut grants = Grants::new(1, 64).expect("bounded table");
+    let name = GrantName { account: 0, generation: 1 };
+    let input = Credential::codex(b"bearer-bytes".as_slice().into(), b"account-id".as_slice().into());
+    grants.grant(name, input, Time::from_nanos(100)).expect("grant");
+    let output = grants.read(name, Time::ZERO).expect("read grant");
+    assert!(output.value.as_ref() == b"bearer-bytes");
+    assert!(output.account_id.as_ref() == b"account-id");
+    assert_eq!(output.scheme, shared::Scheme::Bearer);
 }

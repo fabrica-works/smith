@@ -851,3 +851,45 @@ fn an_unknown_job_problem_names_which_number_was_invalid() {
         b"invalid job 17: no running answer named it, or its end was already answered"
     );
 }
+
+#[test]
+fn skein_failures_map_to_the_sessions_classes() {
+    use skein_llm::{Cap, Failure as Source, Phase};
+    use smith_domain::llm::{Failure, Limit};
+
+    let retry = Duration::from_secs(7);
+    for (source, expected) in [
+        (Source::Unauthorized, Failure::Unauthorized),
+        (Source::Exhausted { retry_after: Some(retry) }, Failure::Exhausted { retry_after: retry }),
+        (Source::Exhausted { retry_after: None }, Failure::Exhausted { retry_after: Duration::ZERO }),
+        (Source::RateLimited { retry_after: retry }, Failure::RateLimited { retry_after: retry }),
+        (Source::Refused, Failure::Invalid),
+        (Source::Unsupported, Failure::Invalid),
+        (Source::Overloaded, Failure::Overloaded),
+        (Source::Unavailable, Failure::Unavailable),
+        (Source::ContextTooLong, Failure::ContextTooLong),
+        (Source::Invalid, Failure::Invalid),
+        (
+            Source::Limit { which: Cap::Value, bound: 7 },
+            Failure::Limit { which: Limit::Path(smith_domain::llm::Cap::AccessToken), bound: 7 },
+        ),
+        (Source::Protocol, Failure::Protocol),
+        (Source::Cancelled, Failure::Cancelled),
+        (Source::TimedOut { phase: Phase::Head }, Failure::TimedOut { phase: smith_domain::llm::Phase::Head }),
+    ] {
+        assert_eq!(crate::failure::class(source), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn each_providers_prompt_allowance_counts_its_tool_inventory() {
+    use skein_llm::Provider;
+
+    let client = skein_llm_world::limits();
+    for provider in [Provider::OpenAi, Provider::OpenAiCodex, Provider::Anthropic] {
+        let empty = crate::prompt_allowance(provider, &client, 0).expect("empty tool inventory");
+        let one = crate::prompt_allowance(provider, &client, 1).expect("one tool");
+        let three = crate::prompt_allowance(provider, &client, 3).expect("three tools");
+        assert!(empty > 0 && one > empty && three > one, "{provider:?}");
+    }
+}
