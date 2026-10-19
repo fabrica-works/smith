@@ -280,6 +280,16 @@ plan's run.
    held. A fault after pieces waits for 2.3's scripted failures (5.2).
    The sentence could say so.
 
+## Rulings
+
+101. **smith-02's Shapes against main** (ready check of smith-02.1).
+     smith-02.1's ready check, against skein 12305e5 (4a16854 at its end, a forge-only commit) and smith c0c89ddc, corrects `smith/02-best-effort.md`:
+     - 02.1's sketch: `skein_lib::Time` has no `Add` or `Sub` (E0369 under clippy); it writes `AT_ZERO.saturating_add(interval)` and `Time::from_nanos(end.as_nanos() - 1)`, a form the check compiled under clippy and ran passing. Checked: `git -C skein show origin/main:crates/skein-lib/src/time.rs` has `Time::saturating_add`, `from_nanos`, `as_nanos`, and no `impl Add`.
+     - 02.1's Files gain `crates/smith-agent-service/src/profile/tests.rs`, where `a_zero_live_interval_is_refused` goes; the test asserts `Check::Deadlines` and the refusal's whole reason as the code gives it.
+     - 02.1's Shape: skein 01.1's `call: Token` on `provider::Event::Call` reaches each Call the worlds build and `tests/protocol-llm/src/wire.rs`' `for` pattern, all in Files (`git grep 'Event::Call {' origin/main -- tests/`: agent, host/inline, local, protocol-llm world and wire, session). 02.1 adds the interval to `Live::new` and `now` to `delta` and `pump`, `Default` to the tests' `Room` stub if 01.3's has none, and moves 01.3's unit tests to the new parameters.
+     - `release_after`: the agent-process referee's `next_deadline` returns the release's instant, its `act` reads `now` (`_now` today), and `World::maximum_queries` (1 for this case today) is at least the call's `queries`, so 02.2's retry (2 queries) passes the referee's `fake::queries(peer).count() <= self.maximum_queries`.
+     A further copy of any of these (another `Time` sum in a sketch, another `Event::Call` built in a world): correct it the same way, and list it in the commit body.
+
 ## For the user
 
 Each is a choice that outlasts the run; a `Decision:` line under it

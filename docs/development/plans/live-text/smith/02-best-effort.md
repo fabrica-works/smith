@@ -65,7 +65,8 @@ Files: `Cargo.lock` (the repin); the A30 sites, `tests/agent/src/
   {world,wire}.rs`, `tests/session/src/world.rs`, `tests/host/src/
   inline.rs`; `smith-agent-service` (`src/profile/quantities.rs`,
   `src/profile/validate.rs`, `src/profile/effective/list.rs`,
-  `src/live.rs`, `src/service.rs`, `src/teardown.rs`);
+  `src/profile/tests.rs`, `src/live.rs`, `src/service.rs`,
+  `src/teardown.rs`);
   `tests/agent-process` (`src/world.rs`, `src/fake.rs`, `tests/live.rs`).
 Shape: first, its own commit: `heavy cargo update -p
   skein-lib` moves the pin to skein's `origin/main`; each
@@ -73,7 +74,10 @@ Shape: first, its own commit: `heavy cargo update -p
   Event::Call { .. } in` becomes a `match` whose other arms panic with
   what came, and each `while let Some(provider::Request::Reply { .. })`
   keeps its loop and panics on another request, so none stops silently
-  (A30). Then `Policy` gains `live_interval: Duration` (sketch),
+  (A30); each `provider::Event::Call { .. }` the worlds build, and
+  `tests/protocol-llm/src/wire.rs`' `for` pattern, takes skein 01.1's
+  `call: Token`, a token that names the call among the world's calls in
+  flight (skein's `provider.rs` passes `call: id.token()`). Then `Policy` gains `live_interval: Duration` (sketch),
   `standard()` 100 ms; `policy_deadlines` checks it like its neighbours;
   the effective list's destructure names it and writes its line. The
   live module keeps the time its oldest unsent byte arrived; `pump(now,
@@ -82,8 +86,13 @@ Shape: first, its own commit: `heavy cargo update -p
   held whatever the time. `live::deadline()` is that time plus the
   interval while bytes are held; the service's `next_deadline`,
   `next_policy_deadline` and `work_pending` include it, and `teardown`'s
-  settling waits for no held bytes. 01.3's unit tests that send a short
-  piece at once pass a time at the interval's end.
+  settling waits for no held bytes. 02.1 adds the interval to
+  `Live::new` and `now` to `delta` and `pump`, and gives the tests'
+  `Room` stub `Default` if 01.3's has none; 01.3's unit tests take the
+  new parameters, and those that send a short piece at once pass a time
+  at the interval's end. `skein_lib::Time` has no `Add` or `Sub`: write
+  `AT_ZERO.saturating_add(interval)`, and `Time::from_nanos(end.
+  as_nanos() - 1)` for the instant before `end`.
 Test shape: `smith-agent-service/src/live.rs`' tests, as 01.3's, with
   `quantities::standard().policy.live_interval`, reference:
   ```rust
@@ -94,21 +103,32 @@ Test shape: `smith-agent-service/src/live.rs`' tests, as 01.3's, with
       live.open(OWNER, 1, 0);
       let mut room = Room { takes: true, ..Room::default() };
       live.delta(OWNER, b"Hel", AT_ZERO, &mut room);
-      live.pump(AT_ZERO + interval - NANO, &mut room);
+      let end = AT_ZERO.saturating_add(interval);
+      live.pump(Time::from_nanos(end.as_nanos() - 1), &mut room);
       assert!(room.sent.is_empty(), "held before the interval ends");
-      assert_eq!(live.deadline(), Some(AT_ZERO + interval));
-      live.pump(AT_ZERO + interval, &mut room);
+      assert_eq!(live.deadline(), Some(end));
+      live.pump(end, &mut room);
       assert_eq!(room.sent.iter().map(|piece| &*piece.bytes).collect::<Vec<_>>(), [b"Hel"]);
       assert_eq!(live.deadline(), None);
   }
   ```
   Beside it: `a_piece_reaching_the_bound_goes_before_the_interval`; the
-  profile's tests: `a_zero_live_interval_is_refused`. In `tests/agent-
-  process`, the world gains `script(turns)`, which gives the peer its
-  turns in the case's place, and `release_after(name, queries, after)`:
-  its referee calls `Peer::release` once the peer has taken `queries`
-  queries and `after` has passed since, and keeps the host's frames
-  observed then (`frames_at_release`). In `tests/live.rs`:
+  profile's tests (`src/profile/tests.rs`):
+  `a_zero_live_interval_is_refused`, which asserts the refusal's
+  `Check::Deadlines` and its whole reason, as the code gives it: in the
+  ready check's probe, where the interval joined the deadlines that
+  derive `deadline_minimum`, `policy.live_interval=0 ns;
+  policy.deadline_minimum=0 ns`. In `tests/agent-process`, the world
+  gains `script(turns)`, which gives the peer its turns in the case's
+  place, and `release_after(name, queries, after)`: its referee calls
+  `Peer::release` once the peer has taken `queries` queries and `after`
+  has passed since, and keeps the host's frames observed then
+  (`frames_at_release`). The referee's `next_deadline` in
+  `tests/agent-process/src/world.rs` returns the release's instant while
+  it waits, so that the world's clock reaches it, and its `act` reads
+  its `now` (`_now` today). `World::maximum_queries` is at least
+  `release_after`'s `queries`, so that the referee's `fake::queries(peer)
+  .count() <= self.maximum_queries` holds for 02.2's retry (2 queries). In `tests/live.rs`:
   `a_held_reply_shows_its_first_piece_at_the_intervals_end` (a turn of
   `Line::Pieces` "Hel", hold `h`, "lo"; `release_after(b"h", 1, 1 s)`,
   under the world's 3 s idle deadline). Units under 20 ms, the story
