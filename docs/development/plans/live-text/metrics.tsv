@@ -1,0 +1,29 @@
+wall_h	2.1	h
+running_h	2.1	h
+steps_planned	8	steps
+steps_added	0	steps
+steps_dropped	0	steps
+step_h	0.27	h per step
+escalations	cross-session scope 1, plan defect 1	by kind
+escalation_wait_min	2.5	min, median
+blocked_h	0.1	h
+answers_reversed	0	answers
+steers	2 sent, 0 points refused	
+restarts		by cause
+tokens_coordinator	13862089 in (98% cached), 25116 out	tokens
+tokens_implementers	61391849 in (98% cached), 178811 out	tokens
+tokens_claude	1355343549 in (98% cached), 5884078 out; in: 1313021646 before the claim, 34818040 in the run, 7503863 after	tokens
+cost_claude	$491: planner $53, supervisor $13, retrospective $1, designer $424; cache reads $249, cache writes $136, fresh input $0, output $106; no transcript on this machine, counted as $0: designer 5e38559b-0011-44e3-917d-4cf49e957868, designer ffc2b313-14b2-457e-8d90-56984b563aab	dollars at list prices
+supervisor	1 sessions, 2.5 h, 0.9M weighted tokens per hour, 52% in the 40 requests after each start or compaction, 1 compactions	
+tokens_per_step	13815210	tokens per step, the run's
+coordinator_requests	150, 17 after a wait ran out	requests
+compactions	0	compactions
+gates_per_step	1.2	land gates per step
+gate_lane_other	8	gate-lane tasks besides land's gates
+queue_wait_ratio	0.18	waiting per running
+suites	skein first: scripts/check.sh passed: 3116 tests / 6.885 s; 104 tests / 29.583 s; 38 tests / 23.286 s; 70 s in all; last: scripts/check.sh passed: 3139 tests / 6.865 s; 104 tests / 29.495 s; 38 tests / 22.288 s; 83 s in all | smith first: scripts/check.sh passed: 2358 tests / 10.863 s; 43 tests / 10.899 s; 27 s in all; last: scripts/check.sh passed: 2388 tests / 11.659 s; 43 tests / 10.987 s; 29 s in all	Gate-Result, by repository
+proofs	world 4, joint 4, 0 below plan	steps
+report_lines	12 median, 14 p90	lines
+lines	code +1111 -175, tests +2256 -307, generated +581 -19, data +72 -28	lines
+pin_lag	smith: skein 8; jig: skein 27, smith 18; hearth: skein 26; temper: skein 24, smith 21, jig 5	commits behind upstream main
+contexts	146K median, 185K p90 of the sessions' peaks; 5 handovers	
