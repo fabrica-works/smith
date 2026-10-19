@@ -561,6 +561,23 @@ commits is this plan's.
      None` ends an issued sign-in `Incomplete` until 08.4, which 08.1's Proof
      already leaves to it.
 
+116. **skein 08.1 lands again past a timing flake** (process, skein 08's block of 2026-10-19T15:02:47Z).
+     Land 08.1 again, once, without changing a test. skein's
+     `tests/world/tests/real.rs`
+     `a_keep_time_after_the_last_word_fails_the_world_naming_the_process`
+     failed as "test did not panic as expected" in 0.014 s, in code no step
+     of this run touches; it passed in the other 25 of this run's gate logs
+     that ran it. Its deadline, `clock.now().now.saturating_add(Duration::from_millis(5))`,
+     is taken before `real::World::new(Judge)` and `world.spawn`, so a setup
+     slower than 5 ms leaves no keep time after the last word: a wall-clock
+     bound, which implementer.md, 8.5, retries once ("If the gate fails only
+     on a timeout (a suite's global timeout, or a test's wall-clock bound),
+     in tests outside your session's files, `land` again once without
+     asking"). The README's "Rules of this plan" now says so for this test
+     (ruling 116), and `later.md` holds its fix. Before landing again,
+     08.1 takes ruling 115: its decision-8 helper counts an empty issued id
+     as none, as `Client::refresh` does.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

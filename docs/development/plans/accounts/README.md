@@ -217,6 +217,15 @@ downstream repin.
   from `anthropic_admission.rs`, one returning `Option<Error>`, the
   other `Error`) and its twice-written `World::new` / `Start` / `run`
   lines are the first: skein 01 moves them at its next increment.
+- **A known timing flake** (ruling 116): skein's
+  `tests/world/tests/real.rs`
+  `a_keep_time_after_the_last_word_fails_the_world_naming_the_process`
+  fails now and then as "did not panic" (once in its 26 runs in this
+  run's gate logs, to skein-08.1's of 15:02): its 5 ms deadline is taken
+  before `real::World::new` and `spawn`. A gate that fails only there is
+  a timeout's failure (implementer.md, 8.5): `land` again once without
+  asking; a second failure on the same tree is a question. Its fix is
+  `later.md`'s.
 
 ## Live services
 
