@@ -691,6 +691,41 @@ commits is this plan's.
      No suite ran in the check (the queue held its run); a further user of
      what 03 changes is refreshed the same way and listed in the commit body.
 
+121. **skein 09's Shapes against main** (ready check of skein-09.1).
+     The ready check of skein-09.1 against skein 11565f3, then main 1c58a52,
+     found 09's Shapes short of the code; `skein/09-driver-shared.md` now
+     says, checked by `git grep` on skein origin/main 1c58a52:
+     - Rules: each story module's `run` takes its flags as plain `bool`s, as
+       `tests/oauth-accounts/src/sign_in.rs`' `pub fn run(seed: u64, story:
+       Story, faulted: bool, large: bool, memory: Memory)` does; 09.1's world
+       already calls `sign_out::run(seed, story, private, Memory::Checked)`,
+       and `src/private.rs`' is `pub fn run(seed: u64, story: Story)`.
+     - 09.1 and 09.3 Files take `component/names.rs`: `named` matches every
+       `Request` with no `..` (`Request::Grant { account } =>
+       Request::Grant { account: self.lookup(account, Asked::Grant, up)? }`,
+       `Request::Kept { account, generation, keeping } => Request::Kept {
+       account: self.terminal_place(account)?, .. }`); `SignOut` maps by
+       `lookup(account, Asked::SignOut, up)`, `Locked` as `Kept` is mapped.
+     - 09.1: an access-only record (`pub fn refresh_state(&self) ->
+       Option<RefreshState>`, `crates/skein-oauth/src/record.rs`) is not
+       revoked, oauth.md 2.3: "An access-only record has no refresh token and
+       is never revoked by the client": `revoked` false, no connection, the
+       record forgotten, a row of
+       `a_sign_out_says_whether_revocation_was_confirmed`.
+       `tests/oauth-accounts/src/sign_in.rs`' `match lower` gains a `Remove`
+       arm.
+     - 09.2: `missing` is `Box<[u8]>` (`Tokens { record: SavedToken, missing:
+       Box<[u8]> }`, `crates/skein-oauth/src/machine.rs`), so the question to
+       raise goes. `component.rs` drops it (`oauth::Request::Tokens { record,
+       .. } =>` … `exchange.stage = Stage::Keeping { candidate: record };`):
+       `exchange.rs`' `Keeping { candidate: oauth::SavedToken }` holds it
+       until `SignedIn`. `component/private.rs`' `let sign_in_allowed = match
+       failure {` lists each `Failure` (`Some(Failure::Unloaded { .. } |
+       Failure::Expired | Failure::Exchange(_) | Failure::NotKept) => false`)
+       and takes `NotGranted`, as 09.3's Files already take it for `Busy`.
+     A further user of what 09 changes is refreshed the same way and listed
+     in the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

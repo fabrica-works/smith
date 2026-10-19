@@ -45,9 +45,12 @@ skein 06.1's revocation in the fake issuer, on skein's `origin/main`.
   `src/shared_tests.rs` (`#[path]` from `tests.rs`), their stories to
   `tests/oauth-accounts/src/{sign_out,shared}.rs`, all new, reusing
   world.rs's fixtures and 08's `src/accounts.rs`. Each story module
-  gives `run(seed, story, memory)` and `facts(procs)` as
-  `src/private.rs`'s `run` and `facts` do, and `protocol` as
-  `src/world.rs`'s.
+  gives `run(seed, story, <flags>, memory)`, its flags plain `bool`s as
+  `src/sign_in.rs`'s `run(seed, story, faulted, large, memory)` takes
+  them (09.1's `sign_out::run(seed, story, private, memory)`;
+  `src/private.rs`'s `run(seed, story)` takes neither), `facts(procs)`
+  as `src/private.rs`'s `facts` does, and `protocol` as
+  `src/world.rs`'s (ruling 121).
 - The scripted owner lock is the world's: it plays the other process,
   writing a newer, absent or other-subject record, and never generates
   a key or draws outside the seeded generator.
@@ -62,6 +65,8 @@ Needs: skein 08's named accounts and `SignIn` fields; skein 05's
   endpoint); skein 06.1's revocation for the worlds.
 Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
   `component/sign_out.rs` (new), `component/private.rs`,
+  `component/names.rs` (`named`'s match over `Request`, which has no
+  `..`, maps `SignOut` by `lookup(account, Asked::SignOut, up)`),
   `component/accounts.rs` (`admit`'s `Unusable::Origin`), `keeper.rs`,
   `exchange.rs`, `boundary.rs`, `lib.rs`, `tests.rs`,
   `sign_out_tests.rs` (new), `private_tests.rs`;
@@ -69,7 +74,8 @@ Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
   `src/sign_out.rs` (new), `src/lib.rs`, `src/world.rs`,
   `src/sign_in.rs` (`observe` moves its `Keep` arm into a `keep`
   helper, as `SignedOut`, `Lock` and `Unlock` join its panic arms and
-  it nears 100 lines), `tests/sign_out.rs` (new), `tests/memory.rs`.
+  it nears 100 lines; its `match lower` over `FileLower` gains a
+  `Remove` arm), `tests/sign_out.rs` (new), `tests/memory.rs`.
 Shape: `Request::SignOut { account }` ends in `Event::SignedOut {
   account, revoked }`, or `Failed { ends: Ends::SignOut }`, or
   `Refused { asked: Asked::SignOut }`: `Source` for a handed-in account,
@@ -79,8 +85,10 @@ Shape: `Request::SignOut { account }` ends in `Event::SignedOut {
   grant ends at once as `Failed { ends: Grant, failure: Expired }`, and
   a grant asked meanwhile ends with it. With a revocation endpoint the
   client steps skein 05's `Revoke` over the web socket; its `Revoked`
-  gives `revoked`. Without one, `revoked` is false and no connection
-  opens. Then the record is forgotten: the account holds `State::Empty`;
+  gives `revoked`. Without one, or for an access-only record
+  (`SavedToken::refresh_state` gives `None`; oauth.md 2.3: it "has no
+  refresh token and is never revoked by the client"), `revoked` is
+  false and no connection opens. Then the record is forgotten: the account holds `State::Empty`;
   a private keeper runs `Operation::Remove` (new) of its file under its
   directory, and after it stores expecting the name absent; for the
   owner's store, `SignedOut` is the owner's word to drop its own. A
@@ -124,7 +132,8 @@ Test shape: unit, `src/sign_out_tests.rs`, a new file over `setup`,
   (Its rows: handed in, no record, an exchange running, exchanges
   full, after close.) Beside it:
   `a_sign_out_says_whether_revocation_was_confirmed` (rows: confirmed,
-  unconfirmed, no endpoint), `a_sign_out_forgets_the_record` (rows:
+  unconfirmed, no endpoint, an access-only record: false, no
+  connection, the record forgotten), `a_sign_out_forgets_the_record` (rows:
   owner, private), `a_held_grant_ends_as_expired_at_a_sign_out`,
   `a_cancelled_sign_out_ends_as_cancelled_and_keeps_the_record` (rows:
   before the revocation's answer, before the owner's answer to the
@@ -158,7 +167,7 @@ Proof: world, `a_sign_out_settles_for_both_keepers`: a signed-in
   file, then `Closed`; under 0.5 s.
 Don't: no change to io's `Remove` here; no revocation retried; no
   record kept after a sign-out that settled.
-Size: about 290 lines.
+Size: about 300 lines.
 Removes: nothing.
 
 ### 09.2 Required scopes
@@ -167,10 +176,16 @@ Needs: skein 08's named accounts; skein 05's terms (the scopes that
   must be granted), its record's granted scopes and `Tokens`' missing
   ones; skein 06's declined scopes for the worlds.
 Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
-  `component/sign_in.rs`, `boundary.rs`, `tests.rs`;
-  `tests/oauth-accounts/src/sign_in.rs`, `tests/sign_in.rs`.
-Shape: `Event::SignedIn` gains `missing`, the required scopes not
-  granted, as skein 05's `Tokens` names them; the record is kept. Each
+  `component/sign_in.rs`, `component/private.rs` (the exhaustive
+  `match failure` that sets `sign_in_allowed` takes `NotGranted`),
+  `exchange.rs` (`Stage::Keeping` holds `missing`), `boundary.rs`,
+  `tests.rs`; `tests/oauth-accounts/src/sign_in.rs`, `tests/sign_in.rs`.
+Shape: `Event::SignedIn` gains `missing: Box<[u8]>`, the required
+  scopes not granted, as skein 05's `Tokens { record, missing }` names
+  them (`crates/skein-oauth/src/machine.rs`); the record is kept.
+  `component.rs`'s `oauth::Request::Tokens { record, .. }` arm, which
+  drops `missing` today, keeps it in `Stage::Keeping { candidate,
+  missing }` until the keep settles and `SignedIn` is pushed. Each
   lend, a grant's answer and a refresh's `Granted`, checks the record's
   granted scopes against the terms' required ones: one lacking ends the
   grant as `Failed { ends: Grant, failure: NotGranted }` (new), nothing
@@ -201,7 +216,9 @@ Scope: oauth.md 6.4, "A shared record": the lock before each write,
   worst case.
 Needs: 09.1's sign-out (its revocation is a write).
 Files: `crates/skein-oauth-accounts/src/`: `component.rs`,
-  `component/lock.rs` (new), `component/private.rs`, `exchange.rs`,
+  `component/lock.rs` (new), `component/private.rs`,
+  `component/names.rs` (`named` maps `Locked`'s account as `Kept`'s
+  is mapped), `exchange.rs`,
   `accounts.rs`, `boundary.rs`, `limits.rs`, `lib.rs`,
   `shared_tests.rs` (new), `tests.rs`, `private_tests.rs`;
   `tests/oauth-accounts/`: `src/shared.rs` (new), `src/lib.rs`,
@@ -355,7 +372,8 @@ pub struct Limits {
 
 ## Questions to raise when reached
 
-- 09.2: the type of skein 05's missing scopes.
+None: ruling 121 gives `missing`'s type, `Box<[u8]>`, as skein 05's
+`Tokens` has it.
 
 ## Done when
 
