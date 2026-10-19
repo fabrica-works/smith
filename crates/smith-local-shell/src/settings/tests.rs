@@ -740,10 +740,10 @@ fn an_openai_endpoint_is_written_with_its_number() {
     }
     let input = effort_settings_input("[endpoints.test]\ndialect='openai'\n", &Shared::default())
         .expect("public endpoint settings");
-    let super::resolve::Selection { models, accounts, mut settings } =
+    let super::resolve::Selection { models, accounts: _, mut settings } =
         super::resolve::select(&input).expect("selected public endpoint");
     let models = super::resolve::models::resolve(&mut settings, &models).expect("public model defaults");
-    let document = super::resolve::document::endpoints(&settings, &models, &accounts).expect("agent endpoints");
+    let document = super::resolve::document::endpoints(&settings, &models).expect("agent endpoints");
     let endpoint = &document[0];
     assert_eq!(
         WrittenEndpoint {

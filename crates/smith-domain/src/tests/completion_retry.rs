@@ -247,9 +247,17 @@ fn a_restored_prefix_names_the_next_source_sequence_without_changing_the_retry()
     assert_eq!(retried, CompletionName { sequence, retry: 1 });
 }
 
-fn account_failure(failure: Failure, report: crate::llm::Report, now: Time, later: Time) -> Option<run::Failure> {
+fn account_failure(
+    failure: Failure,
+    report: crate::llm::Report,
+    now: Time,
+    later: Time,
+    account: Option<u32>,
+) -> (Option<run::Failure>, u32) {
     let mut harness = Harness::new();
-    let (_, owner, _) = harness.admit(7, charter());
+    let mut charter = charter();
+    charter.llm.account = account;
+    let (_, owner, _) = harness.admit(7, charter);
     harness.env.now = now;
     let emitted = harness.step(Event::Failed {
         owner,
@@ -259,12 +267,13 @@ fn account_failure(failure: Failure, report: crate::llm::Report, now: Time, late
         detail: bytes(b"provider reason"),
     });
     harness.env.now = later;
+    let notices = account_notices(&emitted).len();
     for request in &*emitted {
         if let Request::Answer { answer: run::Answer::Failed { failure, .. }, .. } = request {
-            return Some(failure.clone());
+            return (Some(failure.clone()), notices);
         }
     }
-    None
+    (None, notices)
 }
 
 #[test]
@@ -276,8 +285,14 @@ fn a_limited_account_ends_the_run_with_its_reset() {
         (None, notice, None),
         (Some(Duration::from_millis(80)), Time::from_nanos(50_000_000), Some(Time::from_nanos(100_000_000))),
     ] {
-        let terminal =
-            account_failure(Failure::Exhausted { retry_after: reset }, crate::llm::Report::none(), notice, later);
+        let terminal = account_failure(
+            Failure::Exhausted { retry_after: reset },
+            crate::llm::Report::none(),
+            notice,
+            later,
+            Some(0),
+        )
+        .0;
         assert_eq!(
             terminal,
             Some(run::Failure::Model(run::Fault::Limited { account: 0, reset_at: expected })),
@@ -289,7 +304,7 @@ fn a_limited_account_ends_the_run_with_its_reset() {
 #[test]
 fn a_refused_account_ends_the_run_with_its_code() {
     let report = crate::llm::Report { code: bytes(b"not-eligible"), request: bytes(b"request"), field: Box::default() };
-    let terminal = account_failure(Failure::Refused, report, Time::ZERO, Time::ZERO);
+    let terminal = account_failure(Failure::Refused, report, Time::ZERO, Time::ZERO, Some(0)).0;
     assert_eq!(terminal, Some(run::Failure::Model(run::Fault::Refused { account: 0, code: bytes(b"not-eligible") })));
 }
 
@@ -297,7 +312,7 @@ fn a_refused_account_ends_the_run_with_its_code() {
 fn an_unsupported_request_ends_the_run_naming_its_field() {
     let report =
         crate::llm::Report { code: bytes(b"unsupported"), request: bytes(b"request"), field: bytes(b"temperature") };
-    let terminal = account_failure(Failure::Unsupported, report, Time::ZERO, Time::ZERO);
+    let terminal = account_failure(Failure::Unsupported, report, Time::ZERO, Time::ZERO, Some(0)).0;
     assert_eq!(
         terminal,
         Some(run::Failure::Model(run::Fault::Completion {
@@ -312,4 +327,29 @@ fn an_unsupported_request_ends_the_run_naming_its_field() {
             }
         }))
     );
+}
+
+#[test]
+fn an_unaccounted_llms_account_failure_names_no_account() {
+    for (failure, expected) in [
+        (Failure::Exhausted { retry_after: None }, run::CompletionFailure::Exhausted { retry_after: None }),
+        (Failure::Refused, run::CompletionFailure::Refused),
+        (Failure::Unauthorized, run::CompletionFailure::Unauthorized),
+    ] {
+        let terminal = account_failure(failure, crate::llm::Report::none(), Time::ZERO, Time::ZERO, None);
+        assert_eq!(
+            terminal,
+            (
+                Some(run::Failure::Model(run::Fault::Completion {
+                    failure: expected,
+                    evidence: run::CompletionEvidence::Response { status: Some(403) },
+                    model: 0,
+                    attempts: 1,
+                    report: run::Report { code: Box::default(), request: Box::default(), field: Box::default() },
+                })),
+                0
+            ),
+            "{failure:?}"
+        );
+    }
 }

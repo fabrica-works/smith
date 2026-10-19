@@ -24,7 +24,9 @@ pub(super) fn run(
                     None => skein_lib::Decimal::of(u64::from(model.endpoint.0)).as_bytes().into(),
                 });
                 value.model = Some(clip(&model.model).into());
-                value.account = Some(u64::from(model.account));
+                if let Some(account) = model.account {
+                    value.account = Some(u64::from(account));
+                }
             }
             match value.completion.as_ref().expect("completion failure").class {
                 FailureClass::Unauthorized if value.account.is_some() => {}

@@ -337,7 +337,7 @@ pub(crate) fn charter() -> Charter {
         llm: Llm {
             effort: None,
             prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
-            account: 0,
+            account: Some(0),
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
             window: 8192,
@@ -646,7 +646,7 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
     let llm = Llm {
         effort: None,
         prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
-        account: 0,
+        account: Some(0),
         endpoint: Endpoint(2),
         model: bytes(b"model-b"),
         window: 8192,
@@ -1701,7 +1701,7 @@ fn agents() -> Charter {
     let models = Box::new([Llm {
         effort: None,
         prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
-        account: 0,
+        account: Some(0),
         endpoint: Endpoint(2),
         model: bytes(b"model-b"),
         window: 8192,

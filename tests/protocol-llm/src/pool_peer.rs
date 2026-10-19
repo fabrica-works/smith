@@ -53,6 +53,7 @@ fn limits() -> ComponentLimits {
             max_failure_bytes: client.detail_bytes,
         },
         contract_bytes: 4096,
+        llms: 1,
         accounts: 1,
         grant_value_bytes: 128,
     }
@@ -111,12 +112,10 @@ impl Peer {
                         skein_llm::Provider::Anthropic => skein_llm::Endpoint::anthropic(),
                     },
                 },
-                account: 0,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
                 models: Box::new([]),
             }]),
             limits.connection.endpoints,
-            limits.connection.connections,
         )
         .expect("fixture endpoint");
         let mut component = Component::new(&limits, endpoints).expect("production component");
@@ -212,7 +211,7 @@ impl Peer {
             &self.env,
             FromDomain::Complete {
                 owner: Token::new(owner),
-                grant: GrantName { account: 0, generation: 1 },
+                grant: Some(GrantName { account: 0, generation: 1 }),
                 prompt,
                 deadlines: smith_domain::session::Deadlines {
                     head: Duration::from_secs(head),

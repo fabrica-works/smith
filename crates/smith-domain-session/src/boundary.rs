@@ -265,6 +265,8 @@ pub enum Request {
 /// What a session is opened for.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Spec {
+    /// Account named by the charter, absent for uncredentialed calls.
+    pub account: Option<u32>,
     /// A child's final answer; main's run supplies its own finishing prompts.
     pub final_turn: Option<FinalTurn>,
     pub endpoint: Endpoint,

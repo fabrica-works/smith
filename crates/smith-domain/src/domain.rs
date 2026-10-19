@@ -127,7 +127,7 @@ pub(crate) struct TurnHandoff {
 /// Issued provider identity survives session closing and is consumed by its terminal.
 #[derive(Debug)]
 pub(crate) struct IssuedCompletion {
-    pub(crate) grant: GrantName,
+    pub(crate) grant: Option<GrantName>,
     pub(crate) name: crate::llm::CompletionName,
 }
 

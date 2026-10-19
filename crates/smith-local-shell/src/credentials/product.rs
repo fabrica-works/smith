@@ -47,7 +47,7 @@ impl Prepared {
 
 pub(crate) fn codex(resolved: &Resolved, account: u32) -> bool {
     for model in &resolved.local.models {
-        if model.account == account {
+        if model.account == Some(account) {
             let endpoint = resolved
                 .agent
                 .service

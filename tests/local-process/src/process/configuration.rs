@@ -175,7 +175,7 @@ fn local_policy(lower: &agent::Config, change: bool, tools: bool) -> (local::Con
                 unit: 1_000_000,
             },
             dialect: 1,
-            account: 0,
+            account: Some(0),
             endpoint: charter::Endpoint(0),
             model: b"fake".as_slice().into(),
             window: 1_048_576,
@@ -283,7 +283,6 @@ fn cloned_endpoints(lower: &agent::Config) -> smith_protocol_llm::Endpoints {
                     limits: destination.limits,
                     credential: destination.credential,
                 },
-                account: options.account,
                 connect: options.connect,
                 handshake: options.handshake,
                 identity: options.identity,
@@ -291,7 +290,7 @@ fn cloned_endpoints(lower: &agent::Config) -> smith_protocol_llm::Endpoints {
             }
         })
         .collect();
-    smith_protocol_llm::Endpoints::new(configured, lower.limits.llm.connection.endpoints, lower.limits.llm.accounts)
+    smith_protocol_llm::Endpoints::new(configured, lower.limits.llm.connection.endpoints)
         .expect("unchanged checked fixture endpoints")
 }
 

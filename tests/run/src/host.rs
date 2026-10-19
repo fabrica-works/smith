@@ -583,7 +583,7 @@ impl Host {
         let llm = |model: &[u8]| Llm {
             effort: None,
             prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
-            account: 0,
+            account: Some(0),
             endpoint: Endpoint(0),
             model: Box::from(model),
             window: 65_536,

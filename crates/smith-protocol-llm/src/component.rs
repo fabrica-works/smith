@@ -1,5 +1,6 @@
 //! A bounded LLM component over skein's connection pool.
-//! It keeps endpoint names, two grant generations per account, and a context
+//! It keeps endpoint names, the last charter's account-to-endpoint bindings,
+//! two grant generations per account, and a context
 //! for each accepted call, plus one exact request awaiting its prompt record.
 //! It never knows retry policy, host credentials, or
 //! provider wire grammar. `from_domain`, `from_below`, `fire` and `reclaim`
@@ -33,6 +34,8 @@ pub struct ComponentLimits {
     pub receiving: Receiving,
     /// Maximum retained charter result and delivery rule bytes per call.
     pub contract_bytes: u64,
+    /// Maximum main and sub-agent LLMs whose grant bindings a start retains.
+    pub llms: u32,
     /// Maximum distinct credential accounts.
     pub accounts: u32,
     /// Maximum bearer and provider account-id bytes in one grant.
@@ -72,6 +75,7 @@ struct Prepared {
 pub struct Component {
     limits: ComponentLimits,
     options: Map<u32, EndpointOptions>,
+    bindings: Map<(u32, u32), ()>,
     grants: Grants,
     active: Map<Token, Active>,
     next: Set<Token>,
@@ -117,13 +121,14 @@ const MEASURES: u32 = MAX_OUT
 /// configured endpoints to count their request heads and credential bounds.
 #[must_use]
 pub fn component_worst_case(limits: &ComponentLimits, endpoints: &Endpoints) -> Option<u64> {
-    if limits.accounts == 0 || limits.connection.connections == 0 {
+    if limits.accounts == 0 || limits.llms == 0 || limits.connection.connections == 0 {
         return None;
     }
     let entrance = crate::worst_case(&limits.adapter, &limits.receiving)?;
     let base = connection::worst_case(&limits.connection, endpoints.destinations())?
         .checked_add(Grants::worst_case(limits.accounts, limits.grant_value_bytes)?)?
         .checked_add(Map::<u32, EndpointOptions>::worst_case(limits.connection.endpoints)?)?
+        .checked_add(Map::<(u32, u32), ()>::worst_case(limits.llms)?)?
         .checked_add(endpoints.option_bytes()?)?
         .checked_add(Map::<Token, Active>::worst_case(limits.connection.connections)?)?
         .checked_add(Set::<Token>::worst_case(limits.connection.connections)?)?
@@ -193,6 +198,7 @@ impl Component {
         Ok(Component {
             limits: *limits,
             options,
+            bindings: Map::with_capacity(limits.llms),
             grants,
             active: Map::with_capacity(limits.connection.connections),
             next: Set::with_capacity(limits.connection.connections),
@@ -240,19 +246,34 @@ impl Component {
         self.route(env.now, to_domain);
     }
 
+    /// Replace the last start's account-to-endpoint bindings before installing its grants.
+    pub fn bind_grants(&mut self, charter: &run::Charter) -> Result<(), GrantError> {
+        self.bindings = Map::with_capacity(self.limits.llms);
+        for llm in core::iter::once(&charter.llm).chain(charter.models.iter()) {
+            if let Some(account) = llm.account {
+                match self.bindings.insert((account, llm.endpoint.0), ()) {
+                    Ok(_) => {}
+                    Err(_) => return Err(GrantError::Full),
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Install a validated generation from the channel or a colocated host.
     pub fn grant(&mut self, name: GrantName, credential: Credential, lapses: Time) -> Result<(), GrantError> {
         if credential.value.is_empty() {
             return Err(GrantError::Scheme);
         }
-        for (_, options) in &self.options {
-            if options.account == name.account {
+        for ((account, endpoint), ()) in &self.bindings {
+            if *account == name.account {
+                let options = self.options.get(endpoint).ok_or(GrantError::Scheme)?;
                 let accepted = match options.provider {
-                    skein_llm::Provider::OpenAiCodex => match credential.scheme {
-                        skein_llm::Scheme::Bearer => !credential.account_id.is_empty(),
-                        skein_llm::Scheme::Key => false,
+                    shared::Provider::OpenAiCodex => match credential.scheme {
+                        shared::Scheme::Bearer => !credential.account_id.is_empty(),
+                        shared::Scheme::Key => false,
                     },
-                    skein_llm::Provider::OpenAi | skein_llm::Provider::Anthropic => credential.account_id.is_empty(),
+                    shared::Provider::OpenAi | shared::Provider::Anthropic => credential.account_id.is_empty(),
                 };
                 if !accepted {
                     return Err(GrantError::Scheme);
@@ -371,7 +392,7 @@ impl Component {
         &mut self,
         env: &Env<ComponentLimits>,
         owner: Token,
-        grant: GrantName,
+        grant: Option<GrantName>,
         prompt: llm::Prompt,
         deadlines: smith_domain::session::Deadlines,
         bounds: Receiving,
@@ -395,14 +416,14 @@ impl Component {
             return;
         }
         let options = match self.options.get(&prompt.endpoint.0) {
-            Some(options) if options.account == grant.account => options,
-            Some(_) | None => {
+            Some(options) => options,
+            None => {
                 Self::local_failure(owner, llm::Failure::Invalid, bounds.max_failure_bytes, to_domain);
                 return;
             }
         };
         let drop_reasoning = options.drop_reasoning(&prompt.model);
-        let credential = match self.grants.read(grant, env.now) {
+        let credential = match self.grants.credential(grant, env.now) {
             Ok(credential) => credential,
             Err(GrantError::Missing | GrantError::Lapsed) => {
                 Self::local_failure(owner, llm::Failure::Unauthorized, bounds.max_failure_bytes, to_domain);
@@ -438,12 +459,12 @@ impl Component {
             return;
         }
         if let Some(event) =
-            crate::guard::check(purpose, &mut translated, &credential, options, owner, bounds.max_failure_bytes)
+            crate::guard::check(purpose, &mut translated, credential.as_ref(), options, owner, bounds.max_failure_bytes)
         {
             Self::domain_event(event, to_domain);
             return;
         }
-        let captured = match observed_prompt(&translated, &credential, options, observation) {
+        let captured = match observed_prompt(&translated, credential.as_ref(), options, observation) {
             Ok(captured) => captured,
             Err(error) => {
                 Self::refusal(owner, error, bounds.max_failure_bytes, to_domain);
@@ -473,7 +494,7 @@ impl Component {
             call: owner,
             endpoint: options.index,
             prompt: translated,
-            credential: Some(credential),
+            credential,
             deadlines,
             drop_reasoning,
         };
@@ -728,13 +749,13 @@ impl Component {
 // This is not a transport measurement: bytes remain unobserved until sending.
 fn observed_prompt(
     translated: &shared::Prompt,
-    credential: &Credential,
+    credential: Option<&Credential>,
     options: &EndpointOptions,
     observation: Option<crate::Observation>,
 ) -> Result<Option<smith_events::Prompt>, Error> {
     match observation {
         Some(observation) => {
-            match shared::client::measure(translated, Some(credential), &options.endpoint, &options.client) {
+            match shared::client::measure(translated, credential, &options.endpoint, &options.client) {
                 Ok(_) => {}
                 Err(error) => return Err(Error::from_shared(error)),
             }

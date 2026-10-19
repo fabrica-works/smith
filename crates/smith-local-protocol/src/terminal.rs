@@ -586,7 +586,7 @@ mod failure_tests {
             effort: None,
             prices: smith_domain::run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
             dialect: 0,
-            account: 7,
+            account: Some(7),
             endpoint: smith_domain::run::charter::Endpoint(3),
             model: b"small".as_slice().into(),
             window: 16,

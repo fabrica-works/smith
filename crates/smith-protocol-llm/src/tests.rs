@@ -893,3 +893,12 @@ fn each_providers_prompt_allowance_counts_its_tool_inventory() {
         assert!(empty > 0 && one > empty && three > one, "{provider:?}");
     }
 }
+
+#[test]
+fn a_call_with_no_account_carries_no_credential() {
+    let grants = crate::Grants::new(1, 64).expect("bounded grants");
+    let missing = smith_domain::GrantName { account: 7, generation: 1 };
+    for (name, expected) in [(None, Ok(false)), (Some(missing), Err(crate::GrantError::Missing))] {
+        assert_eq!(grants.credential(name, skein_lib::Time::ZERO).map(|credential| credential.is_some()), expected);
+    }
+}

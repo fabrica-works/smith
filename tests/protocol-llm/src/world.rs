@@ -2045,7 +2045,7 @@ fn main_model() -> run::charter::Llm {
     Llm {
         effort: None,
         prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
-        account: 0,
+        account: Some(0),
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
         window: crate::MODEL_WINDOW,

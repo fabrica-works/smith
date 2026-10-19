@@ -544,9 +544,7 @@ fn configure_choices(config: &mut service::Config, lower: &mut agent::Config) {
     other.efforts = Box::new([b"low".as_slice().into()]);
     lower.domain.models = Box::new([main, other]);
     let mut names = skein_lib::List::with_capacity(1);
-    names
-        .push(smith_protocol_channel::Endpoint { name: b"main".as_slice().into(), number: 0, dialect: 1, account: 0 })
-        .unwrap();
+    names.push(smith_protocol_channel::Endpoint { name: b"main".as_slice().into(), number: 0, dialect: 1 }).unwrap();
     lower.channel_endpoints = smith_protocol_channel::Endpoints::new(names);
     config.endpoints = lower.channel_endpoints.clone();
     let main = config.local.models[0].clone();

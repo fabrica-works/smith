@@ -166,6 +166,7 @@ pub(crate) struct Session {
 /// What a session holds in every state.
 #[derive(Debug)]
 struct Conversation {
+    account: Option<u32>,
     protocol_allowance: u64,
     /// The opener's token, echoed on every record back to it.
     opener: Token,
@@ -843,7 +844,7 @@ pub(crate) fn failed(
                     None => call(&mut session.conversation, id, 0, env, out),
                 }
             } else {
-                call_failed(attempt, failure, evidence, session.conversation.expires, &mut domain.rng, env)
+                call_failed(attempt, failure, evidence, &session.conversation, &mut domain.rng, env)
             }
         }
         State::Closing { end, waiting: waiting @ Waiting { call: true, .. } } => {
@@ -1816,7 +1817,7 @@ fn call_failed(
     attempt: u32,
     failure: Failure,
     evidence: crate::llm::Evidence,
-    expiry: Time,
+    conversation: &Conversation,
     rng: &mut Rng,
     env: &Env<Limits>,
 ) -> State {
@@ -1839,7 +1840,24 @@ fn call_failed(
         | Failure::Unauthorized
         | Failure::Exhausted { .. } => failure,
     };
-    match retry_decision(failure, attempt, env.now, expiry, &env.limits, rng) {
+    let decision = match failure {
+        Failure::Unauthorized if conversation.account.is_none() => Retry::Fail,
+        Failure::Unauthorized
+        | Failure::Overloaded
+        | Failure::Unavailable
+        | Failure::TimedOut { .. }
+        | Failure::RateLimited { .. }
+        | Failure::ContextTooLong
+        | Failure::Refused
+        | Failure::Unsupported
+        | Failure::Invalid
+        | Failure::Exhausted { .. }
+        | Failure::Limit { .. }
+        | Failure::ApplicationLimit
+        | Failure::Protocol
+        | Failure::Cancelled => retry_decision(failure, attempt, env.now, conversation.expires, &env.limits, rng),
+    };
+    match decision {
         Retry::After(delay) => {
             State::Backoff { attempt: attempt.saturating_add(1), until: env.now.saturating_add(delay) }
         }
@@ -2095,6 +2113,7 @@ fn admit(
     let mut transcript = List::with_capacity(limits.history_messages);
     transcript.push(Message { role: Role::User, content }).ok()?;
     let conversation = Conversation {
+        account: spec.account,
         protocol_allowance: spec.protocol_allowance,
         opener,
         endpoint: spec.endpoint,

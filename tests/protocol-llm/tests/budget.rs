@@ -156,7 +156,7 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
             output: rate.output,
             unit: rate.unit,
         },
-        account: 0,
+        account: Some(0),
         endpoint: Endpoint(0),
         model: rate.model.into(),
         window: smith_protocol_llm_world::MODEL_WINDOW,

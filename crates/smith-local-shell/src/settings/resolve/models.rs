@@ -131,7 +131,7 @@ impl Model {
             effort: None,
             prices: self.prices,
             dialect,
-            account,
+            account: Some(account),
             endpoint: charter::Endpoint(endpoint),
             model: self.declared.name.clone(),
             window: self.declared.window,

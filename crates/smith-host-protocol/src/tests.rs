@@ -319,9 +319,7 @@ fn host_stop_signals_keep_the_child_identity() {
 
 fn endpoints() -> smith_protocol_channel::Endpoints {
     let mut names = skein_lib::List::with_capacity(1);
-    names
-        .push(smith_protocol_channel::Endpoint { name: Box::new([]), number: 0, dialect: 0, account: 0 })
-        .expect("one endpoint");
+    names.push(smith_protocol_channel::Endpoint { name: Box::new([]), number: 0, dialect: 0 }).expect("one endpoint");
     smith_protocol_channel::Endpoints::new(names)
 }
 

@@ -62,7 +62,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         effort: None,
         prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         dialect: 1,
-        account: 0,
+        account: Some(0),
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
         window: 65_536,

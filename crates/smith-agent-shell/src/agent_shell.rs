@@ -221,7 +221,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         versions: smith_events::Versions {
             events: smith_events::VERSION,
             channel: 4,
-            charter: 2,
+            charter: 3,
             transcript: 5,
             chat_store: None,
         },

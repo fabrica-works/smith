@@ -173,7 +173,7 @@ fn decoded_batch_reserves_refusal_cells_before_any_payload() {
         agents: false,
         wait: true,
     };
-    let mut peer = crate::peer::Peer::new(Token::new(17), 1, 0, 0, offered, &LIMITS.session);
+    let mut peer = crate::peer::Peer::new(Token::new(17), 1, Some(0), 0, offered, &LIMITS.session);
     let completion = Completion {
         reasoning_dropped: Box::default(),
         content: Box::new([
@@ -439,10 +439,7 @@ impl Harness {
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             answered: Box::default(),
             workspace: Some(workspace()),
-            grants: Box::new([crate::Grant {
-                name: crate::GrantName { account: 0, generation: 0 },
-                valid: Duration::from_secs(100_000),
-            }]),
+            grants: account_grants(),
             reply_to: ReplyTo::new(Token::new(call)),
             host_run: Token::new(call),
             identity: None,
@@ -500,6 +497,13 @@ fn workspace() -> Workspace {
     }
 }
 
+fn account_grants() -> Box<[crate::Grant]> {
+    Box::new([crate::Grant {
+        name: crate::GrantName { account: 0, generation: 0 },
+        valid: Duration::from_secs(100_000),
+    }])
+}
+
 fn charter() -> Charter {
     Charter {
         reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
@@ -517,7 +521,7 @@ fn charter() -> Charter {
         llm: Llm {
             effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
-            account: 0,
+            account: Some(0),
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
             window: 8192,
@@ -569,7 +573,7 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             answered: Box::default(),
             workspace: None,
-            grants: Box::new([]),
+            grants: account_grants(),
             reply_to: ReplyTo::new(Token::new(7)),
             host_run: Token::new(7),
             identity: None,
@@ -592,12 +596,14 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
     let mut requested = charter();
     requested.models =
         Box::new([Llm { effort: None, endpoint: Endpoint(2), model: bytes(b"model-b"), ..requested.llm.clone() }]);
+    let mut grants = account_grants();
+    grants[0].valid = Duration::ZERO;
     let emitted = h.step(Event::Start {
         messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: None,
-        grants: Box::new([]),
+        grants,
         reply_to: ReplyTo::new(Token::new(7)),
         host_run: Token::new(7),
         identity: None,
@@ -619,7 +625,7 @@ fn root_refuses_incompatible_conversation_limits_before_admission() {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
-        grants: Box::new([]),
+        grants: account_grants(),
         reply_to: ReplyTo::new(Token::new(7)),
         host_run: Token::new(7),
         identity: None,
@@ -667,7 +673,7 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
-        grants: Box::new([]),
+        grants: account_grants(),
         reply_to: ReplyTo::new(Token::new(7)),
         host_run: Token::new(7),
         identity: None,
@@ -829,7 +835,7 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
     h.env.now = h.domain.next_deadline().expect("unauthorized retry backoff");
     let emitted = h.fire();
     let [Request::Complete { grant, .. }] = &*emitted else { panic!("expected retry") };
-    assert_eq!(*grant, next.name);
+    assert_eq!(*grant, Some(next.name));
     assert_eq!(
         &*h.step(Event::Failed {
             owner,
@@ -858,7 +864,7 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
 fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
     let mut h = Harness::new();
     let mut ungranted = charter();
-    ungranted.llm.account = 9;
+    ungranted.llm.account = Some(9);
     let emitted = h.step(Event::Start {
         messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
@@ -872,11 +878,8 @@ fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
         grants: Box::new([]),
         transcript: None,
     });
-    let [Request::Admitted { run, .. }, Request::Read { .. }] = &*emitted else { panic!("expected admission") };
-    let emitted = h.step(Event::Read { owner: *run, read: run::Read::Missing });
-    let [Request::Probe { .. }] = &*emitted else { panic!("writable directory probes checks: {emitted:?}") };
-    assert!(h.step(Event::Probed { owner: *run, executable: false }).is_empty(), "no provider request without a grant");
-    assert!(h.domain.next_deadline().is_some(), "local unauthorized waits for a grant");
+    let [Request::Answer { answer, .. }] = emitted.as_ref() else { panic!("missing grant is refused") };
+    assert_eq!(answer, &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Grants)));
     let mut h = Harness::new();
     let (_, owner, _) = h.admit(7, charter());
     let retry_after = Duration::from_secs(30);
@@ -992,10 +995,7 @@ fn an_unsafe_workspace_mount_refuses_start_before_discovery() {
         messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
-        grants: Box::new([crate::Grant {
-            name: crate::GrantName { account: 0, generation: 0 },
-            valid: Duration::from_secs(100_000),
-        }]),
+        grants: account_grants(),
         reply_to: ReplyTo::new(Token::new(7)),
         host_run: Token::new(7),
         identity: None,
@@ -1038,10 +1038,7 @@ fn an_opening_larger_than_a_session_holds_refuses_main_as_invalid() {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
-        grants: Box::new([crate::Grant {
-            name: crate::GrantName { account: 0, generation: 0 },
-            valid: Duration::from_secs(100_000),
-        }]),
+        grants: account_grants(),
         reply_to: ReplyTo::new(Token::new(7)),
         host_run: Token::new(7),
         identity: None,
@@ -1750,7 +1747,7 @@ fn invalid_conventions_are_refused_at_original_root_start_before_any_effect() {
                 activation: 1,
                 charter: Charter { conventions: Some(conventions), ..charter() },
                 transcript: None,
-                grants: Box::new([]),
+                grants: account_grants(),
             });
             let [Request::Answer { answer, .. }] = emitted.as_ref() else {
                 panic!("invalid selection has only its original Start terminal: {emitted:?}");
@@ -1923,7 +1920,7 @@ fn scalar_prepared(charter: Charter) -> (Harness, Box<[Request]>) {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
-        grants: Box::default(),
+        grants: account_grants(),
         reply_to: ReplyTo::new(Token::new(1)),
         host_run: Token::new(1),
         identity: None,
@@ -2035,7 +2032,7 @@ fn overflowing_reservation_runs_no_calls_and_tells_no_turn() {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
-        grants: Box::default(),
+        grants: account_grants(),
         reply_to: ReplyTo::new(Token::new(1)),
         host_run: Token::new(1),
         identity: None,
@@ -2084,7 +2081,7 @@ fn each_main_or_child_model_quantity_is_checked_before_admission() {
                 window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
                 charter: requested,
                 workspace: None,
-                grants: Box::new([]),
+                grants: account_grants(),
                 transcript: None,
                 answered: Box::new([]),
             });
@@ -2120,10 +2117,7 @@ fn the_selected_model_progress_reaches_the_original_root_completion() {
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             charter: requested,
             workspace: Some(workspace()),
-            grants: Box::new([crate::Grant {
-                name: crate::GrantName { account: 0, generation: 0 },
-                valid: Duration::from_secs(100_000),
-            }]),
+            grants: account_grants(),
             transcript: None,
             answered: Box::default(),
         });
@@ -2157,10 +2151,7 @@ fn awaiting_start(transcript: Option<session::record::Transcript>, answered: Box
         workspace: None,
         transcript,
         answered,
-        grants: Box::new([crate::Grant {
-            name: crate::GrantName { account: 0, generation: 0 },
-            valid: Duration::from_secs(100_000),
-        }]),
+        grants: account_grants(),
     }
 }
 
@@ -2395,7 +2386,7 @@ fn an_unchecked_charter_effort_is_refused_before_any_run_work() {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         charter: requested,
         workspace: None,
-        grants: Box::new([]),
+        grants: account_grants(),
         transcript: None,
         answered: Box::new([]),
     });

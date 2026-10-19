@@ -61,6 +61,7 @@ fn limits() -> ComponentLimits {
             max_failure_bytes: client.detail_bytes,
         },
         contract_bytes: 4096,
+        llms: 1,
         accounts: 1,
         grant_value_bytes: 128,
     }
@@ -139,11 +140,9 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 },
                 llm: call.endpoint,
             },
-            account: 0,
             identity: smith_protocol_llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),
-        1,
         1,
     )
     .expect("one endpoint");
@@ -178,7 +177,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
         &env,
         FromDomain::Complete {
             owner: Token::new(7),
-            grant: GrantName { account: 0, generation: 1 },
+            grant: Some(GrantName { account: 0, generation: 1 }),
             prompt: llm::Prompt {
                 effort: None,
                 purpose: llm::Purpose::Ordinary { guard: None },

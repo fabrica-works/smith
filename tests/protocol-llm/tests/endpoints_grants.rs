@@ -7,7 +7,7 @@ use skein_llm::{self as shared, Credential};
 use smith_domain::{GrantName, llm};
 use smith_protocol_llm::{ConfiguredEndpoint, EndpointError, Endpoints, GrantError, Grants};
 
-fn destination(name: u32, account: u32, provider: shared::Provider) -> ConfiguredEndpoint {
+fn destination(name: u32, _account: u32, provider: shared::Provider) -> ConfiguredEndpoint {
     let mut roots = skein_tls::RootCertStore::empty();
     roots
         .add(skein_tls::CertificateDer::from(include_bytes!("../fixtures/root.der").to_vec()))
@@ -31,7 +31,6 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
             },
             llm,
         },
-        account,
         identity: smith_protocol_llm::IdentityProfile::Plain,
         models: Box::new([]),
     }
@@ -42,12 +41,10 @@ fn numeric_names_resolve_the_complete_destination_and_options() {
     let endpoints = Endpoints::new(
         Box::new([destination(42, 1, shared::Provider::OpenAiCodex), destination(7, 0, shared::Provider::Anthropic)]),
         2,
-        2,
     )
     .expect("two named endpoints");
     let codex = endpoints.resolve(llm::Endpoint(42)).expect("configured name");
     assert_eq!(codex.index, 0);
-    assert_eq!(codex.account, 1);
     assert_eq!(codex.provider, shared::Provider::OpenAiCodex);
     assert_eq!(endpoints.resolve(llm::Endpoint(7)).expect("second name").index, 1);
     let mut prompt = shared::Prompt {
@@ -78,13 +75,12 @@ fn duplicate_names_fail_at_startup() {
                 destination(9, 0, shared::Provider::Anthropic),
                 destination(9, 0, shared::Provider::OpenAiCodex),
             ]),
-            2,
-            1,
+            2
         ),
         Err(EndpointError::Duplicate)
     ));
     assert!(matches!(
-        Endpoints::new(Box::new([destination(9, 0, shared::Provider::Anthropic)]), 0, 1),
+        Endpoints::new(Box::new([destination(9, 0, shared::Provider::Anthropic)]), 0),
         Err(EndpointError::TooMany)
     ));
 }
@@ -118,7 +114,7 @@ fn a_refresh_preserves_the_first_call_then_evicts_the_oldest_generation() {
 fn configured_claude_identity_precedes_domain_instructions_only_for_anthropic() {
     let mut anthropic = destination(8, 0, shared::Provider::Anthropic);
     anthropic.identity = smith_protocol_llm::IdentityProfile::ClaudeCode;
-    let endpoints = Endpoints::new(Box::new([anthropic]), 1, 1).expect("provider supports identity");
+    let endpoints = Endpoints::new(Box::new([anthropic]), 1).expect("provider supports identity");
     let mut prompt = shared::Prompt {
         affinity: Some(shared::Affinity { key: [0; 16], thread: 0 }),
         model: b"model".as_slice().into(),
@@ -134,7 +130,7 @@ fn configured_claude_identity_precedes_domain_instructions_only_for_anthropic() 
     assert!(prompt.instructions.ends_with(b"domain system"));
     let mut codex = destination(9, 0, shared::Provider::OpenAiCodex);
     codex.identity = smith_protocol_llm::IdentityProfile::ClaudeCode;
-    assert!(matches!(Endpoints::new(Box::new([codex]), 1, 1), Err(EndpointError::Identity)));
+    assert!(matches!(Endpoints::new(Box::new([codex]), 1), Err(EndpointError::Identity)));
 }
 
 #[test]
@@ -145,7 +141,7 @@ fn reasoning_drop_is_selected_per_declared_model() {
         ConfiguredModel { name: b"strict".as_slice().into(), oversized_reasoning: OversizedReasoning::Fail },
         ConfiguredModel { name: b"optional".as_slice().into(), oversized_reasoning: OversizedReasoning::Drop },
     ]);
-    let endpoints = Endpoints::new(Box::new([endpoint]), 1, 1).expect("named models");
+    let endpoints = Endpoints::new(Box::new([endpoint]), 1).expect("named models");
     let options = endpoints.resolve(llm::Endpoint(1)).expect("endpoint");
     assert!(!options.drop_reasoning(b"strict"));
     assert!(options.drop_reasoning(b"optional"));
@@ -196,7 +192,4 @@ fn a_fifth_distinct_account_is_refused() {
         ),
         Err(GrantError::Full)
     );
-    let endpoints =
-        (0..=ACCOUNT_COUNT).map(|account| destination(account, account, shared::Provider::Anthropic)).collect();
-    assert!(matches!(Endpoints::new(endpoints, ACCOUNT_COUNT + 1, ACCOUNT_COUNT), Err(EndpointError::Account)));
 }

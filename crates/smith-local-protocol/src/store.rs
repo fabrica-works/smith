@@ -233,9 +233,7 @@ pub(crate) mod tests {
 
     pub(crate) fn fixture() -> (Endpoints, smith_domain::Turn) {
         let mut entries = List::with_capacity(1);
-        entries
-            .push(channel::Endpoint { name: Box::from(&b"main"[..]), number: 2, dialect: 1, account: 0 })
-            .expect("one endpoint");
+        entries.push(channel::Endpoint { name: Box::from(&b"main"[..]), number: 2, dialect: 1 }).expect("one endpoint");
         let endpoints = Endpoints::new(entries);
         let turn = smith_domain::Turn {
             model: b"model".as_slice().into(),

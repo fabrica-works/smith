@@ -8,7 +8,7 @@ use smith_host_domain::channel::LiveAsk;
 fn start(live: Option<LiveAsk>) -> Box<smith_protocol_channel::DecodedStart> {
     let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     world.settle();
-    let charter = include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin");
+    let charter = include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin");
     world.send_start_asking(Box::from(charter.as_slice()), live);
     world.settle();
     world.take_agent_start().expect("the start reached the agent")
@@ -30,7 +30,7 @@ fn asking(ask: LiveAsk) -> World {
     let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     world.settle();
     world.send_start_asking(
-        Box::from(include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin").as_slice()),
+        Box::from(include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin").as_slice()),
         Some(ask),
     );
     world.settle();

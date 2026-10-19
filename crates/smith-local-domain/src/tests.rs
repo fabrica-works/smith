@@ -193,7 +193,7 @@ pub(super) fn config() -> Config {
             effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             dialect: 1,
-            account: 7,
+            account: Some(7),
             endpoint: Endpoint(4),
             model: Box::from(&b"small"[..]),
             window: 8192,
@@ -910,7 +910,7 @@ fn each_model_fault_has_its_exit_status() {
             spent: 0,
             result: host::RunResult::Failed { failure: host::RunFailure::Model(fault.clone()) },
         };
-        assert_eq!(crate::end::answer_status(&answer, 9), expected, "{fault:?}");
+        assert_eq!(crate::end::answer_status(&answer, Some(9)), expected, "{fault:?}");
     }
 }
 

@@ -488,6 +488,15 @@ fn choose_start(
 }
 
 impl World {
+    /// Queue a host's grant before the pending start, which names no new grant.
+    pub fn hold_grant(&mut self, account: u32) {
+        let start = self.stage.next_event().expect("pending start");
+        self.stage.push(Event::Grant {
+            grant: Grant { name: GrantName { account, generation: 1 }, valid: Duration::from_secs(7200) },
+        });
+        self.stage.push(start);
+    }
+
     /// Creates one host request and a fresh agent tree. Fixed queue slack
     /// exercises output pressure; finite trace and delivery caps fail fast.
     ///
@@ -2268,7 +2277,7 @@ fn main_model(window: u32) -> run::charter::Llm {
     Llm {
         effort: None,
         prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
-        account: 0,
+        account: Some(0),
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
         window,
@@ -2287,6 +2296,31 @@ fn finishing_reserve(settings: &Settings, change: bool) -> run::charter::Reserve
             Duration::ZERO
         },
     }
+}
+
+/// Build a reporting world with exactly these host account grants.
+#[must_use]
+pub fn world(settings: &Settings, charter: run::Charter, granted: &[u32]) -> World {
+    let grants = granted
+        .iter()
+        .map(|account| Grant { name: GrantName { account: *account, generation: 1 }, valid: Duration::from_secs(7200) })
+        .collect();
+    World::with_start(
+        *settings,
+        Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            identity: None,
+            activation: 1,
+            window: agent::Window { turns: u32::MAX, bytes: u64::MAX },
+            charter,
+            workspace: None,
+            grants,
+            transcript: None,
+            answered: Box::new([]),
+        },
+    )
 }
 
 #[cfg(test)]

@@ -40,7 +40,7 @@ impl Local {
             | RunFailure::Policy(_)
             | RunFailure::Transcript(_)
             | RunFailure::Cancelled
-            | RunFailure::Stale => model.map(|model| model.account),
+            | RunFailure::Stale => model.and_then(|model| model.account),
         };
         let name = account.and_then(|account| {
             self.credential_locations

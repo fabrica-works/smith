@@ -181,8 +181,8 @@ pub struct Llm {
     /// Opaque configured replay dialect; history requires an exact match.
     pub dialect: u32,
 
-    /// The credential account configured for the endpoint.
-    pub account: u32,
+    /// Optional host account named by the charter; none sends no credential.
+    pub account: Option<u32>,
     pub endpoint: Endpoint,
     /// The provider's name for the model.
     pub model: Box<[u8]>,

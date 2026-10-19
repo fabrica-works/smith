@@ -190,9 +190,7 @@ fn configuration_for(provider: skein_llm::Provider) -> agent::Config {
 
 fn configuration_with_limits(provider: skein_llm::Provider, limits: &agent::Limits) -> agent::Config {
     let mut endpoints = List::with_capacity(1);
-    endpoints
-        .push(channel::Endpoint { name: Box::default(), number: 0, dialect: 1, account: 0 })
-        .expect("one endpoint");
+    endpoints.push(channel::Endpoint { name: Box::default(), number: 0, dialect: 1 }).expect("one endpoint");
     let llm_endpoints = llm::Endpoints::new(
         Box::new([llm::ConfiguredEndpoint {
             connect: skein_lib::Duration::from_secs(1),
@@ -212,11 +210,9 @@ fn configuration_with_limits(provider: skein_llm::Provider, limits: &agent::Limi
                     skein_llm::Provider::OpenAiCodex => skein_llm_world::call(7).endpoint,
                 },
             },
-            account: 0,
             identity: llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),
-        1,
         1,
     )
     .expect("one LLM endpoint");
@@ -418,7 +414,7 @@ fn scenario_credential(anthropic: bool, private_grant: bool) -> skein_llm::Crede
 /// A concrete charter within the process limits, with one report contract.
 #[must_use]
 pub fn charter() -> Box<[u8]> {
-    let smallest = include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin");
+    let smallest = include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin");
     let source = smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut skein_lib::Reader::new(smallest))
         .expect("golden charter");
     let mut parts = source.into_parts();
@@ -453,6 +449,7 @@ pub fn charter() -> Box<[u8]> {
     )
     .expect("outcome contract");
     let mut llm = parts.main.into_parts();
+    llm.account = Some(0);
     llm.model = Box::from(*b"fake");
     llm.window = declarations(0).endpoints[0].models[0].window;
     llm.output = declarations(0).endpoints[0].models[0].output;

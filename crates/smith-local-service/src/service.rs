@@ -1113,7 +1113,9 @@ fn inline_effects(
         return Err(Error::Memory);
     }
     let Ok(mut effects) = agent_service::Effects::new(configuration, seed) else { return Err(Error::Process) };
-    effects.contract(local::charter(local).outcome);
+    let charter = local::charter(local);
+    effects.bind_grants(&charter).or(Err(Error::Process))?;
+    effects.contract(charter.outcome);
     local.workspace = match local.workspace.take() {
         Some(workspace) => match effects.workspace(workspace, roots) {
             Ok(workspace) => Some(workspace),

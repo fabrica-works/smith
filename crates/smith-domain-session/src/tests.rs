@@ -310,6 +310,7 @@ fn spec() -> Spec {
         affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
+        account: Some(0),
         endpoint: Endpoint(0),
         model: bytes(b"model"),
         system: bytes(b"be brief"),
@@ -3072,3 +3073,20 @@ fn a_resumed_ordinary_window_carries_the_guard() {
 
 #[path = "tests/batched_change.rs"]
 mod batched_change;
+
+#[test]
+fn an_unauthorized_call_is_retried_only_for_an_account() {
+    let failure = Failure::Unauthorized;
+    let failed = End::Failed { failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 };
+    for (account, expected) in [(Some(0), None), (None, Some(ended(failed, 0)))] {
+        let mut harness = Harness::new(&LIMITS);
+        let (owner, _) = harness.open_with(1, Spec { account, ..spec() });
+        let request = harness.step(Event::Failed {
+            owner,
+            failure,
+            evidence: crate::llm::Evidence::Unknown,
+            detail: Box::default(),
+        });
+        assert_eq!(request, expected, "account {account:?}");
+    }
+}

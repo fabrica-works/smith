@@ -14,14 +14,14 @@ use crate::{EndpointOptions, Error};
 /// Measure the body added after `from`, restoring every moved message.
 pub(crate) fn measure(
     request: &mut shared::Prompt,
-    credential: &Credential,
+    credential: Option<&Credential>,
     options: &EndpointOptions,
     from: usize,
 ) -> Result<u64, Error> {
     if from > request.messages.len() {
         return Err(Error::Invalid);
     }
-    let whole = match shared::client::measure(request, Some(credential), &options.endpoint, &options.client) {
+    let whole = match shared::client::measure(request, credential, &options.endpoint, &options.client) {
         Ok(measured) => measured,
         Err(error) => return Err(Error::from_shared(error)),
     };
@@ -36,7 +36,7 @@ pub(crate) fn measure(
         }
     }
     request.messages = prefix.into_boxed();
-    let cut = shared::client::measure(request, Some(credential), &options.endpoint, &options.client);
+    let cut = shared::client::measure(request, credential, &options.endpoint, &options.client);
     let mut restored = List::with_capacity(capacity);
     for message in mem::replace(&mut request.messages, Box::new([])) {
         restored.push(message).expect("bounded prefix");
@@ -56,7 +56,7 @@ pub(crate) fn measure(
 pub(crate) fn check(
     purpose: llm::Purpose,
     request: &mut shared::Prompt,
-    credential: &Credential,
+    credential: Option<&Credential>,
     options: &EndpointOptions,
     owner: Token,
     max_failure_bytes: u32,

@@ -475,7 +475,7 @@ fn empty_charter() -> crate::Charter {
             effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 0 },
             dialect: 0,
-            account: 0,
+            account: Some(0),
             endpoint: run::charter::Endpoint(0),
             model: Box::new([]),
             window: 0,

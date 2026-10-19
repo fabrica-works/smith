@@ -334,7 +334,7 @@ pub enum Request {
         /// Session-owned completion identity; emitted even when no content follows.
         name: crate::llm::CompletionName,
         /// Credential name or refresh notice; its secret value stays below the domain.
-        grant: GrantName,
+        grant: Option<GrantName>,
         /// Complete provider-neutral conversation snapshot from the root, bounded by session ownership limits.
         prompt: Prompt,
         /// Model progress deadlines and the enclosing session's expiry.

@@ -209,6 +209,11 @@ impl Effects {
         Ok(Self { service, installed: Map::with_capacity(accounts) })
     }
 
+    /// Replace the account-to-endpoint bindings before a colocated host lends grants.
+    pub fn bind_grants(&mut self, charter: &run::Charter) -> Result<(), Failure> {
+        self.service.llm.bind_grants(charter).or(Err(Failure::Credential))
+    }
+
     /// Configure the result shapes used by completion tool schemas.
     pub fn contract(&mut self, outcome: run::outcome::OutcomeSpec) {
         self.service.delivery.clone_from(&outcome.change);
@@ -413,6 +418,7 @@ impl Effects {
 
     /// Retain the values supplied by the parent face's start.
     pub fn starting(&mut self, activation: u64, messages: u64, charter: &run::Charter) {
+        self.service.llm.bind_grants(charter).expect("admitted charter fits its LLM binding bound");
         self.service.run_started = self.service.domain_env.now;
         if let Some(events) = &mut self.service.events {
             events.starting(activation, messages, charter);
@@ -871,6 +877,10 @@ impl Service {
         }
         self.outcome = Some(start.charter.outcome.clone());
         self.delivery.clone_from(&start.charter.outcome.change);
+        if self.llm.bind_grants(&start.charter).is_err() {
+            self.refuse_start(run::Invalid::Grants);
+            return;
+        }
         let mut grants = List::with_capacity(u32::try_from(start.grants.len()).expect("bounded grant count"));
         for grant in &start.grants {
             let value = match self.channel.as_ref().expect("framed agent owns its channel").grant_value(grant.name) {
@@ -2587,6 +2597,7 @@ mod tests {
                     max_failure_bytes: client.detail_bytes,
                 },
                 contract_bytes: 4096,
+                llms: smith_agent_world::LIMITS.run.models.checked_add(1).expect("main LLM fits"),
                 accounts: 1,
                 grant_value_bytes: 128,
             },
@@ -2623,7 +2634,7 @@ mod tests {
     fn configuration() -> Config {
         let limits = limits();
         let channel_endpoints = channel::Endpoints::new(List::with_capacity(1));
-        let llm_endpoints = llm::Endpoints::new(Box::new([]), 1, 1).expect("empty endpoint table");
+        let llm_endpoints = llm::Endpoints::new(Box::new([]), 1).expect("empty endpoint table");
         Config {
             limits,
             domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
@@ -2670,7 +2681,7 @@ mod tests {
     #[test]
     fn startup_counts_file_driver_and_rejects_missing_route_room() {
         let mut limits = limits();
-        let llm_endpoints = llm::Endpoints::new(Box::new([]), 1, 1).expect("empty endpoint table");
+        let llm_endpoints = llm::Endpoints::new(Box::new([]), 1).expect("empty endpoint table");
         assert!(
             worst_case(&limits, &llm_endpoints).expect("checked memory")
                 > file_layer::FileIo::worst_case(4, 64, 2, 512).expect("file bound")
@@ -2958,7 +2969,7 @@ mod tests {
                 profile: b"test".as_slice().into(),
                 capture: smith_events::Capture::Calls,
                 delivery: smith_events::Delivery::Complete,
-                versions: smith_events::Versions { events: 3, channel: 4, charter: 2, transcript: 5, chat_store: None },
+                versions: smith_events::Versions { events: 3, channel: 4, charter: 3, transcript: 5, chat_store: None },
                 limits: List::with_capacity(0),
             },
         );

@@ -10,7 +10,7 @@ use smith_host_domain::channel as host;
 use crate::Error;
 
 #[expect(clippy::manual_map, clippy::manual_let_else, reason = "exhaustive result and fence decoding")]
-pub(crate) fn decode_answer(record: &wire::Answer, limits: &smith_charter::v2::Limits) -> Result<host::Answer, Error> {
+pub(crate) fn decode_answer(record: &wire::Answer, limits: &smith_charter::v3::Limits) -> Result<host::Answer, Error> {
     let result = match record.result() {
         wire::RunResult::Refused(refused) => {
             let refusal = match refused.reason() {

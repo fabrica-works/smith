@@ -25,7 +25,7 @@ fn derived_limit_halves_and_their_opening_fit_their_combined_worst_case() {
     };
     host_limits.channel.output_bytes = host::output_bytes(&host_limits).expect("host directional frame");
     let mut entries = List::with_capacity(1);
-    entries.push(agent::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 }).expect("one endpoint");
+    entries.push(agent::Endpoint { name: Box::default(), number: 0, dialect: 0 }).expect("one endpoint");
     let endpoints = agent::Endpoints::new(entries);
     let bound = host::worst_case(&host_limits)
         .expect("checked host bound")

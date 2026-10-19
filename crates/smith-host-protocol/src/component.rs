@@ -103,7 +103,7 @@ pub struct Component {
     now: Time,
     cancelled: bool,
     endpoints: smith_protocol_channel::Endpoints,
-    charter: smith_charter::v2::Limits,
+    charter: smith_charter::v3::Limits,
     transcript: smith_transcript::v5::Limits,
     sequence: u32,
     long_open: u32,
@@ -669,9 +669,7 @@ mod tests {
 
     fn component() -> Component {
         let mut names = skein_lib::List::with_capacity(1);
-        names
-            .push(smith_protocol_channel::Endpoint { name: Box::new([]), number: 0, dialect: 0, account: 0 })
-            .expect("endpoint");
+        names.push(smith_protocol_channel::Endpoint { name: Box::new([]), number: 0, dialect: 0 }).expect("endpoint");
         let limits = crate::Limits {
             bodies: smith_channel::CEILINGS,
             charter: smith_charter::CEILINGS,

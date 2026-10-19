@@ -65,8 +65,6 @@ pub struct ConfiguredEndpoint {
     pub name: llm::Endpoint,
     /// Resolved transport and LLM endpoint given to skein's connection pool.
     pub destination: connection::Endpoint,
-    /// Credential account selected for calls to this endpoint.
-    pub account: u32,
     pub connect: Duration,
     pub handshake: Duration,
     /// Optional provider system identity selected at startup.
@@ -80,8 +78,6 @@ pub struct ConfiguredEndpoint {
 pub struct EndpointOptions {
     /// Index in skein's configured destination list.
     pub index: u32,
-    /// Credential account selected for this endpoint.
-    pub account: u32,
     pub connect: Duration,
     pub handshake: Duration,
     /// Dialect that owns replay and provider-specific request rules.
@@ -119,8 +115,6 @@ pub enum EndpointError {
     TooMany,
     /// Two destinations use the same numeric name.
     Duplicate,
-    /// More distinct accounts than the agent admits.
-    Account,
     /// A prompt named no configured destination.
     Unknown,
     /// The selected identity is incompatible with the dialect or bound.
@@ -135,22 +129,14 @@ pub struct Endpoints {
 }
 
 impl Endpoints {
-    /// Validate names and accounts before a service starts its loop.
-    pub fn new(
-        configured: Box<[ConfiguredEndpoint]>,
-        endpoint_limit: u32,
-        account_limit: u32,
-    ) -> Result<Endpoints, EndpointError> {
+    /// Validate names before a service starts its loop.
+    pub fn new(configured: Box<[ConfiguredEndpoint]>, endpoint_limit: u32) -> Result<Endpoints, EndpointError> {
         if configured.len() > usize::try_from(endpoint_limit).expect("u32 fits usize") {
             return Err(EndpointError::TooMany);
         }
         let mut destinations = List::with_capacity(endpoint_limit);
         let mut options = Map::with_capacity(endpoint_limit);
-        let mut accounts = Map::with_capacity(account_limit);
         for (index, configured) in configured.into_iter().enumerate() {
-            if !accounts.contains_key(&configured.account) {
-                accounts.insert(configured.account, ()).or(Err(EndpointError::Account))?;
-            }
             let index = u32::try_from(index).or(Err(EndpointError::TooMany))?;
             if options.contains_key(&configured.name.0) {
                 return Err(EndpointError::Duplicate);
@@ -164,7 +150,6 @@ impl Endpoints {
             destinations.push(configured.destination).or(Err(EndpointError::TooMany))?;
             let option = EndpointOptions {
                 index,
-                account: configured.account,
                 connect: configured.connect,
                 handshake: configured.handshake,
                 provider,

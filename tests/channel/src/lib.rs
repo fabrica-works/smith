@@ -429,7 +429,7 @@ impl Peer {
 #[must_use]
 pub fn test_endpoints() -> agent::Endpoints {
     let mut entries = skein_lib::List::with_capacity(1);
-    entries.push(agent::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 }).expect("one endpoint");
+    entries.push(agent::Endpoint { name: Box::default(), number: 0, dialect: 0 }).expect("one endpoint");
     agent::Endpoints::new(entries)
 }
 
@@ -1127,7 +1127,7 @@ impl World {
 pub fn typed_charter(bytes: &[u8]) -> smith_host_domain::Charter {
     let value = agent::decode_charter(bytes, &smith_charter::CEILINGS, &test_endpoints()).unwrap_or_else(|_| {
         agent::decode_charter(
-            include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin"),
+            include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin"),
             &smith_charter::CEILINGS,
             &test_endpoints(),
         )

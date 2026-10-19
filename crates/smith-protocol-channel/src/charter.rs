@@ -15,7 +15,7 @@ use smith_domain::run;
 )]
 pub fn encode_charter(
     source: &run::Charter,
-    limits: &wire::v2::Limits,
+    limits: &wire::v3::Limits,
     endpoints: &Endpoints,
 ) -> Result<Box<[u8]>, Error> {
     let mut brief = List::with_capacity(count(source.brief.sections.len())?);
@@ -173,7 +173,7 @@ fn count(length: usize) -> Result<u32, Error> {
     }
 }
 
-fn fields(source: &[run::outcome::FieldRule], limits: &wire::v2::Limits) -> Result<List<wire::FieldRule>, Error> {
+fn fields(source: &[run::outcome::FieldRule], limits: &wire::v3::Limits) -> Result<List<wire::FieldRule>, Error> {
     let mut fields = List::with_capacity(count(source.len())?);
     for field in source {
         let item = wire::FieldRule::new(limits, wire::FieldRuleParts { name: field.name.clone(), max: field.max })?;
@@ -184,30 +184,27 @@ fn fields(source: &[run::outcome::FieldRule], limits: &wire::v2::Limits) -> Resu
     Ok(fields)
 }
 
-fn change(source: &run::outcome::ChangeSpec, limits: &wire::v2::Limits) -> Result<wire::ChangeRule, Error> {
+fn change(source: &run::outcome::ChangeSpec, limits: &wire::v3::Limits) -> Result<wire::ChangeRule, Error> {
     Ok(wire::ChangeRule::new(
         limits,
         wire::ChangeRuleParts { checks_must_pass: source.checks_must_pass, fields: fields(&source.fields, limits)? },
     )?)
 }
 
-fn text(source: &run::outcome::TextSpec, limits: &wire::v2::Limits) -> Result<wire::TextRule, Error> {
+fn text(source: &run::outcome::TextSpec, limits: &wire::v3::Limits) -> Result<wire::TextRule, Error> {
     Ok(wire::TextRule::new(limits, wire::TextRuleParts { max: source.max, fields: fields(&source.fields, limits)? })?)
 }
 
-fn llm(source: &run::charter::Llm, limits: &wire::v2::Limits, endpoints: &Endpoints) -> Result<wire::Llm, Error> {
+fn llm(source: &run::charter::Llm, limits: &wire::v3::Limits, endpoints: &Endpoints) -> Result<wire::Llm, Error> {
     let endpoint = match endpoints.name_of(source.endpoint.0, source.dialect) {
         Some(name) => Box::from(name),
         None => return Err(Error::Endpoints),
     };
-    match endpoints.resolve(&endpoint) {
-        Some(configured) if configured.account == source.account => {}
-        Some(_) | None => return Err(Error::Endpoints),
-    }
     Ok(wire::Llm::new(
         limits,
         wire::LlmParts {
             endpoint,
+            account: source.account,
             model: source.model.clone(),
             effort: source.effort.clone(),
             window: source.window,

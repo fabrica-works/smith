@@ -61,7 +61,7 @@ fn every_session_end_and_budget_dimension_keeps_its_class() {
         ),
     ];
     for (from, to) in rows {
-        assert_eq!(translate::end(from, 0, 0, None, llm::Report::none()), to);
+        assert_eq!(translate::end(from, 0, Some(0), None, llm::Report::none()), to);
     }
 }
 
@@ -76,7 +76,7 @@ fn every_transcript_refusal_keeps_its_reason() {
         (session::record::Refusal::TooLarge, run::TranscriptRefusal::TooLarge),
     ] {
         assert_eq!(
-            translate::end(session::End::TranscriptRefused { reason: from }, 0, 0, None, llm::Report::none()),
+            translate::end(session::End::TranscriptRefused { reason: from }, 0, Some(0), None, llm::Report::none()),
             run::End::TranscriptRefused { reason: to }
         );
     }
@@ -117,7 +117,7 @@ fn every_completion_failure_and_transport_evidence_maps_without_inference() {
                 translate::end(
                     session::End::Failed { failure, evidence, attempts: 1 },
                     0,
-                    0,
+                    Some(0),
                     None,
                     llm::Report::none()
                 ),

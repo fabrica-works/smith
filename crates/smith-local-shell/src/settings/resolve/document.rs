@@ -1,7 +1,7 @@
 //! Generate the agent's existing configuration values (shell.md, 5.4).
 //! Profile, environment and endpoint values are built without opening credentials.
 use super::super::{Refusal, Settings};
-use super::{Account, input, models::Model};
+use super::{input, models::Model};
 use serde_json::{Value, json};
 
 pub(super) fn profile(settings: &Settings) -> Result<Value, Refusal> {
@@ -74,20 +74,11 @@ pub(super) fn environment(settings: &Settings) -> Result<Vec<Value>, Refusal> {
     Ok(values.into_iter().map(|(name, value)| json!({"name":name,"value":value})).collect())
 }
 
-pub(in crate::settings) fn endpoints(
-    settings: &Settings,
-    models: &[Model],
-    accounts: &[Account],
-) -> Result<Vec<Value>, Refusal> {
+pub(in crate::settings) fn endpoints(settings: &Settings, models: &[Model]) -> Result<Vec<Value>, Refusal> {
     let names: std::collections::BTreeSet<_> = models.iter().map(|model| model.endpoint.as_str()).collect();
     let mut endpoints = Vec::new();
     for (index, name) in names.into_iter().enumerate() {
         let prefix = format!("endpoints.{}.", super::super::name(name));
-        let account = input::text(settings, &format!("{prefix}account"))?;
-        let account = accounts
-            .iter()
-            .find(|entry| entry.name == account)
-            .ok_or_else(|| input::refuse(settings, &format!("{prefix}account"), "account is not configured"))?;
         let provider = input::text(settings, &format!("{prefix}dialect"))?;
         let dialect = match provider {
             "openai" => 3,
@@ -100,7 +91,7 @@ pub(in crate::settings) fn endpoints(
         }).collect();
         let declared: Vec<_> = models.iter().filter(|model| model.endpoint == name).map(Model::document).collect();
         let mut endpoint = json!({"name":name,"number":u32::try_from(index).expect("bounded endpoints"),
-            "dialect":dialect,"account":account.number,"provider":provider,"transport":"tls",
+            "dialect":dialect,"provider":provider,"transport":"tls",
             "address":input::text(settings,&format!("{prefix}address"))?,"server_name":input::text(settings,&format!("{prefix}server_name"))?,
             "connect":input::millis(settings,&format!("{prefix}connect"))?,"handshake":input::millis(settings,&format!("{prefix}handshake"))?,
             "models":declared,"headers":headers});

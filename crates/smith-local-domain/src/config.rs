@@ -313,7 +313,9 @@ impl Config {
             if model_bytes > limits.smith.configured_model_bytes {
                 return Err(Invalid::Limits);
             }
-            if !self.accounts.contains(&model.account) {
+            if let Some(account) = model.account
+                && !self.accounts.contains(&account)
+            {
                 return Err(Invalid::Accounts);
             }
             if !limits.endpoints.contains(&model.endpoint) {

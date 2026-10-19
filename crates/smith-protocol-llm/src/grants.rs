@@ -108,6 +108,17 @@ impl Grants {
         Ok(Credential { value, account_id, scheme: entry.credential.scheme })
     }
 
+    /// Read a named grant only; absent accounts carry no credential.
+    pub fn credential(&self, name: Option<GrantName>, now: Time) -> Result<Option<Credential>, GrantError> {
+        match name {
+            Some(name) => match self.read(name, now) {
+                Ok(value) => Ok(Some(value)),
+                Err(error) => Err(error),
+            },
+            None => Ok(None),
+        }
+    }
+
     /// Worst retained table and secret payload ownership for configured caps.
     #[must_use]
     pub fn worst_case(accounts: u32, value_bytes: u32) -> Option<u64> {

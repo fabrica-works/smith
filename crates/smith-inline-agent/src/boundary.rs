@@ -50,7 +50,7 @@ pub enum Lower {
     Complete {
         owner: Token,
         name: smith::llm::CompletionName,
-        grant: smith::GrantName,
+        grant: Option<smith::GrantName>,
         prompt: smith::llm::Prompt,
         deadlines: smith::session::Deadlines,
         max_completion_bytes: u64,

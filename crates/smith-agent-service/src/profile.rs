@@ -357,7 +357,7 @@ fn channel_limits(
     domain: &domain::Limits,
     policy: &Policy,
     bodies: smith_channel::Limits,
-    charter: smith_charter::v2::Limits,
+    charter: smith_charter::v3::Limits,
     transcript: smith_transcript::v5::Limits,
     io: &io::Limits,
 ) -> Result<channel::Limits, Refusal> {
@@ -637,6 +637,7 @@ fn component_limits(
         // Outcome and its separately retained delivery contract both come
         // from the run's admitted aggregate declaration ownership.
         contract_bytes: domain.run.run_bytes.checked_mul(2).ok_or(derived(Layer::Llm, "contract_bytes"))?,
+        llms: domain.run.models.checked_add(1).ok_or(derived(Layer::Llm, "llms"))?,
         accounts: ACCOUNTS,
         grant_value_bytes: 2048,
     })

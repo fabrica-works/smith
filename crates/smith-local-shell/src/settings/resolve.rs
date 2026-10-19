@@ -61,7 +61,7 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
     let profile = smith_agent_shell::config::profile_from_value(profile_document.clone())
         .map_err(|why| relationships::native(&settings, &models, why))?;
     relationships::budget(&settings, &profile)?;
-    let endpoints = document::endpoints(&settings, &models, &accounts)?;
+    let endpoints = document::endpoints(&settings, &models)?;
     let mut generated = serde_json::json!({"profile":profile_document,"endpoints":endpoints,
         "environment":document::environment(&settings)?});
     let trace: BTreeMap<_, _> = settings

@@ -100,7 +100,13 @@ pub(super) fn build(
     let mut allowances = Vec::new();
     for model in models {
         let endpoint = agent.service.channel_endpoints.resolve(model.endpoint.as_bytes()).expect("configured endpoint");
-        configured.push(model.local(endpoint.number, endpoint.dialect, endpoint.account));
+        let account_field = format!("endpoints.{}.account", super::super::name(&model.endpoint));
+        let account_name = input::text(settings, &account_field)?;
+        let account = accounts
+            .iter()
+            .find(|entry| entry.name == account_name)
+            .ok_or_else(|| input::refuse(settings, &account_field, "account is not configured"))?;
+        configured.push(model.local(endpoint.number, endpoint.dialect, account.number));
         let declaration =
             agent.declarations.endpoints.iter().find(|entry| entry.number == endpoint.number).expect("declaration");
         allowances.push(

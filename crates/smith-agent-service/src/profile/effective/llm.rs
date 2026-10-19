@@ -97,11 +97,13 @@ pub(super) fn component(inventory: &mut Inventory, limits: &smith_protocol_llm::
         connection: _,
         receiving: _,
         contract_bytes,
+        llms,
         accounts,
         grant_value_bytes,
     } = *limits;
     inventory.layer = Layer::Llm;
     inventory.value("component.contract_bytes", Value::Bytes(contract_bytes))?;
+    inventory.value("component.llms", Value::Count(u64::from(llms)))?;
     inventory.value("component.accounts", Value::Count(u64::from(accounts)))?;
     inventory.value("component.grant_value_bytes", Value::Bytes(u64::from(grant_value_bytes)))?;
     Some(())

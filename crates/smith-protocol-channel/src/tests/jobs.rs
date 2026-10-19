@@ -5,7 +5,7 @@ use smith_domain_tools::{BytesClamp, Exit, JobEnd, JobNumber, Outcome, TimeoutCl
 
 fn round_trip(outcome: Outcome) -> Result<Outcome, record::Refusal> {
     let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).unwrap();
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).unwrap();
     let endpoints = crate::Endpoints::new(configured);
     let limits = smith_transcript::CEILINGS;
     let mut turn = crate::decode_turn(&super::saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();
@@ -229,7 +229,7 @@ fn a_running_commands_deadline_clamp_survives_its_resume() {
 
 fn round_trip_problem(problem: llm::Problem) -> llm::Problem {
     let mut configured = skein_lib::List::with_capacity(1);
-    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).unwrap();
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0 }).unwrap();
     let endpoints = crate::Endpoints::new(configured);
     let limits = smith_transcript::CEILINGS;
     let mut turn = crate::decode_turn(&super::saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();

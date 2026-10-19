@@ -30,7 +30,7 @@ pub(crate) struct Peer {
     pub(crate) activation: u64,
     /// The run's token for the conversation, which is its session's opener.
     pub(crate) conversation: Token,
-    pub(crate) account: u32,
+    pub(crate) account: Option<u32>,
     pub(crate) retry_at: Option<skein_lib::Time>,
     pub(crate) report: llm::Report,
     pub(crate) model: u32,
@@ -49,7 +49,7 @@ impl Peer {
     pub(crate) fn new(
         conversation: Token,
         activation: u64,
-        account: u32,
+        account: Option<u32>,
         model: u32,
         offered: Offered,
         limits: &session::Limits,

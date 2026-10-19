@@ -12,9 +12,7 @@ use smith_events::LimitValue;
 fn names() -> smith_protocol_channel::Endpoints {
     let mut entries = List::with_capacity(2);
     for (number, name) in [(7, b"codex".as_slice()), (8, b"other".as_slice())] {
-        entries
-            .push(smith_protocol_channel::Endpoint { number, name: name.into(), dialect: 91, account: 0 })
-            .expect("names");
+        entries.push(smith_protocol_channel::Endpoint { number, name: name.into(), dialect: 91 }).expect("names");
     }
     smith_protocol_channel::Endpoints::new(entries)
 }
@@ -111,7 +109,6 @@ fn endpoints(configuration: &super::super::Configuration, limits: &crate::Limits
                     transport: skein_llm_connection::Transport::Plaintext,
                     llm: skein_llm::Endpoint::codex(),
                 },
-                account: 0,
                 connect: endpoint.connect,
                 handshake: endpoint.handshake,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
@@ -119,7 +116,7 @@ fn endpoints(configuration: &super::super::Configuration, limits: &crate::Limits
             })
             .expect("two endpoints");
     }
-    smith_protocol_llm::Endpoints::new(configured.into_boxed(), 2, 1).expect("endpoint names")
+    smith_protocol_llm::Endpoints::new(configured.into_boxed(), 2).expect("endpoint names")
 }
 
 #[test]

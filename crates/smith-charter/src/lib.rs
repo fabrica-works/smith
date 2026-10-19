@@ -10,10 +10,10 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 #[rustfmt::skip]
-#[path = "generated/v2.rs"]
-pub mod v2;
+#[path = "generated/v3.rs"]
+pub mod v3;
 
-pub use v2::{
+pub use v3::{
     Budget, BudgetParts, CEILINGS, ChangeRule, ChangeRuleParts, Charter, CharterParts, Contract, ContractParts,
     Conventions, ConventionsParts, Effect, Families, FamiliesParts, Field, FieldParts, FieldRule, FieldRuleParts, Form,
     HostTool, HostToolParts, Item, ItemKind, ItemKindParts, ItemParts, Llm, LlmParts, Prices, PricesParts, Reserve,
@@ -23,7 +23,7 @@ pub use v2::{
 
 impl Charter {
     /// The wire format version this codec writes and reads.
-    pub const FORMAT_VERSION: u64 = 2;
+    pub const FORMAT_VERSION: u64 = 3;
 }
 
 /// Provider effort name, bounded to 32 UTF-8 bytes by the charter codec.

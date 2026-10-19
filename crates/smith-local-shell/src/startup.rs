@@ -101,7 +101,7 @@ pub fn stream_header(
         versions: smith_events::Versions {
             events: 3,
             channel: 4,
-            charter: 2,
+            charter: 3,
             transcript: 5,
             chat_store: Some(smith_local_protocol::CHAT_STORE_VERSION),
         },

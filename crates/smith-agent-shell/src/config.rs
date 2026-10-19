@@ -20,7 +20,7 @@ use smith_protocol_llm as llm;
 use smith_protocol_machine as machine;
 
 use crate::trace::{Capture, TraceConfig};
-use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, Layer, LimitName, Per, Refusal};
+use smith_agent_service::profile::{ENDPOINTS, Layer, LimitName, Per, Refusal};
 
 const CONFIG_BYTES: u64 = 1 << 20;
 
@@ -179,7 +179,9 @@ struct Endpoint {
     name: String,
     number: u32,
     dialect: u32,
-    account: u32,
+    /// Withdrawn endpoint account, ignored; accounts-sources removes it.
+    #[serde(default, rename = "account")]
+    _account: u32,
     /// Provider route: openai, anthropic, or the withdrawn codex route.
     provider: String,
     address: String,
@@ -370,7 +372,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
         .collect();
     let endpoints = build_endpoints(document.endpoints, &limits.llm, &profile)?;
     let llm_endpoints =
-        llm::Endpoints::new(endpoints.llm, ENDPOINTS, ACCOUNTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
+        llm::Endpoints::new(endpoints.llm, ENDPOINTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
     if let Some(trace) = &trace {
         // First admit the sink, then include its own limits in the receiving header.
         for _ in 0..2 {
@@ -494,7 +496,6 @@ fn build_endpoints(
                 name: endpoint.name.into_bytes().into(),
                 number: endpoint.number,
                 dialect: endpoint.dialect,
-                account: endpoint.account,
             })
             .map_err(|_| "too many channel endpoints")?;
         let credential = credential_limits(limits);
@@ -510,7 +511,6 @@ fn build_endpoints(
         llm_endpoints.push(llm::ConfiguredEndpoint {
             name: domain::llm::Endpoint(endpoint.number),
             destination,
-            account: endpoint.account,
             connect: endpoint_duration(endpoint.connect, endpoint.number, "connect")?,
             handshake: endpoint_duration(endpoint.handshake, endpoint.number, "handshake")?,
             identity,
@@ -1003,6 +1003,23 @@ mod tests {
     }
 
     #[test]
+    fn an_endpoints_account_is_read_and_ignored() {
+        for account in [None, Some(u32::MAX)] {
+            let mut document = document();
+            let mut endpoint = shaped_document()["endpoints"][0].clone();
+            endpoint.as_object_mut().expect("endpoint object").remove("account");
+            if let Some(account) = account {
+                endpoint["account"] = account.into();
+            }
+            document.endpoints[0] = serde_json::from_value(endpoint).expect("withdrawn account or absent");
+            document.endpoints[0].dialect = 1;
+            let configuration = build(document).expect("withdrawn account is ignored");
+            let endpoint = configuration.service.channel_endpoints.resolve(b"local").expect("configured endpoint");
+            assert_eq!((endpoint.number, endpoint.dialect), (0, 1));
+        }
+    }
+
+    #[test]
     fn empty_endpoint_and_model_lists_name_the_missing_field() {
         let mut empty = document();
         empty.endpoints.clear();
@@ -1079,7 +1096,7 @@ mod tests {
             name: "test".into(),
             number: 42,
             dialect: 1,
-            account: 0,
+            _account: 0,
             provider: "codex".into(),
             address: "127.0.0.1:443".into(),
             transport: "tls".into(),
@@ -1480,7 +1497,7 @@ mod tests {
             service::profile::derive(&selected, &declarations).expect("all product startup relationships");
         let effort = smith_charter::CEILINGS.llm_effort_some;
         let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
-        let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");
+        let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS).expect("numeric destinations");
         let header = effective_header(&selected, &declarations, &derived, &configured.channel, &destinations)
             .expect("product header");
         let events = service::EventLimits::derive(
@@ -1652,8 +1669,7 @@ mod tests {
             .expect("drawn event ownership");
             limits.events = Some(events);
             let configured = build_endpoints(dto.endpoints, &limits.llm, &profile).expect("drawn endpoints");
-            let destinations =
-                llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("drawn native admission");
+            let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS).expect("drawn native admission");
             let service_bytes = service::worst_case(&limits, &destinations).expect("drawn service bound");
             // The shell may hold every inherited root, its error stream and
             // the append file's temporary root before its first pass.

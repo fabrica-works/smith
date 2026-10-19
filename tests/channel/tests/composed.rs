@@ -151,7 +151,7 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
 }
 
 fn composed_charter() -> host::Charter {
-    let smallest = include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin");
+    let smallest = include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin");
     let source =
         smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut Reader::new(smallest)).expect("golden charter");
     let mut parts = source.into_parts();
@@ -186,6 +186,7 @@ fn composed_charter() -> host::Charter {
     )
     .expect("outcome contract");
     let mut llm = parts.main.into_parts();
+    llm.account = Some(0);
     llm.model = Box::from(*b"fake");
     llm.window = 8192;
     llm.output = 1024;

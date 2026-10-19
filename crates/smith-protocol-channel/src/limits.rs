@@ -12,7 +12,7 @@ pub struct Limits {
     /// Aggregate incoming Start bytes, including its whole saved window.
     pub start_bytes: u32,
     /// This agent's bounded charter decoder allowances.
-    pub charter: smith_charter::v2::Limits,
+    pub charter: smith_charter::v3::Limits,
     /// This agent's bounded saved-turn decoder allowances.
     pub transcript: smith_transcript::v5::Limits,
     /// Saved turns admitted on resume, from one window's message capacity.
@@ -44,7 +44,7 @@ pub enum Error {
     /// Configured endpoint names exceed their count or byte allowance.
     Endpoints,
     /// The accepted result is outside the configured charter codec limits.
-    Result(smith_charter::v2::Problem),
+    Result(smith_charter::v3::Problem),
     /// A bounded result list had no room for a field or item.
     ResultCapacity,
     /// A saved answer decodes but fails the domain's sealed result bounds.
@@ -89,8 +89,8 @@ impl From<skein_channel::FrameError> for Error {
     }
 }
 
-impl From<smith_charter::v2::Problem> for Error {
-    fn from(problem: smith_charter::v2::Problem) -> Error {
+impl From<smith_charter::v3::Problem> for Error {
+    fn from(problem: smith_charter::v3::Problem) -> Error {
         Error::Result(problem)
     }
 }
@@ -226,8 +226,8 @@ fn start_cells(limits: &smith_channel::Limits) -> Option<u64> {
     smith_channel::Start::worst_case_heap(&cells)
 }
 
-fn charter_cells(limits: &smith_charter::v2::Limits) -> Option<u64> {
-    let cells = smith_charter::v2::Limits {
+fn charter_cells(limits: &smith_charter::v3::Limits) -> Option<u64> {
+    let cells = smith_charter::v3::Limits {
         section_title: 0,
         section_body: 0,
         host_tool_name: 0,

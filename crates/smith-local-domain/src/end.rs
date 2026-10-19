@@ -37,7 +37,7 @@ pub(crate) const fn exit_status(cause: Option<EndCause>) -> ExitStatus {
 }
 
 /// Classify the actual answer before rendering moves its concrete result.
-pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) -> ExitStatus {
+pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: Option<u32>) -> ExitStatus {
     use smith_host_domain::{Refusal, RunFailure, RunResult};
     match &answer.result {
         RunResult::Accepted { .. } => ExitStatus::Accepted,
@@ -53,7 +53,10 @@ pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) ->
                 smith_host_domain::ModelFault::Completion {
                     failure: smith_host_domain::CompletionFailure::Unauthorized,
                     ..
-                } => ExitStatus::Credentials { account },
+                } => match account {
+                    Some(account) => ExitStatus::Credentials { account },
+                    None => ExitStatus::RunFailed,
+                },
                 smith_host_domain::ModelFault::Refused { account, .. }
                 | smith_host_domain::ModelFault::Unauthorized { account } => {
                     ExitStatus::Credentials { account: *account }

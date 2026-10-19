@@ -90,7 +90,7 @@ fn priced_charter() -> smith_domain::run::Charter {
                 output: 10_000_000,
                 unit: 1_000_000,
             },
-            account: 0,
+            account: Some(0),
             endpoint: run::charter::Endpoint(1),
             model: b"gpt-5".as_slice().into(),
             window: 2_097_152,
@@ -246,12 +246,8 @@ fn standard_profile_builds_a_complete_bounded_service() {
         limits,
         domain: smith_domain::Config { endpoints: Box::new([]), models: Box::new([]) },
         channel_endpoints: smith_protocol_channel::Endpoints::new(List::with_capacity(0)),
-        llm_endpoints: smith_protocol_llm::Endpoints::new(
-            Box::new([]),
-            crate::profile::ENDPOINTS,
-            crate::profile::ACCOUNTS,
-        )
-        .expect("empty endpoints"),
+        llm_endpoints: smith_protocol_llm::Endpoints::new(Box::new([]), crate::profile::ENDPOINTS)
+            .expect("empty endpoints"),
         environment: smith_protocol_machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
         stream_mode: skein_channel::StreamMode::Two,
     };

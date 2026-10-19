@@ -18,7 +18,7 @@ pub enum FromDomain {
     /// Start one completion under the admitted charter's result rules.
     Complete {
         owner: Token,
-        grant: smith_domain::GrantName,
+        grant: Option<smith_domain::GrantName>,
         prompt: llm::Prompt,
         deadlines: smith_domain::session::Deadlines,
         bounds: crate::Receiving,

@@ -49,7 +49,7 @@ mod tests {
             effort: None,
             prices: smith_domain::run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
             dialect: 0,
-            account: 0,
+            account: Some(0),
             endpoint: smith_domain::run::charter::Endpoint(0),
             model: b"first".as_slice().into(),
             window: 8192,

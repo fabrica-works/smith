@@ -116,7 +116,7 @@ pub(super) fn config() -> Config {
                 effort: None,
                 prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                 dialect: 1,
-                account: 7,
+                account: Some(7),
                 endpoint: Endpoint(4),
                 model: Box::from(&b"small"[..]),
                 window: 65_536,
@@ -643,7 +643,7 @@ fn colocated_config() -> Config {
         local::max_line_bytes(lower.limits.domain.run.message_bytes).expect("line allowance");
     config.limits.local.endpoints = lower.domain.endpoints.clone();
     config.local.accounts = Box::new([0]);
-    config.local.models[0].account = 0;
+    config.local.models[0].account = Some(0);
     config.local.models[0].endpoint = Endpoint(0);
     config.local.models[0].prices = run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 };
     config.local.models[0].window = lower.domain.models[0].window;

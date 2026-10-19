@@ -59,6 +59,7 @@ fn limits() -> ComponentLimits {
             max_failure_bytes: client.detail_bytes,
         },
         contract_bytes: 4096,
+        llms: 1,
         accounts: 1,
         grant_value_bytes: 128,
     }
@@ -93,11 +94,9 @@ fn endpoints_with_client(connect: Duration, client: skein_llm::client::Limits) -
                 },
                 llm: shared::Endpoint::codex(),
             },
-            account: 0,
             identity: smith_protocol_llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),
-        1,
         1,
     )
     .expect("one endpoint")
@@ -127,7 +126,7 @@ fn prompt() -> llm::Prompt {
 fn complete(owner: u64, generation: u64, bounds: Receiving) -> FromDomain {
     FromDomain::Complete {
         owner: Token::new(owner),
-        grant: GrantName { account: 0, generation },
+        grant: Some(GrantName { account: 0, generation }),
         prompt: prompt(),
         deadlines: smith_domain::session::Deadlines {
             head: Duration::from_secs(2),

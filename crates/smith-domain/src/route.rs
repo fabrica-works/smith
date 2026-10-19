@@ -58,7 +58,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                 });
                 return;
             }
-            if !takes_grants(domain, &grants, env.limits.accounts) {
+            if !takes_grants(domain, &charter, &grants, env.limits.accounts) {
                 domain.notices.push(Request::Answer {
                     read: None,
                     to: reply_to,
@@ -128,7 +128,8 @@ fn failed(
     assert!(run::settle_reservation(&mut domain.run, conversation, owner, 0), "failed call held its reservation");
     match failure {
         crate::llm::Failure::Unauthorized => {
-            if let Some(held) = domain.grants.get_mut(&grant.account)
+            if let Some(grant) = grant
+                && let Some(held) = domain.grants.get_mut(&grant.account)
                 && !was_rejected(held, grant.generation)
             {
                 held.rejected = Some(grant.generation);
@@ -141,11 +142,15 @@ fn failed(
             if let Some(reset) = retry_after {
                 peer.retry_at = Some(env.now.saturating_add(reset));
             }
-            domain.notices.push(Request::Limited { account: grant.account, reset: retry_after });
+            if let Some(grant) = grant {
+                domain.notices.push(Request::Limited { account: grant.account, reset: retry_after });
+            }
         }
         crate::llm::Failure::Refused => {
             let code = domain.peers.get(id).expect("failed completion retains its peer").report.code.clone();
-            domain.notices.push(Request::Refused { account: grant.account, code, reason: detail.clone() });
+            if let Some(grant) = grant {
+                domain.notices.push(Request::Refused { account: grant.account, code, reason: detail.clone() });
+            }
         }
         crate::llm::Failure::Overloaded
         | crate::llm::Failure::RateLimited { .. }
@@ -804,24 +809,12 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             return session_step(domain, env, session::Event::BudgetDenied { owner, reason });
         }
     }
-    let grant = match domain.grants.get(&account) {
-        Some(held) if held.expires > env.now => held.name,
-        Some(_) | None => {
-            assert!(
-                run::settle_reservation(&mut domain.run, conversation, owner, 0),
-                "unsent call held its reservation"
-            );
-            return session_step(
-                domain,
-                env,
-                session::Event::Failed {
-                    owner,
-                    failure: crate::llm::Failure::Unauthorized,
-                    evidence: crate::llm::Evidence::Unsent,
-                    detail: Box::default(),
-                },
-            );
-        }
+    let grant = match account {
+        Some(account) => match domain.grants.get(&account) {
+            Some(held) if held.expires > env.now => Some(held.name),
+            Some(_) | None => return unsent_unauthorized(domain, env, conversation, owner),
+        },
+        None => None,
     };
     crate::operation::begin_completion(
         domain,
@@ -842,6 +835,21 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
         max_failure_bytes,
         decoded_call_bytes: env.limits.decoded_call_bytes,
     });
+}
+
+/// Settle the reservation of a named account whose grant has lapsed.
+fn unsent_unauthorized(domain: &mut Domain, env: &Env<Limits>, conversation: Token, owner: Token) {
+    assert!(run::settle_reservation(&mut domain.run, conversation, owner, 0), "unsent call held its reservation");
+    session_step(
+        domain,
+        env,
+        session::Event::Failed {
+            owner,
+            failure: crate::llm::Failure::Unauthorized,
+            evidence: crate::llm::Evidence::Unsent,
+            detail: Box::default(),
+        },
+    );
 }
 
 /// Resolve the selected LLM through the charter's main-first numbering.
@@ -1015,7 +1023,20 @@ fn granted(domain: &mut Domain, env: &Env<Limits>, grant: crate::Grant) {
     }
 }
 
-fn takes_grants(domain: &Domain, grants: &[crate::Grant], most: u32) -> bool {
+fn takes_grants(domain: &Domain, charter: &run::Charter, grants: &[crate::Grant], most: u32) -> bool {
+    for llm in core::iter::once(&charter.llm).chain(charter.models.iter()) {
+        if let Some(account) = llm.account {
+            let mut present = domain.grants.contains_key(&account);
+            for grant in grants {
+                if grant.name.account == account {
+                    present = true;
+                }
+            }
+            if !present {
+                return false;
+            }
+        }
+    }
     if u32::try_from(grants.len()).unwrap_or(u32::MAX) > most {
         return false;
     }

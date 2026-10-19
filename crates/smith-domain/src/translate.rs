@@ -108,6 +108,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
             Some(final_turn) => Some(session::FinalTurn { note: final_turn.note, allowance: final_turn.allowance }),
             None => None,
         },
+        account: llm.account,
         endpoint: llm::Endpoint(llm.endpoint.0),
         affinity: llm::Affinity { key: identity.bytes(), thread: ordinal },
         protocol_allowance: generated_schema_bytes,
@@ -203,7 +204,7 @@ pub(crate) fn spend(turns: u32, usage: llm::Usage) -> Spend {
 pub(crate) fn end(
     end: session::End,
     model: u32,
-    account: u32,
+    account: Option<u32>,
     retry_at: Option<skein_lib::Time>,
     report: llm::Report,
 ) -> run::End {
@@ -216,11 +217,11 @@ pub(crate) fn end(
         session::End::Busy => run::End::Busy,
         session::End::Invalid => run::End::Invalid,
         session::End::Closed => run::End::Closed,
-        session::End::Failed { failure: llm::Failure::Exhausted { .. }, .. } => {
-            run::End::Fault(run::Fault::Limited { account, reset_at: retry_at })
+        session::End::Failed { failure: llm::Failure::Exhausted { .. }, .. } if account.is_some() => {
+            run::End::Fault(run::Fault::Limited { account: account.expect("guarded account"), reset_at: retry_at })
         }
-        session::End::Failed { failure: llm::Failure::Refused, .. } => {
-            run::End::Fault(run::Fault::Refused { account, code: report.code })
+        session::End::Failed { failure: llm::Failure::Refused, .. } if account.is_some() => {
+            run::End::Fault(run::Fault::Refused { account: account.expect("guarded account"), code: report.code })
         }
         session::End::Failed { failure, evidence, attempts } => run::End::Fault(run::Fault::Completion {
             failure: completion_failure(failure),

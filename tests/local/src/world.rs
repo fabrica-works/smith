@@ -663,7 +663,7 @@ impl World {
                 effort: None,
                 prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                 dialect: 1,
-                account: 0,
+                account: Some(0),
                 endpoint: run::charter::Endpoint(0),
                 model: b"scripted".as_slice().into(),
                 window: 8192,
