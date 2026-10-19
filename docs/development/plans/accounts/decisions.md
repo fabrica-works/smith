@@ -639,6 +639,21 @@ commits is this plan's.
      A further user of what 07 changes is refreshed the same way and listed in
      the commit body.
 
+119. **A table test's rows are data** (steer of 2026-10-19T15:24:42Z).
+     The check of 2026-10-19T15:24:42Z saw, a second time after the steer of
+     14:31Z, table tests that branch on a row's value and assert inside match
+     arms or helpers: skein 05.4's `issued.rs`
+     (`an_issued_client_id_is_bounded_by_its_cap` asserts `end` inside its arm;
+     `every_later_request_carries_the_issued_id` branches twice on
+     `refreshing`) and 05.5's `revoke.rs` (`answer_case` asserts on the way and
+     branches on `retry` and `evidence`; `a_revocation_posts_its_form` computes
+     its expected id with `if issued`). The README's "Rules of this plan" gains
+     "A table test's rows are data" (testing-strategy.md, 10, "Rows carry
+     data"): a row holds its inputs and its expected value, the body compares
+     once after any match, a helper returns a value and asserts nothing, and
+     rows that need different code are tests of their own. The landed tests
+     stay as they are. A script cannot test the rule, so it adds no gate step.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

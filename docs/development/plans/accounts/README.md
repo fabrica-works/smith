@@ -226,6 +226,15 @@ downstream repin.
   a timeout's failure (implementer.md, 8.5): `land` again once without
   asking; a second failure on the same tree is a question. Its fix is
   `later.md`'s.
+- **A table test's rows are data** (testing-strategy.md, 10, "Rows
+  carry data" and "The setup the assertion reads"; ruling 119): a row
+  holds its inputs and its expected value; the body runs the same lines
+  for every row and compares once, with `assert_eq!` after any match,
+  never inside an arm. A match or a helper turns what it saw into a
+  value (a `Result`, or a small struct) and asserts nothing. Rows that
+  need different code are tests of their own, each calling one function
+  with what differs. skein 05.4's `issued.rs` and 05.5's `revoke.rs`,
+  where it was seen twice, stay as they landed.
 
 ## Live services
 
