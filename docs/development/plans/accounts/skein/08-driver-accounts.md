@@ -94,7 +94,8 @@ Shape: `Component` gains `names: List<Name>` of capacity
   `State::Empty`, a grant fails as expired, a sign-in goes ahead. Both
   ask one private helper over the registration's `terms` and the
   record's `issued_client_id` (skein-oauth's `issued_id` is
-  `pub(crate)` there). `boundary.rs`'s `Unloaded::Unreadable` doc names
+  `pub(crate)` there); an empty id counts as none, as `Client::refresh`
+  reads it (ruling 115). `boundary.rs`'s `Unloaded::Unreadable` doc names
   this case beside damaged bytes and another version. `settled` clears
   `names` with the other tables (ruling 114).
   Downstream: nothing breaks; `new`'s accounts keep their indices.

@@ -547,6 +547,20 @@ commits is this plan's.
      A further user of what 08.1 changes is refreshed the same way and listed
      in the commit body.
 
+115. **skein 08's Shapes against main, after skein-05.4** (re-check of skein-08.1).
+     The re-check of skein-08.1 against skein 0b64ac7 (skein-05.4) found the
+     driver's helper for decision 8 confirmed (`issued_id` is `pub(crate)` in
+     skein-oauth's private `redirect` module) and one gap:
+     `decode_record` admits an empty issued id, while the client reads one as
+     missing (`crates/skein-oauth/src/machine.rs`: `let Some(client_id) =
+     &prior.issued_client_id else { return Err(Failure::Refused) }; if
+     client_id.is_empty() { return Err(Failure::Refused); }`). 08.1's helper
+     counts an empty id as none, so such a record loads `Unreadable` (private)
+     or is held as none (owner) under issued terms. The new `SignIn` and
+     `Redirected` fields change nothing else in 08.1: `deliver`'s `client_id:
+     None` ends an issued sign-in `Incomplete` until 08.4, which 08.1's Proof
+     already leaves to it.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
