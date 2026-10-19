@@ -72,10 +72,12 @@ Scope: oauth.md 2.2 (the keys come first; which keys fit), 3
 Needs: skein 05.3's `OpenId` terms; skein 06.2's documents and
   `Event::Get`.
 Files: `crates/skein-oauth/src/keys.rs` (new), `machine.rs`,
-  `common.rs`, `lib.rs`, `redirect.rs`, `machine_tests.rs`;
-  `tests/oauth/src/lib.rs`, `tests/oauth/tests/openid.rs` (new),
+  `machine/fetch.rs` (new), `common.rs`, `lib.rs`, `redirect.rs`,
+  `machine_tests.rs`, `machine_tests/terms.rs`, `machine_tests/openid.rs`
+  (new); `tests/oauth/src/lib.rs`, `tests/oauth/tests/openid.rs` (new),
   `world.rs`, `memory.rs`, `fuzzy_world.rs`;
-  `crates/skein-oauth-accounts/src/exchange.rs`, `component.rs`. The
+  `crates/skein-oauth-accounts/src/exchange.rs` (not `component.rs`:
+  ruling 118). The
   `HttpRequest` literals: `tests/oauth/tests/world.rs`
   (`authorization_code_cannot_be_redeemed_twice`), `memory.rs`
   (`client_and_rotating_issuer_steps_fit_declared_heap_bounds`),
@@ -113,7 +115,14 @@ Shape: `HttpRequest.method: Method` (new `Method { Post, Get }`); a
   check: Keys } }` with no `Visit`; `Cancel` is `Cancelled`. New
   `Failure::Unverified { check: Check }` and `Check` (the sketches);
   `retry_or_fail`, the one exhaustive match on `Failure`, counts it not
-  transient. `ClientLimits` gains `metadata_bytes`, `key_set_bytes`,
+  transient. Where it goes (ruling 118: `machine.rs` is 759 lines and
+  `machine_tests.rs` 732 on main): `Phase::AwaitKeys` and its arm stay
+  in `machine.rs`, which hands the GET's answer to `machine/fetch.rs`
+  (new, beside `machine/revoke.rs`: the fetch in flight, its retry, the
+  move to `AwaitRedirect`); 07.1's and 07.2's machine unit tests go in
+  `machine_tests/openid.rs` (new, beside `terms.rs`), so that neither
+  file passes 800 lines. `redirect.rs`'s `issuer_endpoint` becomes
+  `pub(crate)` for `keys.rs`. `ClientLimits` gains `metadata_bytes`, `key_set_bytes`,
   `keys` and `modulus_bits`; `client_worst_case` counts the larger
   document and `keys` held keys, each `modulus_bits / 8` bytes and two
   strings. `Client::new` refuses `modulus_bits` outside 2048..=8192, as
@@ -122,13 +131,36 @@ Shape: `HttpRequest.method: Method` (new `Method { Post, Get }`); a
   `metadata_bytes` is 0 and no key set URL is named, as `Limit`, so
   each of those three has smallest valid value 0. A host's
   `string_bytes` must hold a key's `n` (342 bytes at 2048 bits), or no
-  set is readable; no host downstream takes OpenID terms. Fixture in
+  set is readable; no host downstream takes OpenID terms. 07.1's worlds
+  rest on 06.2's `documents()` (`document_bytes` 4096, `string_bytes`
+  1024): under main's 1024 and 256 no key is readable; under 06.2's,
+  four keys (1666 bytes, 61 tokens) fit `tokens` 64, five (2080 bytes,
+  75 tokens) do not. Fixture in
   `tests/oauth/src/lib.rs`: 1024, 2048, 4 and 2048, and `begin`,
   `openid_registration` and `openid_issuer` (new; the test shape). The
   world answers a GET with skein 06.2's `fake::Event::Get`. The
-  driver: `Web::new` returns `None` for a GET, which `component.rs`
-  ends as `Exchange(Malformed)`, until skein 10.2; `exchange.rs`'s test
-  demand names `Post`. Downstream, the `ClientLimits` literals take 0,
+  driver: `Web::new` returns `None` for a GET (a `match` on
+  `request.method`: clippy disallows `matches!`), which `component.rs`
+  already ends as `Exchange(Malformed)`, unchanged, until skein 10.2;
+  `exchange.rs`'s test demand names `Post`. In skein, the driver's
+  `ClientLimits` literals (`tests/oauth-accounts/src/world.rs`
+  `limits`, `tests/memory.rs`, skein-oauth-accounts's `src/tests.rs`
+  `limits`) take 0, 0, 0 and 2048 too: no driver registration takes
+  OpenID terms. The tests that meet the GET (ruling 118):
+  `machine_tests/terms.rs`' `a_nonce_is_bounded_and_needs_openid` and
+  `an_admitted_nonce_is_sent_in_the_visit_url` answer the key GET (a
+  one-key set literal) before they read the `Visit`; `machine_tests.rs`'
+  `limits()` sets `metadata_bytes` 1024, `key_set_bytes` 4096, `keys` 4,
+  `document_bytes` 4096 and `tokens` 128 (the row of `keys` and one more
+  is 2080 bytes and 75 tokens), so that
+  `terms_are_refused_where_the_design_refuses` still reaches its rows,
+  and `modulus_bits` with `string_bytes` such that a modulus one bit past
+  `modulus_bits` reads as a string (a 4097-bit `n` is 684 base64url
+  bytes); a test that rests on `string_bytes` 512 keeps its own limits.
+  `world.rs`' `an_openid_sign_in_fails_before_its_check_exists`, whose
+  `visit()` now meets the GET, answers the keys first through `begin`,
+  the fake's `Event::Get` and the answer; its `Malformed` holds until
+  07.2 removes the guard. Downstream, the `ClientLimits` literals take 0,
   0, 0 and 2048: smith-local-shell `src/credentials/product.rs`,
   smith-local-service `src/credentials/tests.rs`; jig's
   `crates/jig-protocol-config/src/profile/small.rs`,
@@ -137,9 +169,9 @@ Shape: `HttpRequest.method: Method` (new `Method { Post, Get }`); a
   `crates/jig-protocol-accounts/src/translate.rs` gains an unreachable
   `Unverified` arm: no registration there has OpenID terms. No
   `HttpRequest` literal is downstream.
-Test shape: unit, `machine_tests.rs` (`limits()`, `registration(public,
-  wire)` given OpenID terms, `step`, `request`, `answered`, over
-  document literals), each under 20 ms:
+Test shape: unit, `machine_tests/openid.rs` over `machine_tests.rs`'
+  `limits()`, `registration(public, wire)` given OpenID terms, `step`,
+  `request`, `answered`, and document literals, each under 20 ms:
   `an_openid_sign_in_fetches_its_keys_before_the_visit`, rows a key set
   URL, the metadata then `jwks_uri`;
   `a_get_carries_no_body_or_content_type`;
@@ -158,8 +190,9 @@ Test shape: unit, `machine_tests.rs` (`limits()`, `registration(public,
   without a key set URL. World, `tests/oauth/tests/openid.rs` over
   `tests/oauth/src/lib.rs`' `client_limits()`, `fake_limits()`,
   `client_step`, `fake_step`, `http` and `response`, which gains
-  `begin(client, registration, seconds)` (the `SignIn` event `sign_in`
-  builds, with a nonce), `openid_registration()` (a key set URL named)
+  `begin(client, registration, seconds) -> Option<oauth::Request>` (the
+  `SignIn` event `visit` builds, its `key` 7, at `time(seconds)`, with a
+  nonce, returning the client's first demand unasserted), `openid_registration()` (a key set URL named)
   and `openid_issuer(fault)`; each under 0.1 s. Reference test, imports
   as `world.rs`' and the fixtures from `skein_oauth_world`:
   ```rust
@@ -184,8 +217,11 @@ Test shape: unit, `machine_tests.rs` (`limits()`, `registration(public,
   `UnreadableMetadata`, `UnreadableKeySet`, `MetadataIssuer`,
   `LongModulus`, `UseEnc`, each `Unverified { check: Keys }` and no
   visit. Memory (`memory.rs`):
-  `client_and_rotating_issuer_steps_fit_declared_heap_bounds` with the
-  four caps at their bounds, against `client_worst_case`.
+  `a_sign_in_holding_its_keys_fits_the_worst_case` (new; ruling 118:
+  `client_and_rotating_issuer_steps_fit_declared_heap_bounds` meters
+  only an `Event::Refresh` step, which holds no keys): the four caps at
+  their bounds, the step that answers the key GET metered against
+  `client_worst_case`.
 Proof: world, `the_keys_are_fetched_again_at_each_sign_in`: two
   sign-ins on one client each emit a bodiless GET and, once the fake
   answers it, their `Visit`; under 0.1 s; unit,
@@ -195,7 +231,7 @@ Proof: world, `the_keys_are_fetched_again_at_each_sign_in`: two
 Don't: keep keys past the sign-in; visit before a key is held; put a
   secret or a body in a GET; check a GET's origin or resolve a name
   (skein 10.2's); fetch keys for a refresh or a revocation.
-Size: about 290 lines.
+Size: about 330 lines.
 Removes: nothing.
 
 ### 07.2 The ID token's check
@@ -205,7 +241,7 @@ Scope: oauth.md 2.2 (the signature, the claims, the subject, a
 Needs: 07.1's keys and `Unverified`; skein 05.1's `verify_rs256`; skein
   06.2's ID token and its faults.
 Files: `crates/skein-oauth/src/jwt.rs`, `machine.rs`, `common.rs`,
-  `lib.rs`, `Cargo.toml`, `src/tests.rs`, `machine_tests.rs`;
+  `lib.rs`, `Cargo.toml`, `src/tests.rs`, `machine_tests/openid.rs`;
   `Cargo.lock` (`skein-oauth` gains `skein-tls`);
   `tests/oauth/src/lib.rs`, `tests/oauth/tests/openid.rs`, `world.rs`;
   the `ClientLimits` literals 07.1 lists, each gaining `skew`.
@@ -241,15 +277,18 @@ Shape: `verify_id_token` (new, crate-private, in `jwt.rs`) takes the
   guard goes. `Cargo.toml` gains `skein-tls`, and so `Cargo.lock`'s
   `skein-oauth` entry. `ClientLimits.skew: Duration` (new), counted
   nowhere; `Client::new` admits any. Fixture 60 s; smallest valid 0,
-  which downstream takes at the 07.1 sites; jig's `translate.rs` arm
+  which the driver's and downstream's 07.1 sites take; jig's `translate.rs` arm
   stays unreachable.
 Test shape: unit, `src/tests.rs` (`limits()`, `wall`, `boxed`, over
   header and payload literals and RFC 7515 A.2's vector), each under
   20 ms: `an_id_tokens_alg_must_be_rs256`, rows `none`, `HS256`,
   `RS384`, `RS256`; `the_key_is_chosen_by_kid_else_the_one_key`, rows a
   named kid among two, an unknown kid, no kid with one key, no kid with
-  two; `rfc_7515_a2_passes_the_signature_check`, with a flipped
-  signature bit as its failing row; `each_claim_is_checked`, one row
+  two; `rfc_7515_a2_passes_the_signature_check`: the vector copied from
+  skein-tls's private `N`, `INPUT` and `SIGNATURE`
+  (`crates/skein-tls/src/tests/rs256.rs`), whose payload (`iss` `joe`,
+  no `aud`, `nonce` or `sub`) passes the signature and ends at
+  `Issuer`, with a flipped signature bit as its `Signature` row; `each_claim_is_checked`, one row
   per claim spoiled, each its `Check`;
   `aud_may_be_a_string_or_an_array`, rows a string, one in an array,
   two with `azp` the client, two with `azp` another, two without `azp`;
@@ -281,8 +320,8 @@ Test shape: unit, `src/tests.rs` (`limits()`, `wall`, `boxed`, over
       }
   }
   ```
-  Unit, `machine_tests.rs` (`limits()`, `registration`, `step`,
-  `answered`), each under 20 ms:
+  Unit, `machine_tests/openid.rs` (over `machine_tests.rs`' `limits()`,
+  `registration`, `step`, `answered`), each under 20 ms:
   `an_openid_exchange_without_an_id_token_is_missing`;
   `an_id_token_past_its_cap_ends_as_limit_before_any_check`;
   `a_refresh_keeps_the_sign_ins_id_token_unchecked`. World,
@@ -352,7 +391,8 @@ pub(crate) struct Key {
     pub(crate) modulus: Box<[u8]>,
     pub(crate) exponent: Box<[u8]>,
 }
-// keys.rs
+// keys.rs (`todo!()` stands for each body: the workspace denies `todo`
+// and `unimplemented`, so no stub lands; ruling 118)
 pub(crate) fn issuer_key_set(metadata: &[u8], issuer: &[u8], limits: &ClientLimits) -> Result<Box<[u8]>, Check> { todo!() }
 pub(crate) fn fitting_keys(key_set: &[u8], limits: &ClientLimits) -> Result<Box<[Key]>, Check> { todo!() }
 
@@ -380,8 +420,8 @@ pub(crate) fn pick_key<'k>(kid: Option<&[u8]>, keys: &'k [Key]) -> Result<&'k Ke
 
 ## Questions to raise when reached
 
-- 07.1: if `machine.rs` passes 800 lines with `keys.rs` in place, say
-  what else moves before 07.2 grows it.
+- None: ruling 118 names where 07.1's and 07.2's machine code and
+  tests go.
 
 ## Done when
 

@@ -603,6 +603,42 @@ commits is this plan's.
      A further fixture the floor refuses rises the same way, named in the
      commit body.
 
+118. **skein 07's Shapes against main** (ready check of skein-07.1).
+     The ready check of skein-07.1 (skein c7f4949, smith a34ac88, jig 8922bfa,
+     hearth 61ab3d1, temper 4121493) found 07's Shapes short of main;
+     `skein/07-openid.md` now says, checked by `git grep` on skein origin/main
+     11565f3:
+     - 07.1 meets tests that read a `Visit` right after `SignIn`:
+       `machine_tests/terms.rs` (`a_nonce_is_bounded_and_needs_openid`:231,
+       `an_admitted_nonce_is_sent_in_the_visit_url`:252) answer the key GET
+       first, and `machine_tests.rs`' `limits()` (`document_bytes: 1024`,
+       `tokens: 64` today) takes the key caps, 4096 and 128, so that
+       `terms_are_refused_where_the_design_refuses` still reaches its rows;
+       `tests/oauth/tests/world.rs`' `an_openid_sign_in_fails_before_its_check_exists`
+       (:396) answers the keys through `begin`, its `Malformed` kept to 07.2.
+     - `begin` returns `Option<oauth::Request>`, built as `visit` builds its
+       `SignIn` (`key: 7`, `now: time(1)` today), at `time(seconds)`.
+     - 07.1's worlds rest on 06.2's `documents()` (main: `string_bytes: 256`,
+       below a 2048-bit `n`, 342 bytes).
+     - The key-holding memory proof is a new sign-in step:
+       `client_and_rotating_issuer_steps_fit_declared_heap_bounds` meters
+       `oauth::Event::Refresh` alone.
+     - `machine.rs` is 759 lines and `machine_tests.rs` 732: the GET's handling
+       goes to `machine/fetch.rs` (beside `machine/revoke.rs`) and the machine
+       tests to `machine_tests/openid.rs` (beside `terms.rs`); the question to
+       raise when reached is answered.
+     - `component.rs` is unchanged: it already ends a `None` from `Web::new` as
+       `Failure::Exchange(oauth::Failure::Malformed)`; `Web::new` matches on
+       the method (clippy.toml: `core::matches`, "a catch-all match in
+       disguise"). The in-skein driver literals take 0, 0, 0, 2048 and skew 0.
+     - `issuer_endpoint` (`redirect.rs`:85, private) becomes `pub(crate)`;
+       `Cargo.toml` denies `todo` and `unimplemented`, so the sketches'
+       `todo!()` bodies never land.
+     - RFC 7515 A.2 is copied from skein-tls's private test consts `N`,
+       `INPUT`, `SIGNATURE`; its payload (`iss` "joe") ends at `Issuer`.
+     A further user of what 07 changes is refreshed the same way and listed in
+     the commit body.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
