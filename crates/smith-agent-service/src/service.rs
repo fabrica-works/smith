@@ -1532,6 +1532,9 @@ fn llm_events_up(service: &mut Service) {
             None => break,
         };
         match event {
+            llm::ToDomain::BuiltinResult { owner, id, text, error } => {
+                service.domain_events.push(domain::Event::BuiltinResult { owner, id, text, error });
+            }
             llm::ToDomain::Completed { owner, completion } => {
                 if let Some(events) = &mut service.events {
                     events.sinks.attempt_ready(owner);
@@ -1759,6 +1762,7 @@ fn observe_messages(service: &mut Service, event: &domain::Event) {
         | domain::Event::Read { .. }
         | domain::Event::Probed { .. }
         | domain::Event::Checked { .. }
+        | domain::Event::BuiltinResult { .. }
         | domain::Event::Aborted { .. } => {}
     }
 }

@@ -746,6 +746,8 @@ impl Book {
             session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
+            | session::FactKind::BuiltinStarted { .. }
+            | session::FactKind::BuiltinAnswered { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
             | session::FactKind::DelegateCancelled { .. }
@@ -775,7 +777,7 @@ fn rejected_calls(completion: &llm::Completion) -> (u64, u64) {
                     | llm::Problem::JobsFull { .. }
                     | llm::Problem::UnknownJob { .. } => {}
                 },
-                llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } => {}
+                llm::Decoded::Builtin { .. } | llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } => {}
             },
             llm::Said::Opaque { .. } | llm::Said::Refusal { .. } | llm::Said::Text { .. } => {}
         }

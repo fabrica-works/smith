@@ -85,6 +85,12 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         Event::Probed { owner, executable } => run::Event::Probed { owner, executable },
         Event::Checked { owner, ran } => run::Event::Checked { owner, ran },
         Event::Aborted { owner } => run::Event::Aborted { owner },
+        Event::BuiltinResult { owner, id, text, error } => {
+            if domain.sessions.contains_key(&owner) {
+                session_step(domain, env, session::Event::BuiltinResult { session: owner, id, text, error });
+            }
+            return;
+        }
         Event::Completed { owner, completion } => return completed(domain, env, owner, completion),
         Event::Failed { owner, failure, evidence, detail, report } => {
             return failed(domain, env, owner, failure, evidence, detail, report);

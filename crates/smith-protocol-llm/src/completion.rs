@@ -115,6 +115,7 @@ fn validate_resolved(resolved: &[ResolvedCall]) -> Result<(), Error> {
                 ask: run::Ask::Finish { .. } | run::Ask::Deliver { .. } | run::Ask::SubAgent { .. } | run::Ask::Wait,
             }
             | llm::Decoded::Owned { .. }
+            | llm::Decoded::Builtin { .. }
             | llm::Decoded::Invalid { .. } => {}
         }
     }
@@ -291,7 +292,7 @@ fn host_wanted(declaration: &run::HostTool, input: &[u8]) -> Option<u64> {
 
 fn matches_kind(kind: ToolKind, call: &llm::Decoded) -> bool {
     match call {
-        llm::Decoded::Invalid { .. } => true,
+        llm::Decoded::Invalid { .. } | llm::Decoded::Builtin { .. } => true,
         llm::Decoded::Owned { call } => match kind {
             ToolKind::Owned(tool) => tools::tool(call) == tool,
             ToolKind::Finish | ToolKind::Deliver | ToolKind::SubAgent | ToolKind::Wait => false,

@@ -153,6 +153,7 @@ pub(super) fn start(
         Stage::Used if conversation.compaction.asking() => return Some(window_limit(conversation, evidence, attempts)),
         Stage::Used => {}
     }
+    super::builtin::forget(conversation);
     let mut blocks = 0_u32;
     for message in &conversation.transcript {
         blocks = blocks.checked_add(super::count(message.content.len())).expect("validated window block bound");

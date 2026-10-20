@@ -36,6 +36,8 @@ pub enum FromDomain {
 /// One typed answer or text fact returned to the root domain.
 #[derive(Debug)]
 pub enum ToDomain {
+    /// The program reports a built-in call's result after its completion (protocol/programs.md, 5.5).
+    BuiltinResult { owner: Token, id: Box<[u8]>, text: Box<[u8]>, error: bool },
     /// The completion and its decoded calls.
     Completed { owner: Token, completion: llm::Completion },
     /// One failure with the shared client's evidence.

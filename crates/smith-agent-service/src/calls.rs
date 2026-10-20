@@ -8,6 +8,7 @@
 
 #![expect(clippy::manual_let_else, reason = "bounded production entries keep explicit Option terminals")]
 
+mod builtin;
 mod jobs;
 
 use alloc::boxed::Box;
@@ -57,6 +58,7 @@ pub(crate) struct Book {
     children: crate::children::Book,
     landing: Option<Token>,
     inputs: crate::inputs::Book,
+    builtin: builtin::Book,
 }
 
 impl Book {
@@ -69,6 +71,7 @@ impl Book {
             children: crate::children::Book::new(bounds.slots),
             landing: None,
             inputs: crate::inputs::Book::new(limits, capture),
+            builtin: builtin::Book::new(limits),
         }
     }
 
@@ -176,40 +179,12 @@ impl Book {
     /// Project only a fact with actual provider metadata; kit lifecycle is not a call.
     pub(crate) fn fact(&mut self, origin: Time, fact: &session::Fact, sinks: &mut Sinks) {
         self.children.session(fact);
-        let opener = match fact.kind {
-            session::FactKind::Tools {
-                opener,
-                fact: tools::FactKind::Started { .. } | tools::FactKind::Answered { .. },
-            }
-            | session::FactKind::DelegateStarted { opener, .. }
-            | session::FactKind::DelegateAnswered { opener, .. }
-            | session::FactKind::DelegateCancelled { opener }
-            | session::FactKind::DelegateWithheld { opener }
-            | session::FactKind::JobEnded { opener, .. } => opener,
-            session::FactKind::Ended { opener, .. } => {
-                self.inputs.ended(opener);
-                return;
-            }
-            session::FactKind::CompactionStarted { .. }
-            | session::FactKind::CompactionEnded { .. }
-            | session::FactKind::Opened { .. }
-            | session::FactKind::CompletionStarted { .. }
-            | session::FactKind::CompletionAnswered { .. }
-            | session::FactKind::CompletionFailed { .. }
-            | session::FactKind::CompletionCancelled { .. }
-            | session::FactKind::CompletionRetried { .. }
-            | session::FactKind::ReasoningDropped { .. }
-            | session::FactKind::Yielded { .. }
-            | session::FactKind::Used { .. }
-            | session::FactKind::Tools {
-                fact:
-                    tools::FactKind::Opened { .. }
-                    | tools::FactKind::Refused { .. }
-                    | tools::FactKind::Closing { .. }
-                    | tools::FactKind::JobEnded { .. }
-                    | tools::FactKind::Closed { .. },
-                ..
-            } => return,
+        if self.builtin.fact(origin, fact, &mut self.inputs, sinks) {
+            return;
+        }
+        let opener = match self.call_opener(fact) {
+            Some(opener) => opener,
+            None => return,
         };
         let metadata = match &fact.call {
             Some(metadata) => metadata,
@@ -255,7 +230,9 @@ impl Book {
                 let terminal = Terminal { job: None, verdict, exit: None, bytes: 0, omitted_bytes: 0, clamped: false };
                 sinks.record(&self.completed(origin, fact.at, metadata, terminal));
             }
-            session::FactKind::CompactionStarted { .. }
+            session::FactKind::BuiltinStarted { .. }
+            | session::FactKind::BuiltinAnswered { .. }
+            | session::FactKind::CompactionStarted { .. }
             | session::FactKind::CompactionEnded { .. }
             | session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
@@ -276,6 +253,46 @@ impl Book {
                     | tools::FactKind::Closed { .. },
                 ..
             } => unreachable!("only selected actual call facts reach projection"),
+        }
+    }
+
+    fn call_opener(&mut self, fact: &session::Fact) -> Option<Token> {
+        match fact.kind {
+            session::FactKind::Tools {
+                opener,
+                fact: tools::FactKind::Started { .. } | tools::FactKind::Answered { .. },
+            }
+            | session::FactKind::DelegateStarted { opener, .. }
+            | session::FactKind::DelegateAnswered { opener, .. }
+            | session::FactKind::DelegateCancelled { opener }
+            | session::FactKind::DelegateWithheld { opener }
+            | session::FactKind::JobEnded { opener, .. } => Some(opener),
+            session::FactKind::Ended { opener, .. } => {
+                self.inputs.ended(opener);
+                None
+            }
+            session::FactKind::BuiltinStarted { .. }
+            | session::FactKind::BuiltinAnswered { .. }
+            | session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
+            | session::FactKind::Opened { .. }
+            | session::FactKind::CompletionStarted { .. }
+            | session::FactKind::CompletionAnswered { .. }
+            | session::FactKind::CompletionFailed { .. }
+            | session::FactKind::CompletionCancelled { .. }
+            | session::FactKind::CompletionRetried { .. }
+            | session::FactKind::ReasoningDropped { .. }
+            | session::FactKind::Yielded { .. }
+            | session::FactKind::Used { .. }
+            | session::FactKind::Tools {
+                fact:
+                    tools::FactKind::Opened { .. }
+                    | tools::FactKind::Refused { .. }
+                    | tools::FactKind::Closing { .. }
+                    | tools::FactKind::JobEnded { .. }
+                    | tools::FactKind::Closed { .. },
+                ..
+            } => None,
         }
     }
 
@@ -474,6 +491,7 @@ pub(crate) fn worst_case(limits: &session::Limits, string: u32) -> Option<u64> {
     let bounds = Bounds::derive(limits)?;
     Map::<Token, Call>::worst_case(bounds.slots)?
         .checked_add(crate::children::worst_case(bounds.slots)?)?
+        .checked_add(builtin::Book::worst_case(limits)?)?
         .checked_add(bounds.bytes)?
         .checked_add(List::<Record>::worst_case(2)?)?
         .checked_add(u64::from(string).checked_mul(4)?)

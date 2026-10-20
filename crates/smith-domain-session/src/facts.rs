@@ -121,6 +121,10 @@ pub enum FactKind {
         /// Content-free child observation, preserved in reserved output room.
         fact: tools::FactKind,
     },
+    /// A program starts its built-in call at `block` (protocol/programs.md, 5.4–5.5).
+    BuiltinStarted { opener: Token, block: u32 },
+    /// A program's result, or its retained stand-in, settles that call once.
+    BuiltinAnswered { opener: Token, bytes: u64, error: bool },
     /// The tool call at `block` of the last message was delegated to the
     /// opener.
     DelegateStarted {

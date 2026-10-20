@@ -1545,7 +1545,8 @@ impl World {
             }
             Event::Failed { .. } => CompletionTerminal::Failed,
             Event::Cancelled { .. } => CompletionTerminal::Cancelled,
-            Event::HostReturned { .. }
+            Event::BuiltinResult { .. }
+            | Event::HostReturned { .. }
             | Event::Start { .. }
             | Event::Acknowledge { .. }
             | Event::Message { .. }
@@ -1602,7 +1603,8 @@ impl World {
                 self.observe(Seen::Delivered { owner, push: push.clone(), tree: landed });
             }
             Event::Aborted { .. } => self.observe(Seen::Checked { owner, exit: None }),
-            Event::HostReturned { .. }
+            Event::BuiltinResult { .. }
+            | Event::HostReturned { .. }
             | Event::Message { .. }
             | Event::Acknowledge { .. }
             | Event::Start { .. }
@@ -1622,7 +1624,8 @@ impl World {
             Event::Failed { .. } | Event::Cancelled { .. } => {
                 self.messages_seen.push((self.now, crate::messages_referee::Seen::CompletionEnded));
             }
-            Event::Start { .. }
+            Event::BuiltinResult { .. }
+            | Event::Start { .. }
             | Event::Message { .. }
             | Event::Acknowledge { .. }
             | Event::Grant { .. }

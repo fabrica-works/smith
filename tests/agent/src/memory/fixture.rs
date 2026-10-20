@@ -7,60 +7,62 @@ use super::{
 
 /// Small limits, so that every bound is met often: few runs and sessions,
 /// few bytes each.
-pub const LIMITS: Limits = Limits {
-    accounts: 4,
-    endpoints: 3,
-    configured_model_bytes: 4096,
-    decoded_call_bytes: 4096,
-    skew: Duration::ZERO,
-    run: run::Limits {
-        runs: 2,
-        conversations: 4,
-        run_bytes: 2048,
-        brief_sections: 4,
-        host_part: 1 << 20,
-        room: 0,
-        compaction_threshold: [4, 5],
-        schema_costs: run::SchemaCosts::NONE,
-        run_conversations: 3,
-        calls: 4,
-        answer_bytes: 128,
-        guide_bytes: 128,
-        outcome_bytes: 512,
-        check_tail: 64,
-        facts: 32,
-        ..TIGHT.run
-    },
-    session: smith_domain::session::Limits {
-        sessions: 4,
-        history_messages: 12,
-        history_bytes: 1_048_576,
-        completion_bytes: 4096,
-        answer_bytes: 4096,
-        completion_blocks: 16,
-        failure_bytes: 512,
-        delegated_result_bytes: 131_072,
-        parallel_tools: 2,
-        // A whole completion may report one content-free drop per block.
-        facts: 50,
-        tools: smith_domain::tools::Limits {
-            shell_output: 128,
-            kits: 4,
-            calls: 2,
-            file_bytes: 512,
-            tool_payload: 512,
-            read_bytes: 256,
-            list_entries: 8,
-            list_bytes: 4096,
-            shell_head: 64,
-            shell_tail: 64,
-            search_hits: 4,
-            search_bytes: 128,
+pub const LIMITS: Limits = {
+    let mut limits = Limits {
+        accounts: 4,
+        endpoints: 3,
+        configured_model_bytes: 4096,
+        decoded_call_bytes: 4096,
+        skew: Duration::ZERO,
+        run: run::Limits {
+            runs: 2,
+            conversations: 4,
+            run_bytes: 2048,
+            brief_sections: 4,
+            host_part: 1 << 20,
+            room: 0,
+            compaction_threshold: [4, 5],
+            schema_costs: run::SchemaCosts::NONE,
+            run_conversations: 3,
+            calls: 4,
+            answer_bytes: 128,
+            guide_bytes: 128,
+            outcome_bytes: 512,
+            check_tail: 64,
             facts: 32,
-            ..TIGHT.session.tools
+            ..TIGHT.run
         },
-        ..TIGHT.session
-    },
+        session: smith_domain::session::Limits {
+            sessions: 4,
+            history_messages: 12,
+            history_bytes: 1_048_576,
+            completion_bytes: 4096,
+            answer_bytes: 4096,
+            completion_blocks: 16,
+            failure_bytes: 512,
+            delegated_result_bytes: 131_072,
+            parallel_tools: 2,
+            tools: smith_domain::tools::Limits {
+                shell_output: 128,
+                kits: 4,
+                calls: 2,
+                file_bytes: 512,
+                tool_payload: 512,
+                read_bytes: 256,
+                list_entries: 8,
+                list_bytes: 4096,
+                shell_head: 64,
+                shell_tail: 64,
+                search_hits: 4,
+                search_bytes: 128,
+                facts: 32,
+                ..TIGHT.session.tools
+            },
+            ..TIGHT.session
+        },
+    };
+    limits.session.facts = smith_domain::session::max_facts(&limits.session);
+    limits
 };
 
 /// A charter with unchanged aggregate context filler distributed across role,

@@ -243,7 +243,8 @@ impl World {
                     }
                 }
             }
-            session::Event::CancelJobs { .. }
+            session::Event::BuiltinResult { .. }
+            | session::Event::CancelJobs { .. }
             | session::Event::Open { .. }
             | session::Event::Continue { .. }
             | session::Event::Close { .. } => {}

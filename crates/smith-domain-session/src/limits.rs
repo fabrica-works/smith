@@ -158,6 +158,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let session = List::<Message>::worst_case(limits.history_messages)?
         .checked_add(List::<Box<[u8]>>::worst_case(calls)?)?
         .checked_add(slots)?
+        .checked_add(crate::session::builtin_worst_case(limits)?)?
         .checked_add(Map::<u32, crate::ToolCall>::worst_case(limits.tools.jobs)?)?
         .checked_add(limits.history_bytes)?
         .checked_add(u64::from(limits.failure_bytes))?;
@@ -191,13 +192,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(staging)
 }
 
-/// The run slab's capacity: two batches a session. A session starts at most
-/// one batch in a step, and a batch the tools answered in the step that
-/// started it goes on from the ready list, after the reclaim point (see the
-/// session module). So in one iteration a session holds the runs of at most
-/// two batches: one ending, and the next it starts.
+/// Two regular batches and one completion's retired program observations per
+/// session. A session starts at most one regular batch in a step and rests
+/// after immediate answers, so at most two regular batches coexist until the
+/// reclaim point. Program observations retire as their stand-ins are made;
+/// tooling rests before the next completion, bounding them by one completion.
 pub(crate) fn runs(limits: &Limits) -> Option<u32> {
-    limits.sessions.checked_mul(limits.parallel_tools)?.checked_mul(2)
+    limits.sessions.checked_mul(limits.parallel_tools.checked_mul(2)?.checked_add(limits.completion_blocks)?)
 }
 
 /// The alarm table's capacity: every session may have two alarms armed.

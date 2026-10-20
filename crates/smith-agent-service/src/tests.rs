@@ -7,6 +7,9 @@
     reason = "programming-model.md section10.2: deterministic test harnesses use ordinary Rust"
 )]
 
+#[path = "tests/builtin.rs"]
+mod builtin;
+
 use alloc::boxed::Box;
 use skein_http::{self as http, Header};
 use skein_lib::List;

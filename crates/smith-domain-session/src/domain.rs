@@ -35,14 +35,51 @@ pub const fn max_to_opener(limits: &Limits) -> u32 {
     4_u32.saturating_add(limits.parallel_tools)
 }
 
-/// Own completion/request observations, one per delegated batch entry, and
-/// the tools' observations from a batch plus entrance and settlement steps.
+/// Ordinary and program calls can start together in `session::advance`, so
+/// their reservations add (protocol/programs.md, sections 5.4–5.5).
 #[must_use]
 pub const fn max_facts(limits: &Limits) -> u32 {
+    let mut program = builtin_completed_facts(limits);
+    if builtin_close_facts(limits) > program {
+        program = builtin_close_facts(limits);
+    }
+    if builtin_failure_facts(limits) > program {
+        program = builtin_failure_facts(limits);
+    }
+    // Completed's two own facts already appear in ordinary_facts.
+    ordinary_facts(limits).saturating_add(program.saturating_sub(2))
+}
+
+// session::tell, tools/kit.rs::call and jobs.rs::call; close/drain paths retain the full child allowance.
+const fn ordinary_facts(limits: &Limits) -> u32 {
     8_u32
-        .saturating_add(limits.completion_blocks)
         .saturating_add(limits.parallel_tools)
         .saturating_add(tools::max_facts(&limits.tools).saturating_mul(limits.parallel_tools.saturating_add(2)))
+}
+
+// session::completed and builtin::flush: each inventory can fill independently.
+pub(crate) const fn builtin_completed_facts(limits: &Limits) -> u32 {
+    let old_stand_ins = limits.completion_blocks;
+    let new_starts = limits.completion_blocks;
+    let new_stand_ins = limits.completion_blocks;
+    let dropped_reasoning = limits.completion_blocks;
+    // CompletionAnswered in completed, Used in tell; ordinary_facts holds terminal/drain facts.
+    old_stand_ins
+        .saturating_add(new_starts)
+        .saturating_add(new_stand_ins)
+        .saturating_add(dropped_reasoning)
+        .saturating_add(2)
+}
+
+// session::close/conclude and tools/kit.rs::close: stand-ins, kit drain and Ended.
+pub(crate) const fn builtin_close_facts(limits: &Limits) -> u32 {
+    let drain = if limits.tools.jobs == 0 { 1 } else { tools::max_facts(&limits.tools) };
+    limits.completion_blocks.saturating_add(drain).saturating_add(1)
+}
+
+// session::failed/conclude: stand-ins, CompletionFailed, kit drain and Ended.
+pub(crate) const fn builtin_failure_facts(limits: &Limits) -> u32 {
+    builtin_close_facts(limits).saturating_add(1)
 }
 
 /// The session child domain's state.
@@ -195,6 +232,9 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::Continue { session, content } => session::continued(domain, env, session, content, out),
         Event::Close { session } => session::close(domain, env, session, out),
         Event::CancelJobs { session } => session::cancel_jobs(domain, env, session, out),
+        Event::BuiltinResult { session, id, text, error } => {
+            session::builtin_result(domain, env, session, id, text, error, out);
+        }
         Event::Completed { owner, completion } => session::completed(domain, env, owner, completion, out),
         Event::Overflowed { owner, end } => session::overflowed(domain, env, owner, end, out),
         Event::BudgetDenied { owner, reason } => session::budget_denied(domain, env, owner, reason, out),

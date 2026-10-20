@@ -137,7 +137,7 @@ fn owe_stopped_calls(conversation: &mut Conversation) {
         .expect("provider admission reserved a result message");
 }
 
-fn minimum(limits: &Limits) -> u64 {
+pub(super) fn minimum(limits: &Limits) -> u64 {
     // A path refusal, an ambiguous edit and the longest text marker still fit.
     u64::from(limits.tools.path_bytes)
         .max(u64::from(limits.tools.match_lines).checked_mul(4).expect("u32 diagnostic count"))
@@ -164,7 +164,9 @@ pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, failed: 
             Block::ToolCall { call: Decoded::Delegated { effect, .. }, .. } => {
                 (*effect, super::delegated_credit(limits))
             }
-            Block::ToolCall { call: Decoded::Invalid { .. } | Decoded::Historical, .. }
+            Block::ToolCall {
+                call: Decoded::Builtin { .. } | Decoded::Invalid { .. } | Decoded::Historical, ..
+            }
             | Block::Text { .. }
             | Block::Refusal { .. }
             | Block::Opaque { .. }
@@ -211,7 +213,9 @@ pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, failed: 
                 super::owned_credit(call, &tool_limits(call, share, limits))
             }
             Block::ToolCall { call: Decoded::Delegated { .. }, .. } => super::delegated_credit(limits).min(share),
-            Block::ToolCall { call: Decoded::Invalid { .. } | Decoded::Historical, .. }
+            Block::ToolCall {
+                call: Decoded::Builtin { .. } | Decoded::Invalid { .. } | Decoded::Historical, ..
+            }
             | Block::Text { .. }
             | Block::Refusal { .. }
             | Block::Opaque { .. }

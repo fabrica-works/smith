@@ -89,7 +89,7 @@ fn bounds(messages: u32) -> Limits {
     let completion_bytes = adapter::completion_worst_case(&wire_limits().client, decoded_call_bytes)
         .expect("explicit native fixture receiving ownership")
         .max(131_072);
-    Limits {
+    let mut limits = Limits {
         accounts: 1,
         endpoints: 1,
         configured_model_bytes: 4096,
@@ -163,7 +163,9 @@ fn bounds(messages: u32) -> Limits {
             ..LIMITS.session
         },
         ..LIMITS
-    }
+    };
+    limits.session.facts = session::max_facts(&limits.session);
+    limits
 }
 
 fn workspace() -> run::Workspace {

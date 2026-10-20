@@ -109,6 +109,8 @@ fn run(settings: &Settings, turns: Vec<Turn>, children: Vec<Script>, checkout: C
                 | session::FactKind::CompletionFailed { .. }
                 | session::FactKind::CompletionCancelled { .. }
                 | session::FactKind::CompletionRetried { .. }
+                | session::FactKind::BuiltinStarted { .. }
+                | session::FactKind::BuiltinAnswered { .. }
                 | session::FactKind::DelegateStarted { .. }
                 | session::FactKind::DelegateAnswered { .. }
                 | session::FactKind::DelegateCancelled { .. }

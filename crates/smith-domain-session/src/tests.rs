@@ -1,5 +1,8 @@
 //! Feed the domain events, inspect the requests that come out.
 
+#[path = "tests/builtin.rs"]
+mod builtin;
+
 use alloc::boxed::Box;
 use core::mem::size_of;
 
@@ -883,7 +886,8 @@ fn time_expires_while_a_session_rests_between_batches() {
 
 #[test]
 fn a_batch_as_wide_as_the_most_a_step_emits_fits() {
-    let limits = Limits { parallel_tools: MAX_PARALLEL, ..LIMITS };
+    let mut limits = Limits { parallel_tools: MAX_PARALLEL, ..LIMITS };
+    limits.facts = crate::max_facts(&limits);
     let mut h = Harness::new(&limits);
     let (owner, _) = h.open(1);
     let mut content = List::with_capacity(MAX_PARALLEL);
@@ -891,6 +895,7 @@ fn a_batch_as_wide_as_the_most_a_step_emits_fits() {
         content.push(tool_call(b"c", list())).expect("room for every call");
     }
     let completion = completion(content.into_boxed(), Stop::ToolUse);
+    h.keep_facts();
     step(&mut h.domain, &h.env, Event::Completed { owner, completion }, &mut h.out);
     assert_eq!(h.out.len(), 2 + MAX_PARALLEL, "the price, usage, and an operation for each call");
     assert!(h.out.len() <= max_out(&limits), "within what a step may emit");

@@ -1372,7 +1372,9 @@ impl World {
                                 panic!("an invalid call retains its exact problem or never ran")
                             }
                         },
-                        Decoded::Historical => panic!("the provider must classify every live call"),
+                        Decoded::Builtin { .. } | Decoded::Historical => {
+                            panic!("the provider must classify every live call")
+                        }
                     }
                 }
                 Block::Opaque { .. } | Block::Text { .. } | Block::Refusal { .. } | Block::ToolResult { .. } => {
@@ -1944,7 +1946,9 @@ impl World {
                 self.sessions.get_mut(&opener.raw()).expect("known opener").compacting = Some(window);
                 return;
             }
-            agent::FactKind::CompactionEnded { .. } => return,
+            agent::FactKind::BuiltinStarted { .. }
+            | agent::FactKind::BuiltinAnswered { .. }
+            | agent::FactKind::CompactionEnded { .. } => return,
             agent::FactKind::Opened { .. } => &mut told.opened,
             agent::FactKind::JobEnded { .. } | agent::FactKind::ReasoningDropped { .. } => &mut told.reasoning_dropped,
             agent::FactKind::CompletionStarted { .. } => &mut told.completions_started,
@@ -2067,7 +2071,8 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
         | agent::Event::AnsweredAndYield { owner, .. }
         | agent::Event::AnswerWithheld { owner }
         | agent::Event::AnswerCancelled { owner, .. } => Some(*owner),
-        agent::Event::Open { .. }
+        agent::Event::BuiltinResult { .. }
+        | agent::Event::Open { .. }
         | agent::Event::Continue { .. }
         | agent::Event::CancelJobs { .. }
         | agent::Event::Close { .. }
@@ -2084,6 +2089,9 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
 
 fn describe_agent_event(event: &agent::Event) -> String {
     match event {
+        agent::Event::BuiltinResult { session, id, text, error } => {
+            format!("builtin result {} {id:?} {text:?} {error}", session.raw())
+        }
         agent::Event::CancelJobs { session } => format!("cancel jobs {}", session.raw()),
         agent::Event::AnswerWithheld { owner } => format!("answer withheld {}", owner.raw()),
         agent::Event::AnswerCancelled { owner, spent, .. } => format!("answer cancelled {} {spent}", owner.raw()),

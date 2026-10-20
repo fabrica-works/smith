@@ -94,6 +94,8 @@ pub enum Event {
     Close { session: Token },
     /// Cancel the session's jobs; `JobsCancelled` follows their settlement.
     CancelJobs { session: Token },
+    /// The program reports a built-in call's result after its completion (protocol/programs.md, 5.5).
+    BuiltinResult { session: Token, id: Box<[u8]>, text: Box<[u8]>, error: bool },
     /// Terminal for `Complete`: the LLM produced its next message.
     Completed {
         owner: Token,

@@ -920,6 +920,8 @@ fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
             | session::FactKind::CompletionCancelled { .. }
             | session::FactKind::CompletionRetried { .. }
             | session::FactKind::Tools { .. }
+            | session::FactKind::BuiltinStarted { .. }
+            | session::FactKind::BuiltinAnswered { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
             | session::FactKind::DelegateWithheld { .. }

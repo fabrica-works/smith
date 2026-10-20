@@ -174,6 +174,8 @@ pub enum Event {
     /// mounts; stale callback generations are inert.
     Delivered { owner: Token, delivery: run::Delivery },
 
+    /// The program reports a built-in call's result after its completion (protocol/programs.md, 5.5).
+    BuiltinResult { owner: Token, id: Box<[u8]>, text: Box<[u8]>, error: bool },
     /// Terminal for `Complete`: the LLM produced its next message.
     Completed {
         owner: Token,

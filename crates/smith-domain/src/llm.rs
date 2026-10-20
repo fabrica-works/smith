@@ -254,6 +254,8 @@ pub enum Said {
 /// A tool call, as the protocol layer decoded it.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum Decoded {
+    /// A program-owned built-in call; the program reports its result later (protocol/programs.md, 5.3–5.5).
+    Builtin { effect: tools::Effect },
     /// A call to one of the tools a session owns.
     Owned {
         /// Typed checkout-tool call decoded below the domain.
@@ -281,6 +283,7 @@ impl Decoded {
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {
         let payload = match self {
+            Decoded::Builtin { .. } => 0,
             Decoded::Owned { call } => {
                 call.owned_bytes()?.checked_sub(u64::try_from(size_of::<tools::Call>()).ok()?)?
             }

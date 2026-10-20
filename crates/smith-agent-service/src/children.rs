@@ -78,6 +78,8 @@ impl Book {
             | session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
+            | session::FactKind::BuiltinStarted { .. }
+            | session::FactKind::BuiltinAnswered { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
             | session::FactKind::DelegateCancelled { .. }
@@ -117,6 +119,8 @@ impl Book {
             | session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
+            | session::FactKind::BuiltinStarted { .. }
+            | session::FactKind::BuiltinAnswered { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
             | session::FactKind::DelegateCancelled { .. }

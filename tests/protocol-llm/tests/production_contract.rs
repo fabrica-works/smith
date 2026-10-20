@@ -44,7 +44,9 @@ fn contract() -> run::outcome::OutcomeSpec {
 fn served(ask: llm::Decoded) -> run::Ask {
     match ask {
         llm::Decoded::Served { ask } => ask,
-        llm::Decoded::Owned { .. } | llm::Decoded::Invalid { .. } => panic!("typed run ask"),
+        llm::Decoded::Builtin { .. } | llm::Decoded::Owned { .. } | llm::Decoded::Invalid { .. } => {
+            panic!("typed run ask")
+        }
     }
 }
 

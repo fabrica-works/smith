@@ -80,7 +80,7 @@ fn each_workspace_call_decodes_escaped_input_and_ignores_unknown_members() {
             llm::Decoded::Owned { call } => {
                 assert_eq!(tools::tool(&call), expected, "{}", String::from_utf8_lossy(name));
             }
-            other @ (llm::Decoded::Served { .. } | llm::Decoded::Invalid { .. }) => {
+            other @ (llm::Decoded::Builtin { .. } | llm::Decoded::Served { .. } | llm::Decoded::Invalid { .. }) => {
                 panic!("{}: {other:?}", String::from_utf8_lossy(name));
             }
         }
@@ -107,7 +107,10 @@ fn malformed_workspace_calls_have_field_named_typed_problems_then_correct() {
                     | llm::Problem::WrongType { field: found }
                     | llm::Problem::BadValue { field: found },
             } => assert_eq!(found.as_ref(), field),
-            other @ (llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } | llm::Decoded::Invalid { .. }) => {
+            other @ (llm::Decoded::Owned { .. }
+            | llm::Decoded::Builtin { .. }
+            | llm::Decoded::Served { .. }
+            | llm::Decoded::Invalid { .. }) => {
                 panic!("{}: {other:?}", String::from_utf8_lossy(name));
             }
         }
@@ -145,7 +148,10 @@ fn wait_and_sub_agent_decode_into_run_asks() {
             assert!(families.tools.inspect && families.tools.shell && !families.tools.modify && !families.agents);
             assert_eq!(llm.as_deref(), Some(b"small".as_slice()));
         }
-        other @ (llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } | llm::Decoded::Invalid { .. }) => {
+        other @ (llm::Decoded::Owned { .. }
+        | llm::Decoded::Builtin { .. }
+        | llm::Decoded::Served { .. }
+        | llm::Decoded::Invalid { .. }) => {
             panic!("{other:?}");
         }
     }

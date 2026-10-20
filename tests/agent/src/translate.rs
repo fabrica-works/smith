@@ -243,7 +243,7 @@ pub fn decode(
             agent::Decoded::Owned { call }
         }
         smith_domain::session::llm::Decoded::Invalid { problem, .. } => agent::Decoded::Invalid { problem },
-        smith_domain::session::llm::Decoded::Delegated { .. } => {
+        smith_domain::session::llm::Decoded::Builtin { .. } | smith_domain::session::llm::Decoded::Delegated { .. } => {
             unreachable!("the component fixture decoder owns only checkout tools")
         }
         smith_domain::session::llm::Decoded::Historical => {

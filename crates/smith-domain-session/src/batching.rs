@@ -8,7 +8,7 @@ pub(super) fn suppressed(block: &Block) -> bool {
     match block {
         Block::ToolCall { call: Decoded::Owned { call }, .. } => tools::effect(call) == Effect::Write,
         Block::ToolCall { call: Decoded::Delegated { effect, .. }, .. } => *effect == Effect::Write,
-        Block::ToolCall { call: Decoded::Invalid { .. } | Decoded::Historical, .. }
+        Block::ToolCall { call: Decoded::Builtin { .. } | Decoded::Invalid { .. } | Decoded::Historical, .. }
         | Block::Text { .. }
         | Block::Refusal { .. }
         | Block::Opaque { .. }
@@ -17,6 +17,14 @@ pub(super) fn suppressed(block: &Block) -> bool {
 }
 
 pub(super) fn answer_skipped(conversation: &Conversation, block: &Block, index: u32, tools: &mut Tools) -> bool {
+    match block {
+        Block::ToolCall { call: Decoded::Builtin { .. }, .. } => return false,
+        Block::ToolCall { .. }
+        | Block::Text { .. }
+        | Block::Refusal { .. }
+        | Block::Opaque { .. }
+        | Block::ToolResult { .. } => {}
+    }
     let why = if chosen(&conversation.choice, block) {
         match tools.failed {
             Some(call) if suppressed(block) => NotRun::AfterFailedWrite { call },
@@ -26,12 +34,12 @@ pub(super) fn answer_skipped(conversation: &Conversation, block: &Block, index: 
         NotRun::OutsideChoice { choice: conversation.choice_names.clone() }
     };
     let result = Block::ToolResult { id: call_id(conversation, index), result: Returned::NotRun { why } };
-    tools.slots.push(Slot::Done { result }).expect("one slot per call");
+    put_next(tools, Slot::Done { result });
     true
 }
 
 pub(super) fn answered_next(tools: &mut Tools, block: &Block, result: &Returned) {
-    answered(tools, tools.slots.len(), block, result);
+    answered(tools, tools.reached, block, result);
 }
 
 pub(super) fn answered(tools: &mut Tools, slot: u32, block: &Block, result: &Returned) {
@@ -85,7 +93,7 @@ pub(super) fn scheduled(block: &Block, failed: &mut bool) -> bool {
         Block::ToolCall { call: Decoded::Owned { .. } | Decoded::Delegated { .. }, .. } => {
             !*failed || !suppressed(block)
         }
-        Block::ToolCall { call: Decoded::Historical, .. }
+        Block::ToolCall { call: Decoded::Builtin { .. } | Decoded::Historical, .. }
         | Block::Text { .. }
         | Block::Refusal { .. }
         | Block::Opaque { .. }
@@ -101,7 +109,10 @@ fn file_change(block: &Block) -> bool {
                 false
             }
         },
-        Block::ToolCall { call: Decoded::Delegated { .. } | Decoded::Invalid { .. } | Decoded::Historical, .. }
+        Block::ToolCall {
+            call: Decoded::Delegated { .. } | Decoded::Builtin { .. } | Decoded::Invalid { .. } | Decoded::Historical,
+            ..
+        }
         | Block::Text { .. }
         | Block::Refusal { .. }
         | Block::Opaque { .. }
@@ -114,7 +125,7 @@ pub(super) fn invalid_slot(tools: &mut Tools, block: &Block, call: &[u8], proble
     let answer = Returned::Invalid { problem: problem.clone() };
     answered_next(tools, block, &answer);
     let result = Block::ToolResult { id: call.into(), result: answer };
-    tools.slots.push(Slot::Done { result }).expect("a slot for every call");
+    put_next(tools, Slot::Done { result });
 }
 
 /// End remaining polls only after the batch's other work has answered.
@@ -170,7 +181,11 @@ fn other_call(conversation: &Conversation) -> bool {
             | Block::Refusal { .. }
             | Block::Opaque { .. }
             | Block::ToolResult { .. } => {}
-            Block::ToolCall { name, call: Decoded::Invalid { .. } | Decoded::Historical, .. } => {
+            Block::ToolCall {
+                name,
+                call: Decoded::Builtin { .. } | Decoded::Invalid { .. } | Decoded::Historical,
+                ..
+            } => {
                 if name.as_ref() != b"job" {
                     return true;
                 }
@@ -179,4 +194,13 @@ fn other_call(conversation: &Conversation) -> bool {
         }
     }
     false
+}
+
+pub(super) fn put_next(tools: &mut Tools, slot: Slot) {
+    *tools.slots.get_mut(tools.reached).expect("one prepared slot per call") = slot;
+    next_slot(tools);
+}
+
+pub(super) fn next_slot(tools: &mut Tools) {
+    tools.reached = tools.reached.checked_add(1).expect("bounded call slots");
 }

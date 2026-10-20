@@ -42,6 +42,8 @@ impl Meeting {
             | FactKind::CompletionFailed { .. }
             | FactKind::CompletionCancelled { .. }
             | FactKind::CompletionRetried { .. }
+            | FactKind::BuiltinStarted { .. }
+            | FactKind::BuiltinAnswered { .. }
             | FactKind::DelegateStarted { .. }
             | FactKind::DelegateAnswered { .. }
             | FactKind::DelegateCancelled { .. }

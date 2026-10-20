@@ -1329,6 +1329,7 @@ fn to_below(event: agent::Event) -> inline::Below {
         | agent::Event::Acknowledge { .. }
         | agent::Event::Grant { .. }
         | agent::Event::HostReturned { .. }
+        | agent::Event::BuiltinResult { .. }
         | agent::Event::Delivered { .. } => unreachable!("effects emit only typed IO terminals"),
     }
 }

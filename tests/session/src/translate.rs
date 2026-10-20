@@ -249,7 +249,9 @@ fn call(name: &[u8], arguments: &[u8]) -> Result<Call, agent::Problem> {
     ) {
         smith_domain::llm::Decoded::Owned { call } => Ok(call),
         smith_domain::llm::Decoded::Invalid { problem } => Err(problem),
-        smith_domain::llm::Decoded::Served { .. } => unreachable!("the finite fixture offers only owned tools"),
+        smith_domain::llm::Decoded::Builtin { .. } | smith_domain::llm::Decoded::Served { .. } => {
+            unreachable!("the finite fixture offers only owned tools")
+        }
     }
 }
 

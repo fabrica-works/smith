@@ -137,7 +137,7 @@ fn block_bytes(block: &Block) -> u64 {
                         - std::mem::size_of::<smith_domain_tools::Call>()
                 }
                 Decoded::Invalid { problem, .. } => problem_bytes(problem),
-                Decoded::Delegated { .. } | Decoded::Historical => 0,
+                Decoded::Builtin { .. } | Decoded::Delegated { .. } | Decoded::Historical => 0,
             };
             id.len() + name.len() + input.len() + decoded + replay(saved)
         }

@@ -54,7 +54,7 @@ impl Book {
             match block {
                 llm::Said::ToolCall { id, name, input, call, replay: _ } => {
                     let selected = match call {
-                        llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } => true,
+                        llm::Decoded::Builtin { .. } | llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } => true,
                         llm::Decoded::Invalid { .. } => false,
                     };
                     if selected {

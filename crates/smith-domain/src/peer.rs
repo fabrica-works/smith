@@ -180,6 +180,7 @@ impl Peer {
 
     fn decoded(&mut self, call: Decoded, name: &[u8], limit: u64) -> sllm::Decoded {
         let ask = match call {
+            Decoded::Builtin { effect } => return sllm::Decoded::Builtin { effect },
             Decoded::Owned { call } => return sllm::Decoded::Owned { call },
             Decoded::Invalid { problem } => {
                 return sllm::Decoded::Invalid { descriptor: self.named_descriptor(name), problem };

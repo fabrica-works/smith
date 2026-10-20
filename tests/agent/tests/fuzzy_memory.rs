@@ -10,7 +10,7 @@ static HEAP: heap::Counting = heap::Counting;
 
 #[test]
 fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_entry_point() {
-    let wider = Limits {
+    let mut wider = Limits {
         configured_model_bytes: LIMITS.configured_model_bytes,
         accounts: LIMITS.accounts,
         endpoints: LIMITS.endpoints,
@@ -27,11 +27,11 @@ fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_entry_point() 
             failure_bytes: 512,
             delegated_result_bytes: 131_072,
             parallel_tools: 3,
-            facts: 57,
             tools: smith_domain::tools::Limits { kits: 8, calls: 3, ..LIMITS.session.tools },
             ..LIMITS.session
         },
     };
+    wider.session.facts = smith_domain::session::max_facts(&wider.session);
     let mut seen = [0; 18];
     for seed in 0..12 {
         for limits in [LIMITS, wider] {

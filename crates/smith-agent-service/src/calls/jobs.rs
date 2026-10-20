@@ -21,6 +21,8 @@ pub(super) fn ended(origin: Time, fact: &session::Fact, scope: Scope, metadata: 
         | session::FactKind::Used { .. }
         | session::FactKind::Ended { .. }
         | session::FactKind::Tools { .. }
+        | session::FactKind::BuiltinStarted { .. }
+        | session::FactKind::BuiltinAnswered { .. }
         | session::FactKind::DelegateStarted { .. }
         | session::FactKind::DelegateAnswered { .. }
         | session::FactKind::DelegateCancelled { .. }

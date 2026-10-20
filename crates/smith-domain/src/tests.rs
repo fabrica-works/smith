@@ -3,6 +3,9 @@
 //! keeps for them, and the hand-offs it defers to the ready list. What each
 //! child domain does on its own is its own tests' business.
 
+#[path = "tests/builtin.rs"]
+mod builtin;
+
 #[path = "tests/jobs.rs"]
 mod jobs;
 
@@ -124,7 +127,7 @@ const LIMITS: Limits = Limits {
         backoff_base: Duration::from_millis(100),
         backoff_max: Duration::from_secs(1),
 
-        facts: 64,
+        facts: 128,
         parallel_tools: 2,
         tools: tools::Limits {
             shell_output: 128,
@@ -211,12 +214,14 @@ fn decoded_batch_reserves_refusal_cells_before_any_payload() {
         session::llm::Decoded::Invalid { problem, .. } => assert_eq!(problem, &Problem::TooLarge),
         session::llm::Decoded::Owned { .. }
         | session::llm::Decoded::Delegated { .. }
+        | session::llm::Decoded::Builtin { .. }
         | session::llm::Decoded::Historical => unreachable!("oversized payload is refused"),
     }
     match calls.get(1).expect("second call") {
         session::llm::Decoded::Delegated { .. } => assert_eq!(peer.tickets(), 1),
         session::llm::Decoded::Owned { .. }
         | session::llm::Decoded::Invalid { .. }
+        | session::llm::Decoded::Builtin { .. }
         | session::llm::Decoded::Historical => unreachable!("later payload-free wait fits"),
     }
 }
