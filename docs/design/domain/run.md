@@ -1,6 +1,6 @@
 # The run
 
-Provisional, 2026-10-05, revised 2026-10-19. What a smith run is, as a
+Provisional, 2026-10-05, revised 2026-10-20. What a smith run is, as a
 domain layer: one activation of an agent, from the charter its host gives
 it to the answer it gives back. It is the child domain `smith-domain-run`,
 composed with its sessions by `smith-domain` (README.md, section 4). The
@@ -187,10 +187,11 @@ outcomes stay typed (tools.md, section 4).
   (protocol/limits.md, section 3.9).
 
 A guide is read from each workspace directory at the path the
-conventions name, as text, UTF-8: whole within the guide limit, which
-the product's presets size so that a guide is normally whole, and past
-it cut at a character boundary, the prompt saying that the file goes on;
-a file that is not text counts as no guide.
+conventions name, as text, UTF-8: whole within its share of the host's
+part, at most the guide limit, which the product's presets size so that
+a guide is normally whole (protocol/limits.md, 3.9), and past it cut at
+a character boundary, the prompt saying that the file goes on; a file
+that is not text counts as no guide.
 
 A sub-agent's system text is its brief, then the same mechanics for the
 tools it has, with the same guides: `## Your share` in place of

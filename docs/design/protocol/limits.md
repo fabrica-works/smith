@@ -507,8 +507,7 @@ For each model the configuration declares:
   such as a budget's, counts at its largest.
 - **The rest is split in halves,** a factor of the derivation's own:
   - **the host's part:** every byte that is there because of what the
-    charter chose, beside a guide at `guide` for each of the start's
-    directories. That includes:
+    charter chose, and its directories' guides. That includes:
     - the charter's instructions, the task role among them when the
       shell gives it (`docs/design/shell.md`, 6.6), its brief, and its
       host tools' descriptions and schemas;
@@ -519,8 +518,18 @@ For each model the configuration declares:
       everything smith adds around each of them.
 
     It is measured as rendered, at the entrance, never at the
-    vocabulary's maxima. A start whose charter, with its directories'
-    guides at their bound, passes it is refused at the entrance.
+    vocabulary's maxima. A start whose charter alone passes it is
+    refused at the entrance.
+  - **The guides share what the charter leaves.** Each of the start's
+    directories keeps its guide whole up to its share: the host's part
+    less the charter as rendered, split evenly among the start's
+    directories, and never more than `guide`. Past its share a guide is
+    cut as past `guide` (domain/run.md, 3.3). So a start with one
+    directory keeps the guide the product sizes, and a start with
+    several fits whatever their guides hold: more directories cut their
+    guides sooner, never refuse the start. The count is the start's
+    directories, never the run's `directories` limit, which bounds only
+    how many a start may name.
   - **How the run counts what the protocol renders.** The system text
     is the run's own to write, so the run counts it directly. The
     generated schemas are `smith-protocol-llm`'s to render, and the run
@@ -586,7 +595,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 |---|---|
 | `derived` | every derived limit fits its type; the first that overflows is named |
 | `fresh-window` | for each declared model, a new window at its largest (smith's own part, the host's part, the task as its instruction and one offer, a summary of `output` tokens, and one offer of held-back messages) and one `output` fit within the window at the compaction threshold, counting a byte as a token (3.9). The parts are derived so that this holds whenever smith's own part fits the room, for every shipped preset among them (`docs/design/shell.md`, 6.1); the check refuses a model whose room smith's own part fills |
-| `host-part-holds-the-role` | for each declared model, the host's part (3.9) holds the task role as written, its bytes as the shell's code holds them, not its 4 KiB cap (`docs/design/shell.md`, 6.6), beside a guide at `guide` for each of the start's directories, so that the product's own default never makes a start too large for the entrance |
+| `host-part-holds-the-role` | for each declared model, the host's part (3.9) holds the task role as written, its bytes as the shell's code holds them, not its 4 KiB cap (`docs/design/shell.md`, 6.6), beside one guide at `guide`, the shell's own start's one directory, so that the product's own default never cuts its guide or makes a start too large for the entrance; a start with more directories shares the rest (3.9) |
 | `compaction-headroom` | for each declared model, the window above its threshold holds one `output` (that of the completion whose results a compaction carries), the summary instruction and a cut result's marker for each of `calls_per_response` results: the line is at or above the threshold, and the compaction the check or the guard calls for always fits, its results cut to what is left; what it leaves is the spare (3.9; domain/session.md, 8.1) |
 | `output-in-window` | each model's `output` is less than its `window` |
 | `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound: the line at `TOKEN_BYTES` bytes a token, plus one completion's whole reserve and one batch's results, within the history's bytes (rule 4 of section 3). It holds by construction for 3.2's derivation, and guards it |
@@ -620,8 +629,8 @@ declaration, its room against the one the limits were derived for, and
 its window above the threshold against one `output` and
 `run.compaction_material`, so that its spare is not negative (3.9),
 refused as a window or an output above its declaration is (charter.md,
-section 6); the charter's text, with its directories' guides at their bound,
-against the host's part; the budget against the ceilings; and the
+section 6); the charter's text against the host's part (its directories' guides
+take their shares of what it leaves, 3.9); the budget against the ceilings; and the
 reserve against the budget.
 
 ## 5. Memory
