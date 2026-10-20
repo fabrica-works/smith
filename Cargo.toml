@@ -1,9 +1,9 @@
 # Profiles and lints follow programming-model.md, section 10.
 
 [workspace]
-default-members = ["benchmarks", ".", "crates/smith-events", "crates/smith-agent-service", "crates/smith-agent-shell", "crates/smith-channel", "crates/smith-charter", "crates/smith-domain", "crates/smith-domain-run", "crates/smith-domain-session", "crates/smith-domain-tools", "crates/smith-host-domain", "crates/smith-host-protocol", "crates/smith-inline-agent", "crates/smith-local-domain", "crates/smith-local-protocol", "crates/smith-local-service", "crates/smith-local-shell", "crates/smith-protocol-channel", "crates/smith-protocol-llm", "crates/smith-protocol-machine", "crates/smith-transcript", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real"]
+default-members = ["benchmarks", ".", "crates/smith-events", "crates/smith-agent-service", "crates/smith-agent-shell", "crates/smith-channel", "crates/smith-charter", "crates/smith-domain", "crates/smith-domain-run", "crates/smith-domain-session", "crates/smith-domain-tools", "crates/smith-host-domain", "crates/smith-host-protocol", "crates/smith-inline-agent", "crates/smith-local-domain", "crates/smith-local-protocol", "crates/smith-local-service", "crates/smith-local-shell", "crates/smith-protocol-channel", "crates/smith-protocol-llm", "crates/smith-protocol-machine", "crates/smith-transcript", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real", "tests/fake-claude"]
 resolver = "3"
-members = ["benchmarks", "crates/*", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real"]
+members = ["benchmarks", "crates/*", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real", "tests/fake-claude"]
 
 [workspace.package]
 license = "MIT"
@@ -13,11 +13,13 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+smith-fake-claude = { path = "tests/fake-claude" }
 skein-lib = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-codec = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-codegen = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-channel = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-heap = { git = "https://github.com/fabrig-dev/skein.git" }
+skein-scratch = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-world = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-io = { git = "https://github.com/fabrig-dev/skein.git" }
 skein-shell = { git = "https://github.com/fabrig-dev/skein.git" }

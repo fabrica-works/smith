@@ -1,0 +1,31 @@
+[package]
+name = "smith-fake-claude"
+description = "One scripted Claude Code sign-in fake for simulated and real programs"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "fake-claude"
+path = "src/bin/fake-claude.rs"
+
+[dependencies]
+skein-io.workspace = true
+skein-lib.workspace = true
+skein-shell.workspace = true
+skein-world.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+skein-fake-machine.workspace = true
+skein-heap.workspace = true
+skein-sim.workspace = true
+skein-scratch.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+elided_lifetimes_in_paths = "deny"

@@ -636,6 +636,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-scratch"
+version = "0.0.0"
+source = "git+https://github.com/fabrig-dev/skein.git#6448909388d4c0e0b0eea58db0487e6b2977d7e2"
+
+[[package]]
 name = "skein-shell"
 version = "0.0.0"
 source = "git+https://github.com/fabrig-dev/skein.git#755059101db33b21aba1faf099d64b7160c3edea"
@@ -972,6 +977,22 @@ version = "0.0.0"
 dependencies = [
  "skein-json",
  "skein-lib",
+]
+
+[[package]]
+name = "smith-fake-claude"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "skein-fake-machine",
+ "skein-heap",
+ "skein-io",
+ "skein-lib",
+ "skein-scratch",
+ "skein-shell",
+ "skein-sim",
+ "skein-world",
 ]
 
 [[package]]

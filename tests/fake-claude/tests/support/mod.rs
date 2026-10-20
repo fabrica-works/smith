@@ -1,0 +1,437 @@
+//! A parent invoking the sign-in fake through pipes in a simulated world
+//! (protocol/programs.md, section 8; testing.md, section 4).
+
+use std::collections::VecDeque;
+
+use skein_fake_machine::{How, Item, Machine as Files, Opened};
+use skein_io::kernel::{Complete, Done, Error, Exit, Fd, Op, Pipe, Signal, Spawn, Submit, Target, Way};
+use skein_lib::{Duration, Queue, Time, Token, Wall};
+use skein_shell::Host;
+use skein_world::{HostedProgram, Inherited, Machine, Referee};
+use smith_fake_claude::{Fake, Story};
+
+#[derive(Clone)]
+pub struct Invocation {
+    args: Vec<String>,
+    env: Vec<String>,
+    input: Vec<u8>,
+    terminate: bool,
+}
+
+impl Invocation {
+    pub fn auth(command: &str) -> Self {
+        Self {
+            args: vec!["auth".into(), command.into()],
+            env: vec!["HOME=home".into(), "CLAUDE_CONFIG_DIR=config".into()],
+            input: Vec::new(),
+            terminate: false,
+        }
+    }
+
+    pub fn input(mut self, bytes: &[u8]) -> Self {
+        self.input = bytes.into();
+        self
+    }
+
+    pub fn environment(mut self, environment: &[&str]) -> Self {
+        self.env = environment.iter().map(|entry| (*entry).into()).collect();
+        self
+    }
+
+    pub fn arguments(mut self, arguments: &[&str]) -> Self {
+        self.args = arguments.iter().map(|argument| (*argument).into()).collect();
+        self
+    }
+
+    pub fn terminate(mut self) -> Self {
+        self.terminate = true;
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Record {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub exit: Option<Exit>,
+}
+
+#[derive(Debug)]
+enum Phase {
+    Spawn,
+    Input,
+    CloseInput,
+    Stdout,
+    CloseStdout,
+    Stderr,
+    CloseStderr,
+    Wait,
+    CloseChild,
+    CloseRoot,
+    Done,
+}
+
+pub struct Parent {
+    invocations: VecDeque<Invocation>,
+    pub records: Vec<Record>,
+    record: Record,
+    phase: Phase,
+    root: Fd,
+    pipes: Vec<Fd>,
+    child: Option<Fd>,
+    input_from: u32,
+    waiting: bool,
+    signal_waiting: bool,
+    signal_at: Option<Time>,
+    pub signalled: bool,
+    sequence: u64,
+    completions: Queue<Complete>,
+    submissions: Queue<Submit>,
+}
+
+impl Parent {
+    fn new(root: Fd, invocations: Vec<Invocation>) -> Self {
+        Self {
+            invocations: invocations.into(),
+            records: Vec::new(),
+            record: Record::default(),
+            phase: Phase::Spawn,
+            root,
+            pipes: Vec::new(),
+            child: None,
+            input_from: 0,
+            waiting: false,
+            signal_waiting: false,
+            signal_at: None,
+            signalled: false,
+            sequence: 0,
+            completions: Queue::with_capacity(8),
+            submissions: Queue::with_capacity(8),
+        }
+    }
+
+    fn issue(&mut self, kind: Op) {
+        self.sequence += 1;
+        self.submissions.push(Submit { op: Token::new(self.sequence), kind });
+    }
+
+    fn complete(&mut self, complete: Complete, now: Time) {
+        if matches!(complete.kind, Op::Signal { .. }) {
+            assert_eq!(complete.result, Ok(Done::Nothing));
+            self.signal_waiting = false;
+            return;
+        }
+        self.waiting = false;
+        let result = complete.result.expect("parent operation succeeds");
+        match self.phase {
+            Phase::Spawn => {
+                let Done::Spawned { pidfd } = result else { panic!("child spawn") };
+                let Op::Spawn { spawn } = complete.kind else { panic!("spawn operation") };
+                self.child = Some(pidfd);
+                self.pipes = spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent pipe")).collect();
+                self.input_from = 0;
+                if self.invocations.front().expect("invocation").terminate {
+                    self.signal_at = Some(now.saturating_add(Duration::from_millis(20)));
+                }
+                self.phase = Phase::Input;
+            }
+            Phase::Input => {
+                let Done::Count(count) = result else { panic!("input write") };
+                self.input_from += count;
+            }
+            Phase::CloseInput => self.phase = Phase::Stdout,
+            Phase::Stdout | Phase::Stderr => {
+                let Done::Count(count) = result else { panic!("output read") };
+                let Op::PipeRead { buf, .. } = complete.kind else { panic!("pipe read") };
+                match self.phase {
+                    Phase::Stdout => {
+                        self.record.stdout.extend_from_slice(&buf[..count as usize]);
+                        if count == 0 {
+                            self.phase = Phase::CloseStdout;
+                        }
+                    }
+                    Phase::Stderr => {
+                        self.record.stderr.extend_from_slice(&buf[..count as usize]);
+                        if count == 0 {
+                            self.phase = Phase::CloseStderr;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Phase::CloseStdout => self.phase = Phase::Stderr,
+            Phase::CloseStderr => self.phase = Phase::Wait,
+            Phase::Wait => {
+                let Done::Exit(exit) = result else { panic!("child exit") };
+                self.record.exit = Some(exit);
+                self.records.push(std::mem::take(&mut self.record));
+                self.phase = Phase::CloseChild;
+            }
+            Phase::CloseChild => {
+                self.child = None;
+                self.invocations.pop_front();
+                self.phase = Phase::Spawn;
+            }
+            Phase::CloseRoot => self.phase = Phase::Done,
+            Phase::Done => panic!("no operation after settlement"),
+        }
+    }
+
+    fn advance(&mut self) {
+        let kind = match self.phase {
+            Phase::Spawn => match self.invocations.front() {
+                Some(invocation) => Op::Spawn {
+                    spawn: Box::new(Spawn {
+                        program: b"claude".as_slice().into(),
+                        args: invocation.args.iter().map(|arg| arg.as_bytes().into()).collect(),
+                        env: invocation.env.iter().map(|entry| entry.as_bytes().into()).collect(),
+                        root: self.root,
+                        dir: Box::new([]),
+                        pipes: [
+                            Pipe { child: 0, way: Way::In, parent: None },
+                            Pipe { child: 1, way: Way::Out, parent: None },
+                            Pipe { child: 2, way: Way::Out, parent: None },
+                        ]
+                        .into(),
+                    }),
+                },
+                None => {
+                    self.phase = Phase::CloseRoot;
+                    Op::Close { fd: self.root }
+                }
+            },
+            Phase::Input => {
+                let bytes = &self.invocations.front().expect("invocation").input;
+                if self.input_from as usize == bytes.len() {
+                    self.phase = Phase::CloseInput;
+                    Op::Close { fd: self.pipes[0] }
+                } else {
+                    Op::PipeWrite { fd: self.pipes[0], bytes: bytes.as_slice().into(), from: self.input_from }
+                }
+            }
+            Phase::Stdout => Op::PipeRead { fd: self.pipes[1], buf: vec![0; 1024].into_boxed_slice() },
+            Phase::Stderr => Op::PipeRead { fd: self.pipes[2], buf: vec![0; 1024].into_boxed_slice() },
+            Phase::CloseStdout => Op::Close { fd: self.pipes[1] },
+            Phase::CloseStderr => Op::Close { fd: self.pipes[2] },
+            Phase::Wait => Op::Wait { pidfd: self.child.expect("child"), reap: false },
+            Phase::CloseChild => Op::Close { fd: self.child.expect("child") },
+            Phase::CloseInput | Phase::CloseRoot | Phase::Done => return,
+        };
+        self.issue(kind);
+        self.waiting = true;
+    }
+}
+
+impl Host for Parent {
+    fn iterate(&mut self, now: Time, _wall: Wall) {
+        while let Some(complete) = self.completions.pop() {
+            self.complete(complete, now);
+        }
+        if self.signal_at.is_some_and(|at| now >= at) {
+            assert!(self.record.stdout.is_empty(), "silent status emits nothing before its signal");
+            assert!(self.record.exit.is_none(), "silent status has not exited before its signal");
+            self.signal_at = None;
+            self.signalled = true;
+            self.signal_waiting = true;
+            self.issue(Op::Signal {
+                pidfd: self.child.expect("silent child"),
+                signal: Signal::Terminate,
+                to: Target::Child,
+            });
+        }
+        if !self.waiting && !self.signal_waiting {
+            self.advance();
+        }
+    }
+
+    fn completions(&mut self) -> &mut Queue<Complete> {
+        &mut self.completions
+    }
+    fn submissions(&mut self) -> &mut Queue<Submit> {
+        &mut self.submissions
+    }
+    fn work_pending(&self, now: Time) -> bool {
+        !self.completions.is_empty()
+            || (!self.waiting && !self.signal_waiting && !self.is_empty())
+            || self.signal_at.is_some_and(|at| now >= at)
+    }
+    fn next_deadline(&self) -> Option<Time> {
+        self.signal_at
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.signal_at
+    }
+    fn is_empty(&self) -> bool {
+        matches!(self.phase, Phase::Done) && self.completions.is_empty() && self.submissions.is_empty()
+    }
+    fn worst_case(&self) -> u64 {
+        1_048_576
+    }
+    fn operations(&self) -> u32 {
+        8
+    }
+}
+
+pub enum Process {
+    Parent(Box<Parent>),
+    Fake(Box<Fake>),
+}
+
+macro_rules! delegate {
+    ($self:ident, $host:ident, $body:expr) => {
+        match $self {
+            Process::Parent($host) => $body,
+            Process::Fake($host) => $body,
+        }
+    };
+}
+
+impl Host for Process {
+    fn iterate(&mut self, now: Time, wall: Wall) {
+        delegate!(self, host, host.iterate(now, wall));
+    }
+    fn completions(&mut self) -> &mut Queue<Complete> {
+        delegate!(self, host, host.completions())
+    }
+    fn submissions(&mut self) -> &mut Queue<Submit> {
+        delegate!(self, host, host.submissions())
+    }
+    fn work_pending(&self, now: Time) -> bool {
+        delegate!(self, host, host.work_pending(now))
+    }
+    fn next_deadline(&self) -> Option<Time> {
+        delegate!(self, host, host.next_deadline())
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        delegate!(self, host, host.next_policy_deadline())
+    }
+    fn is_empty(&self) -> bool {
+        delegate!(self, host, host.is_empty())
+    }
+    fn exit(&self) -> Option<Exit> {
+        delegate!(self, host, host.exit())
+    }
+    fn worst_case(&self) -> u64 {
+        delegate!(self, host, host.worst_case())
+    }
+    fn operations(&self) -> u32 {
+        delegate!(self, host, host.operations())
+    }
+}
+
+pub struct Judge {
+    last_word: skein_world::LastWord,
+}
+
+impl Referee<Process> for Judge {
+    fn act(&mut self, _now: Time, _procs: &mut [Process]) {}
+    fn observe(&mut self, _now: Time, procs: &[Process]) {
+        let Process::Parent(parent) = &procs[0] else { panic!("parent first") };
+        if parent.signal_at.is_some() {
+            for child in procs.iter().skip(1) {
+                assert!(child.exit().is_none(), "silent child waits for termination");
+            }
+        }
+    }
+    fn next_deadline(&self) -> Option<Time> {
+        None
+    }
+    fn overdue(&self, _now: Time) -> Option<String> {
+        None
+    }
+    fn passed(&self) -> bool {
+        true
+    }
+    fn last_word(&self) -> skein_world::LastWord {
+        self.last_word
+    }
+}
+
+pub struct MachineFiles {
+    files: Files,
+    base: Opened,
+}
+
+impl Machine for MachineFiles {
+    fn open_root(&mut self, path: &[u8]) -> Result<skein_sim::Handle, Error> {
+        self.files
+            .open(self.base, path, How::Directory)
+            .map(|opened| skein_sim::Handle::new(opened.raw()))
+            .map_err(skein_fake_machine::kernel_error)
+    }
+    fn close_root(&mut self, root: skein_sim::Handle) {
+        self.files.close(Opened::new(root.raw()));
+    }
+    fn open_append(&mut self, root: skein_sim::Handle, path: &[u8], mode: u32) -> Result<skein_sim::Handle, Error> {
+        self.files
+            .open(Opened::new(root.raw()), path, How::Append { mode })
+            .map(|opened| skein_sim::Handle::new(opened.raw()))
+            .map_err(skein_fake_machine::kernel_error)
+    }
+    fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<skein_sim::Answer>) {
+        skein_fake_machine::step(&mut self.files, call, answers);
+    }
+}
+
+fn make_fake(spawn: &Spawn, inherited: &Inherited) -> Process {
+    Process::Fake(Box::new((smith_fake_claude::hosted(b"claude").make)(spawn, inherited)))
+}
+
+pub struct Run {
+    pub records: Vec<Record>,
+    pub login: Option<Vec<u8>>,
+    pub observations: Option<Vec<u8>>,
+    pub signalled: bool,
+}
+
+pub fn run(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocation>) -> Run {
+    let mut items = vec![Item::directory(b"home"), Item::directory(b"config")];
+    if let Some(story) = story {
+        items.push(Item::file(b"config/fake-claude.story", &story.encode()));
+    }
+    if let Some(login) = login {
+        items.push(Item::file(b"config/fake-claude.login", login));
+    }
+    let mut files = Files::new();
+    let base = files.lay(&items);
+    let mut machine = MachineFiles { files, base };
+    let root = machine.open_root(b".").expect("parent root");
+    let last_word = if invocations.iter().any(|invocation| invocation.terminate) {
+        skein_world::LastWord::After(Time::ZERO.saturating_add(Duration::from_millis(20)))
+    } else {
+        skein_world::LastWord::LastExpectation
+    };
+    let mut world =
+        skein_world::World::new(7, skein_sim::Config::calm(), Judge { last_word }, skein_world::Memory::Checked)
+            .with_machine(machine);
+    let factory = smith_fake_claude::hosted(b"claude");
+    world.host_startup(
+        HostedProgram {
+            program: factory.program,
+            make: make_fake,
+            instances: factory.instances,
+            operations: factory.operations,
+        },
+        |spawn| smith_fake_claude::config_root(spawn).into_iter().collect(),
+        |spawn| smith_fake_claude::observation_append(spawn).into_iter().collect(),
+    );
+    world.spawn_root(root, |fd| Process::Parent(Box::new(Parent::new(fd, invocations.clone()))));
+    let mut outcome = world.run();
+    let Process::Parent(parent) = &outcome.procs[0] else { panic!("parent process") };
+    let records = parent.records.clone();
+    let signalled = parent.signalled;
+    let mut read = |path: &[u8]| match outcome.machine.files.open(base, path, How::Read) {
+        Ok(file) => {
+            let bytes = outcome.machine.files.read(file, 0, 65_536).expect("fixture file");
+            outcome.machine.files.close(file);
+            Some(bytes)
+        }
+        Err(skein_fake_machine::Refusal::NotFound) => None,
+        Err(error) => panic!("fixture file: {error:?}"),
+    };
+    let login = read(b"config/fake-claude.login");
+    let observations = read(b"config/fake-claude.observations");
+    outcome.machine.files.close(base);
+    assert_eq!(outcome.machine.files.open_handles(), 0, "all invocation descriptors settle");
+    Run { records, login, observations, signalled }
+}

@@ -1,0 +1,117 @@
+//! Startup adapters for the same command machine (protocol/programs.md,
+//! sections 4.2 and 8; testing.md, section 4). Only this module reads the
+//! process's arguments/environment or opens kernel startup descriptors.
+
+use std::{os::unix::ffi::OsStrExt, path::Path, process::ExitCode};
+
+use skein_io::kernel::{Exit, Fd, Spawn};
+use skein_shell::{Clock, Config, Host};
+use skein_world::{HostedProgram, Inherited, StartupAppend, StartupRoot};
+
+use crate::{CONFIG_DIR, Faces, Fake, OBSERVATIONS_FILE};
+
+pub(crate) fn config_path(environment: &[Box<[u8]>]) -> Option<&[u8]> {
+    environment.iter().find_map(|entry| entry.strip_prefix(b"CLAUDE_CONFIG_DIR=").filter(|path| !path.is_empty()))
+}
+
+/// Declares the configuration directory named by this launch, as `config`.
+/// Worlds must make it before spawning (protocol/programs.md, section 4.2):
+/// an absent directory fails hosted startup as any missing startup root does.
+/// The binary separately admits an absent directory as `Faces::config: None`.
+pub fn config_root(spawn: &Spawn) -> Option<StartupRoot> {
+    config_path(&spawn.env).map(|path| StartupRoot { name: b"config".as_slice().into(), path: path.into() })
+}
+
+/// Declares the observations append file for `World::host_startup`, alongside
+/// [`config_root`]. Both selectors return no descriptor when the variable is unset.
+pub fn observation_append(spawn: &Spawn) -> Option<StartupAppend> {
+    config_path(&spawn.env).map(|path| StartupAppend {
+        name: b"observations".as_slice().into(),
+        root: path.into(),
+        path: OBSERVATIONS_FILE.as_bytes().into(),
+        mode: 0o600,
+    })
+}
+
+/// A hosted factory; register it with [`config_root`] and [`observation_append`]
+/// through `World::host_startup`. Its default limit is one simultaneous invocation.
+pub fn hosted(program: &[u8]) -> HostedProgram<Fake> {
+    HostedProgram { program: program.into(), make, instances: 1, operations: crate::fake::operations() }
+}
+
+fn make(spawn: &Spawn, inherited: &Inherited) -> Fake {
+    let pipe = |number| inherited.pipes.iter().find(|(child, _)| *child == number).expect("standard pipe").1;
+    Fake::new(
+        &spawn.args,
+        &spawn.env,
+        Faces {
+            stdin: pipe(0),
+            stdout: pipe(1),
+            stderr: pipe(2),
+            signal: inherited.signal,
+            config: inherited.roots.iter().find(|(name, _)| name.as_ref() == b"config").map(|(_, fd)| *fd),
+            observations: inherited
+                .appends
+                .iter()
+                .find(|(name, _)| name.as_ref() == b"observations")
+                .map(|(_, fd)| *fd),
+        },
+    )
+}
+
+/// Runs the fake on the kernel, returning its command's exit code. Downstream
+/// packages need only call this from their own binary's `main`.
+pub fn main() -> ExitCode {
+    let arguments: Vec<Box<[u8]>> = std::env::args_os().skip(1).map(|argument| argument.as_bytes().into()).collect();
+    let environment: Vec<Box<[u8]>> = std::env::vars_os()
+        .map(|(name, value)| [name.as_bytes(), b"=", value.as_bytes()].concat().into_boxed_slice())
+        .collect();
+    let config = match config_path(&environment) {
+        Some(path) => match skein_shell::open_root(Path::new(std::ffi::OsStr::from_bytes(path))) {
+            Ok(root) => Some(root),
+            Err(2) => None,
+            Err(error) => {
+                eprintln!("fake claude: cannot open {CONFIG_DIR}: errno {error}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
+    let observations = match config {
+        Some(root) => match skein_shell::open_append(root, OBSERVATIONS_FILE.as_bytes(), 0o600) {
+            Ok(file) => Some(file),
+            Err(error) => {
+                skein_shell::close_keeper_fd(root);
+                eprintln!("fake claude: cannot open observations: {error:?}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
+    let signal = match skein_shell::open_termination_signals() {
+        Ok(signal) => signal,
+        Err(error) => {
+            for fd in config.into_iter().chain(observations) {
+                skein_shell::close_keeper_fd(fd);
+            }
+            eprintln!("fake claude: cannot open signals: errno {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut fake = Fake::new(
+        &arguments,
+        &environment,
+        Faces { stdin: Fd::new(0), stdout: Fd::new(1), stderr: Fd::new(2), signal, config, observations },
+    );
+    let mut kernel = match skein_shell::Kernel::open(Config { operations: fake.operations() }) {
+        Ok(kernel) => kernel,
+        Err(error) => {
+            eprintln!("fake claude: cannot open kernel: {error:?}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match skein_shell::drive(&mut kernel, &Clock::new(), &mut fake) {
+        Exit::Code(code) => ExitCode::from(code),
+        Exit::Signal(signal) => ExitCode::from(u8::try_from(128_u32.saturating_add(signal)).unwrap_or(255)),
+    }
+}
