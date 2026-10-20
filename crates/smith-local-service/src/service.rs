@@ -526,6 +526,22 @@ impl Service {
         }
     }
 
+    /// The next destination given up, with why, for the shell's one line on
+    /// standard error (protocol/events.md, section 5.2).
+    #[must_use]
+    pub fn pop_given_up(&mut self) -> Option<agent_service::GivenUp> {
+        match self.below.inline_mut() {
+            Some(effects) => match effects.front_sinks() {
+                Some(sinks) => sinks.pop_given_up(),
+                None => None,
+            },
+            None => match &mut self.stream {
+                Some(stream) => stream.producer.sinks().pop_given_up(),
+                None => None,
+            },
+        }
+    }
+
     /// Lend a credential value only beside the domain's grant name.
     pub fn credential(&mut self, grant: agent::Grant, value: smith_protocol_channel::GrantValue) {
         let bytes = match &value {

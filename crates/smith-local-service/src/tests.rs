@@ -720,3 +720,67 @@ fn an_inline_service_refuses_a_different_common_io_capacity() {
     config.limits.process.io.intake = config.limits.process.io.intake.checked_sub(1).unwrap();
     let Err(crate::Error::Process) = Service::new(config, 1) else { panic!("one common IO configuration") };
 }
+
+fn session_started() -> smith_events::SessionStarted {
+    smith_events::SessionStarted {
+        chat: None,
+        wall_ms: 0,
+        agent: smith_events::Agent { name: b"test".as_slice().into(), version: Box::default(), build: Box::default() },
+        mode: smith_events::Mode::Exec,
+        containment: smith_events::Containment::Groups,
+        pid: 1,
+        profile: b"test".as_slice().into(),
+        capture: smith_events::Capture::Calls,
+        delivery: smith_events::Delivery::Complete,
+        versions: smith_events::Versions { events: 4, channel: 4, charter: 3, transcript: 6, chat_store: None },
+        limits: List::with_capacity(0),
+    }
+}
+
+/// The trace's first `Append`, within a few passes; the inline agent's
+/// requests reach the kernel one pass after it makes them.
+fn trace_append(service: &mut Service, trace: skein_io::kernel::Fd) -> skein_io::kernel::Submit {
+    for _ in 0_u32..4 {
+        iterate(service, Time::ZERO, Wall::EPOCH);
+        while let Some(submit) = service.submissions().pop() {
+            if let skein_io::kernel::Op::Append { fd, .. } = submit.kind
+                && fd == trace
+            {
+                return submit;
+            }
+        }
+    }
+    panic!("the trace's session.started is appended")
+}
+
+#[test]
+fn an_inline_trace_whose_append_fails_is_given_up_once_with_why() {
+    use smith_agent_service::{Destination, GivenUp, Why, sinks};
+    let trace = skein_io::kernel::Fd::new(20);
+    let mut config = colocated_config();
+    let crate::AgentConfig::Inline { configuration: lower, .. } = &mut config.agent else { panic!("colocated agent") };
+    lower.limits.events = Some(
+        smith_agent_service::EventLimits::derive(
+            &lower.limits,
+            sinks::Capture::Calls,
+            1,
+            0,
+            &[],
+            Duration::from_secs(30),
+        )
+        .expect("bounded event stream"),
+    );
+    config.limits.inline = Some(crate::InlineLimits::new(lower).expect("bounded lower configuration"));
+    let mut service = Service::new(config, 8).expect("colocated service");
+    service.adopt_trace(trace, Time::ZERO, session_started(), sinks::Delivery::Complete).expect("inline trace");
+    let append = trace_append(&mut service, trace);
+    assert_eq!(service.pop_given_up(), None, "nothing is given up while the write is in flight");
+    service.completions().push(skein_io::kernel::Complete {
+        op: append.op,
+        kind: append.kind,
+        result: Err(skein_io::kernel::Error::NoSpace),
+    });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    assert_eq!(service.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::WriteFailed }));
+    assert_eq!(service.pop_given_up(), None, "the destination is named once");
+}

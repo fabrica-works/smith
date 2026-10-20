@@ -741,6 +741,11 @@ impl Host for Local {
         }
         self.writer_up();
         service::iterate(&mut self.service, now, wall);
+        // Each destination given up is named once, with why (protocol/events.md,
+        // section 5.2); the agent shell prints the same line.
+        while let Some(given_up) = self.service.pop_given_up() {
+            drop(writeln!(self.errors, "smith: {}", smith_agent_shell::given_up_line(given_up)));
+        }
         self.files();
         self.product_files(now, wall);
         self.writer_down();
