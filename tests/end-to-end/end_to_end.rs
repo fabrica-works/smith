@@ -734,6 +734,23 @@ fn a_dir_is_a_named_directory_the_run_writes_unless_it_is_read_only() {
 }
 
 #[test]
+fn a_writable_plain_dir_past_snapshot_bounds_starts_and_answers() {
+    // One byte past process.rs's plain_limits().file_bytes.
+    const UNKNOWN_FILE_BYTES: usize = 65_537;
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let plan = Scratch::new();
+    std::fs::write(plan.path().join("large"), vec![b'x'; UNKNOWN_FILE_BYTES]).unwrap();
+    let flag = format!("plan={}:rw", plan.path().display());
+    let ran =
+        support::exec_with_turns(&scratch, &["exec", "--dir", &flag, "-"], b"Note it\n", dir_turns("/plan/notes.txt"));
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(ran.stdout.windows(b"Wrote it".len()).any(|bytes| bytes == b"Wrote it"));
+    assert!(!String::from_utf8_lossy(&ran.stderr).contains("could not be saved"));
+    assert_eq!(std::fs::read(plan.path().join("notes.txt")).unwrap(), b"noted\n");
+}
+
+#[test]
 fn a_headless_run_that_would_wait_exits_5_naming_its_chat() {
     let scratch = Scratch::new();
     let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));

@@ -224,7 +224,7 @@ fn plain_snapshots_walk_nested_directories() {
 }
 
 #[test]
-fn an_incomplete_or_unsupported_plain_tree_is_never_declared_unchanged() {
+fn an_incomplete_or_unsupported_plain_tree_makes_the_snapshot_unknown() {
     let owner = skein_lib::Token::new(17);
     let empty: Box<[skein_io::file::Entry]> = Box::new([]);
     for (entries, more) in [
@@ -253,7 +253,7 @@ fn an_incomplete_or_unsupported_plain_tree_is_never_declared_unchanged() {
         .unwrap();
         drop(scan.start());
         let crate::PlainAction::Failed = scan.from_file(skein_io::file::Event::Scanned { owner, entries, more }) else {
-            panic!("partial snapshot refused")
+            panic!("incomplete tree must be unknown, never unchanged")
         };
     }
 }

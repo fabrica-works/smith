@@ -2,14 +2,15 @@
 //! domain/host.md, section 8). A scan keeps ordered paths and content digests,
 //! never file handles or delivery policy. `new`, `start` and `from_file` walk
 //! one directory or file at a time. Errors, omitted entries, unsupported
-//! nodes and bounds refuse the scan; no partial snapshot is declared clean.
+//! nodes and bounds refuse the scan, making the tree unknown. Unknown counts
+//! as changed, never unchanged, and refuses neither a start nor a delivery.
 //!
 //! | State | Input | Output |
 //! |---|---|---|
 //! | Scanning | directory entries | append bounded paths, visit next |
 //! | Scanning | file bytes | retain digest, visit next |
 //! | Scanning | last node | completed snapshot |
-//! | Scanning | refusal | failed scan |
+//! | Scanning | refusal | unknown tree, counted as changed |
 
 #![expect(clippy::manual_let_else, reason = "explicit bounded transition matches")]
 
@@ -46,7 +47,7 @@ pub enum PlainAction {
     File { request: file::Request, deadline: Time },
     /// The whole admitted tree has been inspected.
     Done,
-    /// No complete snapshot could be made.
+    /// The local host could not snapshot the whole tree: unknown, never unchanged.
     Failed,
 }
 

@@ -485,6 +485,233 @@ fn plain_status_uses_the_runs_snapshot_and_refreshes_it_before_the_next_run() {
     assert!(events.is_empty());
 }
 
+#[expect(
+    clippy::disallowed_macros,
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    clippy::default_trait_access,
+    reason = "real-loop harness is ordinary Rust (programming-model.md, section 10.2); clock inferred through skein's API"
+)]
+mod plain {
+    use super::*;
+
+    // process.rs's plain_limits: the bounded snapshot includes its root entry.
+    const PLAIN_FILE_BYTES: usize = 65_536;
+    const PLAIN_CHILDREN: u32 = 255;
+    const TOO_MANY_PLAIN_CHILDREN: u32 = 257;
+
+    struct PlainTree {
+        process: crate::process::ProcessAdapter,
+        events: skein_lib::Queue<local::Event>,
+        captures: Vec<bool>,
+        statuses: Vec<local::Event>,
+        immediate: Vec<bool>,
+        directory: std::path::PathBuf,
+        delivery_bytes: Option<usize>,
+        recapture: bool,
+        started: bool,
+    }
+
+    impl Host for PlainTree {
+        fn iterate(&mut self, now: Time, wall: Wall) {
+            let deadline = Time::from_nanos(u64::MAX);
+            if !self.started {
+                self.started = true;
+                let mut directories = List::with_capacity(1);
+                directories.push(0).unwrap();
+                self.process.capture_plain(directories, deadline);
+            }
+            self.process.io_up(&self.process.at(now, wall));
+            self.process.up(
+                &self.process.at(now, wall),
+                &mut skein_lib::Queue::with_capacity(256),
+                &mut smith_local_protocol::Terminal::new(smith_local_protocol::TerminalLimits {
+                    line_bytes: 256,
+                    show_bytes: 1024,
+                })
+                .unwrap(),
+                &mut skein_lib::Queue::with_capacity(256),
+                &mut self.events,
+                &mut None,
+            );
+            if let Some(done) = self.process.take_capture_done() {
+                self.captures.push(done);
+                if let Some(bytes) = self.delivery_bytes.take() {
+                    std::fs::write(self.directory.join("file"), vec![b'x'; bytes]).unwrap();
+                }
+                self.process.plain_status(skein_lib::Token::new(7), 0, deadline, &mut self.events);
+                self.immediate.push(!self.events.is_empty());
+            }
+            if let Some(event) = self.events.pop() {
+                self.statuses.push(event);
+                if self.recapture {
+                    self.recapture = false;
+                    std::fs::write(self.directory.join("file"), b"small").unwrap();
+                    let mut directories = List::with_capacity(1);
+                    directories.push(0).unwrap();
+                    self.process.capture_plain(directories, deadline);
+                } else {
+                    self.process.close();
+                }
+            }
+            self.process.down(
+                &self.process.at(now, wall),
+                &mut skein_lib::Queue::with_capacity(256),
+                &mut None,
+                &skein_lib::Map::with_capacity(1),
+                &mut skein_lib::Queue::with_capacity(256),
+                &mut None,
+            );
+        }
+
+        fn completions(&mut self) -> &mut skein_lib::Queue<skein_io::kernel::Complete> {
+            self.process.completions()
+        }
+
+        fn submissions(&mut self) -> &mut skein_lib::Queue<skein_io::kernel::Submit> {
+            self.process.submissions()
+        }
+
+        fn work_pending(&self, now: Time) -> bool {
+            !self.started || self.process.work_pending(now)
+        }
+
+        fn next_deadline(&self) -> Option<Time> {
+            self.process.next_deadline()
+        }
+
+        fn next_policy_deadline(&self) -> Option<Time> {
+            None
+        }
+
+        fn is_empty(&self) -> bool {
+            self.process.closed()
+        }
+
+        fn worst_case(&self) -> u64 {
+            // This unchecked real world does not meter heap; retain the service's bound.
+            crate::worst_case(&config().limits).unwrap()
+        }
+
+        fn operations(&self) -> u32 {
+            256
+        }
+    }
+
+    fn plain_tree(file_bytes: usize, children: u32, delivery_bytes: Option<usize>, recapture: bool) -> PlainTree {
+        use std::os::fd::IntoRawFd;
+        let directory = std::env::temp_dir().join(format!(
+            "smith-plain-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(directory.join("file"), vec![b'x'; file_bytes]).unwrap();
+        for child in 1..children {
+            std::fs::write(directory.join(format!("file-{child}")), b"").unwrap();
+        }
+        let root = skein_io::kernel::Fd::new(std::fs::File::open(&directory).unwrap().into_raw_fd());
+        let config = config();
+        let mut process =
+            crate::process::ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints, 1).unwrap();
+        process.adopt_delivery_roots(Box::new([root]), Box::new([]));
+        let mut world = skein_world::real::World::new(skein_world::Expectations::<PlainTree, PlainSettled>::new(
+            1,
+            vec![PlainSettled],
+        ));
+        world.spawn_with_fds(vec![root], || PlainTree {
+            process,
+            events: skein_lib::Queue::with_capacity(256),
+            captures: Vec::new(),
+            statuses: Vec::new(),
+            immediate: Vec::new(),
+            directory: directory.clone(),
+            delivery_bytes,
+            recapture,
+            started: false,
+        });
+        let mut outcome = world.run(&Default::default(), Duration::from_secs(5));
+        std::fs::remove_dir_all(directory).unwrap();
+        outcome.procs.pop().unwrap()
+    }
+
+    #[derive(Debug)]
+    struct PlainSettled;
+
+    impl skein_world::Expectation<PlainTree> for PlainSettled {
+        fn check(&self, _now: Time, procs: &[PlainTree]) -> Result<bool, String> {
+            Ok(procs.iter().all(Host::is_empty))
+        }
+
+        fn deadline(&self) -> Time {
+            Time::from_nanos(u64::MAX)
+        }
+    }
+
+    impl skein_world::Referee<PlainTree> for skein_world::Expectations<PlainTree, PlainSettled> {
+        fn act(&mut self, _now: Time, _procs: &mut [PlainTree]) {}
+
+        fn observe(&mut self, now: Time, procs: &[PlainTree]) {
+            Self::observe(self, now, procs);
+        }
+
+        fn next_deadline(&self) -> Option<Time> {
+            Self::next_deadline(self)
+        }
+
+        fn overdue(&self, now: Time) -> Option<String> {
+            Self::overdue(self, now)
+        }
+
+        fn passed(&self) -> bool {
+            Self::passed(self)
+        }
+    }
+
+    fn assert_plain_status(event: &local::Event, expected: bool) {
+        let local::Event::PlainStatus { owner, changed } = event else { panic!("expected plain status: {event:?}") };
+        assert_eq!(*owner, skein_lib::Token::new(7));
+        assert_eq!(*changed, expected);
+    }
+
+    #[test]
+    fn an_unknown_plain_capture_completes_and_counts_as_changed() {
+        for (file_bytes, children) in [(PLAIN_FILE_BYTES + 1, 1), (0, PLAIN_CHILDREN + 1), (0, TOO_MANY_PLAIN_CHILDREN)]
+        {
+            let tree = plain_tree(file_bytes, children, None, false);
+            assert_eq!(tree.captures, [true]);
+            assert_eq!(tree.statuses.len(), 1);
+            assert_plain_status(&tree.statuses[0], true);
+            assert_eq!(tree.immediate, [true], "unknown capture answers without a compare scan");
+        }
+    }
+
+    #[test]
+    fn a_plain_tree_outgrowing_its_capture_counts_as_changed() {
+        let tree = plain_tree(PLAIN_FILE_BYTES, 1, Some(PLAIN_FILE_BYTES + 1), false);
+        assert_eq!(tree.captures, [true]);
+        assert_eq!(tree.statuses.len(), 1);
+        assert_plain_status(&tree.statuses[0], true);
+    }
+
+    #[test]
+    fn an_untouched_plain_tree_at_the_bounds_is_unchanged() {
+        let tree = plain_tree(PLAIN_FILE_BYTES, PLAIN_CHILDREN, None, false);
+        assert_eq!(tree.captures, [true]);
+        assert_eq!(tree.statuses.len(), 1);
+        assert_plain_status(&tree.statuses[0], false);
+    }
+
+    #[test]
+    fn a_fresh_capture_replaces_an_unknown_plain_tree() {
+        let tree = plain_tree(PLAIN_FILE_BYTES + 1, 1, None, true);
+        assert_eq!(tree.captures, [true, true]);
+        assert_eq!(tree.statuses.len(), 2);
+        assert_plain_status(&tree.statuses[0], true);
+        assert_plain_status(&tree.statuses[1], false);
+    }
+}
+
 #[test]
 #[expect(clippy::wildcard_enum_match_arm, reason = "the story names unexpected shell requests")]
 fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_spawning() {

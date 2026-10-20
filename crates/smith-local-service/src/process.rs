@@ -1,6 +1,9 @@
 //! One spawned agent's IO, pipe channel and host-domain terminals
 //! (protocol/hosts.md, sections 3 and 5.6). The adapter keeps IO tokens,
-//! process resources, channel buffers, and bounded plain-tree snapshots.
+//! process resources, channel buffers, and bounded plain-tree snapshots or
+//! unknown marks.
+//! `capture_plain` retains no snapshot for trees it cannot inspect whole;
+//! `plain_status` counts them as changed (protocol/hosts.md, section 5.5).
 //! File demands settle serially before markers or a snapshot become a terminal.
 //! It never knows local delivery
 //! policy, a credential's meaning, or the agent's private domain state.
@@ -93,7 +96,7 @@ pub(crate) struct ProcessAdapter {
     git: Option<local_protocol::GitChild>,
     markers: Option<(Token, local_protocol::Markers)>,
     plain: Option<PlainScan>,
-    snapshots: Map<u32, local_protocol::Snapshot>,
+    snapshots: Map<u32, Option<local_protocol::Snapshot>>,
     capture_directories: List<u32>,
     capture_next: u32,
     capture_deadline: Time,
@@ -210,7 +213,7 @@ impl ProcessAdapter {
             .checked_add(Queue::<local_protocol::Action>::worst_case(3)?)?;
         let delivery = local_protocol::plain_worst_case(&plain_limits())?
             .checked_mul(65)?
-            .checked_add(Map::<u32, local_protocol::Snapshot>::worst_case(64)?)?
+            .checked_add(Map::<u32, Option<local_protocol::Snapshot>>::worst_case(64)?)?
             .checked_add(List::<u32>::worst_case(64)?)?
             .checked_add(local_protocol::markers_worst_case(&git_limits(limits))?)?
             .checked_add(local_protocol::git_child_worst_case(&git_limits(limits))?)?
@@ -505,12 +508,23 @@ impl ProcessAdapter {
     ) {
         assert!(self.plain.is_none() && self.markers.is_none(), "file inspection is serial");
         let root = match self.file_roots.get(usize::try_from(directory).expect("bounded directory")) {
-            Some(root) if self.snapshots.get(&directory).is_some() => *root,
-            Some(_) | None => {
+            Some(root) => *root,
+            None => {
                 events.push(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Read });
                 return;
             }
         };
+        match self.snapshots.get(&directory) {
+            Some(Some(_)) => {}
+            Some(None) => {
+                events.push(local::Event::PlainStatus { owner, changed: true });
+                return;
+            }
+            None => {
+                events.push(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Read });
+                return;
+            }
+        }
         let scan = local_protocol::Plain::new(owner, root, plain_limits(), deadline).expect("checked plain limits");
         let action = scan.start();
         self.plain = Some(PlainScan { purpose: PlainPurpose::Compare { owner, directory }, scan });
@@ -525,12 +539,17 @@ impl ProcessAdapter {
                 let snapshot = active.scan.finish();
                 match active.purpose {
                     PlainPurpose::Capture { directory } => {
-                        self.snapshots.insert(directory, snapshot).expect("bounded snapshots");
+                        self.snapshots.insert(directory, Some(snapshot)).expect("bounded snapshots");
                         self.capture_next = self.capture_next.checked_add(1).expect("bounded directory position");
                         self.next_capture();
                     }
                     PlainPurpose::Compare { owner, directory } => {
-                        let before = self.snapshots.get(&directory).expect("capture precedes compare");
+                        let before = self
+                            .snapshots
+                            .get(&directory)
+                            .expect("capture precedes compare")
+                            .as_ref()
+                            .expect("unknown capture answers without a scan");
                         events.push(local::Event::PlainStatus { owner, changed: *before != snapshot });
                     }
                 }
@@ -538,9 +557,13 @@ impl ProcessAdapter {
             local_protocol::PlainAction::Failed => {
                 let active = self.plain.take().expect("active plain scan");
                 match active.purpose {
-                    PlainPurpose::Capture { .. } => self.capture_done = Some(false),
-                    PlainPurpose::Compare { .. } => {
-                        events.push(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Read });
+                    PlainPurpose::Capture { directory } => {
+                        self.snapshots.insert(directory, None).expect("bounded snapshots");
+                        self.capture_next = self.capture_next.checked_add(1).expect("bounded directory position");
+                        self.next_capture();
+                    }
+                    PlainPurpose::Compare { owner, .. } => {
+                        events.push(local::Event::PlainStatus { owner, changed: true });
                     }
                 }
             }
