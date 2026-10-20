@@ -323,6 +323,18 @@ The interactive chat, the local host of domain/host.md, section 8:
   its failure in words, comes from what the local host hears (4.2).
 
   A waiting prompt appears only once every relayed line has been read.
+
+  A run spawned on a program (9) keeps its records in its own process
+  (protocol/events.md, 2), so its live view comes from what the local
+  host hears, with the same words: the model's text from live content,
+  which the local host asks for at the start (domain/host.md, 2); and,
+  from each told turn, the text the pieces did not show, each tool call
+  with its verdict, and the status line, its model, tokens and spend the
+  turn's, what is left from the charter's budget less the turn's
+  cumulative spend, and its elapsed time the local host's, from the
+  message it sent or the turn before to this turn. A tool's duration
+  and a failed attempt's measures are not shown: records never cross
+  the channel (protocol/channel.md, 8).
 - **Commands** begin with `/`. They are the local host's, never
   messages:
   - `/model ENDPOINT/NAME` chooses another model of main's endpoint,
