@@ -554,4 +554,67 @@ mod tests {
             assert!(inventory.iter().any(|limit| limit.name.field == "teardown"));
         }
     }
+
+    #[test]
+    fn the_interactive_chat_start_fits_the_standard_memory() {
+        // The smoke-tools Chat arm: standard profile, codex/gpt-6-luna
+        // selected at low effort, a borrowed login and an everything trace.
+        // Invocation derivation prices descriptors without reading the login.
+        let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
+        let text = format!(
+            "model='codex/gpt-6-luna'\neffort='low'\n\
+             [accounts.codex]\nsource='borrow'\nfile='/unopened-login/auth.json'\n\
+             [endpoints.codex]\ntrust.system=false\ntrust.der=['{certificate}']\n\
+             [trace]\npath='/unopened-events'\ncapture='everything'\n"
+        );
+        let settings = settings::merge(
+            &command::Shared::default(),
+            "/workspace".into(),
+            &[settings::Source { layer: settings::Layer::User, path: "chat-start.toml".into(), text }],
+        )
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+        let mut resolved = settings::resolve::resolve(
+            &settings,
+            &Command::Check { shared: command::Shared::default(), json: true, execution: None },
+        )
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+        assert_eq!(resolved.accounts.len(), 1);
+        assert_eq!(resolved.limits.endpoints.len(), 1);
+
+        // This is check's derive_invocation -> interactive_header path; its
+        // admission includes the trace header's reservation as well.
+        let memory = resolved.agent.memory;
+        let (limits, _) = interactive_limits(&mut resolved).expect("standard Chat startup admission");
+        let events = resolved.agent.service.limits.events.expect("interactive trace and view");
+        assert!(events.front);
+        assert_eq!(events.sinks.destinations, 1);
+        let account = resolved.accounts.first().expect("one selected account");
+        let mut locations = skein_lib::List::with_capacity(1);
+        locations
+            .push(crate::credentials::Location {
+                account: account.number,
+                name: account.name.clone(),
+                source: crate::credentials::source(&account.fields, &settings.workspace, false, &account.name),
+            })
+            .expect("one handed credential location");
+        let handed = crate::credentials::Prepared {
+            sources: skein_lib::List::with_capacity(1),
+            locations,
+            limits: crate::credentials::limits(resolved.agent.service.limits.io, 1),
+        };
+        let screen = crate::front::interactive::Interactive::new(false, &resolved.agent.service.limits)
+            .expect("interactive footprint");
+        // Ask startup's complete owner for the number, including credential
+        // and Map routing allocations and the selected model's inline effects.
+        let (worst_case, _) = crate::Local::startup_memory(
+            &limits,
+            resolved.agent.service.limits.routes,
+            Some(&handed),
+            None,
+            Some(&screen),
+        )
+        .unwrap_or_else(|why| panic!("{}", why.detail()));
+        let margin = memory.checked_sub(worst_case).expect("Chat startup fits declared memory");
+        println!("CHAT_START worst_case={worst_case} memory={memory} margin={margin}");
+    }
 }
