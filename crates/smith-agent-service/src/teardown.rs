@@ -3,12 +3,13 @@
 //! outcome. Each pass advances what its children have reported, through usage
 //! and the event stream. Contract: protocol/agent.md, section 6.
 
-use skein_lib::Time;
+use skein_lib::{Time, Token};
 use smith_domain as domain;
 use smith_protocol_llm as llm;
 
-use super::{Failure, Service, USAGE_OWNER, close_roots, settled};
-use skein_io as io;
+use super::{Failure, Operation, Service, USAGE_OWNER};
+use skein_io::{self as io, file, file_layer};
+use smith_protocol_machine as machine;
 
 /// Where the service is in its end, advanced after each routing pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -277,4 +278,84 @@ pub(super) fn advance(service: &mut Service) {
             }
         }
     }
+}
+
+fn close_roots(service: &mut Service) {
+    if service.machine_below.room() < machine::max_out(&service.limits.machine).below {
+        return;
+    }
+    service.machine.close(&mut service.machine_below);
+    if service.machine.closed()
+        && service.owners.is_empty()
+        && service.pipe_routes.is_empty()
+        && service.files.takes()
+        && !service.root_close_pending
+        && service.file_events.room() > 0
+        && service.file_submissions.room() >= 2
+    {
+        if service.root_close_next > 0 {
+            service.root_close_next = service.root_close_next.checked_sub(1).expect("positive root count");
+            let root = *service.roots.get(service.root_close_next).expect("closed roots in reverse order");
+            service.root_close_pending = true;
+            file_layer::down(
+                &mut service.files,
+                service.io_env.now,
+                file::Request::Close { owner: Token::new(u64::MAX), file: root },
+                &mut service.file_events,
+                &mut service.file_submissions,
+            );
+        } else {
+            service.roots.clear();
+        }
+    }
+}
+
+/// All non-destination children have reported closed; only these streams may remain.
+fn operations_settled(service: &Service) -> bool {
+    for (_, operation) in &service.operations {
+        match operation {
+            Operation::Signals(_) if service.signals.is_some() => {}
+            Operation::Signals(_) | Operation::Io(_) | Operation::File(_) => return false,
+        }
+    }
+    true
+}
+
+fn settled(service: &Service, streams: u32) -> bool {
+    use super::program;
+
+    (match &service.channel {
+        Some(channel) => channel.ended(),
+        None => true,
+    }) && service.channel_events.is_empty()
+        && service.channel_below.is_empty()
+        && service.llm_events.is_empty()
+        && service.llm.measures_drained()
+        && program::closed(service)
+        && service.llm_below.is_empty()
+        && service.machine_events.is_empty()
+        && service.machine_below.is_empty()
+        && service.domain_events.is_empty()
+        && service.domain_requests.is_empty()
+        && match &service.domain {
+            Some(domain) => !domain.has_facts(),
+            None => true,
+        }
+        && service.io_events.is_empty()
+        && service.io_requests.is_empty()
+        && service.file_events.is_empty()
+        && service.io_submissions.is_empty()
+        && service.file_submissions.is_empty()
+        && service.completions.is_empty()
+        && match &service.io {
+            Some(io) => io.sockets() == streams,
+            None => true,
+        }
+        && service.files.takes()
+        && service.files.open_files() == 0
+        && service.roots.is_empty()
+        && service.owners.is_empty()
+        && service.pipe_routes.is_empty()
+        && operations_settled(service)
+        && service.submissions.is_empty()
 }
