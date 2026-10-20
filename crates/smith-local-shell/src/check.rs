@@ -361,6 +361,7 @@ fn derive_invocation(
     }
     let handed = crate::credentials::Prepared {
         sources: skein_lib::List::with_capacity(count),
+        lendable: skein_lib::Map::with_capacity(count),
         locations,
         limits: crate::credentials::limits(resolved.agent.service.limits.io, count.max(1)),
     };
@@ -614,6 +615,7 @@ mod tests {
             .expect("one handed credential location");
         let handed = crate::credentials::Prepared {
             sources: skein_lib::List::with_capacity(1),
+            lendable: skein_lib::Map::with_capacity(1),
             locations,
             limits: crate::credentials::limits(resolved.agent.service.limits.io, 1),
         };

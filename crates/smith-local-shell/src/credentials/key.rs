@@ -1,5 +1,5 @@
 //! Private, unrefreshed key files (domain/host.md, section 7; shell.md, 7.1).
-//! `read` lends bytes to the service; `inspect` retains only their usability.
+//! Startup keeps `read`'s bytes for in-memory lends; `inspect` reports usability.
 use super::Credential;
 use std::path::Path;
 

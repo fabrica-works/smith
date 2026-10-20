@@ -439,6 +439,7 @@ pub fn prepared_accounts(
     smith_local_shell::credentials::Prepared {
         sources,
         locations: skein_lib::List::with_capacity(0),
+        lendable: skein_lib::Map::with_capacity(0),
         limits: smith_local_shell::credentials::limits(io, 1),
     }
 }

@@ -844,16 +844,21 @@ fn borrowed_accounts(
     let borrowing = launch.borrowing?;
     let mut sources = skein_lib::List::with_capacity(1);
     let mut locations = skein_lib::List::with_capacity(1);
+    let mut lendable = skein_lib::Map::with_capacity(1);
     let (handed, descriptor) = match borrowing {
         Borrowing::Key => {
+            let file = launch.token_directory.parent().expect("scratch parent").join("key");
+            let bytes = std::fs::read(&file).expect("scratch key at startup");
+            lendable.insert(0, (0, smith_protocol_channel::GrantValue::Key(bytes.into()))).expect("one key value");
             locations
-                .push(Location {
-                    account: 0,
-                    name: "codex".into(),
-                    source: Source::Key { file: launch.token_directory.parent().expect("scratch parent").join("key") },
-                })
+                .push(Location { account: 0, name: "codex".into(), source: Source::Key { file } })
                 .expect("one key location");
-            return Some(Prepared { sources, locations, limits: smith_local_shell::credentials::limits(io, 1) });
+            return Some(Prepared {
+                sources,
+                locations,
+                lendable,
+                limits: smith_local_shell::credentials::limits(io, 1),
+            });
         }
         Borrowing::Env => {
             let variable = "SMITH_FIXTURE_TOKEN";
@@ -882,5 +887,5 @@ fn borrowed_accounts(
     };
     assert!(sources.push(handed).is_ok(), "one selected source");
     locations.push(Location { account: 0, name: "codex".into(), source: descriptor }).expect("one selected location");
-    Some(Prepared { sources, locations, limits: smith_local_shell::credentials::limits(io, 1) })
+    Some(Prepared { sources, locations, lendable, limits: smith_local_shell::credentials::limits(io, 1) })
 }

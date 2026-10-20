@@ -178,14 +178,14 @@ impl Local {
             service.line_mode(front.plain());
             service.initial_chat();
         }
-        let credential_locations = match handed {
+        let (credential_locations, lendable) = match handed {
             Some(prepared) => {
                 service
                     .handed_accounts(prepared.sources, prepared.limits, resources.oauth_entropy)
                     .map_err(|error| configuration_failure(format!("account driver: {error:?}")))?;
-                prepared.locations
+                (prepared.locations, prepared.lendable)
             }
-            None => skein_lib::List::with_capacity(0),
+            None => (skein_lib::List::with_capacity(0), Map::with_capacity(0)),
         };
         let mut writer = if service.inline() { None } else { Some(io::Io::new(&io_limits)) };
         let output = if headless.as_ref().is_some_and(|front| front.json) {
@@ -206,7 +206,7 @@ impl Local {
             ephemeral_directory: None,
             headless,
             interactive,
-            lent: lend::Lent::with_capacity(credential_locations.capacity()),
+            lent: lend::Lent::new(lendable),
             credential_locations,
             writer,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: io_limits },
@@ -441,7 +441,7 @@ impl Local {
     }
 
     fn credential(&mut self, account: u32) {
-        match self.lent.answer(&self.credential_locations, account) {
+        match self.lent.answer(account) {
             lend::Answer::Lend(grant, value) => self.service.credential(grant, value),
             lend::Answer::Missing => self
                 .service

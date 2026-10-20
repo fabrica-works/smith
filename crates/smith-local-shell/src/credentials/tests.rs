@@ -158,7 +158,7 @@ fn an_identifier_past_the_drivers_receiving_bound_is_not_reported_usable() {
     assert!(!inspect(&descriptor(file), wall()).usable(), "inspection uses the driver's account-id bound");
 }
 
-fn resolved_source(files: &Files, source: &str) -> settings::resolve::Resolved {
+pub(crate) fn resolved_source(files: &Files, source: &str) -> settings::resolve::Resolved {
     let mut resolved = resolved(files, files.login("valid.json"));
     let value = Sourced { value: toml::Value::String(source.into()), origin: Origin::BuiltIn };
     resolved.accounts[0].fields.insert("source".into(), value.clone());
@@ -170,7 +170,7 @@ fn resolved_source(files: &Files, source: &str) -> settings::resolve::Resolved {
     resolved
 }
 
-fn private_key(files: &Files) {
+pub(crate) fn private_key(files: &Files) {
     use std::os::unix::fs::PermissionsExt;
     let key = files.0.join("keys/codex");
     std::fs::create_dir_all(key.parent().expect("keys parent")).expect("keys directory");

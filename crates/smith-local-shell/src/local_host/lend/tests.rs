@@ -1,93 +1,110 @@
 use super::*;
-use crate::credentials::tests::Files;
-use std::os::unix::fs::PermissionsExt;
+use crate::credentials::{
+    prepare,
+    tests::{Files, private_key, resolved_source},
+};
+use skein_lib::Wall;
 
 // shell.md, section 7.4: the name work hashes to this number.
 const WORK: u32 = 14_761_687;
 
-fn locations(source: Source) -> List<Location> {
-    let mut locations = List::with_capacity(1);
-    locations.push(Location { account: WORK, name: "work".into(), source }).expect("one account");
-    locations
+fn lent(value: GrantValue, generation: u64) -> Lent {
+    let mut accounts = Map::with_capacity(1);
+    accounts.insert(WORK, (generation, value)).expect("one account");
+    Lent::new(accounts)
 }
 
-fn key(files: &Files) -> std::path::PathBuf {
-    let file = files.0.join("key");
-    std::fs::write(&file, b"key-for-work").expect("scratch key");
-    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).expect("private key");
-    file
+fn key_value() -> GrantValue {
+    GrantValue::Key(b"key-for-work".as_slice().into())
 }
 
-#[test]
-fn the_first_request_for_a_key_account_lends_its_key() {
-    let files = Files::new();
-    let locations = locations(Source::Key { file: key(&files) });
-    let mut lent = Lent::with_capacity(1);
-    match lent.answer(&locations, WORK) {
+fn assert_lend(answer: Answer, account: u32, generation: u64, expected: &GrantValue) {
+    match answer {
         Answer::Lend(grant, value) => {
-            assert_eq!(grant.name.account, WORK, "account number");
-            assert_eq!(grant.name.generation, 1, "only generation");
-            assert!(grant.valid > Duration::from_secs(365 * 24 * 60 * 60), "valid past a year");
-            match value {
-                GrantValue::Key(bytes) => assert!(bytes.as_ref() == b"key-for-work", "private key bytes"),
-                GrantValue::Bearer(_) | GrantValue::Program(_) | GrantValue::Withdrawn { .. } => {
-                    panic!("key grant expected")
-                }
-            }
+            assert_eq!(grant.name.account, account, "account number");
+            assert_eq!(grant.name.generation, generation, "fresh generation");
+            assert_eq!(grant.valid, Duration::from_nanos(u64::MAX), "unrefreshed validity");
+            assert!(value == *expected, "same startup value");
         }
-        Answer::Missing => panic!("key grant expected"),
+        Answer::Missing => panic!("grant expected"),
     }
 }
 
 #[test]
-fn the_first_request_for_a_program_account_lends_its_name() {
-    let locations = locations(Source::Program { name: "work".into() });
-    match Lent::with_capacity(1).answer(&locations, WORK) {
-        Answer::Lend(grant, value) => {
-            assert_eq!(grant.name.account, WORK, "account number");
-            assert_eq!(grant.name.generation, 1, "only generation");
-            match value {
-                GrantValue::Program(name) => assert_eq!(name.as_ref(), b"work", "source name"),
-                GrantValue::Bearer(_) | GrantValue::Key(_) | GrantValue::Withdrawn { .. } => {
-                    panic!("program grant expected")
-                }
-            }
-        }
-        Answer::Missing => panic!("program grant expected"),
+fn every_key_request_lends_a_fresh_generation() {
+    let mut lent = lent(key_value(), 0);
+    for generation in [1, 2, 3] {
+        assert_lend(lent.answer(WORK), WORK, generation, &key_value());
     }
 }
 
 #[test]
-fn a_second_request_is_answered_missing() {
-    let locations = locations(Source::Program { name: "work".into() });
-    let mut lent = Lent::with_capacity(1);
-    drop(lent.answer(&locations, WORK));
-    assert!(matches!(lent.answer(&locations, WORK), Answer::Missing), "never refresh");
-}
-
-#[test]
-fn a_request_for_an_unknown_account_is_answered_missing() {
-    let locations = locations(Source::Nothing);
-    let mut lent = Lent::with_capacity(1);
-    for account in [WORK, 7] {
-        assert!(matches!(lent.answer(&locations, account), Answer::Missing), "no grant");
-    }
-}
-
-#[test]
-fn a_key_removed_after_start_is_answered_missing() {
+fn every_program_request_lends_a_fresh_generation() {
     let files = Files::new();
-    let file = key(&files);
-    let locations = locations(Source::Key { file: file.clone() });
-    std::fs::remove_file(file).expect("removed after startup");
-    assert!(matches!(Lent::with_capacity(1).answer(&locations, WORK), Answer::Missing), "reread fails");
+    let prepared = prepare(&resolved_source(&files, "program"), Wall::EPOCH, false).expect("program startup");
+    let mut lent = Lent::new(prepared.lendable);
+    for generation in [1, 2, 3] {
+        assert_lend(lent.answer(0), 0, generation, &GrantValue::Program(b"codex".as_slice().into()));
+    }
+}
+
+#[test]
+fn generations_advance_per_account() {
+    // One key account and one program account.
+    const ACCOUNTS: u32 = 2;
+    const PROGRAM: u32 = 7;
+    let program = GrantValue::Program(b"review".as_slice().into());
+    let mut accounts = Map::with_capacity(ACCOUNTS);
+    accounts.insert(WORK, (0, key_value())).expect("key account");
+    accounts.insert(PROGRAM, (0, program.clone())).expect("program account");
+    let mut lent = Lent::new(accounts);
+    for (account, generation, value) in [
+        (WORK, 1, key_value()),
+        (WORK, 2, key_value()),
+        (PROGRAM, 1, program.clone()),
+        (WORK, 3, key_value()),
+        (PROGRAM, 2, program),
+    ] {
+        assert_lend(lent.answer(account), account, generation, &value);
+    }
+}
+
+#[test]
+fn an_account_without_a_value_answers_missing() {
+    let files = Files::new();
+    let prepared = prepare(&resolved_source(&files, "none"), Wall::EPOCH, false).expect("nothing startup");
+    let mut lent = Lent::new(prepared.lendable);
+    for account in [0, WORK] {
+        assert!(matches!(lent.answer(account), Answer::Missing), "no grant for a Nothing or unknown account");
+    }
+}
+
+#[test]
+fn the_last_generation_lends_before_overflow_answers_missing() {
+    let mut lent = lent(key_value(), u64::MAX - 1);
+    assert_lend(lent.answer(WORK), WORK, u64::MAX, &key_value());
+    for _ in 0..2 {
+        assert!(matches!(lent.answer(WORK), Answer::Missing), "generation never wraps");
+    }
+}
+
+#[test]
+fn a_key_removed_after_start_still_lends_its_first_bytes() {
+    let files = Files::new();
+    private_key(&files);
+    let prepared = prepare(&resolved_source(&files, "key"), Wall::EPOCH, false).expect("key startup");
+    std::fs::remove_file(files.0.join("keys/codex")).expect("removed after startup");
+    let mut lent = Lent::new(prepared.lendable);
+    for generation in [1, 2] {
+        assert_lend(lent.answer(0), 0, generation, &key_value());
+    }
 }
 
 #[test]
 fn a_lent_answers_debug_holds_no_value() {
-    let files = Files::new();
-    let locations = locations(Source::Key { file: key(&files) });
-    let answer = Lent::with_capacity(1).answer(&locations, WORK);
+    let mut lent = lent(key_value(), 0);
+    assert!(!format!("{lent:?}").contains("key-for-work"), "redacted stored value");
+    let answer = lent.answer(WORK);
     assert!(matches!(answer, Answer::Lend(_, GrantValue::Key(_))), "lent key required");
     assert!(!format!("{answer:?}").contains("key-for-work"), "redacted grant value");
 }

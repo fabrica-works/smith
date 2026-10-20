@@ -1,9 +1,11 @@
 //! Startup source descriptors and the product's exact credential notice names.
-//! Values are handed to the driver once; locations contain no credential bytes.
+//! Driver sources are handed in once; key and program values stay in memory
+//! for repeated shell lends (shell.md, section 7.1). Locations contain no values.
 use super::{Credential, Refusal, Source, environment, inspect, source};
 use crate::settings::resolve::Resolved;
-use skein_lib::{Duration, List, Queue, Wall};
+use skein_lib::{Duration, List, Map, Queue, Wall};
 use smith_local_service as service;
+use smith_protocol_channel::GrantValue;
 
 /// Names used by the shell when its driver reports a borrowed login's expiry.
 #[derive(Debug)]
@@ -17,6 +19,8 @@ pub struct Location {
 pub struct Prepared {
     pub sources: List<service::Source>,
     pub locations: List<Location>,
+    /// Last lent generation (zero at startup) and value per shell-owned account.
+    pub lendable: Map<u32, (u64, GrantValue)>,
     pub limits: skein_oauth_accounts::Limits,
 }
 
@@ -26,7 +30,7 @@ impl Prepared {
     pub fn worst_case(&self) -> Option<u64> {
         let mut bytes = service::accounts_worst_case(&self.limits)?
             .checked_add(List::<Location>::worst_case(self.locations.capacity())?)?
-            .checked_add(List::<u32>::worst_case(self.locations.capacity())?)?
+            .checked_add(Map::<u32, (u64, GrantValue)>::worst_case(self.locations.capacity())?)?
             .checked_add(Queue::<smith_local_service::CredentialRequest>::worst_case(service::ACCOUNTS_MAX_OUT)?)?
             .checked_add(
                 u64::from(self.limits.client.document.token_bytes).checked_mul(u64::from(service::ACCOUNTS_MAX_OUT))?,
@@ -37,8 +41,15 @@ impl Prepared {
                     file.as_os_str().as_encoded_bytes().len().checked_add(program.len())?
                 }
                 Source::Env { variable, .. } => variable.len(),
-                Source::SignIn { file } | Source::Key { file } => file.as_os_str().as_encoded_bytes().len(),
-                Source::Program { name } => name.len(),
+                Source::SignIn { file } => file.as_os_str().as_encoded_bytes().len(),
+                Source::Key { file } => {
+                    bytes = bytes.checked_add(u64::from(crate::local_host::token_limits().token_bytes))?;
+                    file.as_os_str().as_encoded_bytes().len()
+                }
+                Source::Program { name } => {
+                    bytes = bytes.checked_add(u64::try_from(name.len()).ok()?)?;
+                    name.len()
+                }
                 Source::Nothing => 0,
             };
             let length = location.name.len().checked_add(source)?.checked_add(256)?;
@@ -83,6 +94,7 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
     })?;
     let mut sources = List::with_capacity(count);
     let mut locations = List::with_capacity(count);
+    let mut lendable = Map::with_capacity(count);
     let directory = super::Directory::of(&resolved.settings);
     for account in &resolved.accounts {
         let descriptor = source(
@@ -97,13 +109,19 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
             .expect("selected locations fit their account bound");
         match &descriptor {
             Source::Key { file } => {
-                let credential = super::key::inspect(file);
-                if !credential.usable() {
-                    return Err(unavailable(&account.name, credential));
-                }
+                let bytes = super::key::read(file).map_err(|credential| unavailable(&account.name, credential))?;
+                lendable
+                    .insert(account.number, (0, GrantValue::Key(bytes)))
+                    .expect("selected keys fit their account bound");
                 continue;
             }
-            Source::Program { .. } | Source::Nothing => continue,
+            Source::Program { name } => {
+                lendable
+                    .insert(account.number, (0, GrantValue::Program(name.as_bytes().into())))
+                    .expect("selected programs fit their account bound");
+                continue;
+            }
+            Source::Nothing => continue,
             Source::Borrow { .. } | Source::Env { .. } | Source::SignIn { .. } => {}
         }
         let handed = match descriptor {
@@ -155,7 +173,7 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
         };
         assert!(sources.push(handed).is_ok(), "selected sources fit their account bound");
     }
-    Ok(Prepared { sources, locations, limits: limits(resolved.agent.service.limits.io, count.max(1)) })
+    Ok(Prepared { sources, locations, lendable, limits: limits(resolved.agent.service.limits.io, count.max(1)) })
 }
 
 fn unavailable(account: &str, credential: Credential) -> Refusal {

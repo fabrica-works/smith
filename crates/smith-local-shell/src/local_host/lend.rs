@@ -1,50 +1,44 @@
 //! The shell's unrefreshed grants (domain/host.md, section 7; shell.md, 7.1).
-//! `Lent` remembers account numbers only; `answer` reads key bytes on demand.
-use crate::credentials::{Location, Source};
-use skein_lib::{Duration, List};
+//! `Lent` keeps startup values and their last lent generations, not key paths.
+//! `answer` lends from memory only; it never reads a key renewed on disk.
+use skein_lib::{Duration, Map};
 use smith_domain as agent;
 use smith_protocol_channel::GrantValue;
 
 /// One shell answer, sent to the service or translated to a missing credential.
 #[derive(Debug)]
 pub(super) enum Answer {
-    /// The first key or program grant, handed to the service's value map.
+    /// A fresh key or program grant, handed to the service's value map.
     Lend(agent::Grant, GrantValue),
-    /// No value to lend, including an account already lent once.
+    /// No value to lend, or its generation cannot advance.
     Missing,
 }
 
-/// Numbers already lent by the shell, kept until this invocation ends.
+/// Startup values and per-account generations, kept until this invocation ends.
+#[derive(Debug)]
 pub(super) struct Lent {
-    accounts: List<u32>,
+    accounts: Map<u32, (u64, GrantValue)>,
 }
 
 impl Lent {
-    pub(super) fn with_capacity(accounts: u32) -> Self {
-        Self { accounts: List::with_capacity(accounts) }
+    pub(super) fn new(accounts: Map<u32, (u64, GrantValue)>) -> Self {
+        Self { accounts }
     }
 
-    pub(super) fn answer(&mut self, locations: &List<Location>, account: u32) -> Answer {
-        if self.accounts.iter().any(|lent| *lent == account) {
-            return Answer::Missing;
-        }
-        let Some(location) = locations.iter().find(|location| location.account == account) else {
+    pub(super) fn answer(&mut self, account: u32) -> Answer {
+        let Some((generation, value)) = self.accounts.get_mut(&account) else {
             return Answer::Missing;
         };
-        let value = match &location.source {
-            Source::Key { file } => match crate::credentials::key::read(file) {
-                Ok(bytes) => GrantValue::Key(bytes),
-                Err(_) => return Answer::Missing,
-            },
-            Source::Program { name } => GrantValue::Program(name.as_bytes().into()),
-            Source::Borrow { .. } | Source::Env { .. } | Source::SignIn { .. } | Source::Nothing => {
-                return Answer::Missing;
-            }
+        let Some(next) = generation.checked_add(1) else {
+            return Answer::Missing;
         };
-        self.accounts.push(account).expect("one lent entry per selected account");
+        *generation = next;
         Answer::Lend(
-            agent::Grant { name: agent::GrantName { account, generation: 1 }, valid: Duration::from_nanos(u64::MAX) },
-            value,
+            agent::Grant {
+                name: agent::GrantName { account, generation: next },
+                valid: Duration::from_nanos(u64::MAX),
+            },
+            value.clone(),
         )
     }
 }
