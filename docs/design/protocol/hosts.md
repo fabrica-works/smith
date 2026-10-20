@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-07, revised 2026-10-19. The host's side of the
+Provisional, 2026-10-07, revised 2026-10-20. The host's side of the
 protocol:
 
 - `smith-host-protocol`, the host's half of the channel, a component that
@@ -285,6 +285,14 @@ directory, each record under its lock (`docs/design/shell.md`, section
   the rest, in order.
 - **Nothing is pushed** unless the configuration says so.
 - **A plain directory's files** are kept as they are, and delivered says so.
+  Whether they changed, which the run's *nothing* needs (domain/run.md,
+  section 8.2), the host learns from a snapshot of the tree before the run,
+  its paths and its files' digests, compared with the tree at delivery.
+  The snapshot is bounded, in entries, a path's bytes and a file's bytes,
+  so it holds in the host's memory. A tree it cannot hold whole, or read
+  whole (past a bound, a node neither a file nor a directory, a read that
+  failed), is *unknown*, and unknown counts as changed: it never refuses
+  a start, never fails a delivery, and is never taken for unchanged.
 - **A repository whose head moved** since the run started is a stale
   delivery.
 - **Each commit names its delivery** in its message, by the call's name,

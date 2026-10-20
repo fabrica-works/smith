@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-05, revised 2026-10-19. The other side of a run:
+Provisional, 2026-10-05, revised 2026-10-20. The other side of a run:
 what a host owes an agent and is owed, the channel between them, and the
 domains smith ships for hosts: `smith-host-domain`, which a host embeds
 to start and supervise agent processes; `smith-inline-agent`, its twin,
@@ -401,7 +401,9 @@ the inline agent it is the `smith` product:
   across invocations.
 - **Delivery in place:** a commit in each writable repository, with the
   result's fields as its message, nothing pushed unless configured; a
-  plain directory's files kept as they are.
+  plain directory's files kept as they are, changed or not by a bounded
+  snapshot, and a tree past its bounds counted as changed
+  (protocol/hosts.md, section 5.5).
 - **Host tools:** none of its own at first; tools from MCP servers it is
   configured with, once MCP is a tool source.
 
