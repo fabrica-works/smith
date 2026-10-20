@@ -540,12 +540,17 @@ projection.
   lost, and says so on standard error, naming the destination and why
   (agent.md, section 6). The run goes on (revised 2026-10-20: a failed
   write ended the destination's records, its authoritative ones too).
-- **An abandoned destination still gets its end** (added 2026-10-20).
-  Each authoritative record still to come, `run.completed` and
-  `session.ended`, is tried there once, in its reserved room, under the
-  write deadline, so a destination given up for a full disk that has
-  room again ends as 5.1 says. A try that fails too is said on standard
-  error, and the run's exit and its last line still say how it ended.
+- **An abandoned destination gets nothing more** (revised 2026-10-20:
+  it was to get its end). io ends a stream at its first failed write,
+  and nothing follows but `Closed` (skein's `io.md`, 3.3), so the end
+  cannot be tried there. The line on standard error names the
+  destination and why, in io's terms: it stayed behind past the write
+  deadline (the sink tells this by its own clock), its reader went
+  away, or a write failed. Every shell prints it, the one that runs the
+  agent in its own process and the one that runs it in another, once
+  per destination. The run's exit and its last line on standard error
+  still say how it ended. A teardown that aborts the destinations gives
+  none of them up: it is the end, not a failure (agent.md, section 6).
 - **One destination, one sink.** With standard output and a trace file,
   each has its own policy state and its own count, and each gets its own
   `session.ended`.
@@ -685,3 +690,12 @@ The vocabulary is pre-release, like every format (README.md, section 8).
 - **A host's stream** beyond the product's: whether a host other than the
   local host (temper's worker, say) writes one.
 - **Traces kept:** rotation, and how long trace files are kept.
+- **A destination's end after a failed write** (added 2026-10-20): a
+  trace given up for a full disk lacks `run.completed` and
+  `session.ended` even when room comes back. Either the shell keeps a
+  spare descriptor of each destination, adopted for the end records
+  alone (each tried once under the write deadline, after a newline if a
+  write was torn); or io's write stream survives a failed write and
+  takes later sends (a change to skein's `io.md`, 3.3). io's fault could
+  also carry the kernel's reason (a full disk, a read-only file system),
+  which it does not today.
