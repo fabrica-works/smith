@@ -23,6 +23,7 @@ pub fn check_program(records: &[Record]) {
     reason = "the inner lookback selects one preceding provider call; the outer referee checks every event"
 )]
 fn check_transport(records: &[Record], program: bool) {
+    let record_limits = std::cell::OnceCell::new();
     let Event::SessionStarted(header) = &records.first().expect("stream header").event else {
         panic!("session.started is first");
     };
@@ -167,7 +168,7 @@ fn check_transport(records: &[Record], program: bool) {
                 let line = smith_events::write(
                     record,
                     &smith_events::Capture::Everything,
-                    &crate::tracing::event_limits(&crate::limits()).sinks.records,
+                    record_limits.get_or_init(|| crate::tracing::event_limits(&crate::limits()).sinks.records),
                 )
                 .expect("actual tool terminal fits its receiving bounds")
                 .expect("tool terminal is emitted");
