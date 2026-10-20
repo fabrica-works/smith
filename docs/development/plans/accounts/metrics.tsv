@@ -1,0 +1,31 @@
+wall_h	12.8	h
+running_h	11.0	h
+steps_planned	54	steps
+steps_added	2	steps
+steps_dropped	0	steps
+step_h	0.20	h per step
+chain_step_min	33.6	min, median
+chain_step_max	116.4	min, longest
+escalations	cross-session scope 6, design gap 2, plan defect 4, process 3	by kind
+escalation_wait_min	3.5	min, median
+blocked_h	1.2	h
+answers_reversed	0	answers
+steers	26 sent, 0 points refused	
+restarts	loaded 3, reboot 2	by cause
+tokens_coordinator	108290071 in (99% cached), 204258 out	tokens
+tokens_implementers	428811361 in (97% cached), 1350411 out	tokens
+tokens_claude	1057334676 in (96% cached), 9047779 out; in: 730069413 before the claim, 312271156 in the run, 14994107 after	tokens
+cost_claude	$375: planner $262, supervisor $111, designer $2, retrospective $1; cache reads $137, cache writes $123, fresh input $0, output $114; no transcript on this machine, counted as $0: designer b357b336-47de-4301-b28b-5e1d0ac226a1	dollars at list prices
+supervisor	2 sessions, 12.1 h, 1.2M weighted tokens per hour, 62% in the 40 requests after each start or compaction, 13 compactions	
+tokens_per_step	15239352	tokens per step, the run's
+coordinator_requests	943, 63 after a wait ran out	requests
+compactions	3	compactions
+gates_per_step	1.4	land gates per step
+gate_lane_other	11	gate-lane tasks besides land's gates
+queue_wait_ratio	1.26	waiting per running
+suites	skein first: scripts/check.sh passed: 3293 tests / 6.407 s; 104 tests / 40.635 s; 38 tests / 22.548 s; 164 s in all; last: scripts/check.sh passed: 3597 tests / 5.424 s; 105 tests / 32.258 s; 38 tests / 26.229 s; 123 s in all | smith first: scripts/check.sh passed: 2388 tests / 13.091 s; 43 tests / 15.438 s; 34 s in all; last: scripts/check.sh passed: 2453 tests / 13.427 s; 43 tests / 16.526 s; 58 s in all | jig first: scripts/check.sh passed: 4360 tests / 12.609 s; 111 tests / 21.291 s; 13 tests / 15.204 s; 143 s in all; last: scripts/check.sh passed: 4360 tests / 10.684 s; 111 tests / 17.971 s; 13 tests / 16.469 s; 243 s in all | temper first: scripts/check.sh passed: 1990 tests / 7.327 s; 58 tests / 19.579 s; 122 s in all; last: scripts/check.sh passed: 1990 tests / 7.327 s; 58 tests / 19.579 s; 122 s in all	Gate-Result, by repository
+proofs	unit 23, world 37, joint 7, process 5, 1 below plan; not a layer: fuzzy 1	steps
+report_lines	12 median, 13 p90	lines
+lines	code +8296 -2547, tests +17908 -4115, generated +1934 -390, data +1166 -945	lines
+pin_lag	smith: skein 7; jig: skein 7, smith 12; hearth: skein 7; temper: skein 3, smith 11, jig 5	commits behind upstream main
+contexts	138K median, 188K p90 of the sessions' peaks; 33 handovers	
