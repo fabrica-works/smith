@@ -374,6 +374,7 @@ pub(super) fn deadline(service: &Service) -> Option<skein_lib::Time> {
 // (child close grace and MCP sockets); they do not await policy work.
 pub(super) fn policy_deadline(service: &Service) -> Option<skein_lib::Time> {
     match service.teardown {
+        super::Teardown::Live if answer_head(service) => None,
         super::Teardown::Live => deadline(service),
         super::Teardown::Answered { .. } | super::Teardown::Closing { .. } | super::Teardown::Closed { .. } => None,
     }
@@ -555,6 +556,67 @@ pub(super) fn down(service: &mut Service) {
                 service.io_requests.push(request);
             }
         }
+    }
+}
+
+// The queued Answer already owns and prices its payload. Hold that request
+// until the program has acknowledged finish and settled its child/files.
+fn answer_head(service: &Service) -> bool {
+    match service.domain_requests.iter().next() {
+        Some(domain::Request::Answer { .. }) => true,
+        Some(
+            domain::Request::Complete { .. }
+            | domain::Request::Cancel { .. }
+            | domain::Request::Io { .. }
+            | domain::Request::Job { .. }
+            | domain::Request::CancelIo { .. }
+            | domain::Request::Read { .. }
+            | domain::Request::Probe { .. }
+            | domain::Request::Check { .. }
+            | domain::Request::Abort { .. }
+            | domain::Request::MessageRefused { .. }
+            | domain::Request::Waiting { .. }
+            | domain::Request::Turn { .. }
+            | domain::Request::HostCall { .. }
+            | domain::Request::WithdrawHost { .. }
+            | domain::Request::Admitted { .. }
+            | domain::Request::Long { .. }
+            | domain::Request::LongDone { .. }
+            | domain::Request::Deliver { .. }
+            | domain::Request::Unauthorized { .. }
+            | domain::Request::Refused { .. }
+            | domain::Request::Limited { .. },
+        )
+        | None => false,
+    }
+}
+
+pub(super) fn requests_ready(service: &Service) -> bool {
+    if !answer_head(service) {
+        return true;
+    }
+    match &service.program {
+        Some(program) => program.backend.closed(),
+        None => true,
+    }
+}
+
+pub(super) fn settled(service: &mut Service, turn: &domain::Turn) {
+    if let Some(program) = &mut service.program {
+        program.backend.settled(&turn.messages, &mut program.below);
+    }
+}
+
+pub(super) fn wait_for_close(service: &mut Service) -> bool {
+    if !answer_head(service) {
+        return false;
+    }
+    match &mut service.program {
+        Some(program) if !program.backend.closed() => {
+            program.backend.close(&service.llm_env, &mut service.llm_events, &mut program.below);
+            !program.backend.closed()
+        }
+        Some(_) | None => false,
     }
 }
 

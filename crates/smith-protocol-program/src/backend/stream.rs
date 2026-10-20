@@ -6,7 +6,7 @@ use alloc::boxed::Box;
 use skein_json::{Kind, collector, tokenizer, writer::Encoder};
 use smith_domain::llm;
 
-fn limits(bound: u32, depth: u32, tokens: u32) -> collector::Limits {
+pub(super) fn limits(bound: u32, depth: u32, tokens: u32) -> collector::Limits {
     collector::Limits {
         tokenizer: tokenizer::Limits {
             depth,
@@ -23,6 +23,19 @@ fn limits(bound: u32, depth: u32, tokens: u32) -> collector::Limits {
 
 pub(super) fn worst_case(bound: u32, depth: u32, tokens: u32) -> Option<u64> {
     json::worst_case_limited(limits(bound, depth, tokens))
+}
+
+pub(super) fn collect(bytes: &[u8], depth: u32, tokens: u32) -> Option<skein_json::Document> {
+    json::collect_limited(bytes, limits(u32::try_from(bytes.len()).ok()?, depth, tokens))
+}
+
+pub(super) fn text_message(text: &[u8], maximum: u32) -> Option<Box<[u8]>> {
+    let quoted = json::quote(text, maximum)?;
+    let bytes = json::join(&[b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":", &quoted, b"}}\n"]);
+    if bytes.len() > usize::try_from(maximum).ok()? {
+        return None;
+    }
+    Some(bytes)
 }
 
 pub(super) fn init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> bool {

@@ -137,7 +137,14 @@ pub enum End {
     /// Completes successfully, optionally supplying the requested outcome.
     Success { structured_output: Option<serde_json::Value> },
     /// Reports the model's error with its available evidence.
-    Error { api_error_status: Option<u16>, terminal_reason: Option<String>, errors: Vec<String> },
+    Error {
+        api_error_status: Option<u16>,
+        terminal_reason: Option<String>,
+        errors: Vec<String>,
+        /// Optional Unix-seconds account reset, as in the rate event.
+        #[serde(default)]
+        resets_at: Option<u64>,
+    },
     /// Exits with this code without sending a result.
     Exit(u8),
     /// Sends an undecodable line and exits one.

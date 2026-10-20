@@ -98,7 +98,7 @@ pub(super) fn backend() -> Backend {
         &Secret::new(Box::new([7; 32])),
     )
 }
-fn env(seconds: u64) -> Env<protocol::ComponentLimits> {
+pub(super) fn env(seconds: u64) -> Env<protocol::ComponentLimits> {
     Env {
         now: Time::from_nanos(seconds.checked_mul(1_000_000_000).expect("simulated clock")),
         wall: Wall::EPOCH,
@@ -195,7 +195,7 @@ fn a_renewed_grant_survives_its_first_lapse() {
         false
     }));
 }
-fn request(backend: &Backend) -> FromDomain {
+pub(super) fn request(backend: &Backend) -> FromDomain {
     FromDomain::Complete {
         owner: Token::new(80),
         grant: Some(GrantName { account: 0, generation: 1 }),
@@ -232,7 +232,7 @@ fn request(backend: &Backend) -> FromDomain {
     }
 }
 #[test]
-fn an_accepted_init_survives_the_startup_deadline() {
+fn an_accepted_init_uses_the_completion_head_deadline() {
     let mut backend = backend();
     backend.phase = Phase::Starting;
     backend.deadline = Some(env(30).now);
@@ -244,9 +244,11 @@ fn an_accepted_init_survives_the_startup_deadline() {
     backend.from_io(&env(1),BelowEvent::Io(io::Event::Stream { owner: Token::new(32),up: skein_lib::stream::Up::Bytes(br#"{"type":"system","subtype":"init","mcp_servers":[{"name":"smith","status":"connected"}],"tools":["mcp__smith__permission_prompt"]}
 "#.as_slice().into()) }),&mut up,&mut below);
     assert_eq!(backend.phase, Phase::Running);
-    backend.fire(&env(31), &mut up, &mut below);
-    assert_eq!(backend.phase, Phase::Running);
-    assert!(up.is_empty());
+    assert_eq!(backend.next_deadline(), Some(env(2).now));
+    backend.fire(&env(2), &mut up, &mut below);
+    let Some(ToDomain::Failed { failure, .. }) = up.pop() else { panic!("completion head deadline") };
+    assert_eq!(failure, llm::Failure::TimedOut { phase: llm::Phase::Head });
+    assert_eq!(backend.phase, Phase::Ending);
 }
 #[test]
 fn private_diagnostics_redact_known_private_values() {

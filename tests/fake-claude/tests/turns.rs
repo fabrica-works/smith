@@ -123,6 +123,7 @@ fn an_error_result_carries_its_status() {
             Vec::new(),
             End::Error {
                 api_error_status: Some(429),
+                resets_at: Some(123),
                 terminal_reason: Some("limited".into()),
                 errors: vec!["limit".into()],
             },
@@ -131,6 +132,7 @@ fn an_error_result_carries_its_status() {
     );
     let result = &results(&run)[0];
     assert_eq!(result["api_error_status"], 429);
+    assert_eq!(result["rate_limit_info"]["resetsAt"], 123);
     assert_eq!(result["terminal_reason"], "limited");
     assert_eq!(result["errors"], json!(["limit"]));
     assert_eq!(result["is_error"], true);
@@ -343,4 +345,36 @@ fn absent_standard_input_is_its_end() {
     assert_eq!(messages(&run).len(), 1);
     assert_eq!(messages(&run)[0]["subtype"], "init");
     assert_eq!(run.records[0].exit, Some(Exit::Code(0)));
+}
+
+#[test]
+fn a_tool_message_is_framed_before_its_mcp_reply() {
+    let mut args = print::arguments();
+    args.push("--include-partial-messages".into());
+    let run = print::with_server(
+        story(vec![Step::Call { tool: "finish".into(), input: json!({"answer":"done"}) }], End::default()),
+        print::invocation(1).arguments(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+        smith_fake_claude::ServerScript {
+            tools: vec![smith_fake_claude::Tool {
+                name: "finish".into(),
+                answer: smith_fake_claude::Answer::Text("accepted".into()),
+            }],
+            ..Default::default()
+        },
+    );
+    let messages = messages(&run);
+    assert_eq!(
+        messages[1..7].iter().map(|m| m["event"]["type"].as_str().expect("bounded test fixture")).collect::<Vec<_>>(),
+        [
+            "message_start",
+            "content_block_start",
+            "content_block_delta",
+            "content_block_stop",
+            "message_delta",
+            "message_stop"
+        ]
+    );
+    assert_eq!(messages[1]["event"]["message"]["id"], messages[7]["message"]["id"]);
+    assert_eq!(messages[3]["event"]["delta"]["type"], "input_json_delta");
+    assert_eq!(messages[8]["message"]["content"][0]["type"], "tool_result");
 }

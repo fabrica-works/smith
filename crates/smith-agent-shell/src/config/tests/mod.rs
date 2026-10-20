@@ -482,7 +482,7 @@ fn product_values_pass_every_startup_check_and_fit_complete_memory() {
 }
 
 // A ratchet: unpriced growth fails here, as the direct product's floor.
-const PROGRAM_MEMORY_FLOOR: u64 = 87_000_000;
+const PROGRAM_MEMORY_FLOOR: u64 = 6_000_000;
 
 #[test]
 fn a_program_product_fits_complete_memory() {

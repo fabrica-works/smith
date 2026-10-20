@@ -1,7 +1,8 @@
 //! One lazy program conversation (protocol/programs.md, sections 3 and 5).
 //! Keeps a source grant, private run files, status child, MCP listener and
 //! program pipes; never reads login contents. `from_domain` starts on demand,
-//! `from_io` and `fire` advance startup, and `close` settles every resource.
+//! `from_io` and `fire` advance startup, `settled` observes each finish verdict,
+//! and `close` settles every resource.
 
 use alloc::boxed::Box;
 use skein_io::{self as io, file, kernel};
@@ -11,15 +12,24 @@ use smith_protocol_llm::{self as protocol, FromDomain, ToDomain};
 
 use crate::{Command, Programs, mcp};
 
+mod calls;
+mod conversation;
 mod diagnostics;
 mod files;
 mod start;
 mod stream;
+mod turns;
 
+#[cfg(test)]
+mod conversation_tests;
 #[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
+mod review_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod turns_tests;
 
 /// An adopted programs root or a workspace supplied by the owning service.
 #[derive(Clone, Copy, Debug)]
@@ -93,6 +103,7 @@ pub struct Backend {
     grant: Option<Grant>,
     phase: Phase,
     owner: Option<Token>,
+    pending_failure: Option<(llm::Failure, Box<[u8]>)>,
     request: Option<FromDomain>,
     check: Option<Command>,
     server: Option<mcp::Server>,
@@ -106,9 +117,12 @@ pub struct Backend {
     exit: Option<u32>,
     deadline: Option<Time>,
     stopping: u8,
+    response_phase: llm::Phase,
     line: List<u8>,
     stdout_demanding: bool,
     calls: List<mcp::Up>,
+    ledger: List<calls::Call>,
+    turns: turns::Turns,
     stderr: List<u8>,
     tail: u32,
     io: Queue<io::Request>,
@@ -138,6 +152,44 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
             .checked_add(u64::try_from(entry.len()).ok()?)?
             .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?;
     }
+    // These workspaces run in separate step phases. A line's collected
+    // document survives decoding/correlation, whereas its collector has gone.
+    let document = skein_json::document::worst_case(&skein_json::document::Limits {
+        tokens: settings.adapter.client.tokens,
+        text: settings.line_bytes,
+    })?;
+    let left = skein_json::document::worst_case(&skein_json::document::Limits {
+        tokens: settings.adapter.client.tokens,
+        text: settings.mcp.message_bytes,
+    })?;
+    let input = settings.adapter.stated.call_input_bytes;
+    let decode_collect = stream::worst_case(input, settings.adapter.client.depth, input)?;
+    // The typed decoder builds fields/items after its collector has gone.
+    // The enclosing stream already admitted at most client.tokens records;
+    // an item-array capacity can overlap its nested field-array capacities.
+    let decode_build = skein_json::document::worst_case(&skein_json::document::Limits { tokens: input, text: input })?
+        .checked_add(
+            u64::from(input.min(settings.adapter.client.tokens)).checked_mul(
+                u64::try_from(
+                    size_of::<smith_domain::run::outcome::Field>()
+                        .checked_add(size_of::<smith_domain::run::outcome::Item>())?,
+                )
+                .ok()?,
+            )?,
+        )?
+        .checked_add(u64::from(input))?;
+    let decode = decode_collect.max(decode_build);
+    let compare =
+        stream::worst_case(settings.mcp.message_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
+            .checked_add(left)?
+            .checked_add(List::<(u32, u32)>::worst_case(settings.adapter.client.tokens)?)?;
+    let workspace =
+        stream::worst_case(settings.line_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
+            .max(document.checked_add(decode.max(compare))?)
+            .max(skein_json::writer::worst_case(&skein_json::writer::Limits {
+                depth: 8,
+                length: settings.input_bytes,
+            })?);
     u64::try_from(size_of::<Backend>())
         .ok()?
         // Launch peak: settings paths; executable; instructions and MCP path
@@ -152,7 +204,9 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
                 .checked_sub(u64::try_from(size_of::<Command>()).ok()?)?,
         )?
         .checked_add(mcp::mcp_worst_case(&settings.mcp)?.checked_sub(u64::try_from(size_of::<mcp::Server>()).ok()?)?)?
-        .checked_add(List::<mcp::Up>::worst_case(u32::from(settings.mcp.calls))?)?
+        // Correlation moves payloads, with old/new MCP event slot arrays
+        // briefly coexisting while the held queue is rebuilt.
+        .checked_add(List::<mcp::Up>::worst_case(u32::from(settings.mcp.calls))?.checked_mul(2)?)?
         .checked_add(u64::from(settings.mcp.message_bytes).checked_mul(u64::from(settings.mcp.calls))?)?
         // Held neutral prompt and the instructions Store's system-text copy.
         // Tool/schema inventories are already in the MCP bound, user encoding
@@ -168,18 +222,28 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         // The sanitizer's List becomes that terminal Box without a fourth copy;
         // the status command's capture/scratch is in command_worst_case.
         .checked_add(u64::from(settings.receiving.max_failure_bytes).checked_mul(3)?)?
-        // Input encoding precedes the child and stream collection. The JSON
-        // encoder's body and the newline copy overlap; the larger workspace
-        // is reserved once, beside the prepared input and raw stdout line.
-        .checked_add(
-            stream::worst_case(settings.line_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
-                .max(skein_json::writer::worst_case(&skein_json::writer::Limits {
-                    depth: 8,
-                    length: settings.input_bytes,
-                })?),
-        )?
-        .checked_add(u64::from(settings.line_bytes))?
+        .checked_add(workspace)?
+        // The old stdout accumulator and its replacement coexist at a line
+        // boundary. Collection/intake/encoding are in stream::worst_case.
+        // Input has its independent ceiling: the encoder body and newline
+        // copy coexist, then one prepared line remains during chunked writes.
+        // Native writer retention belongs to the service's two writer terms.
+        .checked_add(u64::from(settings.line_bytes).checked_mul(2)?)?
         .checked_add(u64::from(settings.input_bytes))?
+        // MCP correlation retains at most five messages' provider fields and
+        // one rendered reply per ledger slot. Rebuilding moves payloads but
+        // briefly owns both old and new slot allocations.
+        .checked_add(
+            List::<calls::Call>::worst_case(settings.receiving.max_completion_blocks.checked_mul(5)?)?
+                .checked_mul(2)?,
+        )?
+        .checked_add(u64::from(settings.adapter.client.answer).checked_mul(5)?)?
+        .checked_add(
+            u64::from(settings.adapter.rendered_result)
+                .checked_mul(u64::from(settings.receiving.max_completion_blocks).checked_mul(5)?)?,
+        )?
+        .checked_add(Queue::<llm::Completion>::worst_case(4)?)?
+        .checked_add(1024)? // retained API message ID
         .checked_add(4096)? // a failed Store's bounded temporary leaf
         .checked_add(Queue::<io::Request>::worst_case(32)?)?
         .checked_add(Queue::<Below>::worst_case(32)?)
@@ -192,6 +256,8 @@ impl Backend {
         let failure_bytes = settings.receiving.max_failure_bytes;
         let line = List::with_capacity(settings.line_bytes);
         let calls = List::with_capacity(u32::from(settings.mcp.calls));
+        let turns = turns::Turns::new(&settings.receiving, settings.adapter.client.answer);
+        let ledger = List::with_capacity(settings.receiving.max_completion_blocks.checked_mul(5).expect("call ledger"));
         Self {
             first,
             settings,
@@ -199,6 +265,7 @@ impl Backend {
             grant: None,
             phase: Phase::Idle,
             owner: None,
+            pending_failure: None,
             request: None,
             check: None,
             server: None,
@@ -212,9 +279,12 @@ impl Backend {
             exit: None,
             deadline: None,
             stopping: 0,
+            response_phase: llm::Phase::Head,
             line,
             stdout_demanding: false,
             calls,
+            ledger,
+            turns,
             stderr: List::with_capacity(failure_bytes),
             tail: 0,
             io: Queue::with_capacity(32),
@@ -296,7 +366,24 @@ impl Backend {
         below: &mut Queue<Below>,
     ) {
         match request {
-            request @ FromDomain::Complete { .. } => self.start(env, request, up, below),
+            request @ FromDomain::Complete { owner, .. } => {
+                if let Some((failure, detail)) = self.pending_failure.take() {
+                    up.push(ToDomain::Failed {
+                        owner,
+                        failure,
+                        evidence: llm::Evidence::Unknown,
+                        detail,
+                        report: llm::Report::none(),
+                    });
+                    return;
+                }
+                match self.phase {
+                    Phase::Running => self.resume(env, request, up, below),
+                    Phase::Idle | Phase::Checking | Phase::Starting | Phase::Ending | Phase::Ended => {
+                        self.start(env, request, up, below);
+                    }
+                }
+            }
             FromDomain::Cancel { owner } => {
                 if self.owner == Some(owner) {
                     if let Some(child) = self.child {
@@ -354,7 +441,14 @@ impl Backend {
                     below,
                 ),
                 Phase::Ending => self.terminate(env.now),
-                Phase::Idle | Phase::Checking | Phase::Running | Phase::Ended => {}
+                Phase::Running => {
+                    let phase = match &self.request {
+                        Some(FromDomain::Complete { deadlines, .. }) if env.now >= deadlines.whole => llm::Phase::Whole,
+                        Some(FromDomain::Complete { .. } | FromDomain::Cancel { .. }) | None => self.response_phase,
+                    };
+                    self.fail(env, llm::Failure::TimedOut { phase }, b"smith: program completion deadline", up, below);
+                }
+                Phase::Idle | Phase::Checking | Phase::Ended => {}
             }
         }
         self.progress(env, up, below);
@@ -409,6 +503,52 @@ impl Backend {
         earliest
     }
 
+    /// Reply to finish from its own settled domain result, keyed by provider ID (5.5).
+    /// Other calls keep their ordinary Complete path; unjudged calls fail at close.
+    pub fn settled(&mut self, messages: &[smith_domain::session::llm::Message], below: &mut Queue<Below>) {
+        use smith_domain::session::llm::{Block, Returned};
+        for message in messages {
+            for block in &message.content {
+                match block {
+                    Block::ToolResult { id, result } => {
+                        for index in 0..self.ledger.len() {
+                            let call = self.ledger.get_mut(index).expect("ledger cell");
+                            if call.id == *id
+                                && call.name.as_ref() == b"finish"
+                                && !call.answered
+                                && call.answer.is_none()
+                            {
+                                call.answer = Some(match result {
+                                    Returned::Text { text, error, .. }
+                                        if text.len()
+                                            <= usize::try_from(self.settings.adapter.rendered_result)
+                                                .expect("result ceiling") =>
+                                    {
+                                        if *error {
+                                            mcp::Answer::Error(text.clone())
+                                        } else {
+                                            mcp::Answer::Text(text.clone())
+                                        }
+                                    }
+                                    Returned::Text { .. }
+                                    | Returned::Owned { .. }
+                                    | Returned::Invalid { .. }
+                                    | Returned::NotRun { .. }
+                                    | Returned::Withdrawn => {
+                                        mcp::Answer::Error(b"smith: the program turn was cancelled".as_slice().into())
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolCall { .. } => {}
+                }
+            }
+        }
+        self.answer_calls();
+        self.flush(below);
+    }
+
     /// End the conversation, closing input before terminating at its grace (5.7).
     pub fn close(&mut self, env: &Env<protocol::ComponentLimits>, up: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
         match self.phase {
@@ -419,6 +559,7 @@ impl Backend {
         if let Some(owner) = self.owner.take() {
             up.push(ToDomain::Cancelled { owner });
         }
+        self.answer_calls();
         self.request = None;
         self.outgoing = None;
         self.deadline = if self.child.is_some() || self.spawning {
@@ -433,7 +574,10 @@ impl Backend {
         if let Some(check) = &mut self.check {
             check.fire(Time::from_nanos(u64::MAX), &mut self.io);
         }
-        if let Some(server) = &mut self.server {
+        if self.child.is_none()
+            && !self.spawning
+            && let Some(server) = &mut self.server
+        {
             server.close(&mut self.io);
         }
         self.progress(env, up, below);
@@ -467,8 +611,8 @@ impl Backend {
         up: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
     ) {
+        let detail = self.private_diagnostic(detail);
         if let Some(owner) = self.owner.take() {
-            let detail = self.private_diagnostic(detail);
             up.push(ToDomain::Failed {
                 owner,
                 failure,
@@ -476,6 +620,8 @@ impl Backend {
                 detail,
                 report: llm::Report::none(),
             });
+        } else if self.pending_failure.is_none() {
+            self.pending_failure = Some((failure, detail));
         }
         self.close(env, up, below);
     }

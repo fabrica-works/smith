@@ -1813,6 +1813,9 @@ fn domain_down(service: &mut Service) {
         {
             break;
         }
+        if program::wait_for_close(service) {
+            break;
+        }
         let request = match service.domain_requests.pop() {
             Some(request) => request,
             None => break,
@@ -1893,6 +1896,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             }
         }
         domain::Request::Turn { host_run: _, number, position: _, read, spent, opens_window, turn } => {
+            program::settled(service, &turn);
             live_step(service, crate::live::Action::End { turn: number });
             let token = service.next_send();
             if service
@@ -2458,6 +2462,7 @@ pub fn next_policy_deadline(service: &Service) -> Option<Time> {
 /// Whether another iteration can progress without waiting on the kernel.
 #[must_use]
 pub fn work_pending(service: &Service, now: Time) -> bool {
+    let domain_room = service.domain_requests.room() >= domain::max_out(&service.limits.domain);
     let takes = match &service.events {
         Some(events) => events.sinks.takes(),
         None => true,
@@ -2477,7 +2482,7 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
             None => false,
         }
         || match &service.domain {
-            Some(domain) => takes && (domain.is_ready() || domain.has_facts()),
+            Some(domain) => takes && (domain.has_facts() || (domain_room && domain.is_ready())),
             None => false,
         }
         || !service.completions.is_empty()
@@ -2487,8 +2492,8 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         || (!service.pending_messages.is_empty() && service.admitted.is_some())
         || (takes && !service.llm_events.is_empty())
         || !service.machine_events.is_empty()
-        || (takes && !service.domain_events.is_empty())
-        || (takes && !service.domain_requests.is_empty() && channel_takes(service))
+        || (takes && domain_room && !service.domain_events.is_empty())
+        || (takes && !service.domain_requests.is_empty() && channel_takes(service) && program::requests_ready(service))
         || !service.channel_below.is_empty()
         || program::pending(service)
         || !service.llm_below.is_empty()

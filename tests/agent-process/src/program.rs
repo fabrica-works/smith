@@ -17,6 +17,8 @@ pub enum Case {
     /// Start the signed-in fake with the approved program binding.
     #[default]
     Ordinary,
+    /// Let a scripted conversation reach its domain terminal.
+    Turns,
     /// The main endpoint does not select the configured program.
     Unbound,
     /// The programs directory could not be opened by the shell.
@@ -110,6 +112,17 @@ fn configuration(case: Case) -> smith_agent_service::Config {
             value: if case == Case::EarlyExit { b"1".as_slice().into() } else { b"0".as_slice().into() },
         },
     ];
+    // These worlds offer only a 128-byte report, no host tools or chat.
+    // Keep result receiving bounds small enough to exercise the program
+    // alongside the unchanged two-gigabyte test deployment.
+    config.limits.domain.run.run_bytes = config.limits.domain.run.run_bytes.min(4096);
+    config.limits.domain.run.outcome_bytes = config.limits.domain.run.outcome_bytes.min(4096);
+    config.limits.domain.run.answer_bytes = config.limits.domain.run.answer_bytes.min(4096);
+    config.limits.domain.run.check_tail = config.limits.domain.run.check_tail.min(256);
+    config.limits.domain.run.host_reply_bytes = config.limits.domain.run.host_reply_bytes.min(4096);
+    config.limits.domain.run.message_bytes = config.limits.domain.run.message_bytes.min(4096);
+    config.limits.domain.session.delegated_result_bytes =
+        smith_domain::feedback_worst_case(&config.limits.domain.run).expect("complete bounded feedback");
     config.limits.machine.env_bytes = 4096;
     config.environment = smith_protocol_machine::Environment::encode(&variables, &config.limits.machine)
         .expect("private test environment");
@@ -228,6 +241,7 @@ impl skein_world::Machine for Machine {
 
 struct Judge {
     cancel: Option<Time>,
+    wait_for_exit: bool,
 }
 
 impl Referee<Proc> for Judge {
@@ -242,7 +256,18 @@ impl Referee<Proc> for Judge {
             self.cancel = None;
         }
     }
-    fn observe(&mut self, _now: Time, _procs: &[Proc]) {}
+    fn observe(&mut self, _now: Time, procs: &[Proc]) {
+        if self.wait_for_exit
+            && let Proc::Parent(parent) = &procs[0]
+            && parent.peer.observed().iter().any(|frame| frame.kind == 0x0110)
+        {
+            for process in procs {
+                if let Proc::Fake(program) = process {
+                    assert!(program.exit().is_some(), "program exit precedes the host answer");
+                }
+            }
+        }
+    }
     fn next_deadline(&self) -> Option<Time> {
         self.cancel
     }
@@ -303,12 +328,20 @@ pub fn run(
     value: &smith_channel::GrantValue,
     refresh: Option<&smith_channel::GrantValue>,
 ) -> Run {
-    let (mut files, base) = fixture(story, login);
+    let mut story = story.clone();
+    if case != Case::Turns && story.turns.is_empty() {
+        story.turns.push(smith_fake_claude::Turn {
+            steps: vec![smith_fake_claude::Step::Hang],
+            end: smith_fake_claude::End::default(),
+        });
+    }
+    let (mut files, base) = fixture(&story, login);
     let root = files.open(base, b".", How::Directory).expect("parent root");
     let machine = Machine { files, base };
     let mut world =
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
-            cancel: Some(Time::ZERO.saturating_add(Duration::from_millis(50))),
+            wait_for_exit: case == Case::Turns,
+            cancel: if case == Case::Turns { None } else { Some(Time::ZERO.saturating_add(Duration::from_millis(50))) },
         })
         .with_machine(machine);
     let operations = smith_agent_service::program_operations(&configuration(case))

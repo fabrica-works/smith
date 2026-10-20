@@ -79,14 +79,18 @@ impl core::fmt::Debug for Below {
 impl Backend {
     pub(super) fn private_diagnostic(&self, bytes: &[u8]) -> Box<[u8]> {
         let mut bytes = super::diagnostic(bytes, self.settings.receiving.max_failure_bytes);
+        self.redact_private(&mut bytes);
+        bytes
+    }
+
+    pub(super) fn redact_private(&self, bytes: &mut [u8]) {
         let entropy: &[u8; 32] = self.names.mcp.expose().try_into().expect("MCP entropy");
         let secret = crate::mcp::secret_text(entropy);
         let instructions = self.run_path(b"instructions.md");
         let mcp = self.run_path(b"mcp.json");
         for pattern in [secret.as_slice(), instructions.as_ref(), mcp.as_ref(), self.names.run.as_slice()] {
-            redact(&mut bytes, pattern);
+            redact(bytes, pattern);
         }
-        bytes
     }
 }
 

@@ -130,6 +130,13 @@ impl Backend {
         self.checked(env, up, below);
         self.server_events(env, up, below);
         if self.phase == Phase::Ending
+            && self.child.is_none()
+            && !self.spawning
+            && let Some(server) = &mut self.server
+        {
+            server.close(&mut self.io);
+        }
+        if self.phase == Phase::Ending
             && self.check.is_none()
             && !self.spawning
             && self.child.is_none()
@@ -204,6 +211,7 @@ impl Backend {
                 ),
                 Some(call @ mcp::Up::Call { .. }) => {
                     self.calls.push(call).expect("server bounds admitted calls");
+                    self.match_calls();
                 }
                 Some(mcp::Up::Ended(_)) => {
                     self.server_ended = true;
@@ -391,44 +399,54 @@ impl Backend {
                     Self::demand(owner, 4096, &mut self.io);
                 } else {
                     self.stdout_demanding = false;
-                    if self.phase == Phase::Starting {
-                        for byte in bytes {
-                            if byte == b'\n' {
-                                if super::stream::init(
-                                    self.line.as_slice(),
-                                    &self.tools(),
-                                    self.settings.adapter.client.depth,
-                                    self.settings.adapter.client.tokens,
-                                ) {
-                                    self.phase = Phase::Running;
-                                    self.deadline = None;
-                                } else {
+                    self.completion_deadline(env, false);
+                    for byte in bytes {
+                        match self.phase {
+                            Phase::Starting | Phase::Running => {
+                                if byte == b'\n' {
+                                    let line = core::mem::replace(
+                                        &mut self.line,
+                                        List::with_capacity(self.settings.line_bytes),
+                                    );
+                                    if self.phase == Phase::Starting {
+                                        if super::stream::init(
+                                            line.as_slice(),
+                                            &self.tools(),
+                                            self.settings.adapter.client.depth,
+                                            self.settings.adapter.client.tokens,
+                                        ) {
+                                            self.phase = Phase::Running;
+                                            self.completion_deadline(env, true);
+                                        } else {
+                                            self.fail(
+                                                env,
+                                                llm::Failure::Program { exit: None },
+                                                b"smith: the program started without smith's tools",
+                                                up,
+                                                below,
+                                            );
+                                        }
+                                    } else {
+                                        self.line(env, line.as_slice(), up, below);
+                                    }
+                                } else if self.line.push(byte).is_err() {
                                     self.fail(
                                         env,
-                                        llm::Failure::Program { exit: None },
-                                        b"smith: the program started without smith's tools",
+                                        llm::Failure::Program { exit: self.exit },
+                                        b"smith: the program stream exceeds its line bound",
                                         up,
                                         below,
                                     );
                                 }
-                                self.line.clear();
-                                break;
                             }
-                            if self.line.push(byte).is_err() {
-                                self.fail(
-                                    env,
-                                    llm::Failure::Program { exit: None },
-                                    b"smith: the program stream exceeds its line bound",
-                                    up,
-                                    below,
-                                );
-                                break;
-                            }
+                            Phase::Idle | Phase::Checking | Phase::Ending | Phase::Ended => {}
                         }
                     }
-                    if self.phase == Phase::Starting || self.phase == Phase::Ending {
-                        self.read_stdout();
+                    // The same read can finish init and start a response line.
+                    if !self.line.is_empty() {
+                        self.completion_deadline(env, false);
                     }
+                    self.read_stdout();
                 }
             }
             io::Event::Stream { owner, up: stream::Up::End | stream::Up::Failed(_) } => {
@@ -439,6 +457,16 @@ impl Backend {
                 if self.phase != Phase::Ending {
                     match outcome {
                         stream::OutputOutcome::Granted => {
+                            if self.exit.is_some() || self.pipes[0].is_none() {
+                                self.fail(
+                                    env,
+                                    llm::Failure::Program { exit: self.exit },
+                                    b"smith: the program input closed",
+                                    up,
+                                    below,
+                                );
+                                return;
+                            }
                             if let Some(bytes) = &self.outgoing {
                                 let start = usize::try_from(self.written).expect("input cursor");
                                 let end = start.checked_add(4096).expect("input chunk").min(bytes.len());

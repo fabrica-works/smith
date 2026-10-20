@@ -1,0 +1,131 @@
+#![expect(
+    clippy::disallowed_macros,
+    clippy::disallowed_methods,
+    reason = "ordinary Rust step harness, programming-model.md 10.2"
+)]
+use super::{stream, turns::Turns};
+use serde_json::{Value, json};
+use smith_protocol_llm::Receiving;
+
+fn turns() -> Turns {
+    Turns::new(
+        &Receiving {
+            max_completion_bytes: 4096,
+            max_completion_blocks: 8,
+            decoded_call_bytes: 4096,
+            max_failure_bytes: 256,
+        },
+        4096,
+    )
+}
+fn feed(turns: &mut Turns, value: Value) -> Option<()> {
+    let bytes = serde_json::to_vec(&value).expect("bounded test fixture");
+    let doc = stream::collect(&bytes, 32, 256).expect("bounded test fixture");
+    match value["type"].as_str().expect("bounded test fixture") {
+        "assistant" => turns.assistant(&doc, 4096).map(|_| ()),
+        "stream_event" => turns.event(&doc, crate::mcp::json::field(&doc, 0, b"event").expect("bounded test fixture")),
+        _ => unreachable!(),
+    }
+}
+fn partial(kind: &str) -> Value {
+    json!({"type":"stream_event","event":{"type":kind,"index":0,"message":{"id":"m"}}})
+}
+fn assistant(content: Value) -> Value {
+    json!({"type":"assistant","message":{"id":"m","content":content,"usage":{"input_tokens":13,"output_tokens":7}}})
+}
+fn call() -> Value {
+    json!({"type":"tool_use","id":"t","name":"mcp__smith__finish","input":{"form":"report","text":"done","fields":{}}})
+}
+
+#[test]
+fn a_partial_first_message_waits_for_its_content() {
+    let mut turns = turns();
+    for kind in ["message_start", "content_block_start", "message_stop"] {
+        feed(&mut turns, partial(kind)).expect("bounded test fixture");
+    }
+    assert_eq!(turns.ready.len(), 0);
+    feed(&mut turns, assistant(json!([call()]))).expect("bounded test fixture");
+    let completion = turns.ready.pop().expect("bounded test fixture");
+    assert_eq!(completion.usage.input_tokens, Some(13));
+    assert_eq!(completion.content.len(), 1);
+}
+#[test]
+fn full_content_waits_for_the_stop() {
+    let mut turns = turns();
+    feed(&mut turns, partial("message_start")).expect("bounded test fixture");
+    feed(&mut turns, partial("content_block_start")).expect("bounded test fixture");
+    feed(&mut turns, assistant(json!([call()]))).expect("bounded test fixture");
+    assert_eq!(turns.ready.len(), 0);
+    feed(&mut turns, partial("message_stop")).expect("bounded test fixture");
+    assert_eq!(turns.ready.len(), 1);
+}
+#[test]
+fn split_full_content_fills_all_started_blocks() {
+    let mut turns = turns();
+    feed(&mut turns, partial("message_start")).expect("bounded test fixture");
+    feed(&mut turns, partial("content_block_start")).expect("bounded test fixture");
+    let mut second = partial("content_block_start");
+    second["event"]["index"] = json!(1_u32);
+    feed(&mut turns, second).expect("bounded test fixture");
+    feed(&mut turns, partial("message_stop")).expect("bounded test fixture");
+    feed(&mut turns, assistant(json!([{"type":"text","text":"first"}]))).expect("bounded test fixture");
+    assert_eq!(turns.ready.len(), 0);
+    feed(&mut turns, assistant(json!([call()]))).expect("bounded test fixture");
+    assert_eq!(turns.ready.pop().expect("bounded test fixture").content.len(), 2);
+}
+#[test]
+fn an_unframed_assistant_is_complete_on_receipt() {
+    let mut turns = turns();
+    feed(&mut turns, assistant(json!([call()]))).expect("bounded test fixture");
+    assert_eq!(turns.ready.len(), 1);
+}
+#[test]
+fn a_fifth_waiting_completion_is_refused() {
+    let mut turns = turns();
+    for _ in 0_u32..4 {
+        feed(&mut turns, assistant(json!([call()]))).expect("bounded test fixture");
+    }
+    assert!(feed(&mut turns, assistant(json!([call()]))).is_none());
+    assert_eq!(turns.ready.len(), 4);
+}
+
+#[test]
+fn consecutive_unframed_texts_have_distinct_completions() {
+    let mut turns = turns();
+    feed(&mut turns, assistant(json!([{"type":"text","text":"one"}]))).expect("first atomic message");
+    let mut next = assistant(json!([{"type":"text","text":"two"}]));
+    next["message"]["id"] = json!("second");
+    feed(&mut turns, next).expect("next atomic message");
+    assert_eq!(turns.ready.len(), 1);
+    turns.close(true).expect("turn result");
+    assert_eq!(turns.ready.len(), 2);
+}
+#[test]
+fn structured_output_completes_the_pending_text_message() {
+    let mut turns = turns();
+    feed(&mut turns, assistant(json!([{"type":"text","text":"one"}]))).expect("atomic text");
+    turns.structured(br#"{"form":"report","text":"done","fields":{}}"#.as_slice().into()).expect("synthetic finish");
+    let completion = turns.ready.pop().expect("one message");
+    assert_eq!(completion.content.len(), 2);
+    assert_eq!(completion.usage.input_tokens, Some(13));
+    assert!(turns.ready.is_empty());
+}
+
+#[test]
+fn ignored_thinking_still_fills_its_started_block() {
+    let mut turns = turns();
+    feed(&mut turns, partial("message_start")).expect("start");
+    feed(&mut turns, partial("content_block_start")).expect("thinking start");
+    let mut next = partial("content_block_start");
+    next["event"]["index"] = json!(1_u32);
+    feed(&mut turns, next).expect("tool start");
+    feed(&mut turns, partial("message_stop")).expect("stop");
+    feed(
+        &mut turns,
+        assistant(json!([{"type":"thinking","thinking":"private reasoning","signature":"opaque"},call()])),
+    )
+    .expect("all blocks arrive");
+    let completion = turns.ready.pop().expect("closed message");
+    assert_eq!(completion.content.len(), 1);
+    assert_eq!(completion.usage.input_tokens, Some(13));
+}

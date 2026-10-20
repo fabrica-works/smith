@@ -351,8 +351,12 @@ impl Print {
                 }
                 effects.extend(self.finish(value));
             }
-            End::Error { api_error_status, terminal_reason, errors } => {
-                effects.extend(self.finish(stream::failure(api_error_status, terminal_reason, errors)))
+            End::Error { api_error_status, terminal_reason, errors, resets_at } => {
+                let mut value = stream::failure(api_error_status, terminal_reason, errors);
+                if let Some(reset) = resets_at {
+                    value["rate_limit_info"] = json!({"resetsAt":reset});
+                }
+                effects.extend(self.finish(value))
             }
             End::Exit(code) => effects.push(Effect::End(code)),
             End::Undecodable => effects.extend([Effect::Output(b"not json\n".to_vec()), Effect::End(1)]),
@@ -386,7 +390,22 @@ impl Print {
         };
         self.pending = Some(ToolCall { id, tool: if result.is_some() { tool } else { bare }, input, result });
         self.phase = Phase::Calling;
-        vec![self.emit(assistant), Effect::McpCall { tool: call, input: arguments }]
+        let mut effects = Vec::new();
+        if self.flags.values.contains_key("--include-partial-messages") {
+            let message = &assistant["message"];
+            for event in [
+                json!({"type":"message_start","message":{"id":message["id"],"role":"assistant","content":[]}}),
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":message["content"][0]["id"],"name":message["content"][0]["name"],"input":{}}}),
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":serde_json::to_string(&message["content"][0]["input"]).expect("tool input JSON")}}),
+                json!({"type":"content_block_stop","index":0}),
+                json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":stream::usage(&self.story.usage,1)}),
+                json!({"type":"message_stop"}),
+            ] {
+                effects.push(self.emit(json!({"type":"stream_event","event":event})));
+            }
+        }
+        effects.extend([self.emit(assistant), Effect::McpCall { tool: call, input: arguments }]);
+        effects
     }
 
     pub fn mcp(&mut self, notice: crate::mcp::Notice) -> Vec<Effect> {
