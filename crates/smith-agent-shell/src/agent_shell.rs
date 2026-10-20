@@ -308,15 +308,8 @@ impl Host for Agent {
             self.close(root);
         }
         service::iterate(&mut self.service, now, wall);
-        while let Some(destination) = self.service.pop_given_up() {
-            let name = match destination {
-                service::Destination::Trace => "trace file",
-                service::Destination::Output => "standard output events",
-            };
-            diagnostic(
-                self.errors.as_mut(),
-                &format!("event destination {name} was given up; later records count as lost"),
-            );
+        while let Some(given_up) = self.service.pop_given_up() {
+            diagnostic(self.errors.as_mut(), &given_up_line(given_up));
         }
         if let Some(overflow) = self.service.pop_accounting_overflow() {
             let line = match overflow {
@@ -410,6 +403,23 @@ fn read_configuration(path: &Path, errors: &mut dyn Write) -> Result<config::Con
     config::read(path).inspect_err(|why| diagnostic(errors, why))
 }
 
+/// The operator's line for one destination IO gave up, naming it and why in
+/// IO's terms; every shell prints it once per destination (protocol/events.md,
+/// section 5.2).
+#[must_use]
+pub fn given_up_line(given_up: service::GivenUp) -> String {
+    let name = match given_up.destination {
+        service::Destination::Trace => "trace file",
+        service::Destination::Output => "standard output events",
+    };
+    let why = match given_up.why {
+        service::Why::Behind => "it stayed behind past the write deadline",
+        service::Why::ReaderGone => "its reader went away",
+        service::Why::WriteFailed => "a write failed",
+    };
+    format!("event destination {name} was given up: {why}; later records count as lost")
+}
+
 fn diagnostic(errors: &mut dyn Write, line: &str) {
     // Diagnostics are best effort, as trace records are; a broken operator
     // output cannot prevent the channel's answer or its lower settlement.
@@ -456,5 +466,37 @@ pub fn identity() -> smith_events::Agent {
         name: b"smith".as_slice().into(),
         version: env!("CARGO_PKG_VERSION").as_bytes().into(),
         build: env!("SMITH_BUILD").as_bytes().into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::given_up_line;
+    use smith_agent_service::{Destination, GivenUp, Why};
+
+    #[test]
+    fn the_given_up_line_names_the_destination_and_why() {
+        let cases = [
+            (
+                Destination::Trace,
+                Why::WriteFailed,
+                "event destination trace file was given up: a write failed; later records count as lost",
+            ),
+            (
+                Destination::Trace,
+                Why::Behind,
+                "event destination trace file was given up: it stayed behind past the write deadline; \
+                 later records count as lost",
+            ),
+            (
+                Destination::Output,
+                Why::ReaderGone,
+                "event destination standard output events was given up: its reader went away; \
+                 later records count as lost",
+            ),
+        ];
+        for (destination, why, line) in cases {
+            assert_eq!(given_up_line(GivenUp { destination, why }), line);
+        }
     }
 }

@@ -1,4 +1,4 @@
-use super::{Capture, Delivery, Destination, Sinks, drain, golden, limits};
+use super::{Capture, DEADLINE, Delivery, Destination, Sinks, drain, golden, limits};
 use crate::sinks::View;
 use skein_lib::{List, Token};
 use smith_events::{Event, Record};
@@ -200,7 +200,7 @@ fn a_request_prompt_never_enters_the_live_view() {
 #[test]
 fn unshown_records_do_not_use_a_view_slot_or_count_as_lost() {
     let bounds = limits(0);
-    let mut sinks = Sinks::with_front(&bounds, Capture::None, 7, true);
+    let mut sinks = Sinks::with_front(&bounds, Capture::None, 7, DEADLINE, true);
     for _ in 0_u32..5 {
         sinks.record(&Record {
             t_ms: 0,
@@ -240,7 +240,7 @@ fn a_projected_request_keeps_its_original_full_capture_trace() {
     let mut record = request();
     let Event::ResponseStarted(started) = &mut record.event else { panic!("request fixture") };
     started.prompt.as_mut().unwrap().system = Some(vec![b'p'; 4096].into());
-    let mut sinks = Sinks::with_front(&bounds, Capture::Everything, 4096, true);
+    let mut sinks = Sinks::with_front(&bounds, Capture::Everything, 4096, DEADLINE, true);
     sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
     sinks.record(&record);
     let Some(View::Model { conversation, .. }) = sinks.pop_front() else { panic!("model projection") };

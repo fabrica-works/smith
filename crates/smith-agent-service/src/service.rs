@@ -317,7 +317,7 @@ impl Effects {
         component_down(service);
         teardown::advance(service);
         if let Some(events) = &mut service.events {
-            events.sinks.down(&mut service.io_requests);
+            events.sinks.down(service.io_env.now, &mut service.io_requests);
         }
         io_down(service);
         if let Some(io) = &mut service.io {
@@ -718,8 +718,9 @@ impl Service {
         }
     }
 
-    /// One destination abandoned by IO, for the shell's operator line.
-    pub fn pop_given_up(&mut self) -> Option<crate::sinks::Destination> {
+    /// One destination IO gave up, and why, for the shell's operator line
+    /// (protocol/events.md, section 5.2).
+    pub fn pop_given_up(&mut self) -> Option<crate::sinks::GivenUp> {
         match &mut self.events {
             Some(events) => events.sinks.pop_given_up(),
             None => None,
@@ -954,7 +955,7 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     component_down(service);
     teardown::advance(service);
     if let Some(events) = &mut service.events {
-        events.sinks.down(&mut service.io_requests);
+        events.sinks.down(service.io_env.now, &mut service.io_requests);
     }
     io_down(service);
     if let Some(io) = &mut service.io {
@@ -1189,7 +1190,7 @@ fn route_io_event(service: &mut Service, event: io::Event) {
     if let Some(events) = &mut service.events {
         match io_event_owner(&event) {
             Some(owner) if events.sinks.owns(owner) => {
-                events.sinks.up(event);
+                events.sinks.up(service.io_env.now, event);
                 return;
             }
             Some(_) | None => {}

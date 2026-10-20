@@ -1000,7 +1000,7 @@ impl ProcessAdapter {
             {
                 trace.measure(&mut self.io_requests);
             }
-            trace.producer.sinks().down(&mut self.io_requests);
+            trace.producer.sinks().down(now, &mut self.io_requests);
         }
         for _ in 0..requests.capacity() {
             if !self.output_room() || host_events.room() == 0 {

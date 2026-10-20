@@ -410,7 +410,7 @@ impl Spawned {
             | skein_io::Event::Closed { .. }
             | skein_io::Event::Resized
             | skein_io::Event::Window { .. }
-            | skein_io::Event::Shutdown { .. }) => self.producer.sinks().up(other),
+            | skein_io::Event::Shutdown { .. }) => self.producer.sinks().up(now, other),
         }
     }
 }

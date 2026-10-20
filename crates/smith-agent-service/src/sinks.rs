@@ -1,7 +1,8 @@
 //! Bounded event destinations, sharing records and retaining independent delivery state.
-//! Each stream keeps its queued lines, byte credit and abandonment notification.
-//! No provider syntax or credential is known here. `record` accepts typed records;
-//! `up` and `down` meet Skein IO, and `pop_given_up` supplies the shell diagnostic.
+//! Each stream keeps its queued lines, byte credit, outstanding send time and, once
+//! IO gives it up, why. No provider syntax or credential is known here. `record`
+//! accepts typed records; `up` and `down` meet Skein IO at the owner's clock, and
+//! `pop_given_up` supplies the shell diagnostic.
 //! Contracts: protocol/events.md, sections 5.1–5.3; protocol/agent.md, sections 5–6.
 
 #![expect(clippy::manual_let_else, reason = "bounded production entrances use explicit matches")]
@@ -22,6 +23,26 @@ pub enum Destination {
     Trace,
     /// The product's standard output stream.
     Output,
+}
+
+/// Why IO gave a destination up, in IO's terms (protocol/events.md, section 5.2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Why {
+    /// It stayed behind past the write deadline, as the sink's own clock tells.
+    Behind,
+    /// Its reader went away: IO reported the stream reset.
+    ReaderGone,
+    /// A write failed for a reason IO does not name further.
+    WriteFailed,
+}
+
+/// One destination IO gave up, and why, for the shell's line on standard error.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GivenUp {
+    /// The destination given up; it gets nothing more.
+    pub destination: Destination,
+    /// Why IO gave it up.
+    pub why: Why,
 }
 
 /// One destination's delivery policy, supplied by its owner at adoption.
@@ -141,6 +162,8 @@ enum Stream {
     Closing,
     /// IO abandoned the destination and owes its Closed terminal.
     GivenUp,
+    /// The owner aborted the stream at teardown; it owes Closed and gives nothing up.
+    Aborted,
     /// IO's descriptor terminal was received.
     Closed,
 }
@@ -154,10 +177,14 @@ struct Writer {
     lines: Queue<Line>,
     active: Option<Line>,
     pending: Option<Pending>,
+    /// When the outstanding Send left, from which IO's write deadline runs;
+    /// none once Room proves it drained.
+    sent: Option<Time>,
     held: u32,
     loss: u64,
     abandoned: bool,
-    notify: bool,
+    /// Why IO gave the destination up, until the shell takes its line.
+    given_up: Option<Why>,
     ended: bool,
 }
 
@@ -174,6 +201,8 @@ pub struct Sinks {
     ordinary: u32,
     /// IO's actual output cap: a full-credit grant proves the previous chunk drained.
     io_output: u32,
+    /// The write deadline IO keeps on each destination; past it a failed one was behind.
+    write_deadline: Duration,
     counts: [u64; TYPES],
     ended: bool,
     front: Option<Queue<View>>,
@@ -187,9 +216,10 @@ const AUTHORITATIVE: u32 = 4;
 const LINE_SLOTS: u32 = 6;
 
 impl Sinks {
-    /// Construct the destinations with a checked bound and the actual adopted IO output cap.
+    /// Construct the destinations with a checked bound, the actual adopted IO output cap,
+    /// and the write deadline IO keeps on each destination.
     #[must_use]
-    pub fn new(limits: &SinkLimits, capture: Capture, io_output: u32) -> Sinks {
+    pub fn new(limits: &SinkLimits, capture: Capture, io_output: u32, write_deadline: Duration) -> Sinks {
         assert!(sinks_worst_case(limits, capture).is_some(), "startup checked the sink's ownership bound");
         let line = limits.line_ceiling(capture).expect("startup checked the produced record bound");
         assert!(io_output > 0, "a destination can send at least one byte");
@@ -203,6 +233,7 @@ impl Sinks {
             reserve: authoritative_credit(limits, capture).expect("startup checked authoritative credit"),
             ordinary: ordinary_credit(limits, capture).expect("startup checked one observation or two fact records"),
             io_output,
+            write_deadline,
             counts: [0; TYPES],
             ended: false,
             front: None,
@@ -210,8 +241,14 @@ impl Sinks {
         }
     }
 
-    pub(crate) fn with_front(limits: &SinkLimits, capture: Capture, io_output: u32, front: bool) -> Self {
-        let mut sinks = Self::new(limits, capture, io_output);
+    pub(crate) fn with_front(
+        limits: &SinkLimits,
+        capture: Capture,
+        io_output: u32,
+        write_deadline: Duration,
+        front: bool,
+    ) -> Self {
+        let mut sinks = Self::new(limits, capture, io_output, write_deadline);
         if front {
             sinks.front = Some(Queue::with_capacity(FRONT_RECORDS));
         }
@@ -260,10 +297,11 @@ impl Sinks {
                 lines: Queue::with_capacity(LINE_SLOTS),
                 active: None,
                 pending: None,
+                sent: None,
                 held: 0,
                 loss: 0,
                 abandoned: false,
-                notify: false,
+                given_up: None,
                 ended: false,
             })
             .expect("destination room checked");
@@ -291,7 +329,12 @@ impl Sinks {
         for writer in &self.writers {
             match writer.stream {
                 Stream::Closed => {}
-                Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp => {
+                Stream::Waiting
+                | Stream::Ready
+                | Stream::Demanding
+                | Stream::Closing
+                | Stream::GivenUp
+                | Stream::Aborted => {
                     open = open.checked_add(1).expect("bounded destinations");
                 }
             }
@@ -317,6 +360,7 @@ impl Sinks {
                 | Stream::Demanding
                 | Stream::Closing
                 | Stream::GivenUp
+                | Stream::Aborted
                 | Stream::Closed => {}
             }
         }
@@ -610,14 +654,17 @@ impl Sinks {
     }
 
     /// Abort each stream that still owes its terminal after the authoritative end.
-    /// Abort the remaining destination closes after the process terminal.
+    /// A teardown's abort is the end, not a failure: it gives no destination up
+    /// (protocol/events.md, section 5.2; protocol/agent.md, section 6).
     pub fn abort(&mut self, out: &mut Queue<io::Request>) {
         for index in 0..self.writers.len() {
             let writer = self.writers.get_mut(index).expect("bounded destinations");
             match writer.stream {
-                Stream::Closed => {}
+                Stream::Aborted | Stream::Closed => {}
                 Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp => {
-                    abandon(writer);
+                    writer.abandoned = true;
+                    discard(writer);
+                    writer.stream = Stream::Aborted;
                     out.push(io::Request::Abort { entity: writer.token });
                 }
             }
@@ -635,8 +682,8 @@ impl Sinks {
         false
     }
 
-    /// The destination's IO event, including the exact terminal after abandonment.
-    pub fn up(&mut self, event: io::Event) {
+    /// The destination's IO event at the owner's clock, including the exact terminal after abandonment.
+    pub fn up(&mut self, now: Time, event: io::Event) {
         let token = match &event {
             io::Event::Stream { owner, .. } | io::Event::Failed { owner, .. } | io::Event::Closed { owner } => *owner,
             io::Event::Listening { .. }
@@ -654,14 +701,15 @@ impl Sinks {
         for index in 0..self.writers.len() {
             let writer = self.writers.get_mut(index).expect("bounded destinations");
             if writer.token == token {
-                received(writer, event);
+                received(writer, event, now, self.write_deadline);
                 return;
             }
         }
     }
 
     /// Bounded demands, owning sends and closes, within the caller's output room.
-    pub fn down(&mut self, out: &mut Queue<io::Request>) {
+    /// Each send is stamped with the owner's clock, from which IO's write deadline runs.
+    pub fn down(&mut self, now: Time, out: &mut Queue<io::Request>) {
         for index in 0..self.writers.len() {
             if out.room() == 0 {
                 return;
@@ -685,7 +733,7 @@ impl Sinks {
                         writer.active = writer.lines.pop();
                     }
                     match writer.active.take() {
-                        Some(line) => send_chunk(writer, line, self.io_output, out),
+                        Some(line) => send_chunk(writer, line, self.io_output, now, out),
                         None if writer.ended => {
                             out.push(io::Request::Close { entity: writer.token });
                             writer.stream = Stream::Closing;
@@ -693,18 +741,18 @@ impl Sinks {
                         None => {}
                     }
                 }
-                Stream::Demanding | Stream::Closing | Stream::GivenUp | Stream::Closed => {}
+                Stream::Demanding | Stream::Closing | Stream::GivenUp | Stream::Aborted | Stream::Closed => {}
             }
         }
     }
 
-    /// One newly abandoned destination for the shell, exactly once.
-    pub fn pop_given_up(&mut self) -> Option<Destination> {
+    /// One destination IO gave up, and why, for the shell's line, exactly once;
+    /// a teardown's abort gives none up.
+    pub fn pop_given_up(&mut self) -> Option<GivenUp> {
         for index in 0..self.writers.len() {
             let writer = self.writers.get_mut(index).expect("bounded destinations");
-            if writer.notify {
-                writer.notify = false;
-                return Some(writer.destination);
+            if let Some(why) = writer.given_up.take() {
+                return Some(GivenUp { destination: writer.destination, why });
             }
         }
         None
@@ -716,7 +764,12 @@ impl Sinks {
         for writer in &self.writers {
             match writer.stream {
                 Stream::Closed => {}
-                Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp => {
+                Stream::Waiting
+                | Stream::Ready
+                | Stream::Demanding
+                | Stream::Closing
+                | Stream::GivenUp
+                | Stream::Aborted => {
                     return false;
                 }
             }
@@ -788,7 +841,7 @@ fn offer(writer: &mut Writer, bytes: Box<[u8]>, authoritative: bool, output: u32
     writer.lines.push(Line { bytes, sent: 0 });
 }
 
-fn send_chunk(writer: &mut Writer, mut line: Line, output: u32, out: &mut Queue<io::Request>) {
+fn send_chunk(writer: &mut Writer, mut line: Line, output: u32, now: Time, out: &mut Queue<io::Request>) {
     let length = u32::try_from(line.bytes.len()).expect("a line fits its checked byte bound");
     let remaining = length.checked_sub(line.sent).expect("sent offset stays within the record");
     let chunk = remaining.min(output);
@@ -810,31 +863,59 @@ fn send_chunk(writer: &mut Writer, mut line: Line, output: u32, out: &mut Queue<
         bytes
     };
     out.push(io::Request::Stream { stream: writer.token, down: stream::Down::Send(bytes) });
+    writer.sent = Some(now);
     writer.stream = Stream::Waiting;
 }
 
-fn received(writer: &mut Writer, event: io::Event) {
+fn received(writer: &mut Writer, event: io::Event, now: Time, deadline: Duration) {
     match event {
         io::Event::Stream { up, .. } => match up {
             stream::Up::Room => {
                 match writer.stream {
                     Stream::Demanding => {}
-                    Stream::Waiting | Stream::Ready | Stream::Closing | Stream::GivenUp | Stream::Closed => return,
+                    Stream::Waiting
+                    | Stream::Ready
+                    | Stream::Closing
+                    | Stream::GivenUp
+                    | Stream::Aborted
+                    | Stream::Closed => return,
                 }
                 if let Some(pending) = writer.pending.take() {
                     writer.held = writer.held.checked_sub(pending.bytes).expect("pending bytes retain credit");
                 }
+                writer.sent = None;
                 writer.stream = Stream::Ready;
             }
-            stream::Up::Failed(_) => abandon(writer),
+            stream::Up::Failed(fault) => {
+                let reset = match fault {
+                    stream::Fault::Reset => true,
+                    stream::Fault::Invalid | stream::Fault::Other => false,
+                };
+                let why = why(writer, now, deadline, reset);
+                abandon(writer, why);
+            }
             stream::Up::End => {}
             stream::Up::Bytes(_) => unreachable!("an append destination never requests input"),
         },
-        io::Event::Failed { .. } => abandon(writer),
+        io::Event::Failed { error, .. } => {
+            let reset = match error {
+                io::Error::Reset => true,
+                io::Error::Refused
+                | io::Error::Unreachable
+                | io::Error::TimedOut
+                | io::Error::Busy
+                | io::Error::Other => false,
+            };
+            let why = why(writer, now, deadline, reset);
+            abandon(writer, why);
+        }
         io::Event::Closed { .. } => {
             match writer.stream {
-                Stream::Closing | Stream::GivenUp | Stream::Closed => {}
-                Stream::Waiting | Stream::Ready | Stream::Demanding => abandon(writer),
+                Stream::Closing | Stream::GivenUp | Stream::Aborted | Stream::Closed => {}
+                Stream::Waiting | Stream::Ready | Stream::Demanding => {
+                    let why = why(writer, now, deadline, false);
+                    abandon(writer, why);
+                }
             }
             writer.stream = Stream::Closed;
         }
@@ -852,12 +933,31 @@ fn received(writer: &mut Writer, event: io::Event) {
     }
 }
 
-fn abandon(writer: &mut Writer) {
+/// Why IO failed a destination: a reset is its reader gone; any other failure
+/// at or past the outstanding send's write deadline, by this clock, is behind.
+fn why(writer: &Writer, now: Time, deadline: Duration, reset: bool) -> Why {
+    if reset {
+        return Why::ReaderGone;
+    }
+    match writer.sent {
+        Some(at) if now >= at.saturating_add(deadline) => Why::Behind,
+        Some(_) | None => Why::WriteFailed,
+    }
+}
+
+/// IO gave the destination up: it gets nothing more, and the shell names it once.
+fn abandon(writer: &mut Writer, why: Why) {
     if writer.abandoned {
         return;
     }
     writer.abandoned = true;
-    writer.notify = true;
+    writer.given_up = Some(why);
+    discard(writer);
+    writer.stream = Stream::GivenUp;
+}
+
+/// Drop what the destination still holds, counting each record as lost.
+fn discard(writer: &mut Writer) {
     if let Some(pending) = writer.pending.take()
         && pending.bytes > 0
     {
@@ -872,8 +972,8 @@ fn abandon(writer: &mut Writer) {
             None => break,
         }
     }
+    writer.sent = None;
     writer.held = 0;
-    writer.stream = Stream::GivenUp;
 }
 
 fn lost(writer: &mut Writer) {
@@ -1098,6 +1198,9 @@ pub(crate) mod tests {
 
     mod view;
 
+    /// The write deadline IO keeps on each test destination.
+    pub(crate) const DEADLINE: Duration = Duration::from_secs(30);
+
     pub(crate) fn limits(destinations: u32) -> SinkLimits {
         let records = smith_events::Limits { string: 64, content: 1024, items: 19 };
         let line = largest_line(&records, Capture::None, records.content, records.string).unwrap();
@@ -1119,7 +1222,7 @@ pub(crate) mod tests {
     fn the_live_view_drops_without_holding_a_none_capture_destination() {
         let limits = limits(1);
         let token = Token::new(400);
-        let mut sinks = Sinks::with_front(&limits, Capture::None, 7, true);
+        let mut sinks = Sinks::with_front(&limits, Capture::None, 7, DEADLINE, true);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         for number in 0..6 {
             sinks.record(&Record {
@@ -1160,7 +1263,7 @@ pub(crate) mod tests {
         limits.output = authoritative.checked_mul(4).unwrap().checked_add(line.checked_mul(2).unwrap()).unwrap();
         assert!(limits.output < line.checked_mul(6).unwrap(), "ordinary identities do not enter authoritative records");
         assert!(sinks_worst_case(&limits, Capture::Everything).is_some());
-        let mut sinks = Sinks::new(&limits, Capture::Everything, 1);
+        let mut sinks = Sinks::new(&limits, Capture::Everything, 1, DEADLINE);
         sinks.add(Destination::Trace, Token::new(1), Delivery::Complete).unwrap();
         assert!(sinks.takes(), "two ordinary records and every authoritative record have separate reserved credit");
     }
@@ -1188,7 +1291,7 @@ pub(crate) mod tests {
             limits.output =
                 largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string).unwrap() * 6;
             let token = Token::new(11);
-            let mut sinks = Sinks::new(&limits, capture, 7);
+            let mut sinks = Sinks::new(&limits, capture, 7, DEADLINE);
             sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
             let answer = crate::answer_record(
                 crate::AnswerMeta {
@@ -1269,7 +1372,7 @@ pub(crate) mod tests {
             for exit in [0, 1] {
                 let limits = limits(1);
                 let token = Token::new(11);
-                let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
+                let mut sinks = Sinks::new(&limits, Capture::None, limits.output, DEADLINE);
                 sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
                 sinks.record(&counted(1));
                 let ended = Ended {
@@ -1318,11 +1421,11 @@ pub(crate) mod tests {
         let count = u64::from(LINE_SLOTS).next_power_of_two();
         let limits = limits(2);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output, DEADLINE);
         sinks.add(Destination::Trace, token, Delivery::BestEffort).unwrap();
         sinks.add(Destination::Output, Token::new(12), Delivery::BestEffort).unwrap();
-        sinks.up(io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
-        sinks.up(io::Event::Closed { owner: Token::new(12) });
+        sinks.up(Time::ZERO, io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
+        sinks.up(Time::ZERO, io::Event::Closed { owner: Token::new(12) });
         for name in 0..count {
             sinks.record(&counted(name));
         }
@@ -1340,7 +1443,127 @@ pub(crate) mod tests {
         assert_eq!(end.emitted.iter().map(|entry| entry.count).sum::<u64>(), count + 1);
         assert_eq!(u64::try_from(records.len()).unwrap().checked_add(end.loss.events).unwrap(), count + 1);
         assert_eq!(sinks.writers.get(1).unwrap().loss, count + 1);
-        assert_eq!(sinks.pop_given_up(), Some(Destination::Output));
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Output, why: Why::WriteFailed }));
+        assert_eq!(sinks.pop_given_up(), None);
+        assert!(sinks.closed());
+    }
+
+    fn settled() -> Ended {
+        Ended { exit: 0, answered: true, aborted: false, teardown: None, usage: io::Measured::Unread, channel: None }
+    }
+
+    /// One trace destination with one counted record sent at `at` and not yet drained.
+    fn sending(at: Time) -> (Sinks, Token, Queue<io::Request>) {
+        let limits = limits(1);
+        let token = Token::new(11);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output, DEADLINE);
+        sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
+        let mut out = Queue::with_capacity(2);
+        sinks.record(&counted(1));
+        sinks.down(at, &mut out);
+        let Some(io::Request::Stream { down: stream::Down::Demand { .. }, .. }) = out.pop() else {
+            panic!("a full-credit demand")
+        };
+        grant(&mut sinks, token);
+        sinks.down(at, &mut out);
+        let Some(io::Request::Stream { down: stream::Down::Send(_), .. }) = out.pop() else { panic!("one send") };
+        (sinks, token, out)
+    }
+
+    #[test]
+    fn a_failed_write_mid_run_names_its_destination_and_why_once_and_later_records_count_lost() {
+        let at = Time::from_nanos(5_000_000_000);
+        let (mut sinks, token, mut out) = sending(at);
+        sinks.record(&counted(2));
+        sinks.up(at, io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::WriteFailed }));
+        assert_eq!(sinks.pop_given_up(), None, "the shell names a destination once");
+        assert_eq!(sinks.writers.get(0).unwrap().loss, 2, "the record in flight and the one queued");
+        sinks.record(&counted(3));
+        sinks.ended(at, Time::ZERO, &settled());
+        assert_eq!(sinks.writers.get(0).unwrap().loss, 4, "a given-up destination gets nothing more, its end too");
+        sinks.down(at, &mut out);
+        assert!(out.is_empty(), "nothing is tried there again");
+        sinks.up(at, io::Event::Closed { owner: token });
+        assert_eq!(sinks.pop_given_up(), None);
+        assert!(sinks.closed());
+    }
+
+    #[test]
+    fn a_destination_failed_at_its_write_deadline_was_behind_by_the_sinks_own_clock() {
+        let at = Time::from_nanos(5_000_000_000);
+        let due = at.saturating_add(DEADLINE);
+        let before = Time::from_nanos(due.as_nanos().checked_sub(1).unwrap());
+        for (now, why) in [(before, Why::WriteFailed), (due, Why::Behind)] {
+            let (mut sinks, token, _) = sending(at);
+            sinks.up(now, io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
+            assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why }));
+        }
+        let (mut sinks, token, mut out) = sending(at);
+        sinks.down(at, &mut out);
+        let Some(io::Request::Stream { down: stream::Down::Demand { .. }, .. }) = out.pop() else {
+            panic!("the demand that proves the send drained")
+        };
+        grant(&mut sinks, token);
+        sinks.down(due, &mut out);
+        assert!(out.is_empty(), "the drained send leaves nothing in flight");
+        sinks.up(due, io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
+        assert_eq!(
+            sinks.pop_given_up(),
+            Some(GivenUp { destination: Destination::Trace, why: Why::WriteFailed }),
+            "with no write outstanding, the deadline cannot have passed"
+        );
+    }
+
+    #[test]
+    fn a_reset_stream_says_its_reader_went_away() {
+        let at = Time::from_nanos(5_000_000_000);
+        let (mut sinks, token, _) = sending(at);
+        sinks.up(
+            at.saturating_add(DEADLINE),
+            io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Reset) },
+        );
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::ReaderGone }));
+        let (mut sinks, token, _) = sending(at);
+        sinks.up(at, io::Event::Failed { owner: token, error: io::Error::Reset });
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::ReaderGone }));
+    }
+
+    #[test]
+    fn a_teardowns_abort_gives_no_destination_up() {
+        let at = Time::from_nanos(5_000_000_000);
+        let (mut sinks, token, mut out) = sending(at);
+        sinks.record(&counted(2));
+        sinks.ended(at, Time::ZERO, &settled());
+        sinks.abort(&mut out);
+        let Some(io::Request::Abort { entity }) = out.pop() else { panic!("the abort") };
+        assert_eq!(entity, token);
+        assert!(out.is_empty());
+        sinks.abort(&mut out);
+        assert!(out.is_empty(), "a stream is aborted once");
+        assert_eq!(sinks.pop_given_up(), None, "the abort is the end, not a failure");
+        sinks.up(at, io::Event::Stream { owner: token, up: stream::Up::Room });
+        sinks.up(at, io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
+        sinks.up(at, io::Event::Failed { owner: token, error: io::Error::Other });
+        assert_eq!(sinks.pop_given_up(), None, "what follows the abort gives nothing up either");
+        assert!(!sinks.closed(), "the aborted stream still owes Closed");
+        sinks.down(at, &mut out);
+        assert!(out.is_empty(), "an aborted destination is never written again");
+        sinks.up(at, io::Event::Closed { owner: token });
+        assert_eq!(sinks.pop_given_up(), None);
+        assert!(sinks.closed());
+        assert_eq!(sinks.writers.get(0).unwrap().loss, 3, "what the abort cut off counts as lost");
+    }
+
+    #[test]
+    fn a_failure_already_named_before_the_abort_is_still_named_once() {
+        let at = Time::from_nanos(5_000_000_000);
+        let (mut sinks, token, mut out) = sending(at);
+        sinks.up(at, io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
+        sinks.abort(&mut out);
+        let Some(io::Request::Abort { .. }) = out.pop() else { panic!("the abort") };
+        sinks.up(at, io::Event::Closed { owner: token });
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::WriteFailed }));
         assert_eq!(sinks.pop_given_up(), None);
         assert!(sinks.closed());
     }
@@ -1354,7 +1577,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn grant(sinks: &mut Sinks, token: Token) {
-        sinks.up(io::Event::Stream { owner: token, up: stream::Up::Room });
+        sinks.up(Time::ZERO, io::Event::Stream { owner: token, up: stream::Up::Room });
     }
 
     pub(crate) fn drain(sinks: &mut Sinks, token: Token) -> Vec<Record> {
@@ -1370,7 +1593,7 @@ pub(crate) mod tests {
         let mut read = Vec::new();
         let mut reader = smith_events::Reader::with_ceiling(&sinks.limits.records, sinks.line).unwrap();
         for _ in 0_u32..10_000 {
-            sinks.down(&mut out);
+            sinks.down(Time::ZERO, &mut out);
             match out.pop() {
                 Some(io::Request::Stream { down: stream::Down::Demand { room, .. }, .. }) => {
                     assert_eq!(room, sinks.io_output);
@@ -1386,7 +1609,7 @@ pub(crate) mod tests {
                 }
                 Some(io::Request::Close { .. }) => {
                     reader.finish().unwrap();
-                    sinks.up(io::Event::Closed { owner: token });
+                    sinks.up(Time::ZERO, io::Event::Closed { owner: token });
                     return read;
                 }
                 None => {
@@ -1405,7 +1628,7 @@ pub(crate) mod tests {
         let count = u64::from(LINE_SLOTS).next_power_of_two();
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output, DEADLINE);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         let mut expected = Vec::new();
         let start = golden(include_bytes!("../../smith-events/golden/v4/session_started_none.jsonl"), &limits);
@@ -1439,7 +1662,7 @@ pub(crate) mod tests {
         let count = u64::from(LINE_SLOTS).next_power_of_two();
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output, DEADLINE);
         sinks.add(Destination::Trace, token, Delivery::BestEffort).unwrap();
         for name in 0..count {
             sinks.record(&counted(name));
@@ -1457,16 +1680,16 @@ pub(crate) mod tests {
     fn a_failed_stream_counts_queued_inflight_and_later_records_and_notifies_once() {
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, Capture::None, 1);
+        let mut sinks = Sinks::new(&limits, Capture::None, 1, DEADLINE);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         sinks.record(&counted(1));
         let mut out = Queue::with_capacity(2);
-        sinks.down(&mut out);
+        sinks.down(Time::ZERO, &mut out);
         let Some(io::Request::Stream { down: stream::Down::Demand { .. }, .. }) = out.pop() else {
             panic!("actual full-credit demand")
         };
         grant(&mut sinks, token);
-        sinks.down(&mut out);
+        sinks.down(Time::ZERO, &mut out);
         let Some(io::Request::Stream { down: stream::Down::Send(_), .. }) = out.pop() else {
             panic!("one owning send")
         };
@@ -1477,20 +1700,20 @@ pub(crate) mod tests {
             "prefixes keep the whole record credit"
         );
         sinks.record(&counted(2));
-        sinks.up(io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
-        assert_eq!(sinks.pop_given_up(), Some(Destination::Trace));
+        sinks.up(Time::ZERO, io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::WriteFailed }));
         assert_eq!(sinks.pop_given_up(), None);
         sinks.record(&counted(3));
         assert!(sinks.takes());
         assert_eq!(sinks.writers.get(0).unwrap().loss, 3);
-        sinks.up(io::Event::Failed { owner: token, error: io::Error::TimedOut });
+        sinks.up(Time::ZERO, io::Event::Failed { owner: token, error: io::Error::TimedOut });
         assert_eq!(sinks.pop_given_up(), None);
         assert!(!sinks.closed(), "the append descriptor still owes Closed");
-        sinks.up(io::Event::Closed { owner: token });
+        sinks.up(Time::ZERO, io::Event::Closed { owner: token });
         assert!(sinks.closed());
         sinks.record(&counted(4));
         assert_eq!(sinks.writers.get(0).unwrap().loss, 4);
-        sinks.down(&mut out);
+        sinks.down(Time::ZERO, &mut out);
         assert!(out.is_empty(), "an abandoned destination is never written again");
     }
 
@@ -1498,14 +1721,14 @@ pub(crate) mod tests {
     fn one_destination_failing_does_not_abandon_the_other() {
         let limits = limits(2);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output, DEADLINE);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         sinks.add(Destination::Output, Token::new(12), Delivery::Complete).unwrap();
         sinks.record(&counted(1));
-        sinks.up(io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
-        sinks.up(io::Event::Closed { owner: Token::new(12) });
+        sinks.up(Time::ZERO, io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
+        sinks.up(Time::ZERO, io::Event::Closed { owner: Token::new(12) });
         sinks.record(&counted(2));
-        assert_eq!(sinks.pop_given_up(), Some(Destination::Output));
+        assert_eq!(sinks.pop_given_up(), Some(GivenUp { destination: Destination::Output, why: Why::WriteFailed }));
         sinks.finish();
         assert_eq!(drain(&mut sinks, token), [counted(1), counted(2)]);
         assert_eq!(sinks.writers.get(0).unwrap().loss, 0);

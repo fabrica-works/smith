@@ -193,7 +193,13 @@ impl Producer {
     ) -> Producer {
         let events = limits.events.expect("event configuration exists");
         Producer {
-            sinks: Sinks::with_front(&events.sinks, events.capture, limits.io.output, events.front),
+            sinks: Sinks::with_front(
+                &events.sinks,
+                events.capture,
+                limits.io.output,
+                events.write_deadline,
+                events.front,
+            ),
             names,
             calls: crate::calls::Book::new(&limits.domain.session, events.capture),
             messages: crate::messages::Book::new(limits, events.capture),
@@ -655,7 +661,7 @@ mod tests {
             let destination = Token::new(400);
             let owner = Token::new(11);
             let mut producer = Producer {
-                sinks: Sinks::new(&bounds, Capture::Calls, bounds.output),
+                sinks: Sinks::new(&bounds, Capture::Calls, bounds.output, crate::sinks::tests::DEADLINE),
                 names: channel::Endpoints::new(List::with_capacity(0)),
                 calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session, Capture::Calls),
                 messages: crate::messages::Book::disabled(),

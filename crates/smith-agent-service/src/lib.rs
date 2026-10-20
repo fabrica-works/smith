@@ -37,7 +37,7 @@ pub use service::teardown::{Answer, Close, Step, Teardown};
 
 pub use events::EventLimits;
 
-pub use sinks::Destination;
+pub use sinks::{Destination, GivenUp, Why};
 
 pub use answers::{AnswerMeta, Answered, Last, accepted, answer_record, last};
 

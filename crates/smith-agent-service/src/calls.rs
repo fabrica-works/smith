@@ -512,7 +512,7 @@ mod tests {
     fn fixture(source: &session::Limits, capture: Capture) -> (Book, Sinks, Token, Token, session::ToolCall) {
         let book = Book::new(source, capture);
         let limits = crate::sinks::tests::limits(1);
-        let mut sinks = Sinks::new(&limits, capture, 7);
+        let mut sinks = Sinks::new(&limits, capture, 7, crate::sinks::tests::DEADLINE);
         let destination = Token::new(999);
         sinks.add(Destination::Trace, destination, Delivery::Complete).unwrap();
         grant(&mut sinks, destination);

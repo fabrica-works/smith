@@ -10,7 +10,7 @@ mod tests {
     )]
     use skein_heap::{Counting, Meter};
     use skein_io as io;
-    use skein_lib::{Queue, Token, stream};
+    use skein_lib::{Queue, Time, Token, stream};
     use smith_agent_service::sinks::{Capture, Delivery, Destination, SinkLimits, Sinks, sinks_worst_case};
     use smith_events::{Effect, Event, Record, Source, ToolStarted};
 
@@ -108,7 +108,7 @@ mod tests {
         let mut requests = Queue::with_capacity(2);
         let meter = Meter::new();
         meter.start();
-        let mut sinks = Sinks::new(&limits, Capture::Everything, 65536);
+        let mut sinks = Sinks::new(&limits, Capture::Everything, 65536, skein_lib::Duration::from_secs(30));
         sinks.add(Destination::Trace, token, Delivery::Complete).expect("actual trace destination");
         assert!(sinks.takes());
         sinks.record(&record);
@@ -119,19 +119,19 @@ mod tests {
         let mut sent = 0_usize;
         for _ in 0_u32..1000 {
             meter.start();
-            sinks.down(&mut requests);
+            sinks.down(Time::ZERO, &mut requests);
             let measured = meter.end();
             while let Some(request) = requests.pop() {
                 match request {
                     io::Request::Stream { stream: owner, down: stream::Down::Demand { room, .. } } => {
                         assert_eq!(room, 65536);
-                        sinks.up(io::Event::Stream { owner, up: stream::Up::Room });
+                        sinks.up(Time::ZERO, io::Event::Stream { owner, up: stream::Up::Room });
                     }
                     io::Request::Stream { stream: _, down: stream::Down::Send(bytes) } => {
                         assert!(bytes.len() <= 65536);
                         sent += bytes.len();
                     }
-                    io::Request::Close { entity } => sinks.up(io::Event::Closed { owner: entity }),
+                    io::Request::Close { entity } => sinks.up(Time::ZERO, io::Event::Closed { owner: entity }),
                     other => panic!("unexpected native writer request {other:?}"),
                 }
             }
@@ -185,7 +185,7 @@ mod tests {
         let mut requests = Queue::with_capacity(2);
         let meter = Meter::new();
         meter.start();
-        let mut sinks = Sinks::new(&limits, Capture::Everything, 4096);
+        let mut sinks = Sinks::new(&limits, Capture::Everything, 4096, skein_lib::Duration::from_secs(30));
         sinks.add(Destination::Trace, tokens[0], Delivery::Complete).expect("trace");
         sinks.add(Destination::Output, tokens[1], Delivery::Complete).expect("output");
         assert!(sinks.takes());
@@ -199,13 +199,13 @@ mod tests {
         let mut sent = [0_usize; 2];
         for _ in 0_u32..2000 {
             meter.start();
-            sinks.down(&mut requests);
+            sinks.down(Time::ZERO, &mut requests);
             let measured = meter.end();
             while let Some(request) = requests.pop() {
                 match request {
                     io::Request::Stream { stream: owner, down: stream::Down::Demand { room, .. } } => {
                         assert_eq!(room, 4096);
-                        sinks.up(io::Event::Stream { owner, up: stream::Up::Room });
+                        sinks.up(Time::ZERO, io::Event::Stream { owner, up: stream::Up::Room });
                     }
                     io::Request::Stream { stream: owner, down: stream::Down::Send(bytes) } => {
                         assert!(bytes.len() <= 4096);
@@ -213,7 +213,7 @@ mod tests {
                         sent[index] += bytes.len();
                         drop(bytes);
                     }
-                    io::Request::Close { entity } => sinks.up(io::Event::Closed { owner: entity }),
+                    io::Request::Close { entity } => sinks.up(Time::ZERO, io::Event::Closed { owner: entity }),
                     other => panic!("unexpected request {other:?}"),
                 }
             }
