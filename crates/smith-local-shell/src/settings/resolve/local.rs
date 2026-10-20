@@ -111,16 +111,14 @@ pub(super) fn build(
             endpoint.dialect,
             (account.source() != "none").then_some(account.number),
         ));
-        let declaration =
-            agent.declarations.endpoints.iter().find(|entry| entry.number == endpoint.number).expect("declaration");
-        allowances.push(
-            smith_agent_service::profile::endpoint_allowance(
-                &agent.profile,
-                declaration,
-                &agent.service.limits.domain.session.tools,
-            )
-            .map_err(|why| super::relationships::profile(settings, models, why))?,
-        );
+        let native = agent
+            .service
+            .domain
+            .models
+            .iter()
+            .find(|entry| entry.endpoint.0 == endpoint.number && entry.model == model.declared.name)
+            .expect("configured model");
+        allowances.push(native.protocol_allowance);
     }
     let efforts = models.iter().map(|model| model.declared.efforts.clone()).collect();
     configured.first_mut().expect("selected main model").effort =

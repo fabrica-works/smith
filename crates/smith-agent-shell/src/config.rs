@@ -407,6 +407,8 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
     }
     let mut models = Vec::new();
     for endpoint in &declarations.endpoints {
+        let protocol_allowance = service::profile::endpoint_allowance(&profile, endpoint, &limits.domain.session.tools)
+            .map_err(ConfigurationRefusal::Profile)?;
         for model in &endpoint.models {
             models.push(domain::ConfiguredModel {
                 prices: *prices.get(models.len()).expect("one resolved price per declared model"),
@@ -415,12 +417,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
                 efforts: model.efforts.clone(),
                 window: model.window,
                 output: model.output,
-                protocol_allowance: service::profile::endpoint_allowance(
-                    &profile,
-                    endpoint,
-                    &limits.domain.session.tools,
-                )
-                .map_err(ConfigurationRefusal::Profile)?,
+                protocol_allowance,
                 head: model.head,
                 idle: model.idle,
             });
