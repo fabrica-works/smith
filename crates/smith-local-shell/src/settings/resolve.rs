@@ -50,16 +50,16 @@ pub struct Resolved {
 
 /// Compose selected models through the native configuration and local policy owners.
 pub fn resolve(settings: &Settings, _command: &crate::command::Command) -> Result<Resolved, super::Refusal> {
-    build(settings, false).map(|(resolved, _document)| resolved)
+    build(select(settings)?, false).map(|(resolved, _document)| resolved)
 }
 
 /// Resolve startup once and return its generated agent document for a spawned child.
 pub fn resolve_startup(settings: &Settings) -> Result<(Resolved, Box<[u8]>), super::Refusal> {
-    build(settings, true)
+    build(select(settings)?, true)
 }
 
-fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), super::Refusal> {
-    let Selection { models: active, accounts, mut settings } = select(settings)?;
+pub(crate) fn build(selection: Selection, document: bool) -> Result<(Resolved, Box<[u8]>), super::Refusal> {
+    let Selection { models: active, accounts, mut settings } = selection;
     let models = models::resolve(&mut settings, &active)?;
     let mut outside_models = BTreeMap::new();
     let children = input::sourced(&settings, "sub_agents")?.value.as_bool().expect("decoded delegation");

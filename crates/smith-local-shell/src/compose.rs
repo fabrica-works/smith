@@ -104,7 +104,8 @@ fn open_mode(
     kind: &AgentKind,
 ) -> Result<(Opened, Kernel), Refused> {
     let settings = settings::read(&invocation.shared).map_err(Refused::Settings)?;
-    open_settings(invocation, wall, clock, interactive, kind, &settings)
+    let selection = settings::resolve::select(&settings).map_err(Refused::Settings)?;
+    open_settings(invocation, wall, clock, interactive, kind, selection)
 }
 
 fn open_settings(
@@ -113,22 +114,12 @@ fn open_settings(
     clock: &Clock,
     interactive: Option<bool>,
     kind: &AgentKind,
-    settings: &settings::Settings,
+    selection: settings::resolve::Selection,
 ) -> Result<(Opened, Kernel), Refused> {
-    let command = Command::Exec(invocation);
-    let (resolved, document) = match kind {
-        AgentKind::Inline => (settings::resolve::resolve(settings, &command).map_err(Refused::Settings)?, None),
-        AgentKind::Spawned { .. } => {
-            let (resolved, document) = settings::resolve::resolve_startup(settings).map_err(Refused::Settings)?;
-            (resolved, Some(document))
-        }
-    };
-    let mut invocation = match command {
-        Command::Exec(invocation) => invocation,
-        Command::Check { .. } | Command::Logout { .. } | Command::Login { .. } | Command::Interactive { .. } => {
-            unreachable!("one exec invocation")
-        }
-    };
+    let spawned = matches!(kind, AgentKind::Spawned { .. });
+    let (resolved, document) = settings::resolve::build(selection, spawned).map_err(Refused::Settings)?;
+    let document = spawned.then_some(document);
+    let mut invocation = invocation;
     let operations =
         crate::Local::kernel_operations(&resolved.agent.service.limits.io, resolved.agent.service.limits.routes, true)
             .ok_or_else(|| {
@@ -531,12 +522,10 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
         }
     };
     let result = settings::read(&invocation.shared).map_err(Refused::Settings).and_then(|settings| {
-        let kind = if program_account(&settings).map_err(Refused::Settings)? {
-            placement::beside_current_exe()?
-        } else {
-            AgentKind::Inline
-        };
-        let opened = open_settings(invocation, at.wall, clock, interactive, &kind, &settings)?;
+        let selection = settings::resolve::select(&settings).map_err(Refused::Settings)?;
+        let kind =
+            if program_account(&selection.accounts) { placement::beside_current_exe()? } else { AgentKind::Inline };
+        let opened = open_settings(invocation, at.wall, clock, interactive, &kind, selection)?;
         run_opened(opened, at, clock, &kind)
     });
     Some(match result {

@@ -254,7 +254,7 @@ pub fn render_text(report: &Report) -> String {
 }
 
 fn startup_agent(resolved: &mut settings::resolve::Resolved) -> Result<(), String> {
-    if crate::compose::program_account(&resolved.settings).map_err(|why| why.line())? {
+    if crate::compose::program_account(&resolved.accounts) {
         let host = crate::compose::host_limits(&resolved.agent, true)
             .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
         resolved.limits.agent = smith_local_domain::AgentLimits::Spawned(host);

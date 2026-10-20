@@ -99,7 +99,7 @@ mod tests {
         };
         let settings =
             crate::settings::from_sources(&crate::command::Shared::default(), "/synthetic".into(), &[source]).unwrap();
-        assert!(crate::compose::program_account(&settings).unwrap());
+        assert!(crate::compose::program_account(&crate::settings::resolve::select(&settings).unwrap().accounts));
         let (_, bytes) = crate::settings::resolve::resolve_startup(&settings).unwrap();
         for (close_ms, write_ms, teardown_seconds, grace_seconds) in [(5000, 30000, 40, 45), (2000, 11000, 15, 17)] {
             let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();

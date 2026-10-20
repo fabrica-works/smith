@@ -1,12 +1,11 @@
 //! Product placement from the main account; no credentials or child state are kept.
-//! `program_account` selects; the binary lookup opens no program (shell.md, section 9).
+//! `program_account` inspects the selection; the binary lookup opens no program (shell.md, section 9).
 use super::{AgentKind, Refused};
 use crate::{settings, startup};
 use std::path::Path;
 
-pub(crate) fn program_account(settings: &settings::Settings) -> Result<bool, settings::Refusal> {
-    let selected = settings::resolve::select(settings)?;
-    Ok(selected.accounts.first().expect("main account is selected first").source() == "program")
+pub(crate) fn program_account(accounts: &[settings::resolve::Account]) -> bool {
+    accounts.first().expect("main account is selected first").source() == "program"
 }
 
 /// Price the child's validated teardown before selecting the host's grace.
@@ -100,7 +99,9 @@ mod tests {
             )
             .unwrap_or_else(|why| panic!("{}", why.line()));
             assert_eq!(
-                program_account(&settings).unwrap_or_else(|why| panic!("{}", why.line())),
+                program_account(
+                    &settings::resolve::select(&settings).unwrap_or_else(|why| panic!("{}", why.line())).accounts
+                ),
                 spawned,
                 "source {source}"
             );
