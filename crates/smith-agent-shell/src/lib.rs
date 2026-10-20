@@ -6,6 +6,7 @@
 mod agent_shell;
 
 pub mod config;
+pub mod program;
 pub mod relay;
 pub mod trace;
 

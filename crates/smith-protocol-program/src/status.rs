@@ -7,6 +7,9 @@ use skein_lib::{Env, Intake, Queue, Time, Wall, stream};
 /// Status arguments sent by the host or agent, without argv[0].
 pub const STATUS: [&[u8]; 2] = [b"auth", b"status"];
 
+/// Sign-in arguments sent by a terminal caller, without argv[0].
+pub const SIGN_IN: [&[u8]; 2] = [b"auth", b"login"];
+
 /// Sign-out arguments sent by the host, without argv[0].
 pub const SIGN_OUT: [&[u8]; 2] = [b"auth", b"logout"];
 

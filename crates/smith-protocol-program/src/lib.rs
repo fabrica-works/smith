@@ -18,4 +18,4 @@ mod tests;
 
 pub use command::{Command, Ended, Launch, command_worst_case};
 pub use source::{Error, Programs, configuration_directory, environment, keeps};
-pub use status::{Method, SIGN_OUT, STATUS, STATUS_BYTES, SUBSCRIPTION, Status, status};
+pub use status::{Method, SIGN_IN, SIGN_OUT, STATUS, STATUS_BYTES, SUBSCRIPTION, Status, status};

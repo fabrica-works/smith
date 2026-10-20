@@ -823,6 +823,7 @@ dependencies = [
  "skein-lib",
  "skein-llm",
  "skein-llm-connection",
+ "skein-scratch",
  "skein-shell",
  "skein-tls",
  "skein-world",

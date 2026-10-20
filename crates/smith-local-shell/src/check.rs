@@ -500,6 +500,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "The fixture retains adapter names even while Claude Code is the sole adapter."
+    )]
     fn execution_fixture() -> settings::resolve::Resolved {
         let (mut local, service) =
             smith_local_process_world::process::configuration(skein_io::kernel::Fd::new(41), false);
@@ -512,6 +516,8 @@ mod tests {
         .expect("product inline fixture");
         settings::resolve::Resolved {
             agent: smith_agent_shell::config::Configuration {
+                programs: BTreeMap::new(),
+                endpoint_programs: BTreeMap::new(),
                 service,
                 memory: 8_589_934_592,
                 trace: None,

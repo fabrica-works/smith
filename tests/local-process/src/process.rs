@@ -726,6 +726,10 @@ pub fn agent_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
 }
 /// Construct the actual agent service with the local scenario's settings.
 #[must_use]
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "The fixture retains adapter names even while Claude Code is the sole adapter."
+)]
 pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = agent_launch(spawn);
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
@@ -755,6 +759,8 @@ pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     };
     let agent = smith_agent_shell::Agent::new(
         smith_agent_shell::config::Configuration {
+            programs: std::collections::BTreeMap::new(),
+            endpoint_programs: std::collections::BTreeMap::new(),
             service: configuration,
             memory: parsed.memory,
             trace,

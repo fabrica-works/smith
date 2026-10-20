@@ -30,6 +30,10 @@ fn descriptor(file: PathBuf) -> Source {
 fn wall() -> Wall {
     Wall::from_nanos(100_000_000_000)
 }
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "The fixture retains adapter names even while Claude Code is the sole adapter."
+)]
 fn resolved(files: &Files, needed_file: PathBuf) -> settings::resolve::Resolved {
     let (local, lower) = smith_local_process_world::process::configuration(skein_io::kernel::Fd::new(70), false);
     let mut values = BTreeMap::new();
@@ -55,6 +59,8 @@ fn resolved(files: &Files, needed_file: PathBuf) -> settings::resolve::Resolved 
         settings: settings::Settings { workspace: files.0.clone(), values },
         accounts: vec![Account { name: "codex".into(), number: 0, fields }],
         agent: smith_agent_shell::config::Configuration {
+            programs: BTreeMap::new(),
+            endpoint_programs: BTreeMap::new(),
             service: lower,
             memory: u64::MAX,
             trace: None,
