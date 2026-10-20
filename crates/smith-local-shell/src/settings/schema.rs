@@ -79,7 +79,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         | [
             "accounts",
             _,
-            "variable" | "program" | "file" | "client_id" | "scope" | "redirect_uri" | "authorization_url"
+            "variable" | "program" | "file" | "format" | "client_id" | "scope" | "redirect_uri" | "authorization_url"
             | "token_url" | "issuer" | "keys_url" | "revocation_url",
         ]
         | ["workspace", "conventions", "guide" | "checks"]
@@ -92,7 +92,6 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ["accounts", _, "redirect_port"] => Some(Kind::Integer(65535)),
         ["accounts", _, "source"] => Some(Kind::Choice(&["sign_in", "borrow", "env", "key", "program", "none"])),
         ["accounts", _, "token_format"] => Some(Kind::Choice(&["json", "form"])),
-        ["accounts", _, "format"] => Some(Kind::Choice(&["codex"])),
         ["deployment", "memory" | "llm_pool"] => Some(Kind::Integer(i64::MAX.unsigned_abs())),
         ["workspace", "directories"] => Some(Kind::Directories),
         ["workspace", "contract" | "delivery", "fields"] => Some(Kind::Fields),

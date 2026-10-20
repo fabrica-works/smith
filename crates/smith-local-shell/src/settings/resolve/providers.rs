@@ -15,6 +15,17 @@ pub(super) fn check(settings: &mut Settings) -> Result<(), super::super::Refusal
         let prefix = format!("accounts.{}.", super::super::name(name));
         let source = settings.values.get(&format!("{prefix}source")).and_then(|value| value.value.as_str());
         let provider = settings.values.get(&format!("{prefix}provider")).and_then(|value| value.value.as_str());
+        let withdrawn = ["file", "format", "program"]
+            .into_iter()
+            .find(|field| settings.values.contains_key(&format!("{prefix}{field}")))
+            .or_else(|| (source == Some("borrow")).then_some("source"));
+        if let Some(field) = withdrawn {
+            return Err(input::refuse(
+                settings,
+                &format!("{prefix}{field}"),
+                &format!("declare `provider = \"openai\"` and `source = \"sign_in\"`, then run `smith login {name}`"),
+            ));
+        }
         if source != Some("sign_in") {
             continue;
         }

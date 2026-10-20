@@ -135,8 +135,6 @@ pub enum CredentialFailure {
     Refresh,
     /// A borrowed access token is approaching expiry.
     BorrowedExpiring { at: Wall },
-    /// A borrowed access token has reached its expiry.
-    BorrowedExpired { at: Wall },
     /// The program's status says this account is signed out; no run starts.
     ProgramNotSignedIn,
     /// The program names another payment method; no run starts.

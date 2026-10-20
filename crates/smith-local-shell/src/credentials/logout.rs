@@ -32,10 +32,6 @@ pub(super) fn run(
             eprintln!("account {name}: smith holds nothing");
             Ok(LoginOutcome::Usable)
         }
-        Source::Borrow { .. } => {
-            eprintln!("account {name}: the login belongs to its program");
-            Ok(LoginOutcome::Unavailable)
-        }
     }
 }
 

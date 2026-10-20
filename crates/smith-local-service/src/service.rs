@@ -993,8 +993,7 @@ impl Service {
                 | local::CredentialFailure::ProgramSignedInOtherwise { .. }
                 | local::CredentialFailure::ProgramFailed(_)
                 | local::CredentialFailure::ProgramInterrupted
-                | local::CredentialFailure::BorrowedExpiring { .. }
-                | local::CredentialFailure::BorrowedExpired { .. } => true,
+                | local::CredentialFailure::BorrowedExpiring { .. } => true,
                 local::CredentialFailure::Missing | local::CredentialFailure::Refresh => match &self.accounts {
                     Some(accounts) => accounts.account_id(*account).is_some(),
                     None => false,

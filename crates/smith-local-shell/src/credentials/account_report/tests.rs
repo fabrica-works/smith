@@ -18,14 +18,11 @@ fn the_report_names_provider_source_number_place() {
         ("key", Some(json!({"kind":"file","at":files.0.join("keys/work")}))),
         ("env", Some(json!({"kind":"variable","at":"SMITH_REPORT_TEST_KEY"}))),
         ("program", Some(json!({"kind":"directory","at":files.0.join("programs/work")}))),
-        ("borrow", Some(json!({"kind":"file","at":files.0.join("borrowed")}))),
         ("none", None),
     ];
     for (source, kept) in rows {
         resolved.settings.values.retain(|key, _| !key.starts_with("accounts."));
-        for (field, value) in
-            [("provider", "anthropic"), ("source", source), ("variable", "SMITH_REPORT_TEST_KEY"), ("file", "borrowed")]
-        {
+        for (field, value) in [("provider", "anthropic"), ("source", source), ("variable", "SMITH_REPORT_TEST_KEY")] {
             resolved.settings.values.insert(
                 format!("accounts.work.{field}"),
                 Sourced { value: toml::Value::String(value.into()), origin: Origin::BuiltIn },

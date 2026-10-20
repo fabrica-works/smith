@@ -79,7 +79,7 @@ impl Accounts {
                     account.loading = false;
                     match &mut account.source {
                         Origin::SignIn { signing, .. } => *signing = false,
-                        Origin::Borrow { .. } | Origin::Env { .. } => unreachable!("sign-in terminal"),
+                        Origin::Env { .. } => unreachable!("sign-in terminal"),
                     }
                     out.push(CredentialRequest::SignedIn { account: account.number });
                 }
@@ -124,13 +124,11 @@ impl Accounts {
                     return;
                 }
             }
-            Origin::Borrow { .. } | Origin::Env { .. } => {}
+            Origin::Env { .. } => {}
         }
-        let reason = match account.source {
-            Origin::Borrow { .. } => local::CredentialFailure::BorrowedExpired { at: account.expires },
-            Origin::SignIn { .. } | Origin::Env { .. } => local::CredentialFailure::Missing,
-        };
-        out.push(CredentialRequest::Failed { event: local::Event::NoCredential { account: account.number, reason } });
+        out.push(CredentialRequest::Failed {
+            event: local::Event::NoCredential { account: account.number, reason: local::CredentialFailure::Missing },
+        });
         account.wanted = false;
     }
 }

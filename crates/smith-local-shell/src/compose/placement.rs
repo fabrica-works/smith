@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn the_main_accounts_source_selects_placement() {
         for (source, spawned) in
-            [("program", true), ("key", false), ("env", false), ("sign_in", false), ("borrow", false), ("none", false)]
+            [("program", true), ("key", false), ("env", false), ("sign_in", false), ("none", false)]
         {
             let settings = settings::merge(
                 &crate::command::Shared::default(),

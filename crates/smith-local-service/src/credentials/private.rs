@@ -18,7 +18,7 @@ impl Accounts {
                         account.startup = true;
                         return true;
                     }
-                    Origin::SignIn { .. } | Origin::Borrow { .. } | Origin::Env { .. } => return false,
+                    Origin::SignIn { .. } | Origin::Env { .. } => return false,
                 }
             }
         }
@@ -45,7 +45,7 @@ impl Accounts {
                         return;
                     }
                 }
-                Origin::Borrow { .. } | Origin::Env { .. } => {}
+                Origin::Env { .. } => {}
             }
         }
         self.close_sent = true;

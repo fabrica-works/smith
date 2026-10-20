@@ -110,7 +110,6 @@ fn catalog(
             let (source, kept) = match &descriptor {
                 Source::SignIn { file, .. } => ("sign_in", directory.as_ref().map(|_| Kept::File(file.clone()))),
                 Source::Key { file } => ("key", directory.as_ref().map(|_| Kept::File(file.clone()))),
-                Source::Borrow { file, .. } => ("borrow", Some(Kept::File(file.clone()))),
                 Source::Env { variable, .. } => ("env", Some(Kept::Variable(variable.clone()))),
                 Source::Program { .. } => {
                     if !include_required && !programs.contains_key(&name) {

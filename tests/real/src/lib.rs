@@ -182,6 +182,7 @@ impl World {
             launch.token_directory.clone(),
             self.scenario.interrupt_on_query,
             launch.keep_facts,
+            self.scenario.expected_token_posts(),
         );
         let mut world = real::World::new_checked(referee);
         let lower = process::lower_configuration();

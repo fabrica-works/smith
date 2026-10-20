@@ -28,7 +28,7 @@ pub fn fake_provider_settings(scratch: &Scratch) -> Vec<u8> {
     let document = serde_json::json!({"tokens": {"access_token": std::str::from_utf8(&token).expect("scratch token text"), "account_id": "acc", "refresh_token": "UNISSUED_NEVER_COPY"}});
     std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&document).expect("scratch login encoding"))
         .expect("scratch login file");
-    format!("credentials='{}'\nmodel='codex/gpt-6-luna'\neffort='low'\ninstructions='@local-shell Assist'\n[accounts.codex]\nsource='borrow'\nfile='{}'\nformat='codex'\nprogram='codex'\n[endpoints.codex]\naddress='{}:34443'\nserver_name='skein.test'\ntrust.system=false\ntrust.der=['{}']\n", scratch.path().join("credentials").display(), scratch.path().join("auth.json").display(), smith_real_world::loopback(), scratch.path().join("root.der").display()).into_bytes()
+    format!("credentials='{}'\nmodel='codex/gpt-6-luna'\neffort='low'\ninstructions='@local-shell Assist'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='{}:34443'\nserver_name='skein.test'\ntrust.system=false\ntrust.der=['{}']\n", scratch.path().join("credentials").display(), smith_real_world::loopback(), scratch.path().join("root.der").display()).into_bytes()
 }
 
 #[must_use]
@@ -270,13 +270,16 @@ fn run_fixture(
         Command {
             program: program.into(),
             arguments: command_arguments,
-            environment: vec![
-                ("HOME".into(), scratch.path().into()),
-                ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
-                ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
-                ("XDG_RUNTIME_DIR".into(), scratch.path().join("runtime").into()),
-                ("PATH".into(), "/usr/bin:/bin".into()),
-            ],
+            environment: super::fixture_environment(
+                scratch.path(),
+                vec![
+                    ("HOME".into(), scratch.path().into()),
+                    ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+                    ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+                    ("XDG_RUNTIME_DIR".into(), scratch.path().join("runtime").into()),
+                    ("PATH".into(), "/usr/bin:/bin".into()),
+                ],
+            ),
             directory: scratch.path().into(),
         },
         person.0,

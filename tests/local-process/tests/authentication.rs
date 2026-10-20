@@ -72,3 +72,25 @@ fn a_lent_grant_refreshes_while_the_model_is_running_before_it_lapses() {
     assert_eq!(token.refresh_token.as_deref(), Some(b"refresh-new".as_slice()));
     review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(23);
 }
+
+#[test]
+fn a_current_sign_in_record_lends_its_grant_without_a_refresh() {
+    let files = Files::new();
+    let mut world = World::authenticated(42, &files, Placement::InProcess, Authentication::Current);
+    let tokens = smith_local_process_world::credential_fixture::Tokens::new(
+        &files.path().join("tokens"),
+        smith_local_shell::local_host::token_limits(),
+    )
+    .expect("private store");
+    let before = std::fs::read(files.path().join("tokens/0.json")).expect("synthetic record");
+    world.settle();
+    assert_eq!(world.oauth_posts(), 0);
+    assert_eq!(world.page_visits(), 0);
+    assert!(!world.queries().is_empty(), "the current grant reaches the provider");
+    assert_eq!(tokens.load(0).expect("record").expect("kept record").generation, 1);
+    assert!(
+        std::fs::read(files.path().join("tokens/0.json")).expect("settled record") == before,
+        "lending leaves the current record unchanged"
+    );
+    review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(42);
+}

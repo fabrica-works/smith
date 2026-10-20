@@ -17,10 +17,6 @@ pub(super) fn source(
 ) -> Result<Binding, crate::Error> {
     let mut identifier: Box<[u8]> = Box::new([]);
     let (number, origin, configured) = match source {
-        Source::Borrow { account, root, path, format } => {
-            let root = files.adopt_root(root).expect("validated source count fits");
-            (account, Origin::Borrow { root: Some(root), path, format }, oauth::Account::HandedIn)
-        }
         Source::Env { account, borrowed } => {
             (account, Origin::Env { initial: Some(borrowed) }, oauth::Account::HandedIn)
         }

@@ -52,9 +52,6 @@ identity = 'plain'
 account = 'codex'
 connect = 10
 handshake = 10
-[accounts.codex]
-format = 'codex'
-program = 'codex'
 [models.'codex/gpt-6-astra']
 window = 272000
 output = 32000

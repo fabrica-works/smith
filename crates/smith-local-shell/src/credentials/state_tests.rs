@@ -34,10 +34,6 @@ fn each_unusable_state_says_its_exit_3_words() {
         (Credential::KeyUnreadable { problem: KeyProblem::Mode }, "account work: key has unsafe mode"),
         (Credential::KeyUnreadable { problem: KeyProblem::Size }, "account work: key has invalid size"),
         (Credential::KeyUnreadable { problem: KeyProblem::Unreadable }, "account work: key is unreadable"),
-        (
-            Credential::Expired { at: 60_000_000_000, file: "/borrowed/work".into(), program: "codex".into() },
-            "the work login borrowed from /borrowed/work expired at 00:01. Run `codex` once to refresh it, then try again.",
-        ),
     ];
     for (credential, expected) in rows {
         assert!(!credential.usable(), "the reported state matches the contract");
@@ -93,7 +89,7 @@ fn a_record_without_the_plan_scope_is_signed_in_without_it() {
     );
     let descriptor = match descriptor {
         Source::SignIn { required_scopes, .. } => Source::SignIn { file: path.clone(), required_scopes },
-        Source::Borrow { .. } | Source::Env { .. } | Source::Key { .. } | Source::Program { .. } | Source::Nothing => {
+        Source::Env { .. } | Source::Key { .. } | Source::Program { .. } | Source::Nothing => {
             panic!("sign-in descriptor")
         }
     };

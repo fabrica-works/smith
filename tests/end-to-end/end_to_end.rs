@@ -59,7 +59,7 @@ fn a_window_size_change_reaches_the_status_line() {
         vec![
             Action::Wait(b"> ".as_slice().into()),
             Action::Send(b"Ask first\n".as_slice().into()),
-            Action::Wait(b"codex/gpt-6-luna: in ".as_slice().into()),
+            Action::Wait(b"codex/gpt-6-luna; API key: in ".as_slice().into()),
             Action::Wait(b"\r\nFinishing now\r\n".as_slice().into()),
             Action::Send(b"Again\n".as_slice().into()),
             Action::Eof,
@@ -71,7 +71,7 @@ fn a_window_size_change_reaches_the_status_line() {
         .stdout
         .split(|byte| *byte == b'\n')
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
-        .filter(|line| line.starts_with(b"codex/gpt-6-luna:"))
+        .filter(|line| line.starts_with(b"codex/gpt-6-luna;"))
         .map(<[u8]>::len)
         .collect();
     assert_eq!(widths, [80, 20]);
@@ -82,18 +82,18 @@ fn the_interactive_default_fits_its_memory() {
     use smith_local_shell::{check, command, settings};
 
     for (model, account, source) in
-        [("codex/gpt-6-astra", "codex", "borrow"), ("anthropic/claude-opus-5-5", "anthropic", "env")]
+        [("codex/gpt-6-astra", "codex", "env"), ("anthropic/claude-opus-5-5", "anthropic", "env")]
     {
         let scratch = Scratch::new();
         let token = smith_local_process_world::world::login_at(skein_shell::Clock::new().now().wall, false);
         let login =
             serde_json::json!({"tokens":{"access_token":std::str::from_utf8(&token).unwrap(),"account_id":"acc"}});
         std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&login).unwrap()).unwrap();
-        let file = if source == "borrow" { "file='auth.json'\n" } else { "" };
+        let variable = if account == "codex" { "SMITH_FIXTURE_TOKEN" } else { "ANTHROPIC_API_KEY" };
         let _file = support::user_layer(
             &scratch,
             format!(
-                "credentials='{}'\nmodel='{model}'\n[accounts.{account}]\nsource='{source}'\n{file}",
+                "credentials='{}'\nmodel='{model}'\n[accounts.{account}]\nsource='{source}'\nvariable='{variable}'\n",
                 scratch.path().join("credentials").display()
             )
             .as_bytes(),
@@ -561,7 +561,7 @@ fn a_refusal_in_the_user_layer_names_its_file_line_and_key() {
 #[test]
 fn smith_check_json_shows_each_value_with_its_layer() {
     let scratch = Scratch::new();
-    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\neffort='low'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n");
+    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\neffort='low'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\n");
     let directory = scratch.path().join(".smith");
     std::fs::create_dir(&directory).expect("repository layer");
     std::fs::write(directory.join("config.toml"), b"[environment.set]\nREPO='repository-value'\n")
@@ -592,7 +592,8 @@ fn a_repository_layer_setting_an_account_is_refused_naming_the_file() {
     let directory = scratch.path().join(".smith");
     std::fs::create_dir(&directory).expect("repository layer");
     let file = directory.join("config.toml");
-    std::fs::write(&file, b"[accounts.codex]\nsource='borrow'\n").expect("account authority");
+    std::fs::write(&file, b"[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n")
+        .expect("account authority");
     let ran = support::smith(&scratch, &["check"], b"");
     assert_eq!(ran.code, 2);
     let line = String::from_utf8(ran.stderr).expect("UTF-8");
@@ -611,7 +612,7 @@ fn an_override_past_its_bound_is_refused_naming_the_override() {
 #[test]
 fn smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling() {
     let scratch = Scratch::new();
-    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='cannot-resolve.invalid:443'\n");
+    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='cannot-resolve.invalid:443'\n");
     let ran = support::smith(&scratch, &["check", "-c", "budget.turns=5000"], b"");
     assert_eq!(ran.code, 2);
     assert_eq!(
@@ -629,7 +630,7 @@ fn smith_check_json_warns_of_a_wrapper_cache_outside_the_caches() {
         std::fs::create_dir_all(cargo.join(cache)).expect("existing Rust cache");
     }
     let settings = format!(
-        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\npreset='rust'\n[environment.set]\nCARGO_HOME='{}'\nRUSTC_WRAPPER='sccache'\nSCCACHE_DIR='{}'\n",
+        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\npreset='rust'\n[environment.set]\nCARGO_HOME='{}'\nRUSTC_WRAPPER='sccache'\nSCCACHE_DIR='{}'\n",
         cargo.display(),
         scratch.path().join("wrapper-cache").display()
     );
@@ -652,7 +653,7 @@ fn smith_check_warns_about_an_absent_cache_and_creates_nothing() {
     let scratch = Scratch::new();
     let cache = scratch.path().join("absent-cache");
     let settings = format!(
-        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\ncaches=['{}']\n",
+        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\ncaches=['{}']\n",
         cache.display()
     );
     let _file = support::user_layer(&scratch, settings.as_bytes());
@@ -671,7 +672,7 @@ fn smith_check_warns_about_a_file_named_as_a_cache_and_keeps_it() {
     let cache = scratch.path().join("file-cache");
     std::fs::write(&cache, b"kept").expect("file in place of cache");
     let settings = format!(
-        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\ncaches=['{}']\n",
+        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\ncaches=['{}']\n",
         cache.display()
     );
     let _file = support::user_layer(&scratch, settings.as_bytes());
@@ -689,7 +690,7 @@ fn smith_check_json_lists_the_effective_limits_by_name() {
     let scratch = Scratch::new();
     let _file = support::user_layer(
         &scratch,
-        b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n",
+        b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\n",
     );
     let ran = support::smith(&scratch, &["check", "--json"], b"");
     assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
@@ -1077,7 +1078,7 @@ fn smith_check_and_startup_refuse_missing_sign_in_registration_keys_by_name() {
     std::fs::create_dir_all(&directory).expect("scratch user layer");
     let base = String::from_utf8(support::fake_provider_settings(&scratch))
         .expect("settings")
-        .replace("source='borrow'", "source='sign_in'");
+        .replace("source='env'\nvariable='SMITH_FIXTURE_TOKEN'", "source='sign_in'");
     std::fs::write(directory.join("config.toml"), base).expect("missing registration fixture");
     for arguments in [&["check"][..], &["exec", "hello"][..]] {
         let ran = support::run_product(&scratch, arguments, b"", None);

@@ -17,7 +17,6 @@ impl Local {
         let location = self.credential_locations.iter().find(|location| location.account == account)?;
         let expires = match reason {
             domain::CredentialFailure::BorrowedExpiring { at } => Some((*at, "expires")),
-            domain::CredentialFailure::BorrowedExpired { at } => Some((*at, "expired")),
             domain::CredentialFailure::Missing
             | domain::CredentialFailure::Refresh
             | domain::CredentialFailure::ProgramNotSignedIn
@@ -26,15 +25,6 @@ impl Local {
             | domain::CredentialFailure::ProgramInterrupted => None,
         };
         let mut line = match &location.source {
-            Source::Borrow { file, program, .. } => match expires {
-                Some((at, verb)) => format!(
-                    "the {} login borrowed from {} {verb} at {}. Run `{program}` once to refresh it, then try again.",
-                    location.name,
-                    file.display(),
-                    time(at.as_nanos())
-                ),
-                None => Credential::Unreadable { file: file.clone() }.line(&location.name),
-            },
             Source::Env { variable, .. } => match expires {
                 Some((at, verb)) => {
                     format!("account {}: variable {variable} {verb} at {}", location.name, time(at.as_nanos()))
@@ -49,8 +39,7 @@ impl Local {
                 | domain::CredentialFailure::ProgramFailed(_)
                 | domain::CredentialFailure::ProgramInterrupted
                 | domain::CredentialFailure::Refresh
-                | domain::CredentialFailure::BorrowedExpiring { .. }
-                | domain::CredentialFailure::BorrowedExpired { .. } => {
+                | domain::CredentialFailure::BorrowedExpiring { .. } => {
                     Credential::KeyUnreadable { problem: crate::credentials::KeyProblem::Unreadable }
                         .line(&location.name)
                 }
@@ -82,8 +71,7 @@ fn program_credential(reason: &domain::CredentialFailure) -> Option<Credential> 
         }
         domain::CredentialFailure::Missing
         | domain::CredentialFailure::Refresh
-        | domain::CredentialFailure::BorrowedExpiring { .. }
-        | domain::CredentialFailure::BorrowedExpired { .. } => return None,
+        | domain::CredentialFailure::BorrowedExpiring { .. } => return None,
     };
     Some(crate::credentials::program_check::credential(smith_agent_shell::config::ProgramName::ClaudeCode, answer))
 }

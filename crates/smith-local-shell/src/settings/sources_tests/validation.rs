@@ -39,33 +39,6 @@ fn credential_paths_use_only_the_supplied_environment() {
     settings.paths.state_home = Some("/supplied-state".into());
     let directory = Directory::of(&settings).expect("supplied default");
     assert!(directory.key("work") == std::path::Path::new("/supplied-state/smith/keys/work"), "supplied state base");
-    let fields = [
-        (
-            "source".into(),
-            super::super::Sourced {
-                value: toml::Value::String("borrow".into()),
-                origin: super::super::Origin::BuiltIn,
-            },
-        ),
-        (
-            "file".into(),
-            super::super::Sourced {
-                value: toml::Value::String("~/auth.json".into()),
-                origin: super::super::Origin::BuiltIn,
-            },
-        ),
-    ]
-    .into();
-    match crate::credentials::source(&fields, &settings, false, "work", Some(&directory)) {
-        crate::credentials::Source::Borrow { file, .. } => {
-            assert!(file == std::path::Path::new("/supplied-home/auth.json"), "supplied home expansion");
-        }
-        crate::credentials::Source::Env { .. }
-        | crate::credentials::Source::SignIn { .. }
-        | crate::credentials::Source::Key { .. }
-        | crate::credentials::Source::Program { .. }
-        | crate::credentials::Source::Nothing => panic!("borrow descriptor required"),
-    }
 }
 
 #[test]
@@ -80,4 +53,37 @@ fn program_documents_use_the_supplied_path() {
     let (_, bytes) = resolve::resolve_startup(&settings).unwrap_or_else(|why| panic!("{}", why.line()));
     let document: serde_json::Value = serde_json::from_slice(&bytes).expect("agent document");
     assert!(document["programs"]["claude_code"]["path"].as_str() == executable.to_str(), "supplied PATH used");
+}
+
+#[test]
+fn withdrawn_source_settings_name_the_replacement() {
+    let mut base = settings(&[source(
+        Layer::User,
+        "[accounts.work]\nsource='borrow'\nfile='auth.json'\nformat='withdrawn'\nprogram='codex'\n",
+    )])
+    .expect("withdrawn keys reach source validation");
+    base.values.retain(|key, _| key.starts_with("accounts.work."));
+    for (source_name, retained, key) in [
+        ("borrow", &[][..], "source"),
+        ("borrow", &["file", "format"][..], "file"),
+        ("env", &["format"][..], "format"),
+        ("env", &["program"][..], "program"),
+    ] {
+        let mut settings = base.clone();
+        for field in ["file", "format", "program"] {
+            if !retained.contains(&field) {
+                settings.values.remove(&format!("accounts.work.{field}"));
+            }
+        }
+        settings.values.get_mut("accounts.work.source").expect("account source").value =
+            toml::Value::String(source_name.into());
+        let refusal = resolve::checked(&settings).expect_err("withdrawn settings");
+        assert_eq!(refusal.key, format!("accounts.work.{key}"));
+        assert!(
+            refusal
+                .line()
+                .contains("declare `provider = \"openai\"` and `source = \"sign_in\"`, then run `smith login work`"),
+            "replacement names the account"
+        );
+    }
 }

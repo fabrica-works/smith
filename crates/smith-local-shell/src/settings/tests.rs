@@ -190,17 +190,18 @@ pub(super) fn selection(text: &str) -> Result<super::resolve::Selection, super::
 #[test]
 fn a_codex_only_first_run_needs_no_anthropic_credential() {
     let selected =
-        selection("model='codex/gpt-6-astra'\n[accounts.codex]\nsource='borrow'\n").expect("one account's run");
+        selection("model='codex/gpt-6-astra'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n")
+            .expect("one account's run");
     assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna", "codex/gpt-6.1-sol"]);
     assert_eq!(selected.accounts.len(), 1);
     assert_eq!(selected.accounts[0].name, "codex");
-    assert_eq!(selected.accounts[0].fields["source"].value.as_str(), Some("borrow"));
+    assert_eq!(selected.accounts[0].fields["source"].value.as_str(), Some("env"));
     assert!(!selected.settings.values.contains_key("accounts.anthropic.source"));
 }
 
 #[test]
 fn sub_agents_on_adds_the_models_of_every_account_with_a_source() {
-    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n[accounts.anthropic]\nsource='env'\n")
+    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[accounts.anthropic]\nsource='env'\n")
         .expect("accounts with sources");
     assert_eq!(
         selected.models,
@@ -228,15 +229,17 @@ fn mains_account_without_a_source_is_refused_naming_the_key() {
 
 #[test]
 fn sub_agents_on_keeps_an_unset_accounts_models_out() {
-    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n")
-        .expect("codex delegation");
+    let selected = selection(
+        "model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n",
+    )
+    .expect("codex delegation");
     assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna", "codex/gpt-6.1-sol"]);
     assert_eq!(selected.accounts.len(), 1);
 }
 
 #[test]
 fn a_custom_endpoint_inherits_its_preset_and_keeps_supplied_values() {
-    let selected = selection("model='custom/gpt-6-astra'\n[endpoints.custom]\npreset='codex'\naddress='example.test:443'\n[models.'custom/gpt-6-astra']\nwindow=100000\ninput_price=1.0\n[accounts.codex]\nsource='borrow'\n")
+    let selected = selection("model='custom/gpt-6-astra'\n[endpoints.custom]\npreset='codex'\naddress='example.test:443'\n[models.'custom/gpt-6-astra']\nwindow=100000\ninput_price=1.0\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n")
         .expect("custom preset");
     let values = selected.settings.values;
     assert_eq!(values["endpoints.custom.address"].value.as_str(), Some("example.test:443"));
@@ -271,7 +274,7 @@ fn an_unknown_endpoint_preset_is_refused_at_its_source() {
 
 #[test]
 fn a_declared_model_with_a_source_is_available_to_sub_agents() {
-    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n[models.'codex/declared']\nwindow=100000\noutput=1000\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n")
+    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[models.'codex/declared']\nwindow=100000\noutput=1000\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n")
         .expect("declared child model");
     assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/declared", "codex/gpt-6-luna", "codex/gpt-6.1-sol"]);
     assert_eq!(selected.accounts.len(), 1);
@@ -290,7 +293,7 @@ fn choosing_another_preset_replaces_only_the_endpoints_default_values() {
 fn composed(extra: &str) -> Result<super::resolve::Resolved, super::Refusal> {
     let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
     let text = format!(
-        "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n[endpoints.anthropic]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
+        "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n[endpoints.anthropic]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
     );
     let decoded = settings(&[source(Layer::User, &text)])?;
     super::resolve::resolve(
@@ -431,7 +434,7 @@ fn cancellation_grace_refusal_names_the_profile_durations() {
 #[test]
 fn trust_paths_are_resolved_from_the_settings_workspace() {
     let decoded = merge(&Shared::default(), PathBuf::from(env!("CARGO_MANIFEST_DIR")), &[
-        source(Layer::User,"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['../../tests/protocol-llm/fixtures/root.der']\n")
+        source(Layer::User,"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['../../tests/protocol-llm/fixtures/root.der']\n")
     ]).expect("relative root");
     let resolved = super::resolve::resolve(
         &decoded,
@@ -837,7 +840,7 @@ fn with_dirs(
 ) -> Result<super::resolve::Resolved, super::Refusal> {
     let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
     let text = format!(
-        "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
+        "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
     );
     let shared = Shared { dirs, ..Shared::default() };
     let decoded = merge(&shared, root.join("work"), &[source(Layer::User, &text)])?;

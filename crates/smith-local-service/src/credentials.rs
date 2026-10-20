@@ -1,14 +1,14 @@
 //! Account sources and private keeper routing (protocol/hosts.md, 5.4).
 //! The driver owns records, exchanges and holds. This owner keeps source
-//! descriptors, account identifiers, socket and file routing. Borrowed logins
-//! are read only; refresh bytes stay in the driver's own private records.
+//! descriptors, account identifiers, socket and private file routing. Env
+//! records are handed in once; refresh bytes stay in private sign-in records.
 use alloc::boxed::Box;
 use core::mem::size_of;
 use skein_io::{self as io, file, file_layer, kernel};
 use skein_lib::{CryptoRng, Env, List, Queue, Secret, Time, Token, Wall};
 use skein_oauth_accounts as oauth;
 use smith_local_domain as local;
-use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
+use smith_local_protocol::Borrowed;
 mod adopt;
 mod boundary;
 pub use boundary::CredentialRequest;
@@ -21,14 +21,12 @@ mod terminals;
 pub use sign_out::Settled;
 mod transport;
 
-const BORROWED_FILE: u64 = 1 << 63;
+const ROOT_FILE: u64 = 1 << 63;
 
 /// One account source handed to the local service before its loop.
 #[expect(missing_debug_implementations, reason = "environment records contain credentials")]
 #[expect(clippy::large_enum_variant, reason = "bounded source registrations are priced in accounts_worst_case")]
 pub enum Source {
-    /// A login under an adopted directory, loaded at startup and for later grants.
-    Borrow { account: u32, root: kernel::Fd, path: Box<[u8]>, format: LoginFormat },
     /// A variable read once by the shell, with its endpoint's account identifier.
     Env { account: u32, borrowed: Borrowed },
     /// An issuer account whose private record and exchanges the driver owns.
@@ -67,11 +65,6 @@ struct Account {
     pending: Option<oauth::Request>,
 }
 enum Origin {
-    Borrow {
-        root: Option<Token>,
-        path: Box<[u8]>,
-        format: LoginFormat,
-    },
     Env {
         initial: Option<Borrowed>,
     },
@@ -114,7 +107,6 @@ pub struct Accounts {
 pub fn accounts_worst_case(limits: &oauth::Limits) -> Option<u64> {
     oauth::worst_case(limits)?
         .checked_add(transport::worst_case(limits)?)?
-        .checked_add(smith_local_protocol::login_worst_case(&limits.client.document)?)?
         .checked_add(file_layer::FileIo::worst_case(
             limits.accounts.checked_mul(4)?,
             4096,
@@ -144,7 +136,7 @@ pub fn accounts_worst_case(limits: &oauth::Limits) -> Option<u64> {
 
 fn number(source: &Source) -> u32 {
     match source {
-        Source::Borrow { account, .. } | Source::Env { account, .. } | Source::SignIn { account, .. } => *account,
+        Source::Env { account, .. } | Source::SignIn { account, .. } => *account,
     }
 }
 
@@ -164,9 +156,6 @@ fn validate_sources(sources: &List<Source>, limits: &oauth::Limits) -> Result<Op
             }
         }
         match source {
-            Source::Borrow { path, .. } if path.is_empty() || path.len() > 4095 => {
-                return Err(crate::Error::Memory);
-            }
             Source::Env { borrowed, .. }
                 if borrowed.record.refresh_token.is_some()
                     || borrowed.account_id.len() > 1024
@@ -174,7 +163,7 @@ fn validate_sources(sources: &List<Source>, limits: &oauth::Limits) -> Result<Op
             {
                 return Err(crate::Error::Process);
             }
-            Source::Borrow { .. } | Source::Env { .. } | Source::SignIn { .. } => {}
+            Source::Env { .. } | Source::SignIn { .. } => {}
         }
     }
     let mut effective_user = None;
@@ -186,7 +175,7 @@ fn validate_sources(sources: &List<Source>, limits: &oauth::Limits) -> Result<Op
                 }
                 effective_user = Some(*user);
             }
-            Source::Borrow { .. } | Source::Env { .. } => {}
+            Source::Env { .. } => {}
         }
     }
     Ok(effective_user)
@@ -221,7 +210,7 @@ fn claim_identifier(account: &mut Account, token: &[u8], wall: Wall, limits: &sk
             }
             Ok(_) | Err(_) => false,
         },
-        Origin::SignIn { claim: None, .. } | Origin::Borrow { .. } | Origin::Env { .. } => true,
+        Origin::SignIn { claim: None, .. } | Origin::Env { .. } => true,
     }
 }
 
@@ -367,27 +356,6 @@ impl Accounts {
                 account.loading = true;
                 self.down(request, now, wall);
             }
-            Origin::Borrow { .. } => {
-                account.loading = true;
-                self.down(oauth::Request::Release { account: index }, now, wall);
-                let account = self.entries.get(index).expect("account index");
-                match &account.source {
-                    Origin::Borrow { root, path, .. } => file_layer::down(
-                        &mut self.files,
-                        now,
-                        file::Request::Load {
-                            owner: Token::new(u64::from(index) | BORROWED_FILE),
-                            root: root.expect("live login root"),
-                            path: path.clone(),
-                            max: self.limits.client.document.document_bytes,
-                            no_follow: true,
-                        },
-                        &mut self.events,
-                        &mut self.submissions,
-                    ),
-                    Origin::Env { .. } | Origin::SignIn { .. } => unreachable!("borrowed source"),
-                }
-            }
             Origin::Env { initial } => {
                 let initial = initial.take();
                 if let Some(borrowed) = initial
@@ -411,22 +379,19 @@ impl Accounts {
             let account = self.entries.get_mut(index).expect("account index");
             if self.closing.is_some() {
                 match &mut account.source {
-                    Origin::Borrow { root, .. } | Origin::SignIn { root, .. } if self.closed => {
+                    Origin::SignIn { root, .. } if self.closed => {
                         if let Some(root) = root.take() {
                             file_layer::down(
                                 &mut self.files,
                                 now,
-                                file::Request::Close {
-                                    owner: Token::new(u64::from(index) | BORROWED_FILE),
-                                    file: root,
-                                },
+                                file::Request::Close { owner: Token::new(u64::from(index) | ROOT_FILE), file: root },
                                 &mut self.events,
                                 &mut self.submissions,
                             );
                             return;
                         }
                     }
-                    Origin::Borrow { .. } | Origin::SignIn { .. } | Origin::Env { .. } => {}
+                    Origin::SignIn { .. } | Origin::Env { .. } => {}
                 }
             } else if !account.loading && (account.startup || account.wanted) {
                 self.begin(index, now, wall);
@@ -435,52 +400,17 @@ impl Accounts {
         }
     }
 
-    #[expect(
-        clippy::wildcard_enum_match_arm,
-        reason = "external file IO terminals other than Loaded or Closed end a failed load"
-    )]
     fn filed(&mut self, event: file::Event, now: Time, wall: Wall) {
-        if event.owner().raw() & lock::LOCK_FILE != 0 && event.owner().raw() & BORROWED_FILE == 0 {
+        if event.owner().raw() & ROOT_FILE != 0 {
+            return;
+        }
+        if event.owner().raw() & lock::LOCK_FILE != 0 {
             self.lock_event(event, now, wall);
             return;
         }
-        if event.owner().raw() & BORROWED_FILE == 0 {
-            self.record_event(&event);
-            let env = Env { now, wall, limits: self.limits };
-            self.driver.filed(&env, event, &mut self.out, &mut self.socket_requests, &mut self.file_requests);
-            return;
-        }
-        match event {
-            file::Event::Loaded { owner, bytes } => {
-                let index = u32::try_from(owner.raw() & !BORROWED_FILE).expect("account index");
-                let account = self.entries.get_mut(index).expect("account index");
-                account.loading = false;
-                let format = match account.source {
-                    Origin::Borrow { format, .. } => format,
-                    Origin::Env { .. } | Origin::SignIn { .. } => unreachable!("borrowed load"),
-                };
-                match decode_login(format, &bytes, &self.limits.client.document) {
-                    Ok(borrowed) if self.closing.is_none() => {
-                        if self.hand_in(index, borrowed, now, wall)
-                            && self.entries.get(index).expect("account index").wanted
-                        {
-                            self.down(oauth::Request::Grant { account: index }, now, wall);
-                        }
-                    }
-                    Ok(_) | Err(_) => self.fail(index, local::CredentialFailure::Missing),
-                }
-            }
-            file::Event::Closed { .. } => {}
-            _ => {
-                for index in 0..self.entries.len() {
-                    let account = self.entries.get_mut(index).expect("account index");
-                    if account.loading {
-                        account.loading = false;
-                        self.fail(index, local::CredentialFailure::Missing);
-                    }
-                }
-            }
-        }
+        self.record_event(&event);
+        let env = Env { now, wall, limits: self.limits };
+        self.driver.filed(&env, event, &mut self.out, &mut self.socket_requests, &mut self.file_requests);
     }
 
     /// Route one terminal of this driver's kernel operations.
@@ -555,10 +485,10 @@ impl Accounts {
                     return true;
                 }
                 match account.source {
-                    Origin::Borrow { root: Some(_), .. } | Origin::SignIn { root: Some(_), .. } if self.closed => {
+                    Origin::SignIn { root: Some(_), .. } if self.closed => {
                         return true;
                     }
-                    Origin::Borrow { .. } | Origin::Env { .. } | Origin::SignIn { .. } => {}
+                    Origin::Env { .. } | Origin::SignIn { .. } => {}
                 }
             }
         }
@@ -593,23 +523,10 @@ impl Accounts {
         }
     }
 
-    /// Close the driver and cancel outstanding login reads before closing roots.
+    /// Close the driver before closing its adopted private roots.
     pub fn close(&mut self, close: smith_agent_service::Close, _now: Time, _wall: Wall) {
         if self.closing.is_none() && !self.closed {
             self.closing = Some(close);
-            for index in 0..self.entries.len() {
-                let account = self.entries.get(index).expect("account index");
-                match account.source {
-                    Origin::Borrow { .. } if account.loading => {
-                        file_layer::cancel(
-                            &mut self.files,
-                            Token::new(u64::from(index) | BORROWED_FILE),
-                            &mut self.submissions,
-                        );
-                    }
-                    Origin::Borrow { .. } | Origin::Env { .. } | Origin::SignIn { .. } => {}
-                }
-            }
         }
         if close == smith_agent_service::Close::Aborted && self.closing == Some(smith_agent_service::Close::Graceful) {
             self.closing = Some(close);

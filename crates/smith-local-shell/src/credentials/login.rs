@@ -129,18 +129,5 @@ fn run(
             eprintln!("{}", credential_words(name, &credential));
             Ok(if credential.usable() { LoginOutcome::Usable } else { LoginOutcome::Unavailable })
         }
-        Source::Borrow { .. } => {
-            let credential = super::inspect(&source, clock.now().wall, &super::program_check::ProgramStates::new());
-            match &source {
-                Source::Borrow { file, .. } => eprintln!("account {name}: reads the login from {}", file.display()),
-                Source::Env { .. }
-                | Source::SignIn { .. }
-                | Source::Key { .. }
-                | Source::Program { .. }
-                | Source::Nothing => {}
-            }
-            eprintln!("{}", credential_words(name, &credential));
-            Ok(if credential.usable() { LoginOutcome::Usable } else { LoginOutcome::Unavailable })
-        }
     }
 }

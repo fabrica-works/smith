@@ -232,19 +232,34 @@ fn start_program(program: &Path, arguments: Vec<std::ffi::OsString>, directory: 
         Command {
             program: program.into(),
             arguments,
-            environment: vec![
-                ("HOME".into(), directory.into()),
-                ("XDG_CONFIG_HOME".into(), directory.join("config").into()),
-                ("XDG_STATE_HOME".into(), directory.join("state").into()),
-                ("XDG_RUNTIME_DIR".into(), directory.join("runtime").into()),
-                ("PATH".into(), "/usr/bin:/bin".into()),
-            ],
+            environment: fixture_environment(
+                directory,
+                vec![
+                    ("HOME".into(), directory.into()),
+                    ("XDG_CONFIG_HOME".into(), directory.join("config").into()),
+                    ("XDG_STATE_HOME".into(), directory.join("state").into()),
+                    ("XDG_RUNTIME_DIR".into(), directory.join("runtime").into()),
+                    ("PATH".into(), "/usr/bin:/bin".into()),
+                ],
+            ),
             directory: directory.into(),
         },
         mode,
         65_536,
     )
     .unwrap_or_else(|why| panic!("shipped Smith end to end requires usable io_uring and binary startup: {why:?}"))
+}
+
+fn fixture_environment(
+    directory: &Path,
+    mut environment: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    if directory.join("auth.json").exists() {
+        use std::os::unix::ffi::OsStringExt;
+        environment
+            .push(("SMITH_FIXTURE_TOKEN".into(), std::ffi::OsString::from_vec(fixture_access(directory).into_vec())));
+    }
+    environment
 }
 
 fn fixture_access(directory: &Path) -> Box<[u8]> {
@@ -283,12 +298,7 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) -> Box<[u8]> {
         write!(text, "[accounts.fake]\nsource='sign_in'\nclient_id='client'\nauthorization_url='http://{host}:34444/authorize'\n\
             token_url='http://{host}:34444/token'\nredirect_uri='http://127.0.0.1:{redirect}/callback'\nscope='read'\ntoken_format='form'\n", host = smith_real_world::loopback(), redirect = smith_real_world::redirect_port()).expect("fixture string");
     } else {
-        write!(
-            text,
-            "[accounts.fake]\nsource='borrow'\nfile='{}'\nformat='codex'\nprogram='codex'\n",
-            scratch.path().join("auth.json").display()
-        )
-        .expect("fixture string");
+        text.push_str("[accounts.fake]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n");
     }
     if scenario.launch.change {
         write!(text, "[[workspace.directories]]\nname='repo'\npath='{}'\nwritable=true\ngit=true\n\
@@ -670,13 +680,14 @@ pub fn smith_with_environment(
     additional: Vec<(std::ffi::OsString, std::ffi::OsString)>,
 ) -> Ran {
     assert_no_children();
-    let mut environment = vec![
+    let environment = vec![
         ("HOME".into(), scratch.path().into()),
         ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
         ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
         ("XDG_RUNTIME_DIR".into(), scratch.path().join("runtime").into()),
         ("PATH".into(), "/usr/bin:/bin".into()),
     ];
+    let mut environment = fixture_environment(scratch.path(), environment);
     environment.extend(additional);
     let mut binary = Binary::start(
         Command {

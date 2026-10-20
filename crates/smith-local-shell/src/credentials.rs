@@ -3,7 +3,7 @@
 //! values leave this module only for the service's credential storage.
 use crate::settings::{self, Sourced};
 use skein_lib::Wall;
-use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
+use smith_local_protocol::Borrowed;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub(crate) mod account_report;
@@ -59,8 +59,6 @@ pub enum Credential {
         program: ProgramName,
         detail: String,
     },
-    /// The other tool must renew this expired login.
-    Expired { at: u64, file: PathBuf, program: String },
     /// The named login cannot be read or decoded.
     Unreadable { file: PathBuf },
     /// A private key failed inspection; startup reports only its fixed problem class.
@@ -83,7 +81,6 @@ impl Credential {
             | Self::ProgramNotSignedIn { .. }
             | Self::ProgramSignedInOtherwise { .. }
             | Self::ProgramFailed { .. }
-            | Self::Expired { .. }
             | Self::Unreadable { .. }
             | Self::KeyUnreadable { .. }
             | Self::Unset { .. }
@@ -113,11 +110,6 @@ impl Credential {
             Self::ProgramFailed { program, detail } => {
                 format!("account {account}: {} could not be checked: {detail}", program_check::shown(*program))
             }
-            Self::Expired { at, file, program } => format!(
-                "the {account} login borrowed from {} expired at {}. Run `{program}` once to refresh it, then try again.",
-                file.display(),
-                time(*at)
-            ),
             Self::Unreadable { file } => format!("account {account}: unreadable login at {}", file.display()),
             Self::KeyUnreadable { problem } => format!("account {account}: key {}", problem.words()),
             Self::Unset { variable } => format!("account {account}: {variable} is not set"),
@@ -137,8 +129,6 @@ pub(crate) fn time(nanos: u64) -> String {
 /// Account descriptors for a selected run; this preparation reads no sign-in source.
 #[derive(Clone)]
 pub enum Source {
-    /// The shell opens this directory once; the service loads its file read-only.
-    Borrow { file: PathBuf, format: LoginFormat, program: String },
     /// The named variable is read once before the loop.
     Env { variable: String, codex: bool },
     /// The native driver keeps this account in its private state file.
@@ -158,7 +148,6 @@ pub enum Source {
 impl std::fmt::Debug for Source {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
-            Self::Borrow { .. } => "Source::Borrow",
             Self::Env { .. } => "Source::Env",
             Self::SignIn { .. } => "Source::SignIn",
             Self::Key { .. } => "Source::Key",
@@ -172,22 +161,13 @@ impl std::fmt::Debug for Source {
 #[must_use]
 pub fn source(
     fields: &BTreeMap<String, Sourced>,
-    settings: &settings::Settings,
+    _settings: &settings::Settings,
     codex: bool,
     name: &str,
     directory: Option<&Directory>,
 ) -> Source {
     let text = |key: &str| fields.get(key).and_then(|field| field.value.as_str()).unwrap_or_default();
     match text("source") {
-        "borrow" => {
-            let file = text("file");
-            let file = if let Some(relative) = file.strip_prefix("~/") {
-                settings.paths.home.as_ref().map(PathBuf::from).unwrap_or_default().join(relative)
-            } else {
-                settings.workspace.join(file)
-            };
-            Source::Borrow { file, format: LoginFormat::Codex, program: text("program").into() }
-        }
         "env" => Source::Env { variable: text("variable").into(), codex },
         "key" => Source::Key {
             file: directory.map_or_else(|| PathBuf::from("missing-key"), |directory| directory.key(name)),
@@ -214,25 +194,6 @@ pub fn source(
 #[must_use]
 pub fn inspect(source: &Source, wall: Wall, programs: &ProgramStates) -> Credential {
     match source {
-        Source::Borrow { file, format, program } => {
-            match skein_shell::read_file(file, crate::local_host::token_limits().document_bytes)
-                .ok()
-                .and_then(|bytes| decode_login(*format, &bytes, &crate::local_host::token_limits()).ok())
-            {
-                Some(borrowed) if borrowed.account_id.len() > smith_local_service::Source::account_id_bytes() => {
-                    Credential::Unreadable { file: file.clone() }
-                }
-                Some(borrowed) if borrowed.record.remaining(wall) > skein_lib::Duration::ZERO => {
-                    Credential::Usable { until: Some(borrowed.record.expires_at.as_nanos()) }
-                }
-                Some(borrowed) => Credential::Expired {
-                    at: borrowed.record.expires_at.as_nanos(),
-                    file: file.clone(),
-                    program: program.clone(),
-                },
-                None => Credential::Unreadable { file: file.clone() },
-            }
-        }
         Source::Env { variable, codex } => match environment(variable, *codex, wall) {
             Some(value) if value.record.remaining(wall) > skein_lib::Duration::ZERO => {
                 Credential::Usable { until: (*codex).then_some(value.record.expires_at.as_nanos()) }

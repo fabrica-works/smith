@@ -56,7 +56,7 @@ impl Accounts {
                                 self.events.push(file::Event::Cancelled { owner: *owner });
                                 return true;
                             }
-                            Origin::SignIn { .. } | Origin::Borrow { .. } | Origin::Env { .. } => {}
+                            Origin::SignIn { .. } | Origin::Env { .. } => {}
                         }
                     }
                 }

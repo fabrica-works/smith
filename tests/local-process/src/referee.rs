@@ -9,8 +9,12 @@ use skein_lib::{Duration, Time};
 use skein_world::domain::{Expectations, Judge, Referee};
 use smith_local_domain::Fact;
 
-/// Repository observations implemented by a fake checkout or a future real one.
+/// Checkout observations and the scenario's expected token-exchange count.
 pub trait CheckoutRead {
+    /// Token requests expected by the scenario when an issuer is present.
+    fn expected_token_posts(&self) -> u64 {
+        1
+    }
     fn head(&self) -> Option<Vec<u8>>;
     fn message(&self, commit: &[u8]) -> Vec<u8>;
     fn files(&self, commit: &[u8]) -> Tree;
@@ -73,6 +77,7 @@ pub enum Observation {
 pub struct Meeting {
     ending: Ending,
     require_facts: bool,
+    expected_token_posts: u64,
     activation: Option<u64>,
     next_turn: u32,
     answered: bool,
@@ -274,7 +279,10 @@ impl Expectations for Meeting {
                     );
                 }
                 if let Some(oauth) = oauth {
-                    judge.check(oauth.posts == 1 && oauth.pages <= 1, "one token exchange and at most one page visit");
+                    judge.check(
+                        oauth.posts == self.expected_token_posts && oauth.pages <= 1,
+                        "the expected token exchanges and at most one page visit",
+                    );
                     judge.check(oauth.pages == 0 || oauth.browser_replied, "the browser heard the loopback reply");
                     judge.check(
                         queries.is_empty() || oauth.saved_before_query,
@@ -339,6 +347,7 @@ fn review_with_facts(
     let mut referee = Referee::new(Meeting {
         ending,
         require_facts,
+        expected_token_posts: checkout.expected_token_posts(),
         activation: None,
         next_turn: 1,
         answered: false,
@@ -482,6 +491,7 @@ impl Run {
         token_directory: std::path::PathBuf,
         interrupt_on_query: bool,
         keep_facts: bool,
+        expected_token_posts: u64,
     ) -> Self {
         let drop_on_query = matches!(ending, Ending::Dropped);
         Self {
@@ -489,6 +499,7 @@ impl Run {
             meeting: Referee::new(Meeting {
                 ending,
                 require_facts: keep_facts,
+                expected_token_posts,
                 activation: None,
                 next_turn: 1,
                 answered: false,

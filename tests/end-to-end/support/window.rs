@@ -86,7 +86,11 @@ impl Watch {
         assert_eq!(modes, self.before, "smith leaves running terminal modes alone");
         self.during = Some(modes);
         match self.resize {
-            Resize::Response if shown.windows(21).any(|bytes| bytes == b"codex/gpt-6-luna: in ") => {
+            Resize::Response
+                if shown
+                    .windows(b"codex/gpt-6-luna; API key: in ".len())
+                    .any(|bytes| bytes == b"codex/gpt-6-luna; API key: in ") =>
+            {
                 resize_terminal(self.master, Size { rows: 24, columns: 20 }).expect("second window change");
                 self.resize = Resize::Done;
             }

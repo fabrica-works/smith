@@ -55,7 +55,7 @@ impl Accounts {
             if account.number == number && !self.closed {
                 match &mut account.source {
                     Origin::SignIn { sign_in, .. } => *sign_in = false,
-                    Origin::Borrow { .. } | Origin::Env { .. } => {}
+                    Origin::Env { .. } => {}
                 }
                 account.pending = Some(oauth::Request::Cancel { account: index });
                 account.loading = false;

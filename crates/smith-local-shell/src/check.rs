@@ -538,7 +538,7 @@ mod tests {
         let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
         let trace = if trace { "[trace]\npath='/unopened-events'\n" } else { "" };
         let text = format!(
-            "model='codex/gpt-6-luna'\n[deployment]\nmemory=8589934592\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\ntrust.system=false\ntrust.der=['{certificate}']\n{trace}"
+            "model='codex/gpt-6-luna'\n[deployment]\nmemory=8589934592\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\ntrust.system=false\ntrust.der=['{certificate}']\n{trace}"
         );
         let settings = settings::merge(
             &command::Shared::default(),
@@ -644,12 +644,12 @@ mod tests {
     #[test]
     fn the_interactive_chat_start_fits_the_standard_memory() {
         // The smoke-tools Chat arm: standard profile, codex/gpt-6-luna
-        // selected at low effort, a borrowed login and an everything trace.
-        // Invocation derivation prices descriptors without reading the login.
+        // selected at low effort, an env token and an everything trace.
+        // Invocation derivation prices descriptors without reading the variable.
         let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
         let text = format!(
             "model='codex/gpt-6-luna'\neffort='low'\n\
-             [accounts.codex]\nsource='borrow'\nfile='/unopened-login/auth.json'\n\
+             [accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n\
              [endpoints.codex]\ntrust.system=false\ntrust.der=['{certificate}']\n\
              [trace]\npath='/unopened-events'\ncapture='everything'\n"
         );

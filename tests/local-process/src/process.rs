@@ -58,7 +58,7 @@ pub struct Launch {
     pub traced: bool,
     pub authenticated: bool,
     #[serde(default)]
-    pub borrowing: Option<crate::world::Borrowing>,
+    pub lending: Option<crate::world::Lending>,
     pub state_directory: PathBuf,
     pub token_directory: PathBuf,
     pub root_path: PathBuf,
@@ -528,12 +528,6 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
     let launch = Launch::read(spawn);
     let path = launch.root_path.as_os_str().as_encoded_bytes();
     let mut roots = vec![StartupRoot { name: b"launch".as_slice().into(), path: path.into() }];
-    if matches!(
-        launch.borrowing,
-        Some(crate::world::Borrowing::Valid | crate::world::Borrowing::Expired | crate::world::Borrowing::Renewed)
-    ) {
-        roots.push(StartupRoot { name: b"login".as_slice().into(), path: path.into() });
-    }
     roots.push(StartupRoot {
         name: b"state".as_slice().into(),
         path: launch.state_directory.as_os_str().as_encoded_bytes().into(),
@@ -634,7 +628,7 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     });
     let (lower, spawned) =
         if launch.placement == crate::Placement::InProcess { (Some(lower), None) } else { (None, Some(lower)) };
-    let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io).unwrap_or_else(|| {
+    let handed = lending_accounts(&launch, spawn, config.limits.process.io).unwrap_or_else(|| {
         prepared_accounts(
             &launch.token_directory,
             launch.authenticated,
@@ -841,20 +835,19 @@ pub fn make_lingering_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Pro
     Proc::LingeringAgent(agent)
 }
 
-fn borrowed_accounts(
+fn lending_accounts(
     launch: &Launch,
     spawn: &kernel::Spawn,
-    inherited: &Inherited,
     io: skein_io::Limits,
 ) -> Option<smith_local_shell::credentials::Prepared> {
-    use crate::world::Borrowing;
+    use crate::world::Lending;
     use smith_local_shell::credentials::{Location, Prepared, Source};
-    let borrowing = launch.borrowing?;
+    let lending = launch.lending?;
     let mut sources = skein_lib::List::with_capacity(1);
     let mut locations = skein_lib::List::with_capacity(1);
     let mut lendable = skein_lib::Map::with_capacity(1);
-    let (handed, descriptor) = match borrowing {
-        Borrowing::Key => {
+    let (handed, descriptor) = match lending {
+        Lending::Key => {
             let file = launch.token_directory.parent().expect("scratch parent").join("key");
             let bytes = std::fs::read(&file).expect("scratch key at startup");
             lendable.insert(0, (0, smith_protocol_channel::GrantValue::Key(bytes.into()))).expect("one key value");
@@ -872,7 +865,7 @@ fn borrowed_accounts(
                 ),
             });
         }
-        Borrowing::Env => {
+        Lending::Env => {
             let variable = "SMITH_FIXTURE_TOKEN";
             let value = spawn
                 .env
@@ -883,19 +876,6 @@ fn borrowed_accounts(
                 .expect("synthetic variable value");
             (service::Source::Env { account: 0, borrowed }, Source::Env { variable: variable.into(), codex: true })
         }
-        Borrowing::Valid | Borrowing::Expired | Borrowing::Renewed => (
-            service::Source::Borrow {
-                account: 0,
-                root: root(inherited, b"login"),
-                path: b"auth.json".as_slice().into(),
-                format: smith_local_protocol::LoginFormat::Codex,
-            },
-            Source::Borrow {
-                file: launch.token_directory.parent().expect("scratch parent").join("auth.json"),
-                format: smith_local_protocol::LoginFormat::Codex,
-                program: "codex".into(),
-            },
-        ),
     };
     assert!(sources.push(handed).is_ok(), "one selected source");
     locations.push(Location { account: 0, name: "codex".into(), source: descriptor }).expect("one selected location");

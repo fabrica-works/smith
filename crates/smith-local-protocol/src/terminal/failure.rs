@@ -104,7 +104,6 @@ pub(super) fn credential(text: &mut Shown, account: u32, why: local::CredentialF
         local::CredentialFailure::BorrowedExpiring { .. } => {
             b" has a borrowed login approaching expiry: run `smith login "
         }
-        local::CredentialFailure::BorrowedExpired { .. } => b" has an expired borrowed login: run `smith login ",
         local::CredentialFailure::Refresh => b" could not renew its credential: run `smith login ",
         local::CredentialFailure::ProgramNotSignedIn => b": claude_code is not signed in: run `smith login ",
         local::CredentialFailure::ProgramSignedInOtherwise { method } => {

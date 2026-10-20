@@ -180,7 +180,7 @@ fn an_unconfirmed_revocation_says_where_to_disconnect() {
 #[test]
 fn key_commands_keep_values_private() {
     let scratch = Scratch::new();
-    let _file = support::user_layer(&scratch, b"[accounts.work]\nsource='key'\n[accounts.empty]\nsource='none'\n[accounts.variable]\nsource='env'\nvariable='WORK_KEY'\n[accounts.borrowed]\nsource='borrow'\nfile='untouched'\n");
+    let _file = support::user_layer(&scratch, b"[accounts.work]\nsource='key'\n[accounts.empty]\nsource='none'\n[accounts.variable]\nsource='env'\nvariable='WORK_KEY'\n");
     let login = support::run_product(&scratch, &["login", "work"], b"key-for-work\n", None);
     assert_eq!(login.code, 0);
     assert!(scratch.path().join("state/smith/keys/work").is_file());
@@ -188,7 +188,7 @@ fn key_commands_keep_values_private() {
     let terminal = support::provider_login::terminal_key(&scratch, "work");
     assert_eq!(terminal.code, 2);
     no_values(&terminal);
-    for (account, code) in [("work", 0), ("empty", 0), ("variable", 0), ("borrowed", 3)] {
+    for (account, code) in [("work", 0), ("empty", 0), ("variable", 0)] {
         let logout = support::run_product(&scratch, &["logout", account], b"", None);
         assert_eq!(logout.code, code);
         no_values(&logout);

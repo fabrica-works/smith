@@ -7,7 +7,7 @@ use skein_lib::{Duration, List, Map, Queue, Wall};
 use smith_local_service as service;
 use smith_protocol_channel::GrantValue;
 
-/// Names used by the shell when its driver reports a borrowed login's expiry.
+/// Names used by the shell when its driver reports a env token's expiry.
 #[derive(Debug)]
 pub struct Location {
     pub account: u32,
@@ -37,9 +37,6 @@ impl Prepared {
             )?;
         for location in &self.locations {
             let source = match &location.source {
-                Source::Borrow { file, program, .. } => {
-                    file.as_os_str().as_encoded_bytes().len().checked_add(program.len())?
-                }
                 Source::Env { variable, .. } => variable.len(),
                 Source::SignIn { file, required_scopes } => file
                     .as_os_str()
@@ -81,7 +78,7 @@ pub(crate) fn codex(resolved: &Resolved, account: u32) -> bool {
     false
 }
 
-/// Inspect selected accounts, report startup warnings once, and open read-only roots.
+/// Inspect selected accounts, report startup warnings once, and open private roots.
 pub fn prepare(
     resolved: &Resolved,
     wall: Wall,
@@ -130,26 +127,9 @@ pub fn prepare(
                 continue;
             }
             Source::Nothing => continue,
-            Source::Borrow { .. } | Source::Env { .. } | Source::SignIn { .. } => {}
+            Source::Env { .. } | Source::SignIn { .. } => {}
         }
         let handed = match descriptor {
-            Source::Borrow { file, format, program } => {
-                let credential =
-                    inspect(&Source::Borrow { file: file.clone(), format, program: program.clone() }, wall, programs);
-                if !credential.usable() {
-                    return Err(unavailable(&account.name, credential));
-                }
-                let parent = file
-                    .parent()
-                    .ok_or_else(|| unavailable(&account.name, Credential::Unreadable { file: file.clone() }))?;
-                let path = file
-                    .file_name()
-                    .ok_or_else(|| unavailable(&account.name, Credential::Unreadable { file: file.clone() }))?;
-                let root = skein_shell::open_root(parent)
-                    .map_err(|_| unavailable(&account.name, Credential::Unreadable { file: file.clone() }))?;
-                let path = path.as_encoded_bytes().into();
-                service::Source::Borrow { account: account.number, root, path, format }
-            }
             Source::Env { variable, codex } => {
                 let borrowed = environment(&variable, codex, wall)
                     .ok_or_else(|| unavailable(&account.name, Credential::Unset { variable: variable.clone() }))?;
@@ -264,7 +244,7 @@ pub(crate) fn status_words(source: &Source, openai: bool) -> &'static str {
     match source {
         Source::Program { .. } => "through Claude Code",
         Source::Key { .. } | Source::Env { .. } => "API key",
-        Source::SignIn { .. } | Source::Borrow { .. } if openai => "Using ChatGPT plan",
-        Source::SignIn { .. } | Source::Borrow { .. } | Source::Nothing => "",
+        Source::SignIn { .. } if openai => "Using ChatGPT plan",
+        Source::SignIn { .. } | Source::Nothing => "",
     }
 }

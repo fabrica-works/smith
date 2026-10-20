@@ -30,7 +30,7 @@ mod terminal;
 #[cfg(test)]
 mod tests;
 
-pub use borrowed::{Borrowed, LoginFormat, LoginRefusal, decode_login, login_worst_case};
+pub use borrowed::Borrowed;
 pub use delivery_store::{decode_delivery, save_delivery};
 pub use git::{Git, GitAction, GitCompletion, GitLimits, git_worst_case};
 pub use git_child::{GitChild, git_child_worst_case};

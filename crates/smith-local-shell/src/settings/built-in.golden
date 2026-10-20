@@ -1,6 +1,4 @@
 accounts.anthropic.variable="ANTHROPIC_API_KEY"
-accounts.codex.format="codex"
-accounts.codex.program="codex"
 budget.reserve.seconds=300
 budget.reserve.turns=2
 budget.seconds=3600

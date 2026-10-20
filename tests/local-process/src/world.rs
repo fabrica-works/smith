@@ -18,15 +18,16 @@ use smith_local_domain as local;
 use smith_local_shell::local_host::token_limits;
 use smith_local_world::git::History;
 use std::cell::RefCell;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-mod borrowed;
 mod key;
-pub(crate) use borrowed::login_token;
-pub use borrowed::{Borrowing, login_at};
+mod lending;
 pub use key::provider as key_provider;
+pub(crate) use lending::login_token;
+pub use lending::{Lending, login_at};
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
@@ -44,6 +45,8 @@ pub enum Authentication {
     Refresh,
     Refused,
     Proactive,
+    /// An existing sign-in record serves the run without a token exchange.
+    Current,
 }
 
 /// Files surviving separate invocations of the actual shared shell.
@@ -56,7 +59,7 @@ impl Files {
     pub fn new() -> Self {
         let index = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("smith-local-process-{}-{index}", std::process::id()));
-        std::fs::create_dir_all(&path).expect("fixture directory");
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&path).expect("fixture directory");
         Self { path }
     }
     #[must_use]
@@ -214,11 +217,6 @@ pub struct Machine {
     checkout: CheckoutView,
     commands: Vec<Box<[Box<[u8]>]>>,
     chat_path: PathBuf,
-    login_handles: Vec<skein_sim::Handle>,
-    login_reads: u32,
-    login_writes: u32,
-    renew_login: bool,
-    login_checks: bool,
 }
 impl Machine {
     fn current_tree(&mut self) -> Tree {
@@ -357,11 +355,7 @@ impl skein_world::Machine for Machine {
             }
         }
         self.files.close(root);
-        if self.login_checks {
-            self.login_step(call, answers);
-        } else {
-            skein_fake_machine::step(&mut self.files, call, answers);
-        }
+        skein_fake_machine::step(&mut self.files, call, answers);
         if let Ok(root) = self.files.open(self.master, b"tokens", How::Directory) {
             if let Ok(file) = self.files.open(root, b"0.json", How::Read) {
                 let bytes = self.files.read(file, 0, token_limits().record_bytes).expect("native kept record");
@@ -671,7 +665,7 @@ impl World {
                     keep_facts,
                     traced: false,
                     authenticated: false,
-                    borrowing: None,
+                    lending: None,
                     state_directory: files.path.join("chat"),
                     token_directory,
                     root_path: ".".into(),
@@ -688,11 +682,6 @@ impl World {
                 master,
                 checkout: checkout.clone(),
                 commands: Vec::new(),
-                login_handles: Vec::new(),
-                login_reads: 0,
-                login_writes: 0,
-                renew_login: false,
-                login_checks: false,
                 chat_path: files.path.join("chat"),
             }),
             checkout,
@@ -729,7 +718,7 @@ impl World {
                 earliest_refresh_at: None,
                 key: 0,
                 generation: 1,
-                access_token: if mode == Authentication::Proactive {
+                access_token: if matches!(mode, Authentication::Proactive | Authentication::Current) {
                     b"access-new".as_slice().into()
                 } else {
                     b"old".as_slice().into()
@@ -742,7 +731,11 @@ impl World {
                 metadata: None,
                 expires_at: Wall::from_nanos(
                     skein_tls_world::pki::VALID.as_nanos()
-                        + if mode == Authentication::Proactive { Duration::from_secs(61).as_nanos() } else { 0 },
+                        + match mode {
+                            Authentication::Proactive => Duration::from_secs(61).as_nanos(),
+                            Authentication::Current => Duration::from_secs(3600).as_nanos(),
+                            Authentication::SignIn | Authentication::Refresh | Authentication::Refused => 0,
+                        },
                 ),
             };
             tokens
@@ -790,6 +783,7 @@ impl World {
             launch.token_directory.clone(),
             self.scenario.interrupt_on_query,
             launch.keep_facts,
+            self.scenario.expected_token_posts(),
         );
         if matches!(&self.scenario.ending, Ending::Report(text) if text.as_slice() == b"Crossed wait") {
             referee.line_on_wait(b"follow-up\n".as_slice().into());
@@ -848,7 +842,7 @@ impl World {
         // The terminal owns a fresh handle, never the machine's master.
         world.spawn_root(skein_sim::Handle::new(terminal_root.raw()), |root| {
             let mut environment = Vec::new();
-            if launch.borrowing.is_some() {
+            if launch.lending.is_some() {
                 let home = launch.token_directory.parent().expect("scratch home");
                 for (name, path) in [
                     ("HOME", home.to_path_buf()),
@@ -857,7 +851,7 @@ impl World {
                 ] {
                     environment.push(format!("{name}={}", path.display()).into_bytes().into_boxed_slice());
                 }
-                if launch.borrowing == Some(Borrowing::Env) {
+                if launch.lending == Some(Lending::Env) {
                     let mut value = b"SMITH_FIXTURE_TOKEN=".to_vec();
                     value.extend_from_slice(&login_token(false));
                     environment.push(value.into());
@@ -1018,6 +1012,9 @@ impl World {
     }
 }
 impl CheckoutRead for World {
+    fn expected_token_posts(&self) -> u64 {
+        self.scenario.expected_token_posts()
+    }
     fn borrowed_notice(&self) -> Option<Vec<u8>> {
         self.checkout.borrowed_notice()
     }
@@ -1032,17 +1029,29 @@ impl CheckoutRead for World {
     }
 }
 impl Scenario {
+    /// Token requests this scenario expects its issuer to observe.
+    #[must_use]
+    pub fn expected_token_posts(&self) -> u64 {
+        match self.authentication {
+            Some(Authentication::Current) => 0,
+            Some(
+                Authentication::SignIn | Authentication::Refresh | Authentication::Refused | Authentication::Proactive,
+            )
+            | None => 1,
+        }
+    }
+
     /// Provider scripts and credentials are scenario data, shared across tiers.
     #[must_use]
     pub fn provider(&self) -> crate::llm::Peer {
-        if self.launch.borrowing == Some(Borrowing::Key) {
+        if self.launch.lending == Some(Lending::Key) {
             return self.provider_with(skein_llm::Credential {
                 value: b"key-for-work".as_slice().into(),
                 account_id: Box::new([]),
                 scheme: skein_llm::Scheme::Key,
             });
         }
-        let token = if self.launch.borrowing.is_some() {
+        let token = if self.launch.lending.is_some() {
             login_token(false)
         } else if self.launch.authenticated {
             b"access-new".as_slice().into()
@@ -1133,7 +1142,7 @@ impl Scenario {
                 }]);
             }
         }
-        if self.launch.borrowing == Some(Borrowing::Key) {
+        if self.launch.lending == Some(Lending::Key) {
             return smith_agent_process_world::fake::configured_anthropic(provider_scripts, credential);
         }
         smith_agent_process_world::fake::configured_transport(
