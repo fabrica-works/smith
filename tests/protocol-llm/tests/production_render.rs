@@ -147,6 +147,15 @@ fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
 }
 
 #[test]
+fn an_unchanged_edit_reports_the_whole_batch() {
+    let outcome = tools::Outcome::EditFailed { edit: 2, why: tools::Mismatch::Unchanged };
+    let (text, error) =
+        adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("bounded failure rendering");
+    assert_eq!(text.as_ref(), b"edit 2 failed: edits leave the file unchanged");
+    assert!(error);
+}
+
+#[test]
 fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
     let outcome = tools::Outcome::Read {
         content: "saved – 界\n".as_bytes().into(),

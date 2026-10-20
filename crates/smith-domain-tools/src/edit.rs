@@ -1,6 +1,7 @@
 //! Ordered edits over current bytes loaded by io. Each replacement matches
 //! the result of its predecessors; scratch bytes never change the file. The
-//! caller stores the final result once, only over the version it loaded.
+//! caller stores the final result once, only over the version it loaded,
+//! and only if the edits together changed those bytes.
 //! This module knows no earlier reads or filesystem state.
 //!
 //! Contract: domain/tools.md, sections 3 and 4; programming-model.md, sections 4.4 and 6.3.
@@ -24,9 +25,6 @@ pub(crate) fn apply(
 ) -> Result<(Box<[u8]>, u32), Outcome> {
     if edit.old.is_empty() {
         return Err(Outcome::EditFailed { edit: number, why: Mismatch::NoMatch });
-    }
-    if edit.old == edit.new {
-        return Err(Outcome::EditFailed { edit: number, why: Mismatch::Unchanged });
     }
     let matches = count(content, &edit.old, u32::MAX);
     if matches == 0 {
@@ -58,12 +56,14 @@ pub(crate) fn apply(
     Ok((writer.finish(), matches))
 }
 
-/// Apply the ordered list to owned scratch bytes; only the caller's final store changes the file.
+/// Apply the ordered list, retaining the loaded bytes for the final comparison
+/// without copying them. Only the caller's final store changes the file.
 pub(crate) fn apply_edits(
-    mut content: Box<[u8]>,
+    loaded: Box<[u8]>,
     edits: &[Replacement],
     limits: &Limits,
 ) -> Result<(Box<[u8]>, u32), Outcome> {
+    let mut content: Option<Box<[u8]>> = None;
     let mut number = 0_u32;
     let mut replaced = 0_u32;
     for edit in edits {
@@ -72,15 +72,18 @@ pub(crate) fn apply_edits(
             size: u64::from(number).checked_add(1).expect("u32 increment fits u64"),
             bound: limits.tool_payload,
         })?;
-        let (next, count) = apply(&content, edit, number, limits)?;
+        let (next, count) = apply(content.as_deref().unwrap_or(&loaded), edit, number, limits)?;
         replaced = replaced.checked_add(count).ok_or(Outcome::TooLarge {
             what: crate::SizePart::EditReplacements,
             size: u64::from(replaced).checked_add(u64::from(count)).expect("two u32 counts fit u64"),
             bound: u32::MAX,
         })?;
-        content = next;
+        content = Some(next);
     }
-    Ok((content, replaced))
+    if content.as_deref().unwrap_or(&loaded) == loaded.as_ref() {
+        return Err(Outcome::EditFailed { edit: number, why: Mismatch::Unchanged });
+    }
+    Ok((content.expect("changed bytes require at least one edit"), replaced))
 }
 
 /// The size of a file of `len` bytes with `matches` occurrences of `old`

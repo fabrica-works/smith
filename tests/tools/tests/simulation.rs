@@ -613,6 +613,31 @@ fn a_kit_edits_a_file_its_llm_read() {
 }
 
 #[test]
+fn a_no_op_beside_a_real_edit_stores_only_the_change() {
+    let call = tools::Call::Edit {
+        path: smith_tools_world::translate::path(b"src/lib.rs"),
+        edits: Box::new([
+            tools::Replacement {
+                old: b"fn two".as_slice().into(),
+                new: b"fn two".as_slice().into(),
+                occurrences: tools::Occurrences::Once,
+            },
+            tools::Replacement {
+                old: b"fn one".as_slice().into(),
+                new: b"fn uno".as_slice().into(),
+                occurrences: tools::Occurrences::Once,
+            },
+        ]),
+    };
+    let (answers, world) = run(Settings::calm(30), MODIFY, vec![Step::Calls(vec![call])]);
+    assert_eq!(answers, vec![Outcome::Edited { replaced: 2 }]);
+    assert_eq!(
+        world.checkout().content(b"work/temper/src/lib.rs"),
+        Some(b"pub fn uno() {}\npub fn two() {}\npub fn three() {}\n".as_slice())
+    );
+}
+
+#[test]
 fn an_edit_that_would_be_wrong_changes_nothing() {
     let script = vec![
         Step::Calls(vec![edit(b"src/lib.rs", b"not-present", b"fn uno", false)]),

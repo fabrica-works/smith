@@ -142,15 +142,19 @@ fn noisy_calls(rng: &mut Rng) -> Vec<smith_domain_tools::Call> {
             2 | 3 => write(path, format!("written {}\n", rng.below(1000)).as_bytes()),
             4 | 5 => {
                 let old = SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")];
-                let new: &[u8] = if rng.chance(50) { old } else { b"edited" };
-                let count = rng.between(1, 3);
-                let replacements = (0..count)
-                    .map(|_| {
-                        let old = SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")];
-                        (old, new, rng.chance(300))
-                    })
-                    .collect::<Vec<_>>();
-                edits(path, &replacements)
+                if rng.chance(300) {
+                    // Unchanged now requires a matching no-op, even when it occurs more than once.
+                    edit(path, old, old, true)
+                } else {
+                    let count = rng.between(1, 3);
+                    let replacements = (0..count)
+                        .map(|_| {
+                            let old = SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")];
+                            (old, b"edited".as_slice(), rng.chance(300))
+                        })
+                        .collect::<Vec<_>>();
+                    edits(path, &replacements)
+                }
             }
             _ => read(path),
         };

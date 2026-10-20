@@ -2041,3 +2041,80 @@ fn read_caps_are_observable_at_the_tools_parent_boundary() {
 }
 
 mod jobs;
+
+/// An edit batch waiting for its file's loaded bytes.
+fn pending_edit_batch(edits: Box<[Edit]>) -> (Harness, Token) {
+    let mut harness = Harness::new(LIMITS);
+    let kit = harness.open(1, authority(ALL));
+    let (owner, _) = harness.start(kit, 1, Call::Edit { path: path(b"src/lib.rs"), edits });
+    (harness, owner)
+}
+
+#[test]
+fn matching_no_ops_beside_real_edits_are_stored_and_counted() {
+    let cases = [
+        (b"a b".as_slice(), [snippet(b"a", b"a", false), snippet(b"b", b"c", false)], b"a c".as_slice(), 2),
+        (b"a b", [snippet(b"b", b"c", false), snippet(b"a", b"a", false)], b"a c", 2),
+        (b"a a b", [snippet(b"a", b"a", true), snippet(b"b", b"c", false)], b"a a c", 3),
+    ];
+    for (loaded, edits, expected, matches) in cases {
+        let (mut harness, owner) = pending_edit_batch(Box::new(edits));
+        assert_eq!(
+            harness.next(owner, Done::Loaded { content: bytes(loaded), version: version(3) }),
+            store(place(1, b"src/lib.rs"), expected, Expect::Is { version: version(3) })
+        );
+        // Replacements count matches, including those whose bytes stay the same.
+        assert_eq!(
+            harness.end(owner, Done::Stored { version: version(4) }),
+            (1, Outcome::Edited { replaced: matches })
+        );
+    }
+}
+
+#[test]
+fn unchanged_edit_batches_are_refused_at_the_last_item() {
+    let cases = [
+        (
+            Box::<[Edit]>::from([snippet(b"a", b"a", false)]),
+            Outcome::EditFailed { edit: 1, why: crate::Mismatch::Unchanged },
+        ),
+        (
+            Box::<[Edit]>::from([snippet(b"a", b"b", false), snippet(b"b", b"a", false)]),
+            Outcome::EditFailed { edit: 2, why: crate::Mismatch::Unchanged },
+        ),
+    ];
+    for (edits, expected) in cases {
+        assert_eq!(refused_edit_batch(b"a", edits), (1, expected));
+    }
+}
+
+/// Complete a batch's load, expecting a terminal answer instead of a store.
+fn refused_edit_batch(loaded: &[u8], edits: Box<[Edit]>) -> (u64, Outcome) {
+    let (mut harness, owner) = pending_edit_batch(edits);
+    harness.end(owner, Done::Loaded { content: bytes(loaded), version: version(3) })
+}
+
+#[test]
+fn absent_or_empty_no_ops_are_refused_as_no_match() {
+    for old in [b"z".as_slice(), b""] {
+        assert_eq!(
+            refused_edit_batch(b"a", Box::new([snippet(old, old, false)])),
+            (1, Outcome::EditFailed { edit: 1, why: crate::Mismatch::NoMatch })
+        );
+    }
+}
+
+#[test]
+fn a_repeated_no_op_requires_all_occurrences() {
+    assert_eq!(
+        refused_edit_batch(b"a\na", Box::new([snippet(b"a", b"a", false)])),
+        (1, Outcome::EditFailed { edit: 1, why: crate::Mismatch::Ambiguous { count: 2, lines: Box::new([1, 2]) } })
+    );
+}
+
+#[test]
+fn a_no_op_item_counts_each_match_without_changing_bytes() {
+    for (content, all, matches) in [(b"a".as_slice(), false, 1), (b"a a", true, 2)] {
+        assert_eq!(edit::apply(content, &snippet(b"a", b"a", all), 1, &LIMITS), Ok(edited(content, matches)));
+    }
+}

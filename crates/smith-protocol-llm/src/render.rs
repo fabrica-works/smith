@@ -306,7 +306,7 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             output.put(b" failed: ")?;
             match why {
                 tools::Mismatch::NoMatch => output.put(b"text to replace was not found")?,
-                tools::Mismatch::Unchanged => output.put(b"replacement leaves the file unchanged")?,
+                tools::Mismatch::Unchanged => output.put(b"edits leave the file unchanged")?,
                 tools::Mismatch::Ambiguous { count, lines } => {
                     output.put(b"text matches ")?;
                     output.number(u64::from(*count))?;
