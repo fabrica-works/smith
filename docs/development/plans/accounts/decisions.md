@@ -1395,6 +1395,15 @@ commits is this plan's.
 
      Checked at origin/main: smith `tests/local-process/src/process.rs:128 let response_bytes = limits.uri_bytes + 6 * limits.document.string_bytes + 267;`, `tests/protocol-llm/tests/adapter_boundary.rs:204 fn overloaded_status(configuration: &Configuration) -> u16 {`; jig `git grep -l 'const DIALECT: u32 = 1;'` → the four files named in the row; skein `crates/skein-oauth-accounts/src/shared_tests.rs:225 fn no_record_under_the_lock_fails_the_held_grant()`.
 
+149. **hearth-repin waits on the director** (process, hearth repin's block of 2026-10-20T00:42:26Z).
+     The gate after c4d0231 times out on x1 as before: 498 of 2150 tests had run at 15.017 s, with load 4.61 when the gate started, and the eight it stopped were hearth-tree-world tests at 0.1 s to 4.6 s. c4d0231 trimmed one test, but hearth's default suite as a whole takes about 23 s on x1 (22.6 s to 25.4 s on `origin/main`, by ruling 147's diagnosis), while hearth's own landings pass that gate at 6.5 s to 8.8 s on another machine. The suite's cost on x1 belongs to hearth's own work, not to this run. The repin itself changes `Cargo.lock` alone, and its build and clippy pass.
+
+     The director, who directs hearth's work and the machines, decides between two courses:
+     - (a) hearth's own work brings the default suite within its 15 s on x1;
+     - (b) the repin's commit lands where hearth's gate is run, with `land`, its trailers unchanged.
+
+     Until the director answers, hearth-repin holds 014bea9a and runs no gate, and the budget does not change. The supervisor relays the answer in a steer.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
