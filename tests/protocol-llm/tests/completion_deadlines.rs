@@ -24,29 +24,48 @@ fn head_for(bytes: usize) -> Vec<u8> {
     format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {bytes}\r\n\r\n").into_bytes()
 }
 
-// Real provider progress crosses native read demand and dispatches an SSE
-// message. Comments alone do not refresh the response-event idle deadline.
-fn progress_event() -> Vec<u8> {
-    let mut bytes = br#"data: {"type":"response.in_progress","response":{"status":"in_progress"},"extra":""#.to_vec();
+// A text delta carries the model's output, so it re-arms idle; its padding
+// crosses native read demand and dispatches an SSE message. Pings and status
+// events alone do not (skein's llm-connection.md, section 6).
+fn output_event() -> Vec<u8> {
+    let mut bytes = br#"data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"done","obfuscation":""#.to_vec();
     bytes.extend_from_slice(&[b' '; 513]);
     bytes.extend_from_slice(b"\"}\n\n");
     bytes
+}
+
+fn streamed_body(deltas: usize) -> (Vec<u8>, Vec<u8>) {
+    let added = br#"data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"item","role":"assistant","content":[]}}"#;
+    let text = "done".repeat(deltas);
+    let rest = [
+        format!(r#"{{"type":"response.output_item.done","output_index":0,"item":{{"type":"message","id":"item","role":"assistant","content":[{{"type":"output_text","text":"{text}"}}]}}}}"#),
+        r#"{"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}"#.to_owned(),
+    ]
+    .iter()
+    .flat_map(|event| format!("data: {event}\n\n").into_bytes())
+    .collect();
+    let mut first = added.to_vec();
+    first.extend_from_slice(b"\n\n");
+    (first, rest)
 }
 
 #[test]
 fn a_response_streaming_past_any_fixed_bound_completes() {
     let mut peer = Peer::configured(2, 2);
     peer.start(1, 60, 60, 900);
-    peer.bytes(100, &head_for(body().len() + 9 * progress_event().len()));
+    let (first, rest) = streamed_body(9);
+    peer.bytes(100, &head_for(first.len() + 9 * output_event().len() + rest.len()));
+    peer.bytes(100, &first);
     for seconds in (50..=450).step_by(50) {
         peer.advance(seconds);
-        assert!(peer.terminals.is_empty(), "progress remains within the declared idle duration: {:?}", peer.terminals);
-        peer.bytes(100, &progress_event());
+        assert!(peer.terminals.is_empty(), "output remains within the declared idle duration: {:?}", peer.terminals);
+        peer.bytes(100, &output_event());
     }
     peer.advance(451);
-    peer.bytes(100, &body());
+    peer.bytes(100, &rest);
+    let text = "done".repeat(9);
     assert!(matches!(peer.terminals.as_slice(), [ToDomain::Completed { owner, completion }] if *owner == Token::new(1)
-        && completion.content.iter().any(|block| matches!(block, llm::Said::Text { text, .. } if text.as_ref() == b"done"))));
+        && completion.content.iter().any(|block| matches!(block, llm::Said::Text { text: said, .. } if said.as_ref() == text.as_bytes()))));
     peer.advance(901);
     assert_eq!(peer.terminals.len(), 1, "former phase and whole timers never repeat a terminal");
 }
@@ -71,11 +90,13 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     let mut peer = Peer::configured(2, 2);
     peer.start(1, 30, 30, 90);
     peer.start(2, 120, 120, 300);
-    peer.bytes(100, &head_for(body().len() + 4 * progress_event().len()));
+    let (first, rest) = streamed_body(4);
+    peer.bytes(100, &head_for(first.len() + 4 * output_event().len() + rest.len()));
+    peer.bytes(100, &first);
     peer.bytes(101, &head_for(body().len()));
     for seconds in [20, 40, 60, 80] {
         peer.advance(seconds);
-        peer.bytes(100, &progress_event());
+        peer.bytes(100, &output_event());
     }
     assert!(peer.terminals.is_empty());
     peer.advance(90);

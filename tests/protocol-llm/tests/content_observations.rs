@@ -62,7 +62,11 @@ fn actual_codex_text_deltas_join_to_the_observed_completion() {
 
 #[test]
 fn actual_transport_latency_and_event_gap_use_the_peer_clock_without_content_capture() {
-    let first = "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"item\",\"role\":\"assistant\",\"content\":[]}}\n\n";
+    // An opened message item is only progress; its first delta is the first output event.
+    let first = concat!(
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"item\",\"role\":\"assistant\",\"content\":[]}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"done\"}\n\n"
+    );
     let last = concat!(
         "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"item\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"done\"}]}}\n\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
