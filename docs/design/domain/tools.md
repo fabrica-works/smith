@@ -184,6 +184,11 @@ modify (`write`, `edit`), shell (`shell`, `job`).
   read, and a version the session wrote itself counts as read. The
   version is checked against the real file when writing, so a change
   made meanwhile by another session, or by anything else, is caught.
+  A session knows the 256 files it read or wrote last; one it knew
+  before those is forgotten, and must be read again before a `write`
+  replaces it (revised 2026-10-20: 16 files were too few for a change
+  across a crate, and a whole file's contents were refused after their
+  generation).
 - **Match before edit.** An `edit` needs no earlier read. It loads the
   file as it is, needs each `old` to match there (section 3), and stores
   the result only if the file still has the version it loaded, so a

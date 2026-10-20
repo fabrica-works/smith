@@ -179,7 +179,10 @@ outcomes stay typed (tools.md, section 4).
   - to write what the next window needs that the task does not say: what
     was done and found, with exact values, names and paths as they were
     read; what remains; and the decisions taken;
-  - not to restate the task or its required answer.
+  - not to restate the task or its required answer;
+  - to keep within 1,000 words (revised 2026-10-20: a summary is
+    generated at the model's output rate, and the median was 3,350
+    tokens, 76 seconds).
 
   The preamble says that what follows is the model's own summary of an
   earlier window, and that the work goes on. Both are the same whatever

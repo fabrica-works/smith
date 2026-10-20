@@ -27,7 +27,7 @@ use crate::workspace::{self, Directory, Workspace};
 pub(crate) const BEGIN: &[u8] = b"Begin the work your brief describes.";
 
 /// The summary keeps the work ready to continue in a new window.
-pub(crate) const SUMMARY: &[u8] = b"Summarise the work so far. The work is not finished: a new context window will continue it, opening with the task's own words. Answer with text only; call no tool. Write what the next window needs that the task does not say: what was done and found, with exact values, names and paths as they were read; what remains; and the decisions taken. Do not restate the task or its required answer.";
+pub(crate) const SUMMARY: &[u8] = b"Summarise the work so far. The work is not finished: a new context window will continue it, opening with the task's own words. Answer with text only; call no tool. Write what the next window needs that the task does not say: what was done and found, with exact values, names and paths as they were read; what remains; and the decisions taken. Do not restate the task or its required answer. Keep within 1,000 words.";
 
 /// The text introducing a summary in the new window.
 pub(crate) const PREAMBLE: &[u8] =

@@ -1062,9 +1062,11 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
      command that checks them (revised 2026-10-20);
   4. changing files with `edit` and `write`, never through the shell,
      the smallest change first, with every replacement one file needs
-     in one `edit`;
-  5. running the tests the change needs, and long commands as jobs
-     whose polls go beside other work (domain/tools.md, section 5);
+     in one `edit`, and an existing file written whole only when most
+     of it changes (revised 2026-10-20);
+  5. running the tests the change needs, each check once on the same
+     files, and long commands as jobs whose polls go beside other work
+     (domain/tools.md, section 5; revised 2026-10-20);
   6. not reverting changes the model did not make;
   7. the report that `finish` carries, as soon as the work is done and
      checked, with no reading or running for the report alone (revised
