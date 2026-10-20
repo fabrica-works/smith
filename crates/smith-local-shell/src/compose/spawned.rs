@@ -86,10 +86,16 @@ mod tests {
 
     #[test]
     fn program_children_validate_with_their_hosts_derived_grace() {
+        // Grace and complete memory use the same declared TLS bounds with one
+        // test root; this story does not need the machine's certificate bundle.
+        let trust = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/protocol-llm/fixtures/root.der");
         let source = crate::settings::Source {
             layer: crate::settings::Layer::User,
             path: "program.toml".into(),
-            text: "credentials='/credentials'\nmodel='anthropic/claude-opus-5-5'\n[accounts.anthropic]\nsource='program'\n[endpoints.anthropic]\nprogram='claude_code'\n[programs]\nclaude_code='/bin/true'\n".into(),
+            text: format!(
+                "credentials='/credentials'\nmodel='anthropic/claude-opus-5-5'\n[accounts.anthropic]\nsource='program'\n[endpoints.anthropic]\nprogram='claude_code'\ntrust.system=false\ntrust.der=['{}']\n[programs]\nclaude_code='/bin/true'\n",
+                trust.display()
+            ),
         };
         let settings =
             crate::settings::from_sources(&crate::command::Shared::default(), "/synthetic".into(), &[source]).unwrap();

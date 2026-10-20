@@ -17,6 +17,7 @@ fn program_invocations_fit_the_standard_memory() {
                 .expect("programs path prefix")
         )
     );
+    let trust = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/protocol-llm/fixtures/root.der");
     let settings = settings::merge(
         &command::Shared::default(),
         "/workspace".into(),
@@ -25,7 +26,8 @@ fn program_invocations_fit_the_standard_memory() {
             path: "program-chat.toml".into(),
             text: format!(
                 "credentials='{credentials}'\nmodel='anthropic/claude-opus-5-5'\n\
-                 [accounts.anthropic]\nsource='program'\n[endpoints.anthropic]\nprogram='claude_code'\n[programs]\nclaude_code='/bin/true'\n"
+                 [accounts.anthropic]\nsource='program'\n[endpoints.anthropic]\nprogram='claude_code'\ntrust.system=false\ntrust.der=['{}']\n[programs]\nclaude_code='/bin/true'\n",
+                trust.display()
             ),
         }],
     )

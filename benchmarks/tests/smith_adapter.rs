@@ -629,9 +629,22 @@ fn product_sources(context: &smith_bench::agent::Context<'_>) -> smith_local_she
 }
 
 fn resolved_product(context: &smith_bench::agent::Context<'_>) -> smith_local_shell::settings::resolve::Resolved {
-    smith_local_shell::settings::resolve::resolve_startup(&product_sources(context))
-        .unwrap_or_else(|why| panic!("{}", why.line()))
-        .0
+    let mut settings = product_sources(context);
+    let trust = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/protocol-llm/fixtures/root.der");
+    // These startup stories open no TLS connection. Keep every native quantity
+    // and memory check, loading the bounded test root instead of the host bundle.
+    for endpoint in ["codex", "anthropic", "openai"] {
+        for (field, value) in [
+            ("system", toml::Value::Boolean(false)),
+            ("der", toml::Value::Array(vec![toml::Value::String(trust.display().to_string())])),
+        ] {
+            settings.values.insert(
+                format!("endpoints.{endpoint}.trust.{field}"),
+                smith_local_shell::settings::Sourced { value, origin: smith_local_shell::settings::Origin::BuiltIn },
+            );
+        }
+    }
+    smith_local_shell::settings::resolve::resolve_startup(&settings).unwrap_or_else(|why| panic!("{}", why.line())).0
 }
 
 #[test]
