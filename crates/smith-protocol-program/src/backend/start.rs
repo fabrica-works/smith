@@ -281,7 +281,7 @@ impl Backend {
         Some(kernel::Spawn {
             program: self.settings.program.claude.clone(),
             args: arguments,
-            env: environment(&self.settings.environment, &configuration).ok()?,
+            env: super::replies::environment(&self.settings.environment, &configuration, self.run_time)?,
             root: root.descriptor,
             dir: directory,
             pipes: Box::new([

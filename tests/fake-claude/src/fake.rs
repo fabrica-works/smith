@@ -91,6 +91,15 @@ pub(crate) fn operations() -> u32 {
 }
 
 impl Fake {
+    /// The scripted call awaiting its MCP reply, without its input or credentials.
+    #[must_use]
+    pub fn pending_tool(&self) -> Option<&str> {
+        match &self.command {
+            Some(Command::Print(print)) => print.pending_tool(),
+            Some(Command::Status(_) | Command::Login(_) | Command::Logout(_) | Command::Unknown) | None => None,
+        }
+    }
+
     /// Takes the invocation's arguments (without argv[0]), `NAME=value`
     /// environment entries and owned startup descriptors.
     pub fn new(arguments: &[Box<[u8]>], environment: &[Box<[u8]>], faces: Faces) -> Self {

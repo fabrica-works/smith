@@ -36,6 +36,7 @@ pub(crate) struct Parent {
     refreshing: Option<smith_channel::GrantValue>,
     pub(crate) cancel_pending: bool,
     pub(crate) program_host_answers: Option<usize>,
+    pub(crate) program_message: bool,
 }
 
 impl Parent {
@@ -100,6 +101,7 @@ impl Parent {
             refreshing: None,
             cancel_pending: false,
             program_host_answers: None,
+            program_message: false,
         };
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
@@ -304,6 +306,10 @@ impl Parent {
 
 impl Host for Parent {
     fn iterate(&mut self, _now: Time, _wall: Wall) {
+        if self.program_message {
+            self.program_message = false;
+            self.peer.play(crate::program_world::message());
+        }
         if self.cancel_pending {
             self.cancel_pending = false;
             self.peer.play(crate::program_world::cancel());
@@ -359,6 +365,7 @@ impl Host for Parent {
     fn work_pending(&self, _now: Time) -> bool {
         !self.completions.is_empty()
             || !self.submissions.is_empty()
+            || self.program_message
             || self.cancel_pending
             || (self.signal > self.signalled)
             || (self.output.is_some() && !self.reading)

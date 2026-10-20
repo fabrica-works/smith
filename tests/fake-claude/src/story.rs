@@ -131,6 +131,8 @@ pub enum Step {
     Together(Vec<Step>),
     /// Calls the named server tool, returning its answer to the model.
     Call { tool: String, input: serde_json::Value },
+    /// Calls a server tool and checks its reply against scripted text.
+    CallChecked { tool: String, input: serde_json::Value, contains: String },
     /// Asks permission before returning this built-in tool's scripted result.
     Builtin { tool: String, input: serde_json::Value, result: String },
 }

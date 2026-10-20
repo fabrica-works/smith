@@ -18,6 +18,7 @@ mod conversation;
 mod diagnostics;
 mod files;
 mod policy;
+mod replies;
 mod start;
 mod stream;
 mod turns;
@@ -28,6 +29,8 @@ mod builtin_tests;
 mod conversation_tests;
 #[cfg(test)]
 mod lifecycle_tests;
+#[cfg(test)]
+mod reply_tests;
 #[cfg(test)]
 mod review_tests;
 #[cfg(test)]
@@ -132,6 +135,7 @@ pub struct Backend {
     deadline: Option<Time>,
     stopping: u8,
     response_phase: llm::Phase,
+    run_time: Duration,
     line: List<u8>,
     stdout_demanding: bool,
     calls: List<mcp::Up>,
@@ -209,10 +213,10 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         // Launch peak: settings paths; executable; instructions and MCP path
         // temporaries; their two argv copies; relative cwd; source directory.
         .checked_add(paths.checked_mul(8)?)?
-        // Settings' command entries and the spawn's owned environment. The
+        // Settings, timeout derivation and the spawn each own command entries. The
         // service prices its machine environment independently. Fixed room
         // covers the synthesized config-directory entry, secret and argv cells.
-        .checked_add(environment.checked_mul(2)?.checked_add(32_768)?)?
+        .checked_add(environment.checked_mul(3)?.checked_add(32_768)?)?
         .checked_add(
             crate::command_worst_case(settings.receiving.max_failure_bytes)?
                 .checked_sub(u64::try_from(size_of::<Command>()).ok()?)?,
@@ -261,6 +265,8 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
             u64::from(settings.adapter.rendered_result)
                 .checked_mul(u64::from(settings.receiving.max_completion_blocks).checked_mul(5)?)?,
         )?
+        // Joining user text temporarily owns the tail and a replacement reply.
+        .checked_add(u64::from(settings.adapter.rendered_result).checked_mul(2)?)?
         .checked_add(Queue::<llm::Completion>::worst_case(4)?)?
         .checked_add(1024)? // retained API message ID
         .checked_add(4096)? // a failed Store's bounded temporary leaf
@@ -300,6 +306,7 @@ impl Backend {
             deadline: None,
             stopping: 0,
             response_phase: llm::Phase::Head,
+            run_time: Duration::ZERO,
             line,
             stdout_demanding: false,
             calls,
@@ -366,6 +373,11 @@ impl Backend {
     /// Set the admitted charter's turn guard before its first completion (5.7).
     pub fn turn_limit(&mut self, turns: u32) {
         self.settings.max_turns = turns;
+    }
+
+    /// Supply the admitted run time for the program's MCP timeout (programs.md 5.7).
+    pub fn run_time(&mut self, time: Duration) {
+        self.run_time = time;
     }
 
     /// Whether a cancellation belongs to the outstanding program completion.

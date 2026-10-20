@@ -139,10 +139,15 @@ pub(crate) struct Print {
     server_config: Value,
     pending: Option<ToolCall>,
     next_tool: u64,
+    expected_reply: Option<String>,
     together: std::collections::VecDeque<(ToolCall, Effect)>,
 }
 
 impl Print {
+    pub(crate) fn pending_tool(&self) -> Option<&str> {
+        self.pending.as_ref().map(|call| call.tool.as_str())
+    }
+
     pub fn start(arguments: &[String], story: Story, config: Config) -> Result<(Self, Vec<Effect>), Vec<Effect>> {
         let flags = Flags::parse(arguments).ok_or_else(|| error("unknown command or flag", 2))?;
         if flags.values.contains_key("--resume") && story.resume == Resume::Missing {
@@ -175,6 +180,7 @@ impl Print {
                 server_config: Value::Null,
                 pending: None,
                 next_tool: 0,
+                expected_reply: None,
                 together: std::collections::VecDeque::new(),
             },
             effects,
@@ -333,6 +339,11 @@ impl Print {
                     effects.extend(self.tool(tool, input, None));
                     return effects;
                 }
+                Step::CallChecked { tool, input, contains } => {
+                    self.expected_reply = Some(contains);
+                    effects.extend(self.tool(tool, input, None));
+                    return effects;
+                }
                 Step::Builtin { tool, input, result } => {
                     effects.extend(self.tool(tool, input, Some(result)));
                     return effects;
@@ -441,6 +452,9 @@ impl Print {
                     },
                     Err(error) => (error, true),
                 };
+                if let Some(expected) = self.expected_reply.take() {
+                    failed |= !text.contains(&expected);
+                }
                 let (text, observation) = match pending.result {
                     None => (text, Seen::Called { tool: pending.tool, error: failed }),
                     Some(result) => {

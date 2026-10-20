@@ -11,6 +11,10 @@ use smith_fake_claude::{Fake, Story};
 
 use crate::world::Parent;
 
+#[path = "program/waiting.rs"]
+mod waiting;
+pub(crate) use waiting::message;
+
 /// One startup scenario encoded in the hosted agent's arguments.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Case {
@@ -19,6 +23,8 @@ pub enum Case {
     Ordinary,
     /// Let a scripted conversation reach its domain terminal.
     Turns,
+    /// Hold wait until the host brings a message.
+    Waiting,
     /// Run workspace built-ins with a writable cwd and a read-only library.
     Tools,
     /// The main endpoint does not select the configured program.
@@ -108,6 +114,10 @@ fn configuration(case: Case) -> smith_agent_service::Config {
         effective_user: 1000,
     });
     let variables = [
+        smith_protocol_machine::Variable {
+            name: b"WAIT_PROOF".as_slice().into(),
+            value: if case == Case::Waiting { b"1".as_slice().into() } else { b"0".as_slice().into() },
+        },
         smith_protocol_machine::Variable { name: b"HOME".as_slice().into(), value: b"/home".as_slice().into() },
         smith_protocol_machine::Variable {
             name: b"EARLY_EXIT".as_slice().into(),
@@ -209,6 +219,7 @@ fn make_agent(spawn: &Spawn, inherited: &Inherited) -> Proc {
 }
 
 fn make_fake(spawn: &Spawn, inherited: &Inherited) -> Proc {
+    waiting::timeout(spawn);
     let mut spawn = Spawn {
         program: spawn.program.clone(),
         args: spawn.args.clone(),
@@ -284,10 +295,12 @@ struct Judge {
     cancel: Option<Time>,
     wait_for_exit: bool,
     ended: bool,
+    waiting: waiting::Release,
 }
 
 impl Referee<Proc> for Judge {
     fn act(&mut self, now: Time, procs: &mut [Proc]) {
+        self.waiting.act(now, procs);
         if self.cancel.is_some_and(|at| now >= at) {
             if let Proc::Parent(parent) = &mut procs[0]
                 && !parent.peer.observed().iter().any(|frame| frame.kind == 0x0110)
@@ -298,7 +311,8 @@ impl Referee<Proc> for Judge {
             self.cancel = None;
         }
     }
-    fn observe(&mut self, _now: Time, procs: &[Proc]) {
+    fn observe(&mut self, now: Time, procs: &[Proc]) {
+        self.waiting.observe(now, procs);
         if let Proc::Parent(parent) = &procs[0] {
             self.ended = parent.peer.observed().iter().any(|frame| frame.kind == 0x0110);
         }
@@ -314,13 +328,13 @@ impl Referee<Proc> for Judge {
         }
     }
     fn next_deadline(&self) -> Option<Time> {
-        self.cancel
+        self.cancel.or(self.waiting.deadline())
     }
     fn overdue(&self, _now: Time) -> Option<String> {
         None
     }
     fn passed(&self) -> bool {
-        self.cancel.is_none() && (!self.wait_for_exit || self.ended)
+        self.cancel.is_none() && self.waiting.passed() && (!self.wait_for_exit || self.ended)
     }
     fn last_word(&self) -> skein_world::LastWord {
         skein_world::LastWord::LastExpectation
@@ -382,7 +396,7 @@ pub fn run(
     refresh: Option<&smith_channel::GrantValue>,
 ) -> Run {
     let mut story = story.clone();
-    if !matches!(case, Case::Turns | Case::Tools) && story.turns.is_empty() {
+    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting) && story.turns.is_empty() {
         story.turns.push(smith_fake_claude::Turn {
             steps: vec![smith_fake_claude::Step::Hang],
             end: smith_fake_claude::End::default(),
@@ -393,9 +407,10 @@ pub fn run(
     let machine = Machine { files, base };
     let mut world =
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
-            wait_for_exit: matches!(case, Case::Turns | Case::Tools),
+            wait_for_exit: matches!(case, Case::Turns | Case::Tools | Case::Waiting),
             ended: false,
-            cancel: if matches!(case, Case::Turns | Case::Tools) {
+            waiting: waiting::Release::new(case == Case::Waiting),
+            cancel: if matches!(case, Case::Turns | Case::Tools | Case::Waiting) {
                 None
             } else {
                 Some(Time::ZERO.saturating_add(Duration::from_millis(50)))
@@ -460,6 +475,7 @@ pub fn run(
         operations: smith_agent_shell::relay::operations(),
     });
     world.spawn_root(skein_sim::Handle::new(root.raw()), |root| {
+        let initial = waiting::initial(case == Case::Waiting);
         let mut parent = Parent::new(
             root,
             charter,
@@ -467,7 +483,7 @@ pub fn run(
             None,
             8,
             false,
-            None,
+            initial.as_ref(),
             smith_agent_service::sinks::Capture::None,
             skein_llm::Provider::OpenAiCodex,
             value,

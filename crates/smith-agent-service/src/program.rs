@@ -264,7 +264,6 @@ pub(super) fn install(
             let program = service.program.as_mut().ok_or(())?;
             if start.charter.llm.account != Some(name.account)
                 || !program.endpoints.contains(&start.charter.llm.endpoint.0)
-                || start.charter.grants.wait
                 || start.transcript.is_some()
             {
                 return Err(());
@@ -293,6 +292,7 @@ pub(super) fn install(
             }
             program.backend.mounts(mounts.into_boxed());
             program.backend.turn_limit(start.charter.budget.turns);
+            program.backend.run_time(start.charter.budget.time);
             program.backend.grant(backend::Grant { name, source: source.clone(), lapses }).or(Err(()))
         }
         channel::GrantValue::Bearer(_) | channel::GrantValue::Key(_) | channel::GrantValue::Withdrawn { .. } => {

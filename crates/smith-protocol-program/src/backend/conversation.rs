@@ -35,57 +35,22 @@ impl Backend {
             return;
         }
         let messages = core::mem::replace(&mut prompt.messages, Box::new([]));
-        let mut nudge = None;
-        let mut replied = false;
-        for message in messages {
-            for block in message.content {
-                match block {
-                    llm::Block::ToolResult { id, result } => {
-                        if id.as_ref() != b"smith-structured-finish" && !self.awaits_answer(&id) {
-                            continue;
-                        }
-                        let Some(answer) = calls::render(result, prompt, &self.settings.adapter) else {
-                            self.fail(
-                                env,
-                                llm::Failure::Invalid,
-                                b"smith: a program tool result exceeds its receiving bound",
-                                up,
-                                below,
-                            );
-                            return;
-                        };
-                        let mut answer = Some(answer);
-                        let mut found = false;
-                        for index in 0..self.ledger.len() {
-                            let call = self.ledger.get_mut(index).expect("ledger cell");
-                            if call.id == id && !call.answered {
-                                call.answer = answer.take();
-                                replied = true;
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found && id.as_ref() == b"smith-structured-finish" {
-                            nudge = match answer {
-                                Some(mcp::Answer::Text(text) | mcp::Answer::Error(text)) => Some(text),
-                                None => None,
-                            };
-                        }
-                    }
-                    llm::Block::Text { text, .. } => nudge = Some(text),
-                    llm::Block::Opaque { .. } | llm::Block::Refusal { .. } | llm::Block::ToolCall { .. } => {}
-                }
-            }
-        }
+        let Some(resumed) = super::replies::resume(self, messages, prompt) else {
+            self.fail(
+                env,
+                llm::Failure::Invalid,
+                b"smith: a program tool result exceeds its receiving bound",
+                up,
+                below,
+            );
+            return;
+        };
         self.request = Some(request);
         self.completion_deadline(env, true);
         self.answer_calls();
-        if replied {
-            nudge = None;
-        }
         // A later API message may already be in flight. Only a completed
         // program turn needs the domain's nudge sent back as a user line.
-        if let Some(text) = nudge
+        if let Some(text) = resumed.nudge
             && self.turns.result
             && self.turns.ready.is_empty()
             && self.turns.message.is_none()

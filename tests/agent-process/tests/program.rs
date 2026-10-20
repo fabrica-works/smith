@@ -229,16 +229,6 @@ fn a_program_that_exits_before_its_init_fails_the_run() {
 }
 
 #[test]
-fn a_program_start_that_waits_is_refused() {
-    let charter = changed_charter(|parts| {
-        let mut tools = parts.tools.clone().into_parts();
-        tools.wait = true;
-        parts.tools = smith_charter::Tools::new(&smith_charter::CEILINGS, tools).expect("wait tool");
-    });
-    refused(Case::default(), &charter, &program(b"source"));
-}
-
-#[test]
 fn a_program_start_with_a_transcript_is_refused() {
     refused(Case::Transcript, &charter(), &program(b"source"));
 }
