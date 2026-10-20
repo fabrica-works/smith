@@ -15,6 +15,9 @@ pub struct Registered {
 
 /// Read and validate an explicitly configured public client before driving it.
 pub fn registration(account: &Account, codex: bool, workspace: &std::path::Path) -> Result<Registered, Refusal> {
+    if account.fields.get("provider").is_some_and(|value| value.value.as_str() == Some("openai")) {
+        return super::registration::configured(account, "", workspace);
+    }
     let registration = configured(account, codex)?;
     let endpoint = destination(account, text(account, "token_url")?, workspace)?;
     Ok(Registered { registration, endpoint })
@@ -77,7 +80,7 @@ fn text<'a>(account: &'a Account, field: &str) -> Result<&'a str, Refusal> {
         .ok_or_else(|| refuse(account, field, "required registration value is absent"))
 }
 
-fn refuse(account: &Account, field: &str, problem: &str) -> Refusal {
+pub(super) fn refuse(account: &Account, field: &str, problem: &str) -> Refusal {
     let origin = account
         .fields
         .get(field)
@@ -90,7 +93,7 @@ fn refuse(account: &Account, field: &str, problem: &str) -> Refusal {
     }
 }
 
-pub(super) fn issuer(uri: &str) -> Result<(&str, bool), &'static str> {
+pub(crate) fn issuer(uri: &str) -> Result<(&str, bool), &'static str> {
     let (rest, plaintext) = if let Some(rest) = uri.strip_prefix("https://") {
         (rest, false)
     } else if let Some(rest) = uri.strip_prefix("http://") {
@@ -115,7 +118,11 @@ pub(super) fn issuer(uri: &str) -> Result<(&str, bool), &'static str> {
     Ok((authority, plaintext))
 }
 
-fn destination(account: &Account, uri: &str, workspace: &std::path::Path) -> Result<accounts::Endpoint, Refusal> {
+pub(super) fn destination(
+    account: &Account,
+    uri: &str,
+    workspace: &std::path::Path,
+) -> Result<accounts::Endpoint, Refusal> {
     let (authority, plaintext) = issuer(uri).map_err(|why| refuse(account, "token_url", why))?;
     let address = if let Ok(address) = authority.parse::<SocketAddr>() {
         address
@@ -163,21 +170,34 @@ fn trust(account: &Account, workspace: &std::path::Path) -> Result<skein_tls::Co
         }
     }
     if sources.is_empty() {
-        sources.push(skein_shell::Trust::Machine { ssl_cert_file: std::env::var_os("SSL_CERT_FILE").map(Into::into) });
+        sources.push(skein_shell::Trust::Machine { ssl_cert_file: None });
     }
     smith_agent_shell::config::configured_trust(&sources).map_err(|why| refuse(account, "trust", &why))
+}
+
+pub(super) fn document_limits() -> oauth::Limits {
+    let mut limits = crate::local_host::token_limits();
+    limits.issued_client_bytes = 1024;
+    limits.subject_bytes = 1024;
+    limits
+}
+
+pub(super) fn record(file: &std::path::Path) -> Result<Option<oauth::SavedToken>, String> {
+    match skein_shell::read_private_file(file, document_limits().record_bytes, skein_shell::effective_user()) {
+        Ok(bytes) => oauth::decode_record(bytes.expose(), &document_limits())
+            .map(Some)
+            .map_err(|_| "unreadable sign-in record".into()),
+        Err(skein_shell::Unread::Absent) => Ok(None),
+        Err(_) => Err("unreadable sign-in record".into()),
+    }
 }
 
 pub(super) fn inspect(file: &std::path::Path, wall: skein_lib::Wall) -> super::Credential {
     if !file.is_absolute() {
         return super::Credential::NotSignedIn;
     }
-    match skein_shell::read_private_file(
-        file,
-        crate::local_host::token_limits().record_bytes,
-        skein_shell::effective_user(),
-    ) {
-        Ok(bytes) => match oauth::decode_record(bytes.expose(), &crate::local_host::token_limits()).ok() {
+    match skein_shell::read_private_file(file, document_limits().record_bytes, skein_shell::effective_user()) {
+        Ok(bytes) => match oauth::decode_record(bytes.expose(), &document_limits()).ok() {
             Some(record) if record.remaining(wall) > skein_lib::Duration::ZERO || record.refresh_token.is_some() => {
                 super::Credential::Usable { until: Some(record.expires_at.as_nanos()) }
             }

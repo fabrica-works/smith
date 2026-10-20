@@ -1,3 +1,5 @@
+mod credentials;
+mod program_commands;
 mod relay;
 mod sources;
 pub mod support;
@@ -248,7 +250,7 @@ fn smith_on_a_terminal_signs_in_and_commits_in_place() {
     );
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
     assert!(String::from_utf8_lossy(&ran.stdout).contains(&format!("Sign in: http://{host}:34444/authorize")));
-    assert!(scratch.path().join("credentials/tokens/636f646578.token").is_file());
+    assert!(scratch.path().join("credentials/tokens/codex").is_file());
     let checkout = scratch.checkout();
     let after = checkout.head().unwrap();
     assert_ne!(before, after);
@@ -1030,7 +1032,7 @@ fn smith_login_signs_in_against_the_fake_issuer_and_exits_0() {
     let ran = support::login::sign_in(&scratch);
     assert_eq!(ran.code, 0);
     assert!(String::from_utf8_lossy(&ran.stderr).contains("account test: signed in"));
-    let file = scratch.path().join("credentials/tokens/74657374.token");
+    let file = scratch.path().join("credentials/tokens/test");
     let secret = skein_shell::read_private_file(
         &file,
         smith_local_shell::local_host::token_limits().record_bytes,

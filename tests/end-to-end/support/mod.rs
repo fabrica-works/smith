@@ -327,7 +327,7 @@ pub fn run_with_provider(
         now,
         deadline: now.saturating_add(Duration::from_secs(5)),
         saved: false,
-        tokens: scratch.path().join("credentials/tokens/66616b65.token"),
+        tokens: scratch.path().join("credentials/tokens/fake"),
         checkout: if scenario.launch.change { scratch.checkout() } else { smith_real_world::Checkout::default() },
         ending: scenario.ending.clone(),
         seed: scenario.launch.seed,
@@ -678,3 +678,5 @@ pub mod sample_host;
 pub mod actor_refusal;
 
 mod window;
+
+pub mod provider_login;

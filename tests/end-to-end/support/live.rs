@@ -251,12 +251,7 @@ impl Backend {
 
 #[must_use]
 pub fn record_path(state: &Path, name: &str) -> PathBuf {
-    use std::fmt::Write;
-    let mut file = String::new();
-    for byte in name.as_bytes() {
-        write!(&mut file, "{byte:02x}").expect("record name");
-    }
-    state.join("smith/tokens").join(format!("{file}.token"))
+    state.join("smith/tokens").join(name)
 }
 
 #[cfg(test)]

@@ -154,6 +154,7 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
                 service::Source::Env { account: account.number, borrowed }
             }
             Source::SignIn { file } => {
+                let interactive = interactive && !account.fields.contains_key("provider");
                 let credential = super::sign_in::inspect(&file, wall);
                 if !interactive && !credential.usable() {
                     return Err(unavailable(&account.name, credential));
@@ -211,15 +212,15 @@ pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::
 #[must_use]
 pub fn client_limits() -> skein_oauth::ClientLimits {
     skein_oauth::ClientLimits {
-        parameter_bytes: 0,
-        resource_bytes: 0,
-        nonce_bytes: 0,
+        parameter_bytes: 1024,
+        resource_bytes: 1024,
+        nonce_bytes: 64,
         metadata_bytes: 0,
-        key_set_bytes: 0,
-        keys: 0,
+        key_set_bytes: 32768,
+        keys: 8,
         modulus_bits: 2048,
         skew: Duration::ZERO,
-        document: crate::local_host::token_limits(),
+        document: super::sign_in::document_limits(),
         uri_bytes: 4096,
         scope_bytes: 1024,
         state_bytes: 64,

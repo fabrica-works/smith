@@ -110,6 +110,10 @@ fn issuer() -> Peer {
 
 impl Private {
     fn new(story: Story) -> Self {
+        Self::configured(story, false)
+    }
+
+    fn configured(story: Story, shared: bool) -> Self {
         let native = native_limits();
         let mut files = Machine::for_user(7);
         let mut items = List::with_capacity(2);
@@ -161,7 +165,9 @@ impl Private {
                 })
                 .is_ok()
         );
-        let mut owner = Accounts::new(sources, native, [61; 32]).expect("private driver");
+        let mut owner =
+            if shared { Accounts::shared(sources, native, [61; 32]) } else { Accounts::new(sources, native, [61; 32]) }
+                .expect("private driver");
         if story == Story::Load || story == Story::Refresh || story == Story::NotSignedIn || story == Story::Interactive
         {
             assert!(owner.request(7));
@@ -192,6 +198,9 @@ impl Private {
         skein_oauth::decode_record(&bytes, &native_limits().client.document).expect("native private encoding")
     }
     fn step(&mut self) {
+        self.step_before(None);
+    }
+    fn step_before(&mut self, ceiling: Option<Time>) {
         let now = self.sim.now();
         let wall = self.sim.wall();
         self.sim.reap(self.peer_pid, self.peer.completions());
@@ -284,6 +293,10 @@ impl Private {
                     .flatten()
                     .min()
             {
+                let next = match ceiling {
+                    Some(ceiling) => next.min(ceiling),
+                    None => next,
+                };
                 self.sim.advance_to(next);
             }
         }
@@ -398,7 +411,7 @@ fn cancelling_a_queued_private_file_request_emits_its_terminal_without_starting_
         deadline: world.sim.now().saturating_add(Duration::from_secs(30)),
     });
     world.owner.file_requests.push(oauth::FileLower::Cancel { owner });
-    world.owner.private_files(world.sim.now());
+    world.owner.private_files(world.sim.now(), world.sim.wall());
     assert_eq!(world.owner.events.pop(), Some(file::Event::Cancelled { owner }));
     assert!(world.owner.file_requests.is_empty());
     world.close();
@@ -435,3 +448,6 @@ fn an_interactive_private_grant_waits_for_sign_in_and_keeping() {
     assert!(world.kept_before_grant);
     world.close();
 }
+
+#[path = "lock.rs"]
+mod shared_tests;

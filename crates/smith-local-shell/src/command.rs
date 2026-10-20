@@ -34,6 +34,8 @@ pub enum Command {
     Exec(Exec),
     /// Sign in to a named account, or inspect its handed-in source.
     Login { shared: Shared, account: String },
+    /// Revoke or remove the credential held for a named account.
+    Logout { shared: Shared, account: String },
 }
 
 /// A headless invocation's prompt and output choices, before any startup reads.
@@ -62,7 +64,7 @@ pub struct Usage(pub String);
 
 /// Parse product flags and the single exec prompt.
 pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
-    if arguments.first().is_some_and(|argument| argument == "login") {
+    if arguments.first().is_some_and(|argument| argument == "login" || argument == "logout") {
         return login(arguments);
     }
     let interactive = !arguments.first().is_some_and(|argument| argument == "exec" || argument == "check");
@@ -131,6 +133,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
 }
 
 fn login(arguments: Vec<OsString>) -> Result<Command, Usage> {
+    let logout = arguments.first().is_some_and(|name| name == "logout");
     let mut arguments = arguments.into_iter().skip(1).collect::<Vec<_>>().into_iter();
     let mut shared = Shared::default();
     let mut account = None;
@@ -144,7 +147,9 @@ fn login(arguments: Vec<OsString>) -> Result<Command, Usage> {
             _ => return Err(Usage(format!("unexpected argument `{argument}`"))),
         }
     }
-    Ok(Command::Login { shared, account: account.ok_or_else(|| Usage("smith login requires an account".into()))? })
+    let verb = if logout { "logout" } else { "login" };
+    let account = account.ok_or_else(|| Usage(format!("smith {verb} requires an account")))?;
+    Ok(if logout { Command::Logout { shared, account } } else { Command::Login { shared, account } })
 }
 
 /// `NAME=PATH`, `NAME=PATH:ro` or `NAME=PATH:rw`; the name is one safe path component.
@@ -399,3 +404,6 @@ mod tests {
         assert_eq!(exec.prompt, Prompt::Argument(b"message".as_slice().into()));
     }
 }
+
+#[cfg(test)]
+mod logout_tests;

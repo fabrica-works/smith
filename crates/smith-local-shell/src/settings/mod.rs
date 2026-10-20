@@ -6,6 +6,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 pub(crate) mod environment;
 mod layers;
+#[cfg(test)]
+mod providers_tests;
 pub mod resolve;
 mod schema;
 #[cfg(test)]
@@ -15,6 +17,7 @@ mod tests;
 
 pub(crate) use layers::merge;
 pub use layers::read;
+pub(crate) use layers::read_in;
 
 /// Resolve supplied startup layers through the same strict merge as file startup.
 pub fn from_sources(

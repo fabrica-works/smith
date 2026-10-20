@@ -19,7 +19,7 @@ impl Service {
         if sources.len() > self.limits.local.smith.accounts {
             return Err(Error::Memory);
         }
-        self.accounts = Some(crate::Accounts::new(sources, limits, entropy)?);
+        self.accounts = Some(crate::Accounts::shared(sources, limits, entropy)?);
         Ok(())
     }
 

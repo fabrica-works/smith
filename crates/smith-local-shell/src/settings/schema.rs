@@ -80,7 +80,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
             "accounts",
             _,
             "variable" | "program" | "file" | "client_id" | "scope" | "redirect_uri" | "authorization_url"
-            | "token_url",
+            | "token_url" | "issuer" | "keys_url" | "revocation_url",
         ]
         | ["workspace", "conventions", "guide" | "checks"]
         | ["trace", "path"] => Some(Kind::Text(4096)),
@@ -88,6 +88,8 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ["endpoints" | "accounts", _, "trust", "der" | "pem"] | ["environment", "inherit"] | ["build", "caches"] => {
             Some(Kind::Strings)
         }
+        ["accounts", _, "provider"] => Some(Kind::Choice(&["openai", "anthropic"])),
+        ["accounts", _, "redirect_port"] => Some(Kind::Integer(65535)),
         ["accounts", _, "source"] => Some(Kind::Choice(&["sign_in", "borrow", "env", "key", "program", "none"])),
         ["accounts", _, "token_format"] => Some(Kind::Choice(&["json", "form"])),
         ["accounts", _, "format"] => Some(Kind::Choice(&["codex"])),

@@ -56,6 +56,8 @@ pub enum Logout {
     Succeeds,
     /// Refuses removal and keeps the login.
     Fails,
+    /// Refuses removal with the supplied stderr detail.
+    Detail(String),
 }
 
 impl Story {

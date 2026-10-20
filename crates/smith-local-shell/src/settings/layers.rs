@@ -12,14 +12,19 @@ const BUILT_IN: &str = "profile='standard'\nchat='default'\nsub_agents=false\nwa
 
 /// Read the startup layers, ordered overrides and flags without opening a run.
 pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
+    read_in(shared, &std::env::vars_os().collect::<Vec<_>>())
+}
+
+pub(crate) fn read_in(
+    shared: &Shared,
+    environment: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> Result<Settings, Refusal> {
+    let variable = |name: &str| environment.iter().find(|(key, _)| key == name).map(|(_, value)| value.clone());
     let current = std::env::current_dir().map_err(|why| refusal(Origin::BuiltIn, "workspace", &why.to_string()))?;
     let workspace = shared.directory.as_ref().map_or_else(|| current.clone(), |path| current.join(path));
-    let path_environment = super::Paths {
-        home: std::env::var_os("HOME"),
-        state_home: std::env::var_os("XDG_STATE_HOME"),
-        path: std::env::var_os("PATH"),
-    };
-    let user = std::env::var_os("XDG_CONFIG_HOME")
+    let path_environment =
+        super::Paths { home: variable("HOME"), state_home: variable("XDG_STATE_HOME"), path: variable("PATH") };
+    let user = variable("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| path_environment.home.as_ref().map(|home| PathBuf::from(home).join(".config")));
     let mut sources = Vec::new();
@@ -60,7 +65,7 @@ pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
 pub(crate) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> Result<Settings, Refusal> {
     let mut settings = Settings { paths: super::Paths::default(), workspace, values: BTreeMap::new() };
     document(&mut settings, BUILT_IN, &Origin::BuiltIn)?;
-    for preset in [crate::presets::Preset::Codex, crate::presets::Preset::Anthropic] {
+    for preset in [crate::presets::Preset::OpenAi, crate::presets::Preset::Codex, crate::presets::Preset::Anthropic] {
         document(&mut settings, crate::presets::built_in(preset), &Origin::BuiltIn)?;
     }
     for source in sources {

@@ -112,7 +112,7 @@ fn open_mode(
     };
     let mut invocation = match command {
         Command::Exec(invocation) => invocation,
-        Command::Check { .. } | Command::Login { .. } | Command::Interactive { .. } => {
+        Command::Check { .. } | Command::Logout { .. } | Command::Login { .. } | Command::Interactive { .. } => {
             unreachable!("one exec invocation")
         }
     };
@@ -496,7 +496,7 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
             },
             Some(plain),
         ),
-        Ok(Command::Check { .. } | Command::Login { .. }) => {
+        Ok(Command::Check { .. } | Command::Logout { .. } | Command::Login { .. }) => {
             return None;
         }
         Err(why) => {

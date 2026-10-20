@@ -45,7 +45,12 @@ pub(crate) fn read(file: &Path) -> Result<Box<[u8]>, Credential> {
             Credential::KeyUnreadable { problem: KeyProblem::Unreadable }
         }
     })?;
-    let value = bytes.expose().strip_suffix(b"\n").unwrap_or(bytes.expose());
+    value(bytes.expose())
+}
+
+pub(super) fn value(bytes: &[u8]) -> Result<Box<[u8]>, Credential> {
+    let bound = crate::local_host::token_limits().token_bytes;
+    let value = bytes.strip_suffix(b"\n").unwrap_or(bytes);
     if value.is_empty() || u64::try_from(value.len()).expect("key length fits u64") > u64::from(bound) {
         return Err(Credential::KeyUnreadable { problem: KeyProblem::Size });
     }

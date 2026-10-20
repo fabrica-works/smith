@@ -228,6 +228,7 @@ impl LogoutCommand {
     fn start(logout: Logout, config: Config) -> (Self, Vec<Effect>) {
         match logout {
             Logout::Fails => (Self::Done, error("sign-out refused", 1)),
+            Logout::Detail(detail) => (Self::Done, error(&detail, 1)),
             Logout::Succeeds => match config.directory {
                 Some(root) => (
                     Self::Removing,

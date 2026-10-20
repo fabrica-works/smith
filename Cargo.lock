@@ -1236,6 +1236,7 @@ dependencies = [
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-protocol-machine",
+ "smith-protocol-program",
  "smith-real-world",
  "smith-transcript",
  "toml",

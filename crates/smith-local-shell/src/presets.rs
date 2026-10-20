@@ -3,8 +3,12 @@
 //! catalog; `list_prices` selects the tier after a window resolves (shell.md, 5.2, 6.1–6.2).
 use crate::settings::{Origin, Settings, Sourced};
 pub use smith_domain::run::Prices;
+mod openai;
 
-const MODELS: [&str; 6] = [
+const MODELS: [&str; 9] = [
+    "openai/gpt-6-astra",
+    "openai/gpt-6-luna",
+    "openai/gpt-6.1-sol",
     "codex/gpt-6-astra",
     "codex/gpt-6-luna",
     "codex/gpt-6.1-sol",
@@ -24,6 +28,8 @@ pub(crate) fn build_homes(preset: &str) -> Option<&'static [&'static str]> {
 /// One provider's built-in endpoint, account metadata and known models.
 #[derive(Clone, Copy, Debug)]
 pub enum Preset {
+    /// `OpenAI`'s public endpoint and smith's known model declarations.
+    OpenAi,
     /// Codex's endpoint, account metadata and known model declarations.
     Codex,
     /// Anthropic's endpoint, account metadata and known model declarations.
@@ -34,6 +40,7 @@ pub enum Preset {
 #[must_use]
 pub const fn built_in(preset: Preset) -> &'static str {
     match preset {
+        Preset::OpenAi => openai::SETTINGS,
         Preset::Codex => {
             r"
 [endpoints.codex]
@@ -115,6 +122,7 @@ price_unit = 1000000
 /// and platform.claude.com/docs/en/about-claude/pricing (2026-10-14).
 #[must_use]
 pub fn list_prices(endpoint: &str, model: &str, window: u64) -> Option<Prices> {
+    let endpoint = if endpoint == "openai" { "codex" } else { endpoint };
     let (input, cached, cache_write, output) = match (endpoint, model) {
         ("codex", "gpt-6-astra") if window > 272_000 => (20_000_000, 2_000_000, 25_000_000, 75_000_000),
         ("codex", "gpt-6-astra") => (10_000_000, 1_000_000, 12_500_000, 50_000_000),

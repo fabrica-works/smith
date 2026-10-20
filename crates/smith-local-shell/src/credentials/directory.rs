@@ -48,12 +48,19 @@ impl Directory {
     /// The current private sign-in record name.
     #[must_use]
     pub fn token(&self, account: &str) -> PathBuf {
-        use std::fmt::Write;
-        let mut file = String::new();
-        for byte in account.as_bytes() {
-            write!(&mut file, "{byte:02x}").expect("a string accepts the filename");
-        }
-        self.base.join("tokens").join(format!("{file}.token"))
+        self.base.join("tokens").join(account)
+    }
+
+    /// The permanent directory whose exclusive lock guards the account record.
+    #[must_use]
+    pub fn lock(&self, account: &str) -> PathBuf {
+        self.base.join("tokens").join(format!("{account}.lock"))
+    }
+
+    /// The installation identifier created only by a provider sign-in.
+    #[must_use]
+    pub fn host_id(&self) -> PathBuf {
+        self.base.join("host-id")
     }
 
     /// The directory containing program source configurations.
@@ -71,3 +78,6 @@ impl Directory {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod layout_tests;

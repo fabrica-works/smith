@@ -9,10 +9,16 @@ use skein_lib::{CryptoRng, Env, List, Queue, Secret, Time, Token, Wall};
 use skein_oauth_accounts as oauth;
 use smith_local_domain as local;
 use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
+mod adopt;
 mod boundary;
 pub use boundary::CredentialRequest;
 
+mod lock;
 mod private;
+mod sign_out;
+mod subject;
+mod terminals;
+pub use sign_out::Settled;
 mod transport;
 
 const BORROWED_FILE: u64 = 1 << 63;
@@ -56,6 +62,9 @@ struct Account {
     startup: bool,
     loading: bool,
     wanted: bool,
+    subject: Option<Box<[u8]>>,
+    subject_failure: Option<oauth::Failure>,
+    pending: Option<oauth::Request>,
 }
 enum Origin {
     Borrow {
@@ -95,6 +104,9 @@ pub struct Accounts {
     closed: bool,
     closing: Option<smith_agent_service::Close>,
     close_sent: bool,
+    locks: List<lock::Lock>,
+    reads: List<subject::Read>,
+    settled: List<Option<(u32, Settled)>>,
 }
 
 /// The driver, source descriptors, file operations and bounded output queues.
@@ -104,11 +116,14 @@ pub fn accounts_worst_case(limits: &oauth::Limits) -> Option<u64> {
         .checked_add(transport::worst_case(limits)?)?
         .checked_add(smith_local_protocol::login_worst_case(&limits.client.document)?)?
         .checked_add(file_layer::FileIo::worst_case(
-            limits.accounts.checked_mul(3)?,
+            limits.accounts.checked_mul(4)?,
             4096,
             1,
             limits.client.document.document_bytes.max(limits.client.document.record_bytes),
         )?)?
+        .checked_add(lock::worst_case(limits)?)?
+        .checked_add(subject::worst_case(limits)?)?
+        .checked_add(sign_out::worst_case(limits)?)?
         .checked_add(List::<Account>::worst_case(limits.accounts)?)?
         .checked_add(List::<Source>::worst_case(limits.accounts)?)?
         .checked_add(
@@ -213,11 +228,26 @@ fn claim_identifier(account: &mut Account, token: &[u8], wall: Wall, limits: &sk
 impl Accounts {
     /// Validate sources and adopt their source directory descriptors.
     pub fn new(sources: List<Source>, limits: oauth::Limits, entropy: [u8; 32]) -> Result<Self, crate::Error> {
-        let effective_user = validate_sources(&sources, &limits)?;
+        Self::build(sources, &limits, entropy, false)
+    }
+
+    /// Adopt sources whose private writes take the record's directory lock.
+    pub fn shared(sources: List<Source>, limits: oauth::Limits, entropy: [u8; 32]) -> Result<Self, crate::Error> {
+        Self::build(sources, &limits, entropy, true)
+    }
+
+    fn build(
+        sources: List<Source>,
+        limits: &oauth::Limits,
+        entropy: [u8; 32],
+        shared: bool,
+    ) -> Result<Self, crate::Error> {
+        let mut locks = List::with_capacity(limits.accounts);
+        let effective_user = validate_sources(&sources, limits)?;
         let mut handed = List::with_capacity(limits.accounts);
         let mut accounts = List::<Account>::with_capacity(limits.accounts);
         let mut files = file_layer::FileIo::with_whole_limit(
-            limits.accounts.checked_mul(3).ok_or(crate::Error::Memory)?,
+            limits.accounts.checked_mul(4).ok_or(crate::Error::Memory)?,
             4096,
             1,
             limits.client.document.document_bytes.max(limits.client.document.record_bytes),
@@ -230,65 +260,16 @@ impl Accounts {
             files = files.with_effective_user(user);
         }
         for source in sources.into_boxed() {
-            let mut identifier: Box<[u8]> = Box::new([]);
-            let (number, origin, configured) = match source {
-                Source::Borrow { account, root, path, format } => {
-                    let root = files.adopt_root(root).expect("validated source count fits");
-                    (account, Origin::Borrow { root: Some(root), path, format }, oauth::Account::HandedIn)
-                }
-                Source::Env { account, borrowed } => {
-                    (account, Origin::Env { initial: Some(borrowed) }, oauth::Account::HandedIn)
-                }
-                Source::SignIn {
-                    account,
-                    root,
-                    directory,
-                    file,
-                    registration,
-                    endpoint,
-                    account_id,
-                    interactive,
-                    ..
-                } => {
-                    if account_id.len() > Source::account_id_bytes() {
-                        return Err(crate::Error::Memory);
-                    }
-                    identifier = account_id;
-                    let root = files.adopt_root(root).expect("validated private source count fits");
-                    let claim = registration.metadata_claim.clone();
-                    (
-                        account,
-                        Origin::SignIn { root: Some(root), claim, interactive, sign_in: false, signing: false },
-                        oauth::Account::SignIn {
-                            registration,
-                            endpoint,
-                            origins: List::with_capacity(0),
-                            shared: false,
-                            keeper: oauth::Keeper::Private { root, directory, file },
-                        },
-                    )
-                }
-            };
-            assert!(handed.push(configured).is_ok(), "validated account capacity");
-            assert!(
-                accounts
-                    .push(Account {
-                        number,
-                        source: origin,
-                        identifier,
-                        generation: 0,
-                        expires: Wall::EPOCH,
-                        startup: true,
-                        loading: false,
-                        wanted: false,
-                    })
-                    .is_ok(),
-                "validated account capacity"
-            );
+            let bound = adopt::source(source, &mut files, &mut locks, shared)?;
+            assert!(handed.push(bound.configured).is_ok(), "validated account capacity");
+            assert!(accounts.push(bound.account).is_ok(), "validated account capacity");
         }
-        let driver = configured_driver(handed, &limits, entropy)?;
+        let driver = configured_driver(handed, limits, entropy)?;
         Ok(Self {
             driver,
+            locks,
+            reads: List::with_capacity(limits.accounts),
+            settled: List::with_capacity(limits.accounts),
             sockets: io::Io::new(&limits.io),
             socket_events: Queue::with_capacity(3),
             socket_requests: Queue::with_capacity(3),
@@ -302,7 +283,7 @@ impl Accounts {
                     .checked_add(1)
                     .ok_or(crate::Error::Memory)?,
             ),
-            limits,
+            limits: *limits,
             entries: accounts,
             files,
             events: Queue::with_capacity(3),
@@ -367,12 +348,17 @@ impl Accounts {
     fn begin(&mut self, index: u32, now: Time, wall: Wall) {
         let account = self.entries.get_mut(index).expect("account index");
         account.startup = false;
+        if let Some(request) = account.pending.take() {
+            account.loading = true;
+            self.down(request, now, wall);
+            return;
+        }
         match &mut account.source {
             Origin::SignIn { sign_in, signing, .. } => {
                 let request = if *sign_in {
                     *sign_in = false;
                     *signing = true;
-                    oauth::Request::SignIn { account: index, subject: None }
+                    oauth::Request::SignIn { account: index, subject: account.subject.take() }
                 } else if account.wanted {
                     oauth::Request::Grant { account: index }
                 } else {
@@ -454,7 +440,12 @@ impl Accounts {
         reason = "external file IO terminals other than Loaded or Closed end a failed load"
     )]
     fn filed(&mut self, event: file::Event, now: Time, wall: Wall) {
+        if event.owner().raw() & lock::LOCK_FILE != 0 && event.owner().raw() & BORROWED_FILE == 0 {
+            self.lock_event(event, now, wall);
+            return;
+        }
         if event.owner().raw() & BORROWED_FILE == 0 {
+            self.record_event(&event);
             let env = Env { now, wall, limits: self.limits };
             self.driver.filed(&env, event, &mut self.out, &mut self.socket_requests, &mut self.file_requests);
             return;
@@ -503,7 +494,9 @@ impl Accounts {
     #[must_use]
     pub fn next_deadline(&self) -> Option<Time> {
         let mut deadline = self.driver.next_deadline();
-        for candidate in [self.files.next_deadline(), self.sockets.next_deadline()].into_iter().flatten() {
+        for candidate in
+            [self.files.next_deadline(), self.sockets.next_deadline(), self.lock_deadline()].into_iter().flatten()
+        {
             deadline = Some(match deadline {
                 Some(prior) => prior.min(candidate),
                 None => candidate,
@@ -511,14 +504,14 @@ impl Accounts {
         }
         for lower in &self.file_requests {
             match lower {
-                oauth::FileLower::Request { deadline: candidate, .. } => {
+                oauth::FileLower::Request { deadline: candidate, .. }
+                | oauth::FileLower::Remove { deadline: candidate, .. } => {
                     deadline = Some(match deadline {
                         Some(prior) => prior.min(*candidate),
                         None => *candidate,
                     });
                 }
                 oauth::FileLower::Cancel { .. } => {}
-                oauth::FileLower::Remove { .. } => unreachable!("local accounts do not sign out"),
             }
         }
         deadline
@@ -540,6 +533,9 @@ impl Accounts {
     pub fn work_pending(&self, now: Time) -> bool {
         if self.closed() {
             return false;
+        }
+        if self.files.takes() && (self.lock_pending(now) || !self.file_requests.is_empty()) {
+            return true;
         }
         if self.socket_pending(now) || self.driver.has_work() || (self.closing.is_some() && !self.close_sent) {
             return true;
@@ -651,115 +647,13 @@ impl Accounts {
                 self.driver.fire(&env, &mut self.out, &mut self.socket_requests, &mut self.file_requests);
             }
         }
-        self.private_files(now);
+        self.lock_progress(now);
+        self.private_files(now, wall);
         self.socket_down(now, wall);
         self.emit(now, wall, out);
         if self.closed() && self.closing.is_some() {
             self.closing = None;
             out.push(CredentialRequest::Closed);
-        }
-    }
-
-    fn emit(&mut self, now: Time, wall: Wall, out: &mut Queue<CredentialRequest>) {
-        if let Some((account, reason)) = self.failed.take() {
-            out.push(CredentialRequest::Failed { event: local::Event::NoCredential { account, reason } });
-        }
-        for _ in 0..3_u32 {
-            match self.out.pop() {
-                Some(oauth::Event::Granted { account: index, token, generation, valid }) => {
-                    let account = self.entries.get_mut(index).expect("account index");
-                    account.wanted = false;
-                    account.loading = false;
-                    if !claim_identifier(account, &token, wall, &self.limits.client.document) {
-                        out.push(CredentialRequest::Failed {
-                            event: local::Event::NoCredential {
-                                account: account.number,
-                                reason: local::CredentialFailure::Missing,
-                            },
-                        });
-                        self.down(oauth::Request::Release { account: index }, now, wall);
-                        continue;
-                    }
-                    out.push(CredentialRequest::Ready {
-                        event: local::Event::Credential {
-                            form: account_form(&account.identifier),
-                            grant: smith_domain::Grant {
-                                name: smith_domain::GrantName { account: account.number, generation },
-                                valid,
-                            },
-                        },
-                        value: token,
-                    });
-                }
-                Some(oauth::Event::Expiring { account, .. }) => {
-                    let account = self.entries.get(account).expect("account index");
-                    out.push(CredentialRequest::Notice {
-                        account: account.number,
-                        reason: local::CredentialFailure::BorrowedExpiring { at: account.expires },
-                    });
-                }
-                Some(oauth::Event::Failed { account: index, ends, failure }) => {
-                    let account = self.entries.get_mut(index).expect("account index");
-                    account.loading = false;
-                    match &mut account.source {
-                        Origin::SignIn { interactive, sign_in, signing, .. } => {
-                            *signing = false;
-                            if *interactive
-                                && self.closing.is_none()
-                                && ends == oauth::Ends::Grant
-                                && failure == oauth::Failure::Expired
-                            {
-                                *sign_in = true;
-                                account.startup = true;
-                                continue;
-                            }
-                        }
-                        Origin::Borrow { .. } | Origin::Env { .. } => {}
-                    }
-                    let reason = match account.source {
-                        Origin::Borrow { .. } => local::CredentialFailure::BorrowedExpired { at: account.expires },
-                        Origin::SignIn { .. } | Origin::Env { .. } => local::CredentialFailure::Missing,
-                    };
-                    out.push(CredentialRequest::Failed {
-                        event: local::Event::NoCredential { account: account.number, reason },
-                    });
-                    account.wanted = false;
-                }
-                Some(oauth::Event::Refused { account: index, .. }) => {
-                    let account = self.entries.get_mut(index).expect("account index");
-                    account.loading = false;
-                    account.wanted = false;
-                    out.push(CredentialRequest::Failed {
-                        event: local::Event::NoCredential {
-                            account: account.number,
-                            reason: local::CredentialFailure::Missing,
-                        },
-                    });
-                }
-                Some(oauth::Event::Visit { url, .. }) => {
-                    out.push(CredentialRequest::Visit { url });
-                }
-                Some(oauth::Event::SignedIn { account: index, .. }) => {
-                    let account = self.entries.get_mut(index).expect("account index");
-                    account.loading = false;
-                    match &mut account.source {
-                        Origin::SignIn { signing, .. } => *signing = false,
-                        Origin::Borrow { .. } | Origin::Env { .. } => unreachable!("sign-in terminal"),
-                    }
-                    out.push(CredentialRequest::SignedIn { account: account.number });
-                }
-                Some(oauth::Event::Closed) => self.closed = true,
-                Some(
-                    oauth::Event::Removed { .. }
-                    | oauth::Event::SignedOut { .. }
-                    | oauth::Event::Lock { .. }
-                    | oauth::Event::Unlock { .. },
-                ) => unreachable!("local accounts are private and not removed"),
-                Some(oauth::Event::Keep { .. }) => {
-                    unreachable!("private keepers own their durable records")
-                }
-                None => break,
-            }
         }
     }
 }

@@ -52,7 +52,7 @@ impl Accounts {
         self.down(oauth::Request::Close, now, wall);
     }
 
-    pub(super) fn private_files(&mut self, now: Time) {
+    pub(super) fn private_files(&mut self, now: Time, wall: Wall) {
         if self.events.room() < 3 || self.submissions.room() < 2 {
             return;
         }
@@ -68,6 +68,9 @@ impl Accounts {
                         });
                         return;
                     }
+                    if self.record_request(&request, now, wall) {
+                        return;
+                    }
                     if self.files.takes() {
                         file_layer::down_until(
                             &mut self.files,
@@ -80,7 +83,29 @@ impl Accounts {
                     }
                     self.file_requests.push(oauth::FileLower::Request { request, deadline });
                 }
-                oauth::FileLower::Remove { .. } => unreachable!("local accounts do not sign out"),
+                oauth::FileLower::Remove { owner, root, name, directory, deadline } => {
+                    if deadline <= now {
+                        self.events.push(file::Event::Failed {
+                            owner,
+                            error: kernel::Error::TimedOut,
+                            committed: false,
+                            residue: None,
+                        });
+                        return;
+                    }
+                    if self.files.takes() {
+                        let root = self.files.descriptor(root).expect("private removal root");
+                        file_layer::down_until(
+                            &mut self.files,
+                            deadline,
+                            file::Request::Remove { owner, root, name, directory },
+                            &mut self.events,
+                            &mut self.submissions,
+                        );
+                        return;
+                    }
+                    self.file_requests.push(oauth::FileLower::Remove { owner, root, name, directory, deadline });
+                }
                 oauth::FileLower::Cancel { owner: cancelled } => {
                     file_layer::cancel(&mut self.files, cancelled, &mut self.submissions);
                     for _ in 0..self.file_requests.len() {
@@ -92,7 +117,19 @@ impl Accounts {
                                     self.file_requests.push(oauth::FileLower::Request { request, deadline });
                                 }
                             }
-                            oauth::FileLower::Remove { .. } => unreachable!("local accounts do not sign out"),
+                            oauth::FileLower::Remove { owner, root, name, directory, deadline } => {
+                                if owner == cancelled {
+                                    self.events.push(file::Event::Cancelled { owner });
+                                } else {
+                                    self.file_requests.push(oauth::FileLower::Remove {
+                                        owner,
+                                        root,
+                                        name,
+                                        directory,
+                                        deadline,
+                                    });
+                                }
+                            }
                             oauth::FileLower::Cancel { owner } => {
                                 self.file_requests.push(oauth::FileLower::Cancel { owner });
                             }
@@ -111,7 +148,8 @@ fn owner(request: &file::Request) -> Token {
         file::Request::OpenPrivate { owner, .. }
         | file::Request::Load { owner, .. }
         | file::Request::Store { owner, .. }
-        | file::Request::Close { owner, .. } => *owner,
+        | file::Request::Close { owner, .. }
+        | file::Request::Remove { owner, .. } => *owner,
         _ => unreachable!("private keeper file vocabulary"),
     }
 }

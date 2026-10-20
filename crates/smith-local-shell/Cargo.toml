@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+smith-protocol-program.workspace = true
 smith-agent-shell.workspace = true
 skein-lib.workspace = true
 skein-oauth.workspace = true

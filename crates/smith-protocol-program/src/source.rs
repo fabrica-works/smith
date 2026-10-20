@@ -69,6 +69,12 @@ pub fn keeps(name: &[u8]) -> bool {
         && name != b"AWS_BEARER_TOKEN_BEDROCK"
 }
 
+/// Maximum filtered environment bytes supplied to a source (protocol/programs.md, 4.2).
+pub const ENVIRONMENT_BYTES: usize = 4096;
+
+/// Maximum filtered environment entries supplied to a source (protocol/programs.md, 4.2).
+pub const ENVIRONMENT_ENTRIES: u32 = 64;
+
 /// Replace competing login variables with the source's configuration directory.
 /// The result holds at most 64 entries and 4096 bytes (programs.md, 4.2).
 pub fn environment(base: &[Box<[u8]>], configuration: &[u8]) -> Result<Box<[Box<[u8]>]>, Error> {
@@ -87,7 +93,7 @@ pub fn environment(base: &[Box<[u8]>], configuration: &[u8]) -> Result<Box<[Box<
             entries = entries.checked_add(1).ok_or(Error::Environment)?;
         }
     }
-    if bytes > 4096 || entries > 64 {
+    if bytes > ENVIRONMENT_BYTES || entries > ENVIRONMENT_ENTRIES {
         return Err(Error::Environment);
     }
     let mut result = List::with_capacity(entries);

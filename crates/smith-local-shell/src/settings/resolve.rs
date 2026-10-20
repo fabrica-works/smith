@@ -10,7 +10,8 @@ mod input;
 mod local;
 pub(super) mod models;
 mod numbers;
-pub(super) mod programs;
+pub(crate) mod programs;
+mod providers;
 pub(super) mod relationships;
 
 /// Main first, followed by eligible child models, with their needed accounts.
@@ -63,7 +64,9 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
     let mut outside_models = BTreeMap::new();
     let children = input::sourced(&settings, "sub_agents")?.value.as_bool().expect("decoded delegation");
     for model in catalog(&settings) {
-        if !active.contains(&model) {
+        if !active.contains(&model)
+            && (!model.starts_with("openai/") || settings.values.contains_key("endpoints.openai.account"))
+        {
             let program = account(&settings, &model).ok().is_some_and(|name| {
                 settings
                     .values
@@ -145,6 +148,7 @@ pub(crate) fn checked(settings: &Settings) -> Result<Settings, super::Refusal> {
     let mut settings = settings.clone();
     inherit::apply(&mut settings)?;
     numbers::check(&settings)?;
+    providers::check(&mut settings)?;
     programs::check_sources(&settings)?;
     Ok(settings)
 }
@@ -163,7 +167,7 @@ pub fn select(settings: &Settings) -> Result<Selection, super::Refusal> {
             if model == main {
                 continue;
             }
-            let account = account(&settings, &model)?;
+            let Ok(account) = account(&settings, &model) else { continue };
             let source = settings.values.get(&format!("accounts.{}.source", super::name(&account)));
             if model.split_once('/').is_some_and(|(endpoint, _)| endpoint != main_endpoint)
                 && source.is_some_and(|field| field.value.as_str() == Some("program"))
@@ -208,5 +212,7 @@ pub(super) fn catalog(settings: &Settings) -> BTreeSet<String> {
 fn account(settings: &Settings, model: &str) -> Result<String, super::Refusal> {
     let (endpoint, _) =
         model.split_once('/').ok_or_else(|| input::refuse(settings, "model", "expected endpoint/model"))?;
-    input::text(settings, &format!("endpoints.{}.account", super::name(endpoint))).map(str::to_owned)
+    input::text(settings, &format!("endpoints.{}.account", super::name(endpoint)))
+        .map(str::to_owned)
+        .map_err(|why| if endpoint == "openai" { providers::missing(settings, endpoint) } else { why })
 }

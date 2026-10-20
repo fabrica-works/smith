@@ -336,6 +336,8 @@ impl Host for BrowserProcess {
     }
 }
 
+mod provider;
+
 /// Issuer transport and the wall time of its first observed token POST.
 pub struct IssuerProcess {
     peer: Issuer,
@@ -360,6 +362,11 @@ impl IssuerProcess {
     /// Issue this synthetic token for the product's claim extraction story.
     pub fn with_token(transport: skein_fake_peers::Transport, port: u16, token: Box<[u8]>) -> Self {
         Self { peer: issuer_with_token(transport, port, token), first_post: None }
+    }
+    /// Script smith's own issued registration, identity and optional revocation.
+    #[must_use]
+    pub fn provider(port: u16, subject: &[u8], plan: bool, again: bool, revocation: Option<bool>) -> Self {
+        Self { peer: provider::issuer(port, subject, plan, again, revocation), first_post: None }
     }
     /// Peer observations only.
     #[must_use]

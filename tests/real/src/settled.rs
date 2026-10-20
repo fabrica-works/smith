@@ -149,7 +149,7 @@ impl Before {
             assert_eq!(new_deliveries, returned, "only observed delivery terminals were persisted");
         }
         if scenario.launch.authenticated {
-            expected.insert(PathBuf::from(if binary { "credentials/tokens/66616b65.token" } else { "tokens/0.json" }));
+            expected.insert(PathBuf::from(if binary { "credentials/tokens/fake" } else { "tokens/0.json" }));
         }
         let repo = root.join("repo");
         if scenario.launch.change {
@@ -171,6 +171,13 @@ impl Before {
             }
         }
         let mut directories = BTreeSet::new();
+        if scenario.launch.authenticated {
+            directories.insert(PathBuf::from(if binary {
+                "credentials/tokens/fake.lock"
+            } else {
+                "tokens/0.json.lock"
+            }));
+        }
         for path in &expected {
             let mut parent = path.parent();
             while let Some(path) = parent.filter(|path| !path.as_os_str().is_empty()) {

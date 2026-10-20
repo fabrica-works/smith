@@ -45,5 +45,5 @@ fn keys_programs_tokens_live_under_the_base() {
     let directory = Directory::from_base("/base".into()).expect("base");
     assert_eq!(directory.key("work"), PathBuf::from("/base/keys/work"), "key");
     assert_eq!(directory.program("work"), PathBuf::from("/base/programs/work"), "program");
-    assert_eq!(directory.token("work"), PathBuf::from("/base/tokens/776f726b.token"), "token");
+    assert_eq!(directory.token("work"), PathBuf::from("/base/tokens/work"), "token");
 }

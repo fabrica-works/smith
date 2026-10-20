@@ -6,7 +6,7 @@ use crate::credentials::Directory;
 use serde_json::{Value, json};
 use std::{ffi::OsStr, os::unix::fs::PermissionsExt, path::PathBuf};
 
-pub(in crate::settings) fn locate(configured: Option<&str>, path: Option<&OsStr>) -> Result<PathBuf, ()> {
+pub(crate) fn locate(configured: Option<&str>, path: Option<&OsStr>) -> Result<PathBuf, ()> {
     let executable = |path: &PathBuf| {
         path.is_absolute()
             && std::fs::metadata(path)
