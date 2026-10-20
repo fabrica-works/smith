@@ -815,6 +815,61 @@ fn a_dir_follows_the_working_directory_named_by_its_last_component() {
 }
 
 #[test]
+fn three_dirs_start_beside_the_working_directory() {
+    use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
+    use smith_domain::run;
+
+    let root = scratch("four");
+    for name in ["plan", "kit", "log"] {
+        std::fs::create_dir_all(root.join(name)).unwrap();
+    }
+    let mut resolved = with_dirs(
+        &root,
+        "",
+        vec![
+            dir("plan", root.join("plan"), false),
+            dir("kit", root.join("kit"), false),
+            dir("log", root.join("log"), true),
+        ],
+    )
+    .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(
+        rows(&resolved),
+        [
+            ("work".into(), true, false),
+            ("plan".into(), false, false),
+            ("kit".into(), false, false),
+            ("log".into(), true, false)
+        ]
+    );
+    let native = &resolved.agent.service.limits.domain;
+    assert_eq!(native.run.directories, 4);
+    assert_eq!(native.session.tools.repos, 4);
+    resolved.local.mode = smith_local_domain::Mode::Headless { prompt: b"Do the work".as_slice().into() };
+    let charter = smith_local_domain::charter(&resolved.local);
+    let mut domain = run::Domain::new(&native.run, 0);
+    let mut out = Queue::with_capacity(run::MAX_OUT);
+    run::step(
+        &mut domain,
+        &Env { now: Time::ZERO, wall: Wall::EPOCH, limits: native.run },
+        run::Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            identity: None,
+            activation: 1,
+            window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+            charter,
+            workspace: resolved.local.workspace,
+            transcript: None,
+            resumed: false,
+        },
+        &mut out,
+    );
+    assert!(matches!(out.pop(), Some(run::Request::Admitted { .. })), "four-directory start admitted");
+}
+
+#[test]
 fn a_dir_inside_a_git_working_tree_is_a_repository() {
     let root = scratch("git");
     std::fs::create_dir_all(root.join("kit/.git")).unwrap();
@@ -857,7 +912,8 @@ fn a_dir_the_workspace_cannot_hold_is_refused_at_the_flag() {
     assert!(line.contains("is not a directory"), "{line}");
     let limits = &with_dirs(&root, "", Vec::new()).unwrap().agent.service.limits.domain;
     let bound = limits.run.directories.min(limits.session.tools.repos);
-    let names = ["a", "b", "c", "d"].get(..usize::try_from(bound).unwrap()).expect("a bound of at most 4");
+    assert_eq!(bound, 4);
+    let names = ["a", "b", "c", "d"];
     let line = refused(names.iter().map(|name| dir(name, root.join(name), true)).collect());
     let count = bound + 1;
     let expected = format!("{count} directories with the working directory exceed the profile's workspace of {bound}");

@@ -689,17 +689,20 @@ fn job_profile(parallel_tools: u32, calls_per_response: u32, jobs: u32) -> crate
 
 #[test]
 fn the_machines_processes_hold_every_batch_check_and_job() {
-    assert_eq!(job_profile(4, 16, 4).machine.processes, 26);
+    // Three conversations hold four calls and four jobs each, plus four directory checks.
+    assert_eq!(job_profile(4, 16, 4).machine.processes, 28);
 }
 
 #[test]
 fn without_jobs_the_processes_hold_single_calls_and_checks() {
-    assert_eq!(job_profile(1, 16, 0).machine.processes, 5);
+    // Three conversations hold one call each, plus four directory checks.
+    assert_eq!(job_profile(1, 16, 0).machine.processes, 7);
 }
 
 #[test]
 fn response_calls_reduce_the_process_capacity_beside_held_jobs() {
-    assert_eq!(job_profile(8, 2, 2).machine.processes, 14);
+    // Three conversations hold two calls and two jobs each, plus four directory checks.
+    assert_eq!(job_profile(8, 2, 2).machine.processes, 16);
 }
 
 fn smaller_process_refusal(parallel_tools: u32, calls_per_response: u32, jobs: u32) -> Box<[u8]> {
@@ -713,7 +716,7 @@ fn smaller_process_refusal(parallel_tools: u32, calls_per_response: u32, jobs: u
 fn a_machine_missing_one_batch_check_or_job_refuses() {
     assert_eq!(
         smaller_process_refusal(4, 16, 4).as_ref(),
-        b"machine-holds-tools: machine.processes_required=26 items; machine.processes=25 items"
+        b"machine-holds-tools: machine.processes_required=28 items; machine.processes=27 items"
     );
 }
 
@@ -721,7 +724,7 @@ fn a_machine_missing_one_batch_check_or_job_refuses() {
 fn a_machine_without_jobs_still_holds_calls_and_checks() {
     assert_eq!(
         smaller_process_refusal(1, 16, 0).as_ref(),
-        b"machine-holds-tools: machine.processes_required=5 items; machine.processes=4 items"
+        b"machine-holds-tools: machine.processes_required=7 items; machine.processes=6 items"
     );
 }
 
@@ -729,7 +732,7 @@ fn a_machine_without_jobs_still_holds_calls_and_checks() {
 fn a_response_limited_batch_still_requires_every_job_slot() {
     assert_eq!(
         smaller_process_refusal(8, 2, 2).as_ref(),
-        b"machine-holds-tools: machine.processes_required=14 items; machine.processes=13 items"
+        b"machine-holds-tools: machine.processes_required=16 items; machine.processes=15 items"
     );
 }
 
@@ -773,8 +776,8 @@ fn the_worst_case_counts_each_sessions_jobs_at_their_kept_output() {
     let without = super::derive(&selected, &declarations()).expect("no jobs");
     selected.declared.jobs = 4;
     let with = super::derive(&selected, &declarations()).expect("four jobs per session");
-    assert_eq!(without.machine.processes, 8);
-    assert_eq!(with.machine.processes, 20);
+    assert_eq!(without.machine.processes, 10);
+    assert_eq!(with.machine.processes, 22);
     assert_eq!(with.domain.session.tools.jobs, 4);
     assert_eq!(with.domain.session.tools.job_poll, Duration::from_secs(30));
     assert_eq!(with.domain.session.tools.job_wait, Duration::from_secs(300));
@@ -798,15 +801,15 @@ fn listing_filter_translation_is_counted_once_per_step() {
     let mut selected = profile();
     selected.declared.conversations = 3;
     let mut machine = super::derive(&selected, &declarations()).expect("job profile").machine;
-    assert_eq!((machine.operations, machine.processes), (2, 20));
+    assert_eq!((machine.operations, machine.processes), (2, 22));
     machine.file_bytes = 0;
     machine.tool_payload = 0;
     let smaller = smith_protocol_machine::worst_case(&machine).expect("bounded machine");
     machine.file_bytes = 1024;
     machine.tool_payload = 1024;
     let larger = smith_protocol_machine::worst_case(&machine).expect("bounded machine");
-    // Two guide buffers, twenty retained filters and four translation buffers.
-    assert_eq!(larger - smaller, 26_624);
+    // Two guide buffers, twenty-two retained filters and four translation buffers.
+    assert_eq!(larger - smaller, 28_672);
 }
 
 #[test]

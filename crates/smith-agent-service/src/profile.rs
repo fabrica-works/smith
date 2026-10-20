@@ -537,11 +537,10 @@ fn derive_domain(
         Err(field) => return Err(derived(Layer::Run, field.name())),
     };
     validate::host_part_holds_the_role(profile, configuration, &run)?;
-    // Each directory's guide shares the host's part. Entrance admission
-    // also accounts for the charter's exact text and generated schemas.
-    let guide = parts.host.checked_div(u64::from(run.directories)).ok_or(derived(Layer::Run, "guide_bytes"))?;
+    // The entrance splits what the rendered charter leaves among the start's
+    // own directories (protocol/limits.md, section 3.9); this is only the cap.
     run.guide_bytes =
-        u32::try_from(guide.min(u64::from(declared.guide))).or(Err(derived(Layer::Run, "guide_bytes")))?;
+        u32::try_from(parts.host.min(u64::from(declared.guide))).or(Err(derived(Layer::Run, "guide_bytes")))?;
     let delegated = domain::feedback_worst_case(&run).ok_or(derived(Layer::Session, "delegated_result_bytes"))?;
     let parallel = policy.parallel_tools.min(declared.calls_per_response);
     let owned = tools::batch_result_worst_case(&tools, parallel).ok_or(derived(Layer::Session, "batch_results"))?;

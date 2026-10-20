@@ -15,7 +15,7 @@ pub struct Shared {
     pub dirs: Vec<Dir>,
 }
 
-/// One `--dir NAME=PATH[:ro|rw]`, another directory of the workspace (shell.md, section 4).
+/// One `--dir NAME=PATH[:ro|rw]`, sent by the caller beside the working directory; four in all (shell.md, section 4).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Dir {
     pub name: String,

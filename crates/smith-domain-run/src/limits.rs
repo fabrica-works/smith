@@ -158,8 +158,11 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Each run holds its charter, including both convention path payloads, up
     // to its byte limit (inline path wrappers are in Slab<Run>), and what it found in
     // its checkout: a guide and a mark for checks per repository.
-    let guides = List::<Guide>::worst_case(limits.directories)?
-        .checked_add(u64::from(limits.directories).checked_mul(u64::from(limits.guide_bytes))?)?;
+    // Guide payloads are bounded by both their per-directory caps and the
+    // host part shared after the rendered charter; the list has its own cap
+    // (protocol/limits.md, sections 3.9 and 5).
+    let guide_bytes = u64::from(limits.directories).checked_mul(u64::from(limits.guide_bytes))?;
+    let guides = List::<Guide>::worst_case(limits.directories)?.checked_add(guide_bytes.min(limits.host_part))?;
     let checks = List::<u32>::worst_case(limits.directories)?;
     // A winding run holds the outcome it accepted.
     let run = limits
@@ -264,7 +267,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         compaction_threshold: inputs.compaction_threshold,
         compaction_material: inputs.compaction_material,
         schema_costs: inputs.schema_costs,
-        directories: 2,
+        directories: 4,
         directory_name_bytes: 256,
         host_path_bytes: 4096,
         conflicts: 64,
