@@ -1409,6 +1409,15 @@ commits is this plan's.
 
      Checked at origin/main of the downstream repository: `startup/checks.rs:447 pub fn agent(engine: &config::Engine, agent: &settings::Agent, problems: &mut Problems)`; `startup/problems.rs:85 What::Agent => b"not in the agent's configuration under the same name and account"`, and the same text in `tests/checks.rs:80` and `:86`; `git grep -c '"dialect": 1'` → eight files, among them `docs/examples/owned.json` and `docs/examples/owned/agent.json`; `tests/worker/domain/src/protocol.rs:21 const SMALLEST: [u8; 120] = {`; `git grep -F 'b"acc"' | wc -l` → 6; `tests/real-loop/src/llm.rs:50 credential: skein_llm::Credential {`. Upstream: smith `crates/smith-charter/src/lib.rs:26 pub const FORMAT_VERSION: u64 = 3;`, skein `crates/skein-llm/src/types.rs:404 pub fn codex(value: Box<[u8]>, account_id: Box<[u8]>) -> Credential {`.
 
+151. **Three stale Done when commands, corrected** (done when of 2026-10-20T00:55:14Z).
+     The Done when run of 2026-10-20T00:55:14Z (skein e880245, smith e6391f60; `done.md`) failed three session commands, each stale rather than missed: the property each was written to show holds at `origin/main`, and the command named a file or a pattern that later landed steps outgrew.
+     - skein 01: `access_token` is gone from the LLM credential (01.2); the extra hit is the fake issuer's OAuth `TokenResponse` in `testing/skein-fake-peers/tests/oauth.rs`, added by 11.1. The command now names fake-peers' LLM files alone.
+     - skein 07: the ID-token check stands where 05.3's guard stood, as `self.identity(..)` in `machine.rs`, whose `Client::identity` calls `verify_id_token` from `machine/fetch.rs`, split out by 07.1 under ruling 118. The command now reads both.
+     - smith 03: the transcript's `Refusal::{Endpoint, Dialect}` and `EndpointError::Account` are gone (03.1, 03.3); the hit is `skein_llm_connection::Refusal::Endpoint` (an unconfigured endpoint index), which the session never meant to remove. The command now skips `connection::`.
+     The three session files' commands are corrected; each now prints what its item says.
+
+     Checked: skein `rg -lw 'access_token|AccessToken' … testing/skein-fake-peers/src/llm.rs testing/skein-fake-peers/tests/llm.rs` → `crates/skein-llm/README.md`; `testing/skein-fake-peers/tests/oauth.rs:276 access_token: bytes::copy_of(ACCESS),`, `git log -1 --format='%h %(trailers:key=Step,valueonly)' 21ad555` → `21ad555 skein-11.1`; `rg -c 'self\.identity\(' crates/skein-oauth/src/machine.rs` → 1; `rg -c -w verify_id_token crates/skein-oauth/src/machine/` → `crates/skein-oauth/src/machine/fetch.rs:1`; `crates/skein-llm-connection/src/boundary.rs:73 pub enum Refusal {`. smith `crates/smith-protocol-llm/src/component.rs:553 connection::Refusal::Endpoint => Error::Invalid,`; the corrected smith 03 command prints nothing (exit 1).
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,

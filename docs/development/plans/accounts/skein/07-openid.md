@@ -437,8 +437,10 @@ pub(crate) fn pick_key<'k>(kid: Option<&[u8]>, keys: &'k [Key]) -> Result<&'k Ke
 - `rg '\b(ring|rustls)::' crates/skein-oauth/src` prints nothing.
 - `rg -c -w 'AwaitKeys' crates/skein-oauth/src/machine.rs` prints a
   count above 0.
-- `rg -c -w 'verify_id_token' crates/skein-oauth/src/machine.rs` prints
-  a count above 0: the check stands where 05.3's guard stood.
+- `rg -c 'self\.identity\(' crates/skein-oauth/src/machine.rs` prints 1,
+  and `rg -c -w 'verify_id_token' crates/skein-oauth/src/machine/` prints
+  `crates/skein-oauth/src/machine/fetch.rs:1`: the check stands where 05.3's guard stood, its fetch in
+  `machine/fetch.rs` (ruling 151).
 - `rg -c '^skein-tls' crates/skein-oauth/Cargo.toml` prints 1.
 - `rg -U -c '"skein-oauth"\s+version[^\]]*"skein-tls"' Cargo.lock`
   prints 1.

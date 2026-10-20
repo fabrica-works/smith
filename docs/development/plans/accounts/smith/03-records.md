@@ -422,6 +422,6 @@ ls crates/smith-charter/golden crates/smith-transcript/golden  # v3; v6
 rg -n -e 'smith_charter::v2|charter-v2|charter/golden/v2' \
   -e 'smith_transcript::v5|transcript-v5|transcript/golden/v5' \
   crates tests benchmarks
-rg -n --glob '*.rs' -e '\bEndpointError::Account\b' \
-  -e 'Refusal::(Endpoint|Dialect)\b' crates tests benchmarks
+rg -n --glob '*.rs' -P -e '\bEndpointError::Account\b' \
+  -e '(?<!connection::)\bRefusal::(Endpoint|Dialect)\b' crates tests benchmarks
 ```

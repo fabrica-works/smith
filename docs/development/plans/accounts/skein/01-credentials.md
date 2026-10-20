@@ -396,5 +396,8 @@ None: decision 21's readings are folded into 01.4 and 01.5.
   `jq` recipe for `.tokens.access_token`): `rg -lw
   'access_token|AccessToken' crates/skein-llm
   crates/skein-llm-connection tests/llm tests/llm-connection tests/tls
-  testing/skein-fake-llm-protocol testing/skein-fake-peers` prints it.
+  testing/skein-fake-llm-protocol testing/skein-fake-peers/src/llm.rs
+  testing/skein-fake-peers/tests/llm.rs` prints it (the fake issuer's
+  `TokenResponse` in `testing/skein-fake-peers/tests/oauth.rs`, from
+  11.1, is OAuth's own field; ruling 151).
 - code-organization.md 8's size count flags no file of this session.
