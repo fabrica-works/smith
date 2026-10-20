@@ -253,7 +253,7 @@ fn request(
         program,
         arguments: Vec::new(),
         configuration: Some(pin_file),
-        codex_home: Some(PathBuf::from(std::env::var_os("HOME").ok_or("HOME is required")?).join(".codex")),
+        codex_home: Some(crate::arm::state_root(&Guard::from_environment()?)?.join("logins/codex")),
         identity: Identity {
             run: run.0.into(),
             attempt: format!("{attempt:02}"),
@@ -579,6 +579,11 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
     };
     let source = options.get("--commit").map_or(Source::Head, |commit| Source::Commit((*commit).into()));
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().ok_or("workspace missing")?;
+    if command == "suite" && name == "smoke" {
+        let guard = Guard::from_environment()?;
+        let directory = crate::arm::state_root(&guard)?.join("logins/smith");
+        crate::credential::logins::smith(&directory, "chatgpt").map_err(|refusal| refusal.reason)?;
+    }
     if command == "suite" {
         let suite = crate::read_suite(&repository.join("benchmarks/suites").join(format!("{name}.toml")))
             .map_err(|error| error.to_string())?;

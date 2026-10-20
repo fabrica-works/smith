@@ -308,7 +308,6 @@ fn observer(
         face: registry.shape,
         registry,
         settings: environment.root.join("config/smith/config.toml"),
-        credential: smith_bench::agent::smith::Credential::Record(None),
         trace: None,
         rendered: serde_json::Value::Null,
         program: env!("CARGO_BIN_EXE_smith").into(),

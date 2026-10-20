@@ -656,18 +656,6 @@ fn observe(
                 }
             }
             crate::agent::Observing::Smith(observing) => {
-                let crate::agent::smith::Credential::Record(borrowed) = &mut observing.prepared.credential;
-                if let Some(borrowed) = borrowed.take() {
-                    let proof = borrowed.finish(guard)?;
-                    login_unchanged = Measure::Observed { value: proof.source_unchanged };
-                    archive(
-                        guard,
-                        directory,
-                        result,
-                        "credential-proof.json",
-                        &serde_json::to_vec_pretty(&proof).map_err(|error| error.to_string())?,
-                    )?;
-                }
                 if let Some(health) = observing.health(process.exit, process.forced) {
                     result.health = health;
                 }
@@ -864,8 +852,10 @@ fn invocation(
             return Err("adapter configuration differs from the planned identity".into());
         }
         let (arm, version) = source_arm(work, &result.identity)?;
-        let home =
+        let source =
             work.prepared.codex_home.as_deref().ok_or("the adapter requires its read-only source login directory")?;
+        let smith_home = source.parent().ok_or("source login needs its harness parent")?.join("smith");
+        let home = if result.identity.agent == crate::Agent::Smith { smith_home.as_path() } else { source };
         let model = crate::ModelChoice {
             model: Some(result.identity.model.requested_model.clone()),
             effort: Some(result.identity.model.requested_effort.clone()),

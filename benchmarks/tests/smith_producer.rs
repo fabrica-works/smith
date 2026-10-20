@@ -9,11 +9,13 @@ fn the_published_face_preserves_the_native_control_producers_joint_bounds() {
     let source = smith_local_shell::settings::Source {
         layer: smith_local_shell::settings::Layer::User,
         path: "producer.toml".into(),
-        text: r"model='codex/gpt-6-luna'
-[accounts.codex]
-source='borrow'
-file='/synthetic/auth.json'
-[endpoints.codex]
+        text: r"model='openai/gpt-6-luna'
+credentials='/synthetic/logins/smith'
+[accounts.chatgpt]
+provider='openai'
+source='sign_in'
+[endpoints.openai]
+account='chatgpt'
 address='127.0.0.1:443'
 [deployment]
 conversations=6
@@ -31,7 +33,7 @@ list_entries=512
 llm_pool=134217728
 memory=2281701376
 host_tools=2
-[models.'codex/gpt-6-luna']
+[models.'openai/gpt-6-luna']
 input_price=1.25
 cached_price=0.125
 output_price=10.0

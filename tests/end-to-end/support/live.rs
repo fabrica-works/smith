@@ -162,6 +162,37 @@ mod tests {
         assert_eq!(setup(Path::new("/dev/null"), "anthropic-key", true), Ok(()));
     }
 
+    fn synthetic_login(root: &Path) -> PathBuf {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let login = root.join("synthetic-login");
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(login.join("tokens"))
+            .expect("private synthetic login");
+        let record = skein_oauth::SavedToken {
+            key: 0,
+            generation: 1,
+            access_token: b"unissued-access".as_slice().into(),
+            refresh_token: None,
+            expires_at: skein_lib::Wall::from_nanos(u64::MAX),
+            issued_client_id: None,
+            granted_scopes: Some(
+                b"openid profile email offline_access resource.invoke chatgpt.tokens.use.direct".as_slice().into(),
+            ),
+            subject: None,
+            id_token: None,
+            earliest_refresh_at: None,
+            metadata: None,
+        };
+        let bytes = skein_oauth::encode_record(&record, &smith_local_shell::local_host::token_limits())
+            .expect("synthetic native record");
+        let file = login.join("tokens/chatgpt");
+        std::fs::write(&file, &bytes).expect("synthetic record file");
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600)).expect("private record");
+        login
+    }
+
     fn pinned_product_check(conversations: i64) -> smith_bench::process::ProcessResult {
         use skein_lib::Duration;
         let scratch = Scratch::new();
@@ -183,9 +214,7 @@ mod tests {
         )
         .expect("environment");
         let clock = skein_shell::Clock::new();
-        let token = smith_local_process_world::world::login_at(clock.now().wall, false);
-        let login = root.join("unissued-auth.json");
-        std::fs::write(&login,serde_json::to_vec(&serde_json::json!({"tokens":{"access_token":std::str::from_utf8(&token).expect("unissued token"),"account_id":"acc"}})).expect("fixture encoding")).expect("fixture file");
+        let login = synthetic_login(root);
         let context = smith_bench::agent::Context {
             guard: &guard,
             private: &private,

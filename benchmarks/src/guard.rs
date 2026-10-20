@@ -21,6 +21,7 @@ impl Guard {
             home.join(".claude.json"),
             config.join("smith"),
             state.join("smith"),
+            state.join("smith-bench/logins"),
         ];
         protected.extend_from_slice(tool_homes);
         let resolved: Vec<_> = protected.iter().map(|path| resolve(path)).collect::<Result<_, _>>()?;
@@ -145,6 +146,7 @@ mod tests {
             home.join(".claude.json"),
             config.join("smith"),
             state.join("smith"),
+            state.join("smith-bench/logins"),
             tools[0].clone(),
             tools[1].clone(),
         ] {
@@ -162,6 +164,7 @@ mod tests {
             home.join(".claude.json"),
             config.join("smith"),
             state.join("smith"),
+            state.join("smith-bench/logins"),
         ] {
             std::fs::create_dir_all(protected.join("nested")).expect("synthetic protected directory");
             let alias = root.join("alias");

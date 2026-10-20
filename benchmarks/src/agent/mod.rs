@@ -33,7 +33,7 @@ pub struct Context<'a> {
     pub arm: &'a crate::arm::ArmRef,
     /// Observed outside the attempt timer from the selected executable.
     pub installed_version: &'a str,
-    /// Read-only source login, never the invocation's `CODEX_HOME`.
+    /// Harness account directory: smith credentials or the source Codex home.
     pub home: &'a Path,
     pub wall: skein_lib::Wall,
     /// Hard deadline plus the grace and settlement spans; adapter adds teardown.

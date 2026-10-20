@@ -1,5 +1,6 @@
 //! The named-thread collector reads only this attempt and preserves every gap.
 
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
@@ -154,7 +155,7 @@ fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     use smith_bench::{Agent, ModelChoice, read_task};
 
     let root = private("prepare");
-    let home = root.join("user/.codex");
+    let home = root.join("logins/codex");
     std::fs::create_dir_all(&home).expect("fake user home");
     let configuration = b"model=\"user-choice\"\n";
     std::fs::write(home.join("config.toml"), configuration).expect("unrelated user configuration");
@@ -218,7 +219,8 @@ fn synthetic_auth(expires: u64) -> Vec<u8> {
 fn access_only_credentials_are_private_and_never_copy_a_refresh_or_other_home_file() {
     use std::os::unix::fs::PermissionsExt;
     let root = private("credentials");
-    let source = root.join("user/.codex");
+    std::fs::DirBuilder::new().mode(0o700).create(&root).expect("private fixture root");
+    let source = root.join("logins/codex");
     std::fs::create_dir_all(&source).expect("fixture source");
     let original = synthetic_auth(500);
     std::fs::write(source.join("auth.json"), &original).expect("source auth");
@@ -256,7 +258,8 @@ fn access_only_credentials_are_private_and_never_copy_a_refresh_or_other_home_fi
 
 fn credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home() {
     let root = private("expiry");
-    let source = root.join("user/.codex");
+    std::fs::DirBuilder::new().mode(0o700).create(&root).expect("private fixture root");
+    let source = root.join("logins/codex");
     std::fs::create_dir_all(&source).expect("fixture source");
     std::fs::write(source.join("auth.json"), synthetic_auth(110)).expect("source auth");
     let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
@@ -271,7 +274,7 @@ fn credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home()
     )
     .expect_err("lapsed token");
     assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Credentials);
-    assert!(refusal.reason.contains("run `codex` once"));
+    assert!(refusal.reason.contains(&format!("run `CODEX_HOME={} codex` once", source.display())));
     assert!(!refusal.reason.contains("UNISSUED"));
     assert!(!home.exists());
     std::fs::remove_dir_all(root).expect("fixture cleanup");
@@ -279,7 +282,8 @@ fn credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home()
 
 fn changed_user_auth_is_reported_after_private_credentials_are_removed() {
     let root = private("changed-source");
-    let source = root.join("user/.codex");
+    std::fs::DirBuilder::new().mode(0o700).create(&root).expect("private fixture root");
+    let source = root.join("logins/codex");
     std::fs::create_dir_all(&source).expect("fixture source");
     std::fs::write(source.join("auth.json"), synthetic_auth(500)).expect("source auth");
     let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
@@ -424,7 +428,7 @@ fn paths_use_the_declared_working_directory_and_refuse_escaped_paths_before_cred
     use std::os::unix::fs::PermissionsExt;
 
     let root = private("paths-prepare");
-    let home = root.join("user/.codex");
+    let home = root.join("logins/codex");
     std::fs::create_dir_all(&home).expect("unissued source directory");
     let auth = synthetic_auth(500);
     std::fs::write(home.join("auth.json"), &auth).expect("unissued source record");
@@ -685,7 +689,7 @@ struct CodexAttempt {
 impl CodexAttempt {
     fn new(name: &str) -> Self {
         let root = private(name);
-        let home = root.join("user/.codex");
+        let home = root.join("logins/codex");
         std::fs::create_dir_all(&home).expect("unissued login directory");
         std::fs::write(home.join("auth.json"), synthetic_auth(500)).expect("unissued login");
         let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])

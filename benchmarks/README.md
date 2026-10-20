@@ -116,11 +116,33 @@ uses fresh private paths, a frozen seed and a supervised process tree.
 Setup stays outside the inference timer. Grading follows settlement in
 its separate home. Workspaces are removed after their evidence is saved.
 
-Sign in to Codex once through its own installed CLI before a live run.
-The adapters read the existing login through one converter, taking only
-access, id and account fields into private files. No issued refresh token
-is copied or used. Expiry must cover the hard deadline and settlement.
-The source digest must be unchanged afterwards; private auth is removed.
+Once per machine, create the harness's own logins. These are separate from
+personal tool homes. The harness never creates or writes `logins/`; smith
+and Codex refresh their own records there through normal use.
+
+```sh
+export BENCH_LOGINS="${XDG_STATE_HOME:-$HOME/.local/state}/smith-bench/logins"
+install -d -m 700 "$BENCH_LOGINS" "$BENCH_LOGINS/smith" "$BENCH_LOGINS/codex"
+install -d -m 700 "$BENCH_LOGINS/smith/config/smith"
+cat > "$BENCH_LOGINS/smith/config/smith/config.toml" <<EOF
+credentials = "$BENCH_LOGINS/smith"
+EOF
+cat benchmarks/agents/smith/accounts.toml >> "$BENCH_LOGINS/smith/config/smith/config.toml"
+chmod 600 "$BENCH_LOGINS/smith/config/smith/config.toml"
+XDG_CONFIG_HOME="$BENCH_LOGINS/smith/config" smith login chatgpt
+XDG_CONFIG_HOME="$BENCH_LOGINS/smith/config" smith login claude
+CODEX_HOME="$BENCH_LOGINS/codex" codex login
+```
+
+The account declarations come from `agents/smith/accounts.toml`, included
+by the harness as `credential::logins::ACCOUNTS`. Each attempt's own XDG user layer
+uses those accounts, the pin's trace and `credentials = "<logins>/smith"`.
+The smith arm selects `openai/<model>` with `endpoints.openai.account = "chatgpt"`; smith alone
+refreshes that shared record under its lock. Each attempt keeps private state.
+The Codex arm reads only its harness login's access, id and account fields
+into a private access-only file. Its expiry must cover the deadline and
+settlement; private auth is removed and the source digest checked afterwards.
+Missing setup refuses by name with the absolute sign-in command.
 No user's settings, instructions, skills, plugins or memories enter an
 attempt. Never put credentials in task seeds or exported artifacts.
 
@@ -165,17 +187,11 @@ same unbuilt copy, with no shared attempt cache.
 
 New product arms run `smith check --json` during setup, then
 `smith exec --json -C <workspace> -m <endpoint>/<model> --effort <effort> -`.
-The attempt's XDG user layer pins settings and borrows the caller's Codex
-login file read-only. Teardown comes from check's effective `service.teardown`.
+The attempt's XDG user layer pins settings and selects the harness's
+shared sign-in record. Teardown comes from check's effective `service.teardown`.
 A nonzero check refuses setup; explicit startup-refusal probes retain that
 check's exit, diagnostic and settled tree as their observation. Historical
 event arms keep their original native configuration and credential codec.
-
-The opt-in live stories use `SMITH_TEST_LIVE_CODEX_LOGIN_FILE` to name an
-absolute Codex login file. The suite leaves it unchanged and runs through
-`smith exec --json`; this plan does not run the live suite. Anthropic stories
-and the optional issuer-refresh story retain their current invocation until
-product sign-in lands (decisions.md, 13.108).
 
 `smith-bench suite parity --commit SHA` runs the three fixtures eight
 times per arm and `shell-cwd` ten times, interleaved without reruns.

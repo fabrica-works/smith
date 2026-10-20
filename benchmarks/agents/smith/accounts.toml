@@ -1,0 +1,19 @@
+[accounts.chatgpt]
+provider = "openai"
+source = "sign_in"
+
+[accounts.claude]
+provider = "anthropic"
+source = "program"
+
+[accounts.anthropic-key]
+provider = "anthropic"
+source = "env"
+variable = "ANTHROPIC_API_KEY"
+
+[endpoints.openai]
+account = "chatgpt"
+
+[endpoints.anthropic]
+account = "claude"
+program = "claude_code"

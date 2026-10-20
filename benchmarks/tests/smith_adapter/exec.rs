@@ -1,5 +1,5 @@
-//! Synthetic checked Exec arms exercise preparation, borrowing and outside classification.
-use super::{Credential, Duration, End, Forced, Path, PathBuf, common, root, unissued_auth};
+//! Synthetic checked Exec arms exercise preparation, shared logins and outside classification.
+use super::{Duration, End, Forced, Path, PathBuf, common, root};
 
 pub(super) struct ExecFixture {
     root: PathBuf,
@@ -17,12 +17,16 @@ pub(super) struct ExecFixture {
 impl ExecFixture {
     pub(super) fn new(name: &str, check_code: i32) -> Self {
         use sha2::{Digest, Sha256};
-        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
         let root = root(&format!("{name}-outside-repository"));
+        std::fs::DirBuilder::new().mode(0o700).create(&root).expect("private fixture root");
         let repository = root.join("source");
         std::fs::create_dir_all(&repository).expect("fixture repository");
-        std::fs::create_dir_all(root.join("user/.codex")).expect("synthetic login directory");
-        std::fs::write(root.join("user/.codex/auth.json"), unissued_auth()).expect("unissued file");
+        for file in ["config/smith/config.toml", "host-id", "tokens/chatgpt"] {
+            let path = root.join("logins/smith").join(file);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("synthetic parent");
+            std::fs::write(path, []).expect("existence marker");
+        }
         let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
             .expect("guard");
         let private = smith_bench::isolate::empty(&guard, &root.join("scratch")).expect("scratch");
@@ -84,7 +88,7 @@ impl ExecFixture {
         )
         .expect("environment");
         Self {
-            source: root.join("user/.codex"),
+            source: root.join("logins/smith"),
             root,
             guard,
             private,
@@ -118,21 +122,16 @@ impl ExecFixture {
 }
 
 #[test]
-fn an_exec_arm_borrows_the_login_file_without_copying_it() {
-    let fixture = ExecFixture::new("exec-borrowed", 0);
-    let prepared = smith_bench::agent::smith::prepare(&fixture.context()).expect("checked Exec preparation");
-    let login = fixture.root.join("user/.codex/auth.json");
-    assert_eq!(prepared.rendered["accounts"]["codex"]["file"], serde_json::json!(login));
+fn an_exec_arm_uses_the_shared_sign_in_directory() {
+    let fixture = ExecFixture::new("exec-sign-in", 0);
+    let prepared = smith_bench::agent::smith::prepare(&fixture.context()).expect("checked preparation");
+    assert_eq!(prepared.rendered["credentials"], serde_json::json!(fixture.source));
+    assert_eq!(prepared.rendered["accounts"]["chatgpt"]["source"], "sign_in");
+    assert_eq!(prepared.rendered["accounts"]["claude"]["source"], "program");
+    assert!(prepared.rendered["accounts"].get("codex").is_none());
     assert_eq!(prepared.state, fixture.private.state);
-    assert_eq!(prepared.rendered["trace"]["capture"], "calls");
-    assert!(prepared.rendered["trace"].get("path").is_none());
     assert!(prepared.settings.starts_with(&fixture.private.config));
     assert!(!fixture.private.root.join("smith/tokens").exists());
-    let Credential::Record(Some(borrowed)) = prepared.credential else { panic!("borrowed source") };
-    assert_eq!(borrowed.credential, login);
-    let proof = borrowed.finish(&fixture.guard).expect("unchanged source");
-    assert!(proof.source_unchanged && !proof.credential_removed);
-    assert_eq!(std::fs::read(login).expect("source kept"), unissued_auth());
     std::fs::remove_dir_all(fixture.root).expect("fixture cleanup");
 }
 
@@ -167,7 +166,7 @@ fn an_exec_arms_teardown_bound_comes_from_check() {
             "-C",
             fixture.private.workspace.to_str().expect("workspace"),
             "-m",
-            "codex/gpt-6-luna",
+            "openai/gpt-6-luna",
             "--effort",
             "low",
             "-"

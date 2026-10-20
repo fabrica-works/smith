@@ -1,14 +1,13 @@
 //! Native preparation and trace replay use unissued credentials and immutable fixtures.
 
 pub mod common;
-use common::unissued_auth;
 
 use std::path::{Path, PathBuf};
 
 use skein_lib::Duration;
 use skein_shell::Clock;
 use skein_world::end_to_end::Command;
-use smith_bench::agent::smith::{Credential, FaceSince, Observing, Prepared};
+use smith_bench::agent::smith::{FaceSince, Observing, Prepared};
 use smith_bench::process::{Bounds, Capture, execute};
 use smith_bench::{End, Forced, Measure};
 
@@ -54,7 +53,6 @@ fn observing(trace: &Path) -> Observing {
     Observing::new(Prepared {
         face,
         settings: trace.with_extension("settings"),
-        credential: Credential::Record(None),
         trace: Some(trace.into()),
         registry: FaceSince {
             commit: "30259d89b88834ed3edaaa08b3f320d2252bbb9a".into(),
@@ -93,7 +91,6 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
     let prepared = Prepared {
         face,
         settings: directory.join("settings.json"),
-        credential: Credential::Record(None),
         trace: Some(trace.clone()),
         registry: FaceSince {
             commit: "30259d89b88834ed3edaaa08b3f320d2252bbb9a".into(),
@@ -394,7 +391,7 @@ fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials(
     assert_eq!(mounts.len(), 1);
     assert_eq!(mounts[0].host.as_ref(), private.workspace.join("app").as_os_str().as_encoded_bytes());
     mount_refusals(&context, &mut task);
-    assert_eq!(std::fs::read(context.home.join("auth.json")).expect("source"), unissued_auth());
+    assert!(context.home.join("tokens/chatgpt").is_file());
     fixture.clean();
 }
 
@@ -584,12 +581,8 @@ fn the_current_source_arm_selects_the_exec_face() {
 fn product_rendered(context: &smith_bench::agent::Context<'_>) -> serde_json::Value {
     let path = context.pin_file.parent().expect("pin directory").join(&context.pin.pin.configuration);
     let base: toml::Value = toml::from_str(&std::fs::read_to_string(path).expect("user layer")).expect("TOML");
-    smith_bench::agent::smith::product_settings(
-        context,
-        &serde_json::to_value(base).expect("layer"),
-        &context.home.join("auth.json"),
-    )
-    .expect("product layer")
+    smith_bench::agent::smith::product_settings(context, &serde_json::to_value(base).expect("layer"), context.home)
+        .expect("product layer")
 }
 
 fn product_arguments(context: &smith_bench::agent::Context<'_>) -> Result<Vec<String>, smith_bench::isolate::Setup> {
@@ -598,7 +591,7 @@ fn product_arguments(context: &smith_bench::agent::Context<'_>) -> Result<Vec<St
     let rendered = smith_bench::agent::smith::product_settings(
         context,
         &serde_json::to_value(base).expect("layer"),
-        &context.home.join("auth.json"),
+        context.home,
     )?;
     Ok(rendered["invocation"]
         .as_array()
@@ -656,10 +649,7 @@ fn every_smith_pin_is_a_product_settings_layer() {
         let layer: toml::Value =
             toml::from_str(&std::fs::read_to_string(root.join(&pin.pin.configuration)).expect("TOML layer"))
                 .expect("product TOML");
-        assert_eq!(
-            layer.as_table().expect("layer").keys().map(String::as_str).collect::<Vec<_>>(),
-            ["accounts", "trace"]
-        );
+        assert_eq!(layer.as_table().expect("layer").keys().map(String::as_str).collect::<Vec<_>>(), ["trace"]);
         assert_eq!(layer["trace"]["capture"].as_str(), Some(if name == "standard" { "calls" } else { "everything" }));
     }
 }
@@ -701,7 +691,7 @@ fn a_task_override_reaches_smith_as_a_product_setting() {
     task.smith.insert("models.\"{model}\".output".into(), toml::Value::Integer(8192));
     let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
     let arguments = product_arguments(&context).expect("overrides");
-    assert!(arguments.contains(&"models.\"codex/gpt-6-luna\".output=8192".into()));
+    assert!(arguments.contains(&"models.\"openai/gpt-6-luna\".output=8192".into()));
     assert_eq!(resolved_product(&context).agent.declarations.endpoints[0].models[0].output, 8192);
     fixture.clean();
 }
@@ -718,7 +708,7 @@ fn a_comparison_pin_keeps_every_preset_value_and_the_default_role() {
     let settings = product_sources(&context);
     for (key, value) in &settings.values {
         if key.starts_with("models.")
-            || key.starts_with("endpoints.")
+            || (key.starts_with("endpoints.") && key != "endpoints.openai.account")
             || key.starts_with("deployment.")
             || key == "instructions"
         {
@@ -733,10 +723,10 @@ fn a_comparison_pin_keeps_every_preset_value_and_the_default_role() {
     }
     let recorded: serde_json::Value =
         serde_json::from_str(include_str!("recorded/smith-product-check.json")).expect("recorded product check");
-    assert_eq!(recorded["version"], 1);
+    assert_eq!(recorded["version"], 2);
     for (key, leaf) in recorded["settings"]["values"].as_object().expect("recorded leaves") {
         if key.starts_with("models.")
-            || key.starts_with("endpoints.")
+            || (key.starts_with("endpoints.") && key != "endpoints.openai.account")
             || key.starts_with("deployment.")
             || key == "instructions"
         {

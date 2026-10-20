@@ -2,10 +2,10 @@
 
 pub mod common;
 
-use base64::Engine;
 use smith_bench::arm::ArmRef;
 use smith_bench::probe::{Order, Source};
 use smith_bench::{Agent, Judgment, Measure};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -18,7 +18,8 @@ fn isolated(name: &str) -> Option<PathBuf> {
         return Some(root(name));
     }
     let directory = root(name);
-    std::fs::create_dir_all(directory.join(".codex")).expect("synthetic home");
+    std::fs::DirBuilder::new().mode(0o700).create(&directory).expect("private fixture root");
+    std::fs::create_dir_all(directory.join("state/smith-bench/logins/smith/tokens")).expect("synthetic home");
     let output = Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", name, "--nocapture"])
         .env("SMITH_PROBE_OFFLINE_CHILD", "1")
@@ -105,12 +106,11 @@ fn calibration_stops_at_ten_passes_or_once_ten_are_out_of_reach() {
 fn a_replay_arm_runs_through_the_probe_command_and_prints_one_line() {
     let directory = root("replay");
     let arm = replay_arm(&directory);
-    let mut auth: serde_json::Value = serde_json::from_slice(&common::unissued_auth()).expect("unissued login");
-    let expiry = skein_shell::Clock::new().now().wall.as_nanos() / 1_000_000_000 + 3600;
-    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!("{{\"exp\":{expiry}}}"));
-    auth["tokens"]["access_token"] = format!("header.{claims}.signature").into();
-    let auth = serde_json::to_vec(&auth).expect("synthetic login");
-    std::fs::write(directory.join(".codex/auth.json"), &auth).expect("login");
+    let login = directory.join("state/smith-bench/logins/smith");
+    std::fs::create_dir_all(login.join("config/smith")).expect("synthetic configuration");
+    std::fs::write(login.join("config/smith/config.toml"), []).expect("setup marker");
+    std::fs::write(login.join("host-id"), []).expect("host marker");
+    std::fs::write(login.join("tokens/chatgpt"), []).expect("record marker");
     let output = Command::new(env!("CARGO_BIN_EXE_smith-bench"))
         .args(["probe", "probes/smoke-tools", "--arm"])
         .arg(&arm)
@@ -133,14 +133,15 @@ fn a_replay_arm_runs_through_the_probe_command_and_prints_one_line() {
         other => panic!("unknown verdict {other}"),
     };
     assert_eq!(output.status.code(), Some(verdict));
-    assert_eq!(std::fs::read(directory.join(".codex/auth.json")).expect("source login"), auth);
+    assert!(login.join("tokens/chatgpt").is_file());
     std::fs::remove_dir_all(directory).expect("cleanup");
 }
 
 fn replay_arm(directory: &Path) -> PathBuf {
     use sha2::{Digest, Sha256};
     use std::os::unix::fs::PermissionsExt;
-    std::fs::create_dir_all(directory.join(".codex")).expect("synthetic home");
+    std::fs::DirBuilder::new().mode(0o700).create(directory).expect("private replay root");
+    std::fs::create_dir_all(directory.join("state/smith-bench/logins/smith/tokens")).expect("synthetic home");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("repository");
     let mut build = common::unexecuted_arm(directory, repository);
     let settings = build.directory.join("recording.jsonl");
@@ -364,4 +365,28 @@ fn an_early_finish_before_the_threshold_is_a_model_deviation() {
     }
     let counted = smith_bench::probe::count(&[result], 10, 12);
     assert_eq!((counted.passed, counted.failed, counted.deviations, counted.unjudged), (0, 0, 1, 0));
+}
+
+#[test]
+fn a_missing_smoke_login_refuses_before_calibration() {
+    let directory = root("missing-smoke-login");
+    std::fs::DirBuilder::new().mode(0o700).create(&directory).expect("private root");
+    let output = Command::new(env!("CARGO_BIN_EXE_smith-bench"))
+        .args(["suite", "smoke"])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", &directory)
+        .env("XDG_CONFIG_HOME", directory.join("config"))
+        .env("XDG_STATE_HOME", directory.join("state"))
+        .output()
+        .expect("offline smoke refusal");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("diagnostic").trim(),
+        format!(
+            "no smith login for the harness: run `XDG_CONFIG_HOME={} smith login chatgpt`",
+            directory.join("state/smith-bench/logins/smith/config").display()
+        )
+    );
+    std::fs::remove_dir_all(directory).expect("synthetic cleanup");
 }

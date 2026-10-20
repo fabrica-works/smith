@@ -17,20 +17,12 @@ use super::{FaceSince, faces, settings};
 pub struct Prepared {
     pub face: super::events::Shape,
     pub settings: PathBuf,
-    pub credential: Credential,
     pub trace: Option<PathBuf>,
     pub registry: FaceSince,
     pub rendered: serde_json::Value,
     pub program: PathBuf,
     pub state: PathBuf,
     pub teardown: skein_lib::Duration,
-}
-
-/// The attempt's credential, removed only after the process tree settles.
-#[derive(Debug)]
-pub enum Credential {
-    /// A private converted record with no usable refresh grant.
-    Record(Option<crate::credential::Borrowed>),
 }
 
 fn configuration(reason: impl Into<String>) -> Setup {
@@ -143,8 +135,10 @@ fn exec(
     registry: FaceSince,
     overrides: &[String],
 ) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
-    let login = context.home.join("auth.json");
-    let mut rendered = settings::product(context, base, &login)?;
+    let account = settings::account(context)?;
+    crate::credential::logins::smith(context.home, &account)?;
+    let login = context.home;
+    let mut rendered = settings::product(context, base, login)?;
     let trace = if registry.shape == super::events::Shape::Chat {
         let trace = context.private.root.join("smith/trace.jsonl");
         write(context, &trace, &[])?;
@@ -194,13 +188,6 @@ fn exec(
     }
     let refused = receipt.exit != crate::Exit::Code(0);
     let teardown = if refused { skein_lib::Duration::ZERO } else { teardown_from_check(&receipt.stdout)? };
-    let credential = if refused {
-        Credential::Record(None)
-    } else {
-        let lifetime =
-            context.lifetime.checked_add(teardown).ok_or_else(|| configuration("credential lifetime overflow"))?;
-        Credential::Record(Some(crate::credential::smith_borrowed(&login, context.wall, lifetime)?))
-    };
     let prepared = Prepared {
         face: registry.shape,
         registry,
@@ -208,7 +195,6 @@ fn exec(
         program,
         settings,
         state: context.private.state.clone(),
-        credential,
         trace,
         teardown,
     };
@@ -283,7 +269,7 @@ impl Prepared {
 
 #[cfg(test)]
 mod tests {
-    use super::{Credential, Prepared, chat_trace, check_arguments, teardown_from_check};
+    use super::{Prepared, chat_trace, check_arguments, teardown_from_check};
     use crate::agent::smith::{FaceSince, Receiving, events::Shape};
     use crate::isolate::SetupStep;
     use serde_json::json;
@@ -296,7 +282,6 @@ mod tests {
         let mut prepared = Prepared {
             face,
             settings: "/scratch/config/smith/config.toml".into(),
-            credential: Credential::Record(None),
             trace: (face == Shape::Chat).then(|| "/scratch/smith/trace.jsonl".into()),
             registry: FaceSince {
                 commit: "0".repeat(40),

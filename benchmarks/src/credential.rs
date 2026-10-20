@@ -1,6 +1,6 @@
 //! Access-only conversion keeps credential values only while preparing a record.
 //! The source login is read-only; no refresh field is deserialized or copied.
-//! `codex` writes a guarded private record; smith borrows the source file.
+//! `codex` writes a guarded private record; smith uses its own sign-in record.
 //! `Borrowed::finish` settles the credential and checks the source digest.
 //! Contracts: benchmarks.md, section 10; reliability-plan Credentials (95a9807).
 
@@ -16,6 +16,8 @@ use skein_lib::{Duration, Wall};
 
 use crate::guard::{Guard, check_credential_record};
 use crate::isolate::{Setup, SetupStep};
+
+pub mod logins;
 
 const MAX_AUTH_BYTES: u64 = 128 * 1024;
 
@@ -59,13 +61,6 @@ pub struct Borrowed {
     pub expires: Wall,
     source: PathBuf,
     digest: String,
-    shape: Shape,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum Shape {
-    Codex,
-    SmithBorrowed,
 }
 
 struct Login {
@@ -134,28 +129,6 @@ fn login(source_home: &Path, now: Wall, lifetime: Duration) -> Result<Login, Str
     Ok(Login { source, auth, digest, expires })
 }
 
-/// Lend the caller's Codex file to smith without writing a private credential.
-pub fn smith_borrowed(source: &Path, now: Wall, lifetime: Duration) -> Result<Borrowed, Setup> {
-    let bytes = read_source(source).map_err(|reason| Setup { step: SetupStep::Credentials, reason })?;
-    let borrowed =
-        smith_local_protocol::decode_login(smith_local_protocol::LoginFormat::Codex, &bytes, &token_limits()).map_err(
-            |_| Setup { step: SetupStep::Credentials, reason: "Codex login cannot lend a bounded access grant".into() },
-        )?;
-    if borrowed.record.remaining(now) <= lifetime {
-        return Err(Setup {
-            step: SetupStep::Credentials,
-            reason: "Codex access token expires before the attempt ends".into(),
-        });
-    }
-    Ok(Borrowed {
-        credential: source.into(),
-        source: source.into(),
-        expires: borrowed.record.expires_at,
-        digest: format!("{:x}", Sha256::digest(&bytes)),
-        shape: Shape::SmithBorrowed,
-    })
-}
-
 fn write_record(guard: &Guard, home: &Path, name: &str, encoded: &[u8]) -> Result<PathBuf, String> {
     let home = crate::isolate::create_directory(guard, home)?;
     let credential = guard.write_path(&home.join(name))?;
@@ -180,6 +153,7 @@ fn write_record(guard: &Guard, home: &Path, name: &str, encoded: &[u8]) -> Resul
 /// Convert only allowed Codex fields into a new private attempt-owned home.
 /// `now` is the shell's wall observation; `lifetime` covers the hard deadline.
 pub fn codex(guard: &Guard, source_home: &Path, home: &Path, now: Wall, lifetime: Duration) -> Result<Borrowed, Setup> {
+    logins::codex(source_home)?;
     let converted: Result<Borrowed, String> = (|| {
         let Login { source, auth: source_auth, digest, expires } = login(source_home, now, lifetime)?;
         let last_refresh = time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(now.as_nanos()))
@@ -200,61 +174,24 @@ pub fn codex(guard: &Guard, source_home: &Path, home: &Path, now: Wall, lifetime
         check_credential_record(&record)?;
         let encoded = serde_json::to_vec(&record).map_err(|_| "cannot encode the access-only record")?;
         let credential = write_record(guard, home, "auth.json", &encoded)?;
-        Ok(Borrowed { credential, expires, source, digest, shape: Shape::Codex })
+        Ok(Borrowed { credential, expires, source, digest })
     })();
     converted.map_err(|reason| Setup {
         step: SetupStep::Credentials,
-        reason: format!("{reason}; run `codex` once before retrying"),
+        reason: format!("{reason}; run `CODEX_HOME={} codex` once before retrying", source_home.display()),
     })
-}
-
-fn token_limits() -> skein_oauth::Limits {
-    skein_oauth::Limits {
-        issued_client_bytes: 0,
-        granted_bytes: 1024,
-        subject_bytes: 0,
-        id_token_bytes: 8192,
-        document_bytes: 16_384,
-        string_bytes: 8192,
-        token_bytes: 8192,
-        client_bytes: 1024,
-        detail_bytes: 1024,
-        record_bytes: 32_768,
-        depth: 16,
-        tokens: 1024,
-    }
 }
 
 impl Borrowed {
     /// Remove the private auth file after settlement and verify the user login.
     pub fn finish(&self, guard: &Guard) -> Result<Proof, String> {
-        if matches!(self.shape, Shape::SmithBorrowed) {
-            let after = format!("{:x}", Sha256::digest(read_source(&self.source)?));
-            if after != self.digest {
-                return Err("borrowed Codex login changed during the attempt".into());
-            }
-            return Ok(Proof {
-                source_sha256_before: self.digest.clone(),
-                source_sha256_after: after,
-                source_unchanged: true,
-                expires_unix_seconds: self.expires.as_secs(),
-                credential_removed: false,
-                private_refresh_empty: false,
-                private_refresh_unusable: false,
-            });
-        }
         let checked: Result<(), String> = (|| {
             let bytes = read_source(&self.credential)?;
-            match self.shape {
-                Shape::Codex => {
-                    let record: serde_json::Value =
-                        serde_json::from_slice(&bytes).map_err(|_| "private Codex auth.json changed shape")?;
-                    check_credential_record(&record)?;
-                    if record.pointer("/tokens/refresh_token").and_then(serde_json::Value::as_str) != Some("") {
-                        return Err("private Codex refresh field is no longer empty".into());
-                    }
-                }
-                Shape::SmithBorrowed => unreachable!("borrowed source is never a private record"),
+            let record: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|_| "private Codex auth.json changed shape")?;
+            check_credential_record(&record)?;
+            if record.pointer("/tokens/refresh_token").and_then(serde_json::Value::as_str) != Some("") {
+                return Err("private Codex refresh field is no longer empty".into());
             }
             Ok(())
         })();

@@ -1,6 +1,2 @@
-[accounts.codex]
-source = "borrow"
-file = "{login}"
-
 [trace]
 capture = "everything"
