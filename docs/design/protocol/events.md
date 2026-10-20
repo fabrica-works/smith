@@ -280,7 +280,9 @@ and its user messages.
 
 **`tool.started`,** for every call a session runs or delegates: the
 workspace's tools, the run's (`finish`, `deliver`, `wait`, `sub_agent`)
-and the host's:
+and the host's; and on a program backend, each of the program's built-in
+tools that stands in for the workspace's, with `source` `workspace`
+(domain/tools.md, section 10):
 
 | Field | Type | What it is |
 |---|---|---|
@@ -299,7 +301,7 @@ and the host's:
 |---|---|---|
 | `run`, `conversation` | integer | |
 | `call`, `tool` | string | as started |
-| `verdict` | string | how it ended, without what it said: a workspace tool's outcome kind (`read`, `listed`, `found`, `written`, `edited`, `exited`, `conflict`, `missing`, `too_large`, `timed_out`, `running`, `stopped`, `failed`, `cancelled`, ...), `result` or `error` for a served or host tool, `invalid`, `not_run` or `withdrawn`. A `shell` call answered `running` left its command running as a job; a `job` call's verdict is `running` while its job goes on, or its job's end: `exited`, `timed_out`, `stopped` or `cancelled` (domain/tools.md, section 5) |
+| `verdict` | string | how it ended, without what it said: a workspace tool's outcome kind (`read`, `listed`, `found`, `written`, `edited`, `exited`, `conflict`, `missing`, `too_large`, `timed_out`, `running`, `stopped`, `failed`, `cancelled`, ...), `result` or `error` for a served or host tool or a program's built-in (as the program told it), `invalid`, `not_run` or `withdrawn`. A `shell` call answered `running` left its command running as a job; a `job` call's verdict is `running` while its job goes on, or its job's end: `exited`, `timed_out`, `stopped` or `cancelled` (domain/tools.md, section 5) |
 | `exit` | object, optional | a command's or a job's end: `code`, or `signal` |
 | `job` | integer, optional | for a `shell` call answered `running`, and for a `job` call not answered `invalid`: the job's number in its conversation |
 | `bytes` | integer | the result's payload |

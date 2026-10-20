@@ -219,7 +219,8 @@ open is section 9.
   `--tools` names exactly these for the run's granted families, so the
   program's other built-in tools, its sub-agents, web access and task
   lists among them, are absent. A `system/init` that lists a built-in
-  tool the run did not grant fails the start (5.6).
+  tool the run did not grant, or lacks one it granted, fails the start
+  (5.6).
 - **Every built-in call asks.** The settings the agent writes give each
   of these tools an ask rule (`permissions.ask`, by bare name). Claude
   Code applies deny rules, then ask, then allow, and an ask rule wins
@@ -248,7 +249,10 @@ open is section 9.
   `Read`'s, `Write`'s and `Edit`'s file, and `Glob`'s and `Grep`'s path,
   resolved against the working directory, within the start's
   directories, outside every `.git` directory, and writable as the start
-  says for `Write` and `Edit`.
+  says for `Write` and `Edit`. A path is judged by its names alone,
+  reading nothing, so a symbolic link within the directories that leads
+  out of them is allowed: containment, where the host has it, bounds
+  where it leads (section 7).
 - **Denied otherwise,** with the rule it broke in words, as a workspace
   tool's invalid call is answered (domain/tools.md, section 4), so the
   model may try again otherwise.
@@ -404,6 +408,12 @@ conditions. smith keeps each as a rule of its own:
   bounds on a tool's output, a command's timeout, read before write and
   match before edit. The transcript tells what the program did; it does
   not make it smith's.
+- **Symbolic links:** the prompt judges a built-in call's paths by
+  their names, reading nothing (5.4), and the program follows a link
+  that a workspace tool's write would not (domain/tools.md, section 4),
+  so `Write` and `Edit` may change a file outside the start's
+  directories through a link inside them. Containment, where the host
+  has it, bounds them.
 - **A command can read the login.** `Bash` runs what the model writes,
   and a command, like any the run starts, reads what the run's tree can,
   the configuration directory's login among it. A program's login on a
