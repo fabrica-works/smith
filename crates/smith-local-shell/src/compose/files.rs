@@ -6,6 +6,7 @@ use crate::command::Usage;
 use skein_io::{file, file_layer, kernel};
 use skein_lib::{Duration, Queue, Time, Token, Wall};
 use skein_shell::{Clock, Host, Kernel};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 const PATH_BYTES: u64 = 4096;
@@ -40,10 +41,7 @@ impl Files {
             .max(resolved.limits.show_bytes)
             .max(1);
         let temporary = if invocation.ephemeral {
-            let base = std::env::var_os("XDG_STATE_HOME")
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
-                .ok_or_else(|| Refused::Usage(Usage("HOME or XDG_STATE_HOME is required for chats".into())))?;
+            let base = ephemeral_base(std::env::var_os("XDG_RUNTIME_DIR"), std::env::var_os("TMPDIR"));
             let path = base.join(format!(".smith-exec-{}-{:016x}", std::process::id(), seed));
             check_path(&path)?;
             Some(path)
@@ -184,6 +182,17 @@ impl Files {
             }
         }
     }
+}
+
+/// The base of `--ephemeral`'s private directory (shell.md 4.2, revised
+/// 2026-10-20): `$XDG_RUNTIME_DIR` when set and non-empty, else `$TMPDIR`
+/// when set and non-empty, else `/tmp`. Never the state directory, which
+/// it is not given: a run's chat sits apart from the disk its builds fill.
+fn ephemeral_base(runtime: Option<OsString>, temporary: Option<OsString>) -> PathBuf {
+    runtime
+        .filter(|value| !value.is_empty())
+        .or_else(|| temporary.filter(|value| !value.is_empty()))
+        .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
 }
 
 fn check_path(path: &Path) -> Result<(), Refused> {
@@ -493,6 +502,27 @@ mod tests {
     fn complete(file: &mut ResultFile, submit: kernel::Submit, result: Result<kernel::Done, kernel::Error>) {
         file.completions.push(kernel::Complete { op: submit.op, kind: submit.kind, result });
         file.iterate(Time::ZERO, Wall::from_nanos(0));
+    }
+
+    #[test]
+    fn an_ephemeral_directory_is_made_under_the_runtime_then_the_temporary_directory() {
+        // The state directory is not an input: no value of it moves the base.
+        let cases = [
+            (Some("/run/user/1000"), Some("/var/tmp"), "/run/user/1000"),
+            (Some("/run/user/1000"), None, "/run/user/1000"),
+            (None, Some("/var/tmp"), "/var/tmp"),
+            (Some(""), Some("/var/tmp"), "/var/tmp"),
+            (None, None, "/tmp"),
+            (Some(""), None, "/tmp"),
+            (None, Some(""), "/tmp"),
+        ];
+        for (runtime, temporary, base) in cases {
+            assert_eq!(
+                ephemeral_base(runtime.map(OsString::from), temporary.map(OsString::from)),
+                Path::new(base),
+                "runtime {runtime:?}, temporary {temporary:?}",
+            );
+        }
     }
 
     #[test]

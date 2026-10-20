@@ -228,6 +228,7 @@ fn run_fixture(
                 ("HOME".into(), scratch.path().into()),
                 ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
                 ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+                ("XDG_RUNTIME_DIR".into(), scratch.path().join("runtime").into()),
                 ("PATH".into(), "/usr/bin:/bin".into()),
             ],
             directory: scratch.path().into(),
@@ -247,7 +248,7 @@ fn run_fixture(
     let mut world = real::World::new(window::Judge::new(
         Refusal {
             now,
-            foreign: foreign.then(|| scratch.path().join("state")),
+            foreign: foreign.then(|| scratch.path().join("runtime")),
             deadline: now.saturating_add(Duration::from_secs(if sign_in { 5 } else { 1 })),
             trace: arguments
                 .windows(2)

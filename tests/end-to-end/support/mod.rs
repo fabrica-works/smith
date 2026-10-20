@@ -232,6 +232,7 @@ fn start_program(program: &Path, arguments: Vec<std::ffi::OsString>, directory: 
                 ("HOME".into(), directory.into()),
                 ("XDG_CONFIG_HOME".into(), directory.join("config").into()),
                 ("XDG_STATE_HOME".into(), directory.join("state").into()),
+                ("XDG_RUNTIME_DIR".into(), directory.join("runtime").into()),
                 ("PATH".into(), "/usr/bin:/bin".into()),
             ],
             directory: directory.into(),
@@ -440,8 +441,8 @@ struct Refusal {
 }
 impl Referee<Process> for Refusal {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
-        if let Some(state) = &self.foreign {
-            for entry in std::fs::read_dir(state).into_iter().flatten() {
+        if let Some(runtime) = &self.foreign {
+            for entry in std::fs::read_dir(runtime).into_iter().flatten() {
                 let entry = entry.expect("private fixture entry");
                 if entry.file_name().as_encoded_bytes().starts_with(b".smith-exec-") {
                     std::fs::write(entry.path().join("foreign.txt"), b"kept foreign content")
@@ -617,6 +618,7 @@ pub fn smith_with_environment(
         ("HOME".into(), scratch.path().into()),
         ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
         ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+        ("XDG_RUNTIME_DIR".into(), scratch.path().join("runtime").into()),
         ("PATH".into(), "/usr/bin:/bin".into()),
     ];
     environment.extend(additional);

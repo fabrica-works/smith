@@ -856,7 +856,7 @@ fn smith_exec_ephemeral_removes_its_private_files_after_acceptance() {
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
     assert_eq!(ran.stdout, b"First answer");
     assert_eq!(std::fs::read(scratch.path().join("answer.txt")).unwrap(), b"First answer");
-    assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
+    assert!(ephemeral_directories(&scratch).is_empty());
     assert!(!String::from_utf8_lossy(&ran.stderr).contains("smith: warning: ephemeral directory "));
 }
 
@@ -875,7 +875,7 @@ fn smith_exec_ephemeral_removes_its_private_files_after_a_failed_answer() {
     assert_eq!(records.last().unwrap()["type"], "session.ended");
     assert_eq!(records.last().unwrap()["exit"], 1);
     assert_eq!(records.iter().find(|record| record["type"] == "run.completed").unwrap()["status"], "failed");
-    assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
+    assert!(ephemeral_directories(&scratch).is_empty());
 }
 
 #[test]
@@ -886,9 +886,9 @@ fn smith_exec_ephemeral_keeps_a_foreign_file_and_warns_before_the_last_line() {
     let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
     let ran = support::exec_with_foreign_file(&scratch, &["exec", "--ephemeral", "-"], b"Ask first\n");
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
-    let entries: Vec<_> = std::fs::read_dir(scratch.path().join("state")).unwrap().collect();
+    let entries = ephemeral_directories(&scratch);
     assert_eq!(entries.len(), 1);
-    let directory = entries[0].as_ref().unwrap().path();
+    let directory = entries[0].clone();
     assert_eq!(std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777, 0o700);
     assert_eq!(std::fs::read(directory.join("foreign.txt")).unwrap(), b"kept foreign content");
     assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
@@ -905,7 +905,24 @@ fn an_ephemeral_directory_is_removed_when_product_startup_refuses() {
     let ran = support::smith(&scratch, &["exec", "--ephemeral", "--trace", "absent/events.jsonl", "message"], b"");
     assert_eq!(ran.code, 1, "{}", String::from_utf8_lossy(&ran.stderr));
     assert!(ran.stdout.is_empty());
-    assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
+    assert!(ephemeral_directories(&scratch).is_empty());
+}
+
+/// What an ephemeral run left in the scratch runtime directory, where its
+/// private directory is made; none is ever made under the state directory
+/// (shell.md 4.2).
+fn ephemeral_directories(scratch: &Scratch) -> Vec<std::path::PathBuf> {
+    let state = std::fs::read_dir(scratch.path().join("state")).into_iter().flatten();
+    assert!(
+        !state
+            .map(|entry| entry.expect("scratch state entry").file_name())
+            .any(|name| name.as_encoded_bytes().starts_with(b".smith-exec-")),
+        "no ephemeral directory under the state directory"
+    );
+    std::fs::read_dir(scratch.path().join("runtime"))
+        .expect("the scratch runtime directory holds the private directory")
+        .map(|entry| entry.expect("scratch runtime entry").path())
+        .collect()
 }
 
 fn login_settings(scratch: &Scratch, registration: &str) {
