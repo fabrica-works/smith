@@ -29,10 +29,13 @@ fn inspect(resolved: &Resolved, account: &str, clock: &Clock) -> Credential {
     let Some(directory) = Directory::of(&resolved.settings) else {
         return failed("an absolute credentials directory is required");
     };
-    // Nothing is kept to ask about; check must not create this directory.
-    match std::fs::symlink_metadata(directory.program(account)) {
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Credential::ProgramNotSignedIn { program },
-        Err(_) | Ok(_) => {}
+    // Inspect both levels without creating or following a source directory.
+    for path in [directory.programs(), directory.program(account)] {
+        match smith_agent_shell::program::private_directory(&path) {
+            Ok(false) => return Credential::ProgramNotSignedIn { program },
+            Ok(true) => {}
+            Err(why) => return failed(&program_source::detail(why.to_string().as_bytes())),
+        }
     }
     let settings = &resolved.settings;
     let configured = settings.values.get("programs.claude_code").and_then(|field| field.value.as_str());

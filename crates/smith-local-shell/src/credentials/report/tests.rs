@@ -55,3 +55,21 @@ fn the_report_names_provider_source_number_place() {
         "the reported state matches the contract"
     );
 }
+
+#[test]
+fn the_report_omits_a_place_without_a_credentials_directory() {
+    let files = Files::new();
+    let mut places = BTreeMap::new();
+    for source in ["sign_in", "key", "program"] {
+        let mut resolved = resolved_source(&files, source);
+        resolved.settings.values.remove("credentials");
+        let catalog = report(&resolved, Wall::from_nanos(0), &ProgramStates::new());
+        let account = serde_json::to_value(&catalog["codex"]).expect("redacted account");
+        places.insert(source, account.get("kept").cloned());
+    }
+    assert_eq!(
+        serde_json::to_value(places).expect("places JSON"),
+        json!({"sign_in":null,"key":null,"program":null}),
+        "no absolute base means no kept location for any owned source"
+    );
+}

@@ -3,7 +3,7 @@ use super::support;
 use smith_real_world::Scratch;
 use std::os::unix::fs::DirBuilderExt;
 
-fn setup(method: Option<&str>, status: &str) -> (Scratch, std::path::PathBuf) {
+pub(super) fn setup(method: Option<&str>, status: &str) -> (Scratch, std::path::PathBuf) {
     let scratch = Scratch::new();
     let executable = std::env::current_exe()
         .expect("test executable")

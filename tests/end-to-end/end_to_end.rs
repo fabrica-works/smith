@@ -1,6 +1,7 @@
 mod credentials;
 mod program_check;
 mod program_commands;
+mod program_directory;
 mod relay;
 mod sources;
 pub mod support;
