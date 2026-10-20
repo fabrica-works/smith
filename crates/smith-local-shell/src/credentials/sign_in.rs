@@ -192,16 +192,29 @@ pub(super) fn record(file: &std::path::Path) -> Result<Option<oauth::SavedToken>
     }
 }
 
-pub(super) fn inspect(file: &std::path::Path, wall: skein_lib::Wall) -> super::Credential {
+pub(super) fn inspect(file: &std::path::Path, wall: skein_lib::Wall, openai: bool) -> super::Credential {
     if !file.is_absolute() {
         return super::Credential::NotSignedIn;
     }
     match skein_shell::read_private_file(file, document_limits().record_bytes, skein_shell::effective_user()) {
         Ok(bytes) => match oauth::decode_record(bytes.expose(), &document_limits()).ok() {
-            Some(record) if record.remaining(wall) > skein_lib::Duration::ZERO || record.refresh_token.is_some() => {
-                super::Credential::Usable { until: Some(record.expires_at.as_nanos()) }
+            Some(record) => {
+                if openai {
+                    let registration = super::registration::openai("", None, &super::registration::Moved::default());
+                    let missing = oauth::missing_scopes(&registration, &record);
+                    if !missing.is_empty() {
+                        return super::Credential::WithoutScope {
+                            scope: String::from_utf8_lossy(&missing).into_owned(),
+                        };
+                    }
+                }
+                if record.remaining(wall) > skein_lib::Duration::ZERO || record.refresh_token.is_some() {
+                    super::Credential::Usable { until: Some(record.expires_at.as_nanos()) }
+                } else {
+                    super::Credential::SignInAgain
+                }
             }
-            Some(_) | None => super::Credential::NotSignedIn,
+            None => super::Credential::NotSignedIn,
         },
         Err(skein_shell::Unread::Absent) => super::Credential::NotSignedIn,
         Err(_) => super::Credential::Unreadable { file: file.into() },

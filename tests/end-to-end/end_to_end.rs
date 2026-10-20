@@ -1,4 +1,5 @@
 mod credentials;
+mod program_check;
 mod program_commands;
 mod relay;
 mod sources;
@@ -554,7 +555,7 @@ fn smith_check_json_shows_each_value_with_its_layer() {
     let ran = support::smith(&scratch, &["check", "--json", "-c", "effort='high'"], b"");
     assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("one check document");
-    assert_eq!(report["version"], 1);
+    assert_eq!(report["version"], 2);
     assert_eq!(report["outside_models"]["anthropic/claude-opus-5-5"], "sub_agents is off");
     assert_eq!(report["settings"]["values"]["model"]["origin"]["layer"], "user");
     assert_eq!(report["settings"]["values"]["effort"]["value"], "high");
@@ -563,7 +564,7 @@ fn smith_check_json_shows_each_value_with_its_layer() {
     assert!(!String::from_utf8_lossy(&ran.stdout).contains("repository-value"));
     assert_eq!(
         report["formats"],
-        serde_json::json!({"channel":4,"charter":3,"transcript":6,"events":4,"chat_store":1,"check":1})
+        serde_json::json!({"channel":4,"charter":3,"transcript":6,"events":4,"chat_store":1,"check":2})
     );
     for tool in ["sh", "rg", "git"] {
         assert!(report["tools"][tool].as_str().expect("tool path").starts_with('/'));

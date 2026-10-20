@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let raw: Vec<_> = std::env::args_os().collect();
     if raw.get(1).is_some_and(|argument| argument == "check") {
         std::io::stdout()
-            .write_all(br#"{"version":1,"limits":[{"name":"service.teardown","value":1000,"unit":"ms"}]}"#)?;
+            .write_all(br#"{"version":2,"limits":[{"name":"service.teardown","value":1000,"unit":"ms"}]}"#)?;
         return Ok(());
     }
     if let Some(index) = raw.iter().position(|argument| argument == "--trace") {

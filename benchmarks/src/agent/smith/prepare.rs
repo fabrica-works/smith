@@ -37,12 +37,13 @@ fn configuration(reason: impl Into<String>) -> Setup {
     Setup { step: SetupStep::Configuration, reason: reason.into() }
 }
 
-/// Read the effective teardown bound from check's version 1 document (benchmarks.md, section 10).
+/// Read check's version 1 or 2 teardown bound (benchmarks.md, section 10).
+/// Both versions use the same effective limits shape.
 pub fn teardown_from_check(bytes: &[u8]) -> Result<skein_lib::Duration, Setup> {
     let report: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|error| configuration(format!("Smith check JSON: {error}")))?;
-    if report["version"].as_u64() != Some(1) {
-        return Err(configuration("Smith check document must have version 1"));
+    if !matches!(report["version"].as_u64(), Some(1 | 2)) {
+        return Err(configuration("Smith check document must have version 1 or 2"));
     }
     let limits = report["limits"].as_array().ok_or_else(|| configuration("Smith check needs effective limits"))?;
     let mut teardown = None;
@@ -379,6 +380,22 @@ mod tests {
     }
 
     #[test]
+    fn a_version_2_document_gives_its_teardown() {
+        let bytes = br#"{"version":2,"limits":[{"name":"service.teardown","value":12345,"unit":"ms"}]}"#;
+        assert_eq!(
+            teardown_from_check(bytes).expect("version 2 teardown").as_nanos(),
+            12_345_000_000,
+            "version 2 retains the milliseconds bound"
+        );
+    }
+
+    #[test]
+    fn a_version_3_document_is_refused() {
+        let bytes = br#"{"version":3,"limits":[{"name":"service.teardown","value":12345,"unit":"ms"}]}"#;
+        assert!(teardown_from_check(bytes).is_err(), "an unknown version cannot supply a bound");
+    }
+
+    #[test]
     fn check_teardown_refuses_a_missing_bound() {
         let refused = teardown_from_check(&report(&json!([]))).expect_err("bound required");
         assert_eq!(refused.step, SetupStep::Configuration);
@@ -406,7 +423,7 @@ mod tests {
 
     #[test]
     fn check_teardown_refuses_another_version_or_a_malformed_document() {
-        for bytes in [b"{}".as_slice(), b"{", br#"{"version":2,"limits":[]}"#, br#"{"version":1}"#] {
+        for bytes in [b"{}".as_slice(), b"{", br#"{"version":3,"limits":[]}"#, br#"{"version":1}"#] {
             assert!(teardown_from_check(bytes).is_err());
         }
     }

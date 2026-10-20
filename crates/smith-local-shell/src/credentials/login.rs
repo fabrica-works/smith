@@ -103,7 +103,7 @@ fn run(
         return super::logout::run(&account, &source, &settings, registration, clock, environment);
     }
     match source {
-        Source::SignIn { file } => {
+        Source::SignIn { file, .. } => {
             provider::run(&account, &file, &settings, registration, provider::Operation::SignIn, clock, environment)
         }
         Source::Key { file } => key::run(name, &file),
@@ -130,7 +130,7 @@ fn run(
             Ok(if credential.usable() { LoginOutcome::Usable } else { LoginOutcome::Unavailable })
         }
         Source::Borrow { .. } => {
-            let credential = super::inspect(&source, clock.now().wall);
+            let credential = super::inspect(&source, clock.now().wall, &super::program_check::ProgramStates::new());
             match &source {
                 Source::Borrow { file, .. } => eprintln!("account {name}: reads the login from {}", file.display()),
                 Source::Env { .. }

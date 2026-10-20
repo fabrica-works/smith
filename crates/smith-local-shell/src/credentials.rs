@@ -13,8 +13,10 @@ mod login;
 mod logout;
 mod private_file;
 mod product;
+pub(crate) mod program_check;
 pub(crate) mod program_source;
 mod registration;
+pub(crate) mod report;
 pub(crate) mod sign_in;
 pub use crate::settings::resolve::Account;
 pub use directory::Directory;
@@ -22,7 +24,11 @@ pub use key::KeyProblem;
 pub use login::{Environment, LoginOutcome, command, credential_words};
 pub(crate) use product::codex as product_codex;
 pub use product::{Location, Prepared, limits, prepare};
+use program_check::ProgramStates;
+pub(crate) use report::unused_warnings;
+pub use report::{AccountReport, Kept, report};
 pub use sign_in::{Registered, registration};
+use smith_agent_shell::config::ProgramName;
 
 /// An account's state reported without its credential value.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -32,6 +38,27 @@ pub enum Credential {
     Usable { until: Option<u64> },
     /// A smith-owned account has no saved login.
     NotSignedIn,
+    /// Startup and check require the account to sign in again before a run.
+    SignInAgain,
+    /// Startup and check found a saved sign-in without a required scope.
+    WithoutScope { scope: String },
+    /// The program told the shell its source is not signed in.
+    ProgramNotSignedIn {
+        #[serde(serialize_with = "program_check::serialize")]
+        program: ProgramName,
+    },
+    /// The program told the shell its source uses another payment method.
+    ProgramSignedInOtherwise {
+        #[serde(serialize_with = "program_check::serialize")]
+        program: ProgramName,
+        method: String,
+    },
+    /// The shell could not establish the program source's state.
+    ProgramFailed {
+        #[serde(serialize_with = "program_check::serialize")]
+        program: ProgramName,
+        detail: String,
+    },
     /// The other tool must renew this expired login.
     Expired { at: u64, file: PathBuf, program: String },
     /// The named login cannot be read or decoded.
@@ -51,6 +78,11 @@ impl Credential {
         match self {
             Self::Usable { .. } => true,
             Self::NotSignedIn
+            | Self::SignInAgain
+            | Self::WithoutScope { .. }
+            | Self::ProgramNotSignedIn { .. }
+            | Self::ProgramSignedInOtherwise { .. }
+            | Self::ProgramFailed { .. }
             | Self::Expired { .. }
             | Self::Unreadable { .. }
             | Self::KeyUnreadable { .. }
@@ -65,7 +97,22 @@ impl Credential {
         match self {
             Self::Usable { until: Some(until) } => format!("account {account}: usable until {until}"),
             Self::Usable { until: None } => format!("account {account}: usable"),
-            Self::NotSignedIn => format!("account {account}: not signed in; run `smith login {account}`"),
+            Self::NotSignedIn => format!("account {account} has no credential: run `smith login {account}`"),
+            Self::SignInAgain => format!("account {account} must sign in again: run `smith login {account}`"),
+            Self::WithoutScope { scope } => format!(
+                "account {account} was signed in without {scope}: run `smith login {account}` again and allow it, or use a key"
+            ),
+            Self::ProgramNotSignedIn { program } => format!(
+                "account {account}: {} is not signed in: run `smith login {account}`",
+                program_check::names(*program).1
+            ),
+            Self::ProgramSignedInOtherwise { program, method } => format!(
+                "account {account}: {} is signed in with {method}, not a subscription: run `smith login {account}`",
+                program_check::names(*program).1
+            ),
+            Self::ProgramFailed { program, detail } => {
+                format!("account {account}: {} could not be checked: {detail}", program_check::names(*program).1)
+            }
             Self::Expired { at, file, program } => format!(
                 "the {account} login borrowed from {} expired at {}. Run `{program}` once to refresh it, then try again.",
                 file.display(),
@@ -73,7 +120,7 @@ impl Credential {
             ),
             Self::Unreadable { file } => format!("account {account}: unreadable login at {}", file.display()),
             Self::KeyUnreadable { problem } => format!("account {account}: key {}", problem.words()),
-            Self::Unset { variable } => format!("account {account}: variable {variable} is unset"),
+            Self::Unset { variable } => format!("account {account}: {variable} is not set"),
             Self::ExpiredVariable { at, variable } => {
                 format!("account {account}: variable {variable} expired at {}", time(*at))
             }
@@ -95,7 +142,11 @@ pub enum Source {
     /// The named variable is read once before the loop.
     Env { variable: String, codex: bool },
     /// The native driver keeps this account in its private state file.
-    SignIn { file: PathBuf },
+    SignIn {
+        file: PathBuf,
+        /// Whether the account selects the preset's required `OpenAI` scopes.
+        openai: bool,
+    },
     /// A private key lent once by the shell, never refreshed (domain/host.md, 7).
     Key { file: PathBuf },
     /// The program owns this account's login; the shell lends its name (domain/host.md, 7).
@@ -144,6 +195,7 @@ pub fn source(
         "program" => Source::Program { name: name.into() },
         "none" => Source::Nothing,
         _ => Source::SignIn {
+            openai: text("provider") == "openai",
             file: directory.map_or_else(|| PathBuf::from("missing-token"), |directory| directory.token(name)),
         },
     }
@@ -151,7 +203,7 @@ pub fn source(
 
 /// Read the startup credential once, with clock data supplied by the shell.
 #[must_use]
-pub fn inspect(source: &Source, wall: Wall) -> Credential {
+pub fn inspect(source: &Source, wall: Wall, programs: &ProgramStates) -> Credential {
     match source {
         Source::Borrow { file, format, program } => {
             match skein_shell::read_file(file, crate::local_host::token_limits().document_bytes)
@@ -181,9 +233,13 @@ pub fn inspect(source: &Source, wall: Wall) -> Credential {
             }
             None => Credential::Unset { variable: variable.clone() },
         },
-        Source::SignIn { file } => sign_in::inspect(file, wall),
+        Source::SignIn { file, openai } => sign_in::inspect(file, wall, *openai),
         Source::Key { file } => key::inspect(file),
-        Source::Program { .. } | Source::Nothing => Credential::Usable { until: None },
+        Source::Program { name } => programs.get(name).cloned().unwrap_or_else(|| Credential::ProgramFailed {
+            program: ProgramName::ClaudeCode,
+            detail: "not checked".into(),
+        }),
+        Source::Nothing => Credential::Usable { until: None },
     }
 }
 
@@ -239,58 +295,6 @@ pub(crate) fn valid_key(value: &[u8]) -> bool {
         && value.iter().all(|byte| (0x21..=0x7e).contains(byte))
 }
 
-/// Inspect every catalog account and mark only the selected accounts as required.
-#[must_use]
-pub fn report(resolved: &settings::resolve::Resolved, wall: Wall) -> BTreeMap<String, AccountReport> {
-    catalog(resolved, wall, true)
-}
-
-pub(crate) fn unused_warnings(resolved: &settings::resolve::Resolved, wall: Wall) -> Vec<crate::check::Warning> {
-    catalog(resolved, wall, false)
-        .into_iter()
-        .filter_map(|(name, account)| {
-            (!account.credential.usable())
-                .then_some(crate::check::Warning::Credential { account: name, credential: account.credential })
-        })
-        .collect()
-}
-
-fn catalog(
-    resolved: &settings::resolve::Resolved,
-    wall: Wall,
-    include_required: bool,
-) -> BTreeMap<String, AccountReport> {
-    let settings = &resolved.settings;
-    let directory = Directory::of(settings);
-    let mut fields = BTreeMap::<String, BTreeMap<String, Sourced>>::new();
-    for (key, value) in &settings.values {
-        if let Some(rest) = key.strip_prefix("accounts.") {
-            let (account, field) = settings::named_field(rest).expect("validated account key");
-            fields.entry(account).or_default().insert(field.into(), value.clone());
-        }
-    }
-    fields
-        .into_iter()
-        .filter_map(|(account, fields)| {
-            let needed = resolved.accounts.iter().find(|needed| needed.name == account);
-            if needed.is_some() && !include_required {
-                return None;
-            }
-            let codex = needed.is_some_and(|needed| product::codex(resolved, needed.number));
-            let credential = inspect(&source(&fields, settings, codex, &account, directory.as_ref()), wall);
-            Some((account, AccountReport { required: needed.is_some(), credential }))
-        })
-        .collect()
-}
-
-/// A catalog account's redacted credential state and the resolver's requirement.
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct AccountReport {
-    pub required: bool,
-    #[serde(flatten)]
-    pub credential: Credential,
-}
-
 /// Why credential preparation cannot compose the selected run.
 #[derive(Debug)]
 pub enum Refusal {
@@ -322,3 +326,6 @@ impl Refusal {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod state_tests;

@@ -47,9 +47,9 @@ fn an_unusable_key_report_contains_no_private_data() {
     assert!(report["credentials"]["codex"]["state"] == "key_unreadable", "key failure required");
     assert!(report["credentials"]["codex"]["problem"] == "mode", "mode problem required");
     assert!(report["settings"]["values"]["credentials"]["value"] == "<redacted>", "private base redacted");
+    assert_eq!(report["credentials"]["codex"]["kept"], serde_json::json!({"kind":"file","at":key}));
     for text in [&ran.stdout, &ran.stderr] {
         let text = std::str::from_utf8(text).expect("report UTF-8");
         assert!(!text.contains("key-for-work"), "no key value");
-        assert!(!text.contains(key.to_str().expect("scratch UTF-8")), "no private key path");
     }
 }

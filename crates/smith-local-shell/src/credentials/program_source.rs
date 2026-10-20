@@ -113,3 +113,8 @@ fn launch_worst_case(program: &std::path::Path) -> Option<u64> {
         .checked_add(skein_lib::List::<Box<[u8]>>::worst_case(ARGUMENT_COUNT)?)?
         .checked_add(u64::try_from(size_of::<skein_io::kernel::Pipe>()).ok()?.checked_mul(u64::from(PIPE_COUNT))?)
 }
+
+// Escape runner output before retaining it in a report or sending it to a terminal.
+pub(super) fn detail(bytes: &[u8]) -> String {
+    bytes.iter().flat_map(|byte| byte.escape_ascii()).map(char::from).collect()
+}

@@ -2,6 +2,7 @@
 use super::super::{Directory, program_source};
 use super::{Environment, LoginOutcome};
 use crate::settings::Settings;
+use program_source::detail;
 use skein_shell::Clock;
 use smith_host_domain::{ProgramCheck, ProgramSignOut};
 use smith_host_protocol::{SourceAnswer, SourceAsk};
@@ -67,10 +68,4 @@ pub(in crate::credentials) fn run(
         }
         SourceAnswer::SignOut(_) => unreachable!("check answers check"),
     }
-}
-
-// SourceAnswer holds the runner's bounded stderr tail. Escape every byte that
-// could control a terminal, including non-ASCII control encodings.
-fn detail(bytes: &[u8]) -> String {
-    bytes.iter().flat_map(|byte| byte.escape_ascii()).map(char::from).collect()
 }

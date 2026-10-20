@@ -24,7 +24,7 @@ pub enum Warning {
 }
 
 /// The version of check's JSON document, read by callers and the harness.
-pub const CHECK_VERSION: u64 = 1;
+pub const CHECK_VERSION: u64 = 2;
 
 /// One startup check's document; only names and sources describe environment.
 #[derive(Debug, Serialize)]
@@ -34,6 +34,7 @@ pub struct Report {
     pub formats: BTreeMap<&'static str, u64>,
     pub build: serde_json::Value,
     pub tools: BTreeMap<&'static str, PathBuf>,
+    pub programs: BTreeMap<&'static str, PathBuf>,
     pub environment: Vec<String>,
     #[serde(skip)]
     pub limits: Vec<smith_agent_service::profile::Limit>,
@@ -64,11 +65,16 @@ pub enum Verdict {
 
 /// Build the document with access values omitted from every reported state.
 #[must_use]
-pub fn report(settings: &Settings, wall: skein_lib::Wall) -> Verdict {
-    report_for(settings, wall, None)
+pub fn report(settings: &Settings, wall: skein_lib::Wall, clock: &skein_shell::Clock) -> Verdict {
+    report_for(settings, wall, clock, None)
 }
 
-fn report_for(settings: &Settings, wall: skein_lib::Wall, execution: Option<&command::Exec>) -> Verdict {
+fn report_for(
+    settings: &Settings,
+    wall: skein_lib::Wall,
+    clock: &skein_shell::Clock,
+    execution: Option<&command::Exec>,
+) -> Verdict {
     let command = match execution {
         Some(execution) => Command::Exec(execution.clone()),
         None => Command::Check { shared: command::Shared::default(), json: false, execution: None },
@@ -123,7 +129,19 @@ fn report_for(settings: &Settings, wall: skein_lib::Wall, execution: Option<&com
         Ok(warnings) => warnings,
         Err(why) => return Verdict::Refused(why),
     };
-    let credentials = crate::credentials::report(&resolved, wall);
+    let catalog = crate::credentials::report::accounts(&resolved);
+    let states = crate::credentials::program_check::check(
+        &resolved,
+        catalog.values().filter(|account| account.source() == "program").map(|account| account.name.as_str()),
+        clock,
+    );
+    let credentials = crate::credentials::report(&resolved, wall, &states);
+    let programs = resolved
+        .agent
+        .programs
+        .iter()
+        .map(|(name, program)| (crate::credentials::program_check::names(*name).0, program.path.clone()))
+        .collect();
     for (account, state) in &credentials {
         if !state.required && !state.credential.usable() {
             warnings.push(Warning::Credential { account: account.clone(), credential: state.credential.clone() });
@@ -153,6 +171,7 @@ fn report_for(settings: &Settings, wall: skein_lib::Wall, execution: Option<&com
         ]),
         build: serde_json::json!({"name":text(&identity.name),"version":text(&identity.version),"build":text(&identity.build)}),
         tools,
+        programs,
         environment,
         limits: limits.into_vec(),
         named_limits,
@@ -209,6 +228,9 @@ pub fn render_text(report: &Report) -> String {
     for (name, path) in &report.tools {
         lines.push(format!("{name} = {}", path.display()));
     }
+    for (name, path) in &report.programs {
+        lines.push(format!("program {name} = {}", path.display()));
+    }
     lines.push(format!("environment: {}", report.environment.join(", ")));
     for warning in &report.warnings {
         lines.push(warnings::line(warning));
@@ -225,6 +247,7 @@ pub fn render_text(report: &Report) -> String {
         lines.push(format!("model {model} is outside the run: {reason}"));
     }
     for (name, account) in &report.credentials {
+        lines.push(account.line(name));
         if account.required || account.credential.usable() {
             lines.push(account.credential.line(name));
         }
@@ -410,9 +433,9 @@ fn interactive_header(
     .map_err(|why| why.detail().to_owned())
 }
 
-/// Handle product arguments, leaving legacy invocations to their existing glue.
+/// Handle check arguments with injected wall time and the program runner's clock.
 #[must_use]
-pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
+pub fn command(arguments: &[OsString], wall: skein_lib::Wall, clock: &skein_shell::Clock) -> Option<u8> {
     let (shared, json, execution) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
         Ok(Command::Exec(_) | Command::Logout { .. } | Command::Login { .. } | Command::Interactive { .. }) => {
             return None;
@@ -424,7 +447,7 @@ pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
         }
     };
     let verdict = match settings::read(&shared) {
-        Ok(settings) => report_for(&settings, wall, execution.as_ref()),
+        Ok(settings) => report_for(&settings, wall, clock, execution.as_ref()),
         Err(why) => Verdict::Refused(why),
     };
     match verdict {
@@ -637,3 +660,6 @@ mod tests {
         println!("CHAT_START worst_case={worst_case} memory={memory} margin={margin}");
     }
 }
+
+#[cfg(test)]
+mod catalog_tests;

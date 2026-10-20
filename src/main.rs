@@ -12,7 +12,7 @@ fn main() -> ExitCode {
     if let Some(code) = smith_local_shell::compose::start(&args, clock.now(), &clock) {
         return ExitCode::from(code);
     }
-    if let Some(code) = smith_local_shell::check::command(&args, clock.now().wall) {
+    if let Some(code) = smith_local_shell::check::command(&args, clock.now().wall, &clock) {
         return ExitCode::from(code);
     }
     ExitCode::from(2)

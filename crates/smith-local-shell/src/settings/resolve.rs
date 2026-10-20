@@ -9,7 +9,7 @@ mod inherit;
 mod input;
 mod local;
 pub(super) mod models;
-mod numbers;
+pub(crate) mod numbers;
 pub(crate) mod programs;
 mod providers;
 pub(super) mod relationships;

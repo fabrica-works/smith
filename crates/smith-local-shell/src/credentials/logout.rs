@@ -13,7 +13,7 @@ pub(super) fn run(
 ) -> Result<LoginOutcome, String> {
     let name = &account.name;
     match source {
-        Source::SignIn { file } => super::login::provider::run(
+        Source::SignIn { file, .. } => super::login::provider::run(
             account,
             file,
             settings,

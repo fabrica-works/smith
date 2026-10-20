@@ -4,7 +4,7 @@ use super::super::{Layer, Origin, Refusal, Settings};
 use std::collections::BTreeMap;
 
 /// First four SHA-256 bytes of the account's name, read big-endian.
-pub(super) fn number(name: &str) -> u32 {
+pub(crate) fn number(name: &str) -> u32 {
     let digest = skein_lib::sha256::digest(name.as_bytes());
     u32::from_be_bytes(digest.get(..4).expect("SHA-256 prefix").try_into().expect("four bytes"))
 }

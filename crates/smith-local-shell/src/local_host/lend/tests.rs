@@ -1,6 +1,7 @@
 use super::*;
 use crate::credentials::{
-    prepare,
+    Credential, prepare,
+    program_check::ProgramStates,
     tests::{Files, private_key, resolved_source},
 };
 use skein_lib::Wall;
@@ -41,7 +42,13 @@ fn every_key_request_lends_a_fresh_generation() {
 #[test]
 fn every_program_request_lends_a_fresh_generation() {
     let files = Files::new();
-    let prepared = prepare(&resolved_source(&files, "program"), Wall::EPOCH, false).expect("program startup");
+    let prepared = prepare(
+        &resolved_source(&files, "program"),
+        Wall::EPOCH,
+        false,
+        &ProgramStates::from([("codex".into(), Credential::Usable { until: None })]),
+    )
+    .expect("program startup");
     let mut lent = Lent::new(prepared.lendable);
     for generation in [1, 2, 3] {
         assert_lend(lent.answer(0), 0, generation, &GrantValue::Program(b"codex".as_slice().into()));
@@ -72,7 +79,8 @@ fn generations_advance_per_account() {
 #[test]
 fn an_account_without_a_value_answers_missing() {
     let files = Files::new();
-    let prepared = prepare(&resolved_source(&files, "none"), Wall::EPOCH, false).expect("nothing startup");
+    let prepared =
+        prepare(&resolved_source(&files, "none"), Wall::EPOCH, false, &ProgramStates::new()).expect("nothing startup");
     let mut lent = Lent::new(prepared.lendable);
     for account in [0, WORK] {
         assert!(matches!(lent.answer(account), Answer::Missing), "no grant for a Nothing or unknown account");
@@ -92,7 +100,8 @@ fn the_last_generation_lends_before_overflow_answers_missing() {
 fn a_key_removed_after_start_still_lends_its_first_bytes() {
     let files = Files::new();
     private_key(&files);
-    let prepared = prepare(&resolved_source(&files, "key"), Wall::EPOCH, false).expect("key startup");
+    let prepared =
+        prepare(&resolved_source(&files, "key"), Wall::EPOCH, false, &ProgramStates::new()).expect("key startup");
     std::fs::remove_file(files.0.join("keys/codex")).expect("removed after startup");
     let mut lent = Lent::new(prepared.lendable);
     for generation in [1, 2] {

@@ -41,7 +41,7 @@ impl Prepared {
                     file.as_os_str().as_encoded_bytes().len().checked_add(program.len())?
                 }
                 Source::Env { variable, .. } => variable.len(),
-                Source::SignIn { file } => file.as_os_str().as_encoded_bytes().len(),
+                Source::SignIn { file, .. } => file.as_os_str().as_encoded_bytes().len(),
                 Source::Key { file } => {
                     bytes = bytes.checked_add(u64::from(crate::local_host::token_limits().token_bytes))?;
                     file.as_os_str().as_encoded_bytes().len()
@@ -78,11 +78,16 @@ pub(crate) fn codex(resolved: &Resolved, account: u32) -> bool {
 }
 
 /// Inspect selected accounts, report startup warnings once, and open read-only roots.
-pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Prepared, Refusal> {
+pub fn prepare(
+    resolved: &Resolved,
+    wall: Wall,
+    interactive: bool,
+    programs: &super::program_check::ProgramStates,
+) -> Result<Prepared, Refusal> {
     for warning in crate::check::startup_warnings(&resolved.settings).map_err(Refusal::Configuration)? {
         eprintln!("smith: {}", crate::check::warnings::line(&warning));
     }
-    for warning in super::unused_warnings(resolved, wall) {
+    for warning in super::unused_warnings(resolved, wall, programs) {
         eprintln!("smith: {}", crate::check::warnings::line(&warning));
     }
     let count = u32::try_from(resolved.accounts.len()).map_err(|_| {
@@ -116,6 +121,10 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
                 continue;
             }
             Source::Program { name } => {
+                let credential = inspect(&descriptor, wall, programs);
+                if !credential.usable() {
+                    return Err(unavailable(&account.name, credential));
+                }
                 lendable
                     .insert(account.number, (0, GrantValue::Program(name.as_bytes().into())))
                     .expect("selected programs fit their account bound");
@@ -127,7 +136,7 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
         let handed = match descriptor {
             Source::Borrow { file, format, program } => {
                 let credential =
-                    inspect(&Source::Borrow { file: file.clone(), format, program: program.clone() }, wall);
+                    inspect(&Source::Borrow { file: file.clone(), format, program: program.clone() }, wall, programs);
                 if !credential.usable() {
                     return Err(unavailable(&account.name, credential));
                 }
@@ -153,9 +162,9 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
                 }
                 service::Source::Env { account: account.number, borrowed }
             }
-            Source::SignIn { file } => {
+            Source::SignIn { file, openai } => {
                 let interactive = interactive && !account.fields.contains_key("provider");
-                let credential = super::sign_in::inspect(&file, wall);
+                let credential = super::sign_in::inspect(&file, wall, openai);
                 if !interactive && !credential.usable() {
                     return Err(unavailable(&account.name, credential));
                 }

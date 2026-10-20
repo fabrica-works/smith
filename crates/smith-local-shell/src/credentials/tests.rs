@@ -76,7 +76,7 @@ fn resolved(files: &Files, needed_file: PathBuf) -> settings::resolve::Resolved 
 #[test]
 fn a_usable_borrowed_login_reports_expiry_without_its_access_value() {
     let files = Files::new();
-    let state = inspect(&descriptor(files.login("valid.json")), wall());
+    let state = inspect(&descriptor(files.login("valid.json")), wall(), &ProgramStates::new());
     assert!(state.usable(), "the valid access-only record is usable");
     let json = serde_json::to_string(&state).expect("redacted state");
     assert!(json.contains("120000000000"), "the state keeps its expiry");
@@ -88,7 +88,7 @@ fn a_usable_borrowed_login_reports_expiry_without_its_access_value() {
 fn an_expired_login_inspection_names_the_file_time_and_program() {
     let files = Files::new();
     let file = files.login("expired.json");
-    let state = inspect(&descriptor(file.clone()), wall());
+    let state = inspect(&descriptor(file.clone()), wall(), &ProgramStates::new());
     assert!(!state.usable(), "an expired record cannot serve the run");
     let line = state.line("codex");
     assert!(line.contains(&file.display().to_string()), "the notice names its source");
@@ -100,7 +100,7 @@ fn a_malformed_login_inspection_reports_the_file_without_its_bytes() {
     let files = Files::new();
     let file = files.0.join("broken.json");
     std::fs::write(&file, b"UNISSUED_BAD_DOCUMENT").expect("scratch input");
-    let state = inspect(&descriptor(file.clone()), wall());
+    let state = inspect(&descriptor(file.clone()), wall(), &ProgramStates::new());
     assert!(!state.usable(), "a malformed record supplies no access value");
     assert_eq!(
         state.line("codex"),
@@ -113,7 +113,7 @@ fn a_malformed_login_inspection_reports_the_file_without_its_bytes() {
 fn the_credential_catalog_uses_the_resolvers_needed_accounts_and_omits_values() {
     let files = Files::new();
     let resolved = resolved(&files, files.login("valid.json"));
-    let accounts = report(&resolved, wall());
+    let accounts = report(&resolved, wall(), &ProgramStates::new());
     assert!(accounts["codex"].required && accounts["codex"].credential.usable(), "the selected account is usable");
     assert!(
         !accounts["unused"].required && !accounts["unused"].credential.usable(),
@@ -127,7 +127,7 @@ fn the_credential_catalog_uses_the_resolvers_needed_accounts_and_omits_values() 
 fn an_expired_selected_login_refuses_composition_with_exit_three() {
     let files = Files::new();
     let resolved = resolved(&files, files.login("expired.json"));
-    let Err(failure) = prepare(&resolved, wall(), false) else {
+    let Err(failure) = prepare(&resolved, wall(), false, &ProgramStates::new()) else {
         panic!("the expired source must refuse before its directory is adopted");
     };
     assert_eq!(failure.exit_code(), 3, "selected credentials have their own refusal code");
@@ -155,7 +155,10 @@ fn an_identifier_past_the_drivers_receiving_bound_is_not_reported_usable() {
     login["tokens"]["account_id"] =
         serde_json::Value::String("a".repeat(smith_local_service::Source::account_id_bytes() + 1));
     std::fs::write(&file, serde_json::to_vec(&login).expect("bounded fixture")).expect("scratch login");
-    assert!(!inspect(&descriptor(file), wall()).usable(), "inspection uses the driver's account-id bound");
+    assert!(
+        !inspect(&descriptor(file), wall(), &ProgramStates::new()).usable(),
+        "inspection uses the driver's account-id bound"
+    );
 }
 
 pub(crate) fn resolved_source(files: &Files, source: &str) -> settings::resolve::Resolved {
@@ -182,7 +185,9 @@ pub(crate) fn private_key(files: &Files) {
 fn preparing_refuses_a_key_account_without_a_key() {
     let files = Files::new();
     for interactive in [false, true] {
-        let refusal = prepare(&resolved_source(&files, "key"), wall(), interactive).err().expect("missing key");
+        let refusal = prepare(&resolved_source(&files, "key"), wall(), interactive, &ProgramStates::new())
+            .err()
+            .expect("missing key");
         assert_eq!(refusal.exit_code(), 3, "credentials refusal");
         assert!(refusal.line().contains("codex") && refusal.line().contains("smith login"), "account and next action");
     }
@@ -193,7 +198,8 @@ fn no_source(source: &str) {
     if source == "key" {
         private_key(&files);
     }
-    let prepared = prepare(&resolved_source(&files, source), wall(), false).expect("usable source");
+    let prepared =
+        prepare(&resolved_source(&files, source), wall(), false, &ProgramStates::new()).expect("usable source");
     assert!(prepared.sources.is_empty(), "the shell owns this source");
     assert_eq!(prepared.locations.len(), 1, "one selected location");
     assert_eq!(prepared.locations.iter().next().expect("location").name, "codex", "selected account");
@@ -206,7 +212,10 @@ fn preparing_a_key_account_hands_no_source() {
 
 #[test]
 fn preparing_a_program_account_hands_no_source() {
-    no_source("program");
+    let files = Files::new();
+    let programs = BTreeMap::from([("codex".into(), Credential::Usable { until: None })]);
+    let prepared = prepare(&resolved_source(&files, "program"), wall(), false, &programs).expect("usable program");
+    assert!(prepared.sources.is_empty(), "the shell lends the program name");
 }
 
 #[test]

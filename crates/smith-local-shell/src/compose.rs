@@ -189,7 +189,9 @@ fn compose(
     } else {
         resolved.local.resume = true;
     }
-    let prepared = credentials::prepare(&resolved, wall, interactive.is_some()).map_err(Refused::Credentials)?;
+    let programs = credentials::program_check::needed(&resolved, clock);
+    let prepared =
+        credentials::prepare(&resolved, wall, interactive.is_some(), &programs).map_err(Refused::Credentials)?;
     let (workspace, chat_path) = chat_paths(
         &resolved.settings.workspace,
         &resolved.local.chat,
