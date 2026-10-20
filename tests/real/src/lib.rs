@@ -18,6 +18,7 @@ use smith_local_process_world::{
     terminal::Terminal,
     world::{Authentication, Scenario},
 };
+use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -100,8 +101,12 @@ printf 'checked\n' > checks-ran.txt
         std::fs::set_permissions(check, std::fs::Permissions::from_mode(0o700)).expect("executable check");
         std::fs::write(files.path().join("root.der"), skein_tls_world::pki::ROOT).expect("private test trust");
         git(&repo, &["init", "-q"]);
-        git(&repo, &["config", "user.name", "Smith test"]);
-        git(&repo, &["config", "user.email", "smith@example.invalid"]);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(repo.join(".git/config"))
+            .expect("initialized repository config")
+            .write_all(b"[user]\n\tname = Smith test\n\temail = smith@example.invalid\n")
+            .expect("fixture commit identity");
         git(&repo, &["add", "."]);
         git(&repo, &["commit", "-q", "-m", "Initial checkout"]);
         Self { files }
