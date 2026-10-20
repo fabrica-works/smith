@@ -721,6 +721,59 @@ fn jobs_job_poll_and_job_wait_reach_the_agents_tool_limits() {
     assert_eq!(resolved.agent.service.limits.domain.session.tools.job_wait, skein_lib::Duration::from_secs(7));
 }
 
+fn refresh_profile(text: &str) -> Result<(smith_agent_service::profile::Profile, smith_agent_service::Limits), String> {
+    use skein_lib::Duration;
+    use smith_agent_service::profile::{Configuration, Endpoint, Model, OversizedReasoning};
+    let decoded = settings(&[source(Layer::User, text)]).map_err(|why| why.line())?;
+    let document = super::resolve::document::profile(&decoded).map_err(|why| why.line())?;
+    let profile = smith_agent_shell::config::profile_from_value(document)
+        .map_err(smith_agent_shell::config::ConfigurationRefusal::detail)?;
+    let configuration = Configuration {
+        role_bound: None,
+        environment_bytes: 0,
+        endpoints: Box::new([Endpoint {
+            number: 0,
+            provider: skein_llm::Provider::OpenAiCodex,
+            option_bytes: 0,
+            connect: Duration::from_secs(2),
+            handshake: Duration::from_secs(3),
+            models: Box::new([Model {
+                efforts: Box::new([]),
+                name: b"test".as_slice().into(),
+                window: 1_048_576,
+                output: 32_768,
+                reasoning_item: 65_536,
+                oversized_reasoning: OversizedReasoning::Fail,
+                head: Duration::from_secs(5),
+                idle: Duration::from_secs(11),
+            }]),
+        }]),
+    };
+    let limits = smith_agent_service::profile::derive(&profile, &configuration)
+        .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
+    Ok((profile, limits))
+}
+
+#[test]
+fn refresh_lead_reaches_the_accounts_limits() {
+    let (profile, agent) = refresh_profile("[deployment]\nrefresh_lead=7\n").unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(profile.policy.refresh_lead, skein_lib::Duration::from_secs(7));
+    let limits = crate::credentials::limits(agent.io, 1, profile.policy.refresh_lead);
+    assert_eq!(limits.refresh_lead, skein_lib::Duration::from_secs(7));
+}
+
+#[test]
+fn an_unset_refresh_lead_keeps_sixty_seconds() {
+    let (profile, _) = refresh_profile("").unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(profile.policy.refresh_lead, skein_lib::Duration::from_secs(60));
+}
+
+#[test]
+fn a_zero_refresh_lead_names_the_setting() {
+    let refusal = refresh_profile("[deployment]\nrefresh_lead=0\n").expect_err("zero duration refused");
+    assert!(refusal.contains("policy.refresh_lead"));
+}
+
 #[test]
 fn the_default_task_role_reaches_the_resolved_run() {
     let resolved = composed("").unwrap_or_else(|why| panic!("{}", why.line()));

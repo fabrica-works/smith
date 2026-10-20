@@ -13,6 +13,7 @@ pub const KEY: &str = "`ANTHROPIC_API_KEY` is not set";
 /// The suite's durable user layer; each story requests only its own accounts.
 pub struct Environment {
     pub root: PathBuf,
+    pub refresh_lead: Option<u64>,
 }
 
 impl Environment {
@@ -20,7 +21,7 @@ impl Environment {
     pub fn load(accounts: &[&str]) -> Self {
         let root = root(std::env::var_os("SMITH_LIVE").as_deref()).unwrap_or_else(|message| panic!("{message}"));
         let root = smith_bench::guard::write_path(&root).expect("guarded $SMITH_LIVE");
-        let environment = Self { root };
+        let environment = Self { root, refresh_lead: None };
         let _configuration = environment.configuration();
         for account in accounts {
             let key = *account == "anthropic-key"
@@ -28,6 +29,15 @@ impl Environment {
             setup(&environment.root, account, key).unwrap_or_else(|message| panic!("{message}"));
         }
         environment
+    }
+
+    /// Read generation through the product's private record reader, without exposing a token.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        let _configuration = self.configuration();
+        smith_local_shell::credentials::record_generation(&self.root.join("tokens/chatgpt"))
+            .expect("a readable ChatGPT record")
+            .expect("ChatGPT record exists")
     }
 
     /// Recheck every live-layer destination before a child can use it.

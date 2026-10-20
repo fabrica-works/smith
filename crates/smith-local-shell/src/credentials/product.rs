@@ -88,12 +88,7 @@ pub fn prepare(
     interactive: bool,
     programs: &super::program_check::ProgramStates,
 ) -> Result<Prepared, Refusal> {
-    for warning in crate::check::startup_warnings(&resolved.settings).map_err(Refusal::Configuration)? {
-        eprintln!("smith: {}", crate::check::warnings::line(&warning));
-    }
-    for warning in super::unused_warnings(resolved, wall, programs) {
-        eprintln!("smith: {}", crate::check::warnings::line(&warning));
-    }
+    warnings(resolved, wall, programs)?;
     let count = u32::try_from(resolved.accounts.len()).map_err(|_| {
         Refusal::Configuration(crate::settings::Refusal {
             origin: crate::settings::Origin::BuiltIn,
@@ -187,7 +182,23 @@ pub fn prepare(
         };
         assert!(sources.push(handed).is_ok(), "selected sources fit their account bound");
     }
-    Ok(Prepared { sources, locations, lendable, limits: limits(resolved.agent.service.limits.io, count.max(1)) })
+    let limits = limits(resolved.agent.service.limits.io, count.max(1), resolved.agent.profile.policy.refresh_lead);
+    Ok(Prepared { sources, locations, lendable, limits })
+}
+
+fn warnings(resolved: &Resolved, wall: Wall, programs: &super::program_check::ProgramStates) -> Result<(), Refusal> {
+    for warning in crate::check::startup_warnings(&resolved.settings).map_err(Refusal::Configuration)? {
+        eprintln!("smith: {}", crate::check::warnings::line(&warning));
+    }
+    for warning in super::unused_warnings(resolved, wall, programs) {
+        eprintln!("smith: {}", crate::check::warnings::line(&warning));
+    }
+    Ok(())
+}
+
+/// Read only a saved record's generation for a refresh observation (shell.md, 7.3).
+pub fn record_generation(file: &std::path::Path) -> Result<Option<u64>, String> {
+    super::sign_in::record(file).map(|record| record.map(|record| record.generation))
 }
 
 fn unavailable(account: &str, credential: Credential) -> Refusal {
@@ -196,7 +207,7 @@ fn unavailable(account: &str, credential: Credential) -> Refusal {
 
 /// Receiving bounds for handed-in accounts; no exchange or public listener is opened.
 #[must_use]
-pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::Limits {
+pub fn limits(mut io: skein_io::Limits, accounts: u32, refresh_lead: Duration) -> skein_oauth_accounts::Limits {
     // One exchange, its callback and its listener need three socket slots.
     io.sockets = 3;
     skein_oauth_accounts::Limits {
@@ -213,7 +224,7 @@ pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::
             response: 1024,
             send: 1024,
         },
-        refresh_lead: Duration::from_secs(60),
+        refresh_lead,
         client: client_limits(),
         http: skein_http::client::Limits { request: 16_384, head: 16_384, headers: 128, read: 16_384, send: 16_384 },
         tls: skein_tls::client::Limits { read: 16_384, send: 16_384, records: 1_048_576 },

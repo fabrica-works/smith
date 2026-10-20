@@ -147,6 +147,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
         write_deadline,
         cancel_grace,
         exit_grace,
+        refresh_lead,
         live_interval,
     } = *limits;
     inventory.layer = Layer::Policy;
@@ -174,6 +175,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
     inventory.value("write_deadline", Value::Duration(write_deadline))?;
     inventory.value("cancel_grace", Value::Duration(cancel_grace))?;
     inventory.value("exit_grace", Value::Duration(exit_grace))?;
+    inventory.value("refresh_lead", Value::Duration(refresh_lead))?;
     inventory.value("live_interval", Value::Duration(live_interval))?;
     Some(())
 }

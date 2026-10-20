@@ -118,6 +118,7 @@ struct PolicyOverrides {
     write_deadline: Option<u64>,
     cancel_grace: Option<u64>,
     exit_grace: Option<u64>,
+    refresh_lead: Option<u64>,
 }
 
 #[derive(Deserialize)]

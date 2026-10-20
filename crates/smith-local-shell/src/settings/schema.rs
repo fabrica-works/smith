@@ -45,7 +45,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
             "deployment",
             "max_time" | "max_waiting" | "connection_keep" | "tool_deadline" | "shell_timeout" | "job_poll"
             | "job_wait" | "check_timeout" | "wrap_up" | "group_stop" | "close" | "write_deadline" | "cancel_grace"
-            | "exit_grace",
+            | "exit_grace" | "refresh_lead",
         ] => Some(seconds()),
         [
             "budget" | "models" | "endpoints" | "accounts" | "deployment" | "workspace" | "environment" | "build"

@@ -132,6 +132,19 @@ fn start_with_workspace(
 }
 
 #[test]
+fn the_standard_refresh_lead_is_sixty_seconds() {
+    assert_eq!(standard().policy.refresh_lead, Duration::from_secs(60));
+}
+
+#[test]
+fn a_zero_refresh_lead_names_its_policy_key() {
+    let mut selected = profile();
+    selected.policy.refresh_lead = Duration::ZERO;
+    let refusal = super::derive(&selected, &declarations()).expect_err("zero refresh lead");
+    assert_eq!(words(&refusal).as_ref(), b"deadlines: policy.refresh_lead=0 ns; policy.deadline_minimum=0 ns");
+}
+
+#[test]
 fn the_standard_exit_grace_exceeds_its_teardown_bound() {
     let selected = profile();
     let mut limits = super::derive(&selected, &declarations()).expect("standard profile");

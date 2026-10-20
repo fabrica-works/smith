@@ -24,7 +24,7 @@ pub use account_report::{AccountReport, Kept, report};
 pub use directory::Directory;
 pub use key::KeyProblem;
 pub use login::{Environment, LoginOutcome, command, credential_words};
-pub use product::{Location, Prepared, limits, prepare};
+pub use product::{Location, Prepared, limits, prepare, record_generation};
 pub(crate) use product::{codex as product_codex, status_words};
 use program_check::ProgramStates;
 pub use sign_in::{Registered, registration};

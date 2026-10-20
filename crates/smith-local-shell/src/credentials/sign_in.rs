@@ -49,28 +49,8 @@ fn configured(account: &Account, codex: bool) -> Result<oauth::Registration, Ref
     issuer(text(account, "token_url")?).map_err(|why| refuse(account, "token_url", why))?;
     oauth::redirect_address(&registration.redirect_uri)
         .map_err(|_| refuse(account, "redirect_uri", "expected loopback, an explicit port and path"))?;
-    oauth::validate_registration(
-        &registration,
-        &super::limits(
-            skein_io::Limits {
-                sockets: 1,
-                names: 0,
-                refusals: 1,
-                intake: 32768,
-                receive: 4096,
-                output: 32768,
-                sends: 1,
-                accepts: 1,
-                backlog: 1,
-                close_timeout: skein_lib::Duration::from_secs(1),
-                retry: skein_lib::Duration::from_millis(1),
-            },
-            1,
-        )
-        .client,
-        true,
-    )
-    .map_err(|_| refuse(account, "client_id", "registration exceeds the client's bounds or syntax"))?;
+    oauth::validate_registration(&registration, &super::product::client_limits(), true)
+        .map_err(|_| refuse(account, "client_id", "registration exceeds the client's bounds or syntax"))?;
     Ok(registration)
 }
 

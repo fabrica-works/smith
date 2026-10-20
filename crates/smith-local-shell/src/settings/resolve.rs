@@ -4,7 +4,7 @@
 use super::{Settings, Sourced};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) mod document;
+pub(crate) mod document;
 mod inherit;
 mod input;
 mod local;

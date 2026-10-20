@@ -79,7 +79,10 @@ pub(in crate::credentials) fn run(
         close_timeout: skein_lib::Duration::from_secs(1),
         retry: skein_lib::Duration::from_millis(10),
     };
-    let limits = super::super::limits(io, 1);
+    let document = crate::settings::resolve::document::profile(settings).map_err(|why| why.line())?;
+    let profile = smith_agent_shell::config::profile_from_value(document)
+        .map_err(smith_agent_shell::config::ConfigurationRefusal::detail)?;
+    let limits = super::super::limits(io, 1, profile.policy.refresh_lead);
     let mut sources = List::with_capacity(1);
     assert!(sources.push(source).is_ok(), "one login source");
     let mut driver = Accounts::shared(sources, limits, crate::startup::oauth_entropy()?)

@@ -25,6 +25,16 @@ fn chatgpt_delivers_a_commit_in_place() {
 }
 
 #[test]
+fn a_run_refreshes_its_grant_at_the_issuer() {
+    let mut environment = live::Environment::load(&["chatgpt"]);
+    environment.refresh_lead = Some(34_560_000);
+    let before = environment.generation();
+    let scratch = Scratch::new();
+    change(&environment, "chatgpt", &scratch, CHANGE, None, false);
+    assert!(environment.generation() > before, "the issuer refresh was kept; generations withheld");
+}
+
+#[test]
 fn claude_delivers_a_commit_in_place() {
     commit("claude");
 }
@@ -250,7 +260,11 @@ fn run(
         force_walk: true,
     };
     let change = expectation.before.is_some();
-    let arguments = live::arguments(account, scratch.path(), change, push);
+    let mut arguments = live::arguments(account, scratch.path(), change, push);
+    if let Some(lead) = environment.refresh_lead {
+        let at = arguments.len().checked_sub(1).expect("prompt argument");
+        arguments.splice(at..at, ["-c".into(), format!("deployment.refresh_lead={lead}").into()]);
+    }
     let mut check_arguments = vec!["check".into(), "--json".into()];
     check_arguments.extend(arguments.clone());
     let check = execute(

@@ -225,6 +225,9 @@ fn apply_durations(
     if let Some(value) = overrides.cancel_grace {
         profile.policy.cancel_grace = duration(value, LimitName::deployment(Layer::Policy, "cancel_grace"))?;
     }
+    if let Some(value) = overrides.refresh_lead {
+        profile.policy.refresh_lead = duration(value, LimitName::deployment(Layer::Policy, "refresh_lead"))?;
+    }
     if let Some(value) = overrides.exit_grace {
         profile.policy.exit_grace = duration(value, LimitName::deployment(Layer::Policy, "exit_grace"))?;
     }

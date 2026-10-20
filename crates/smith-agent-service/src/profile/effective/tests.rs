@@ -201,6 +201,7 @@ fn job_poll_and_job_wait_print_their_policy_and_derived_tools_durations() {
         effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
     let header = header(&named, &names(), &declarations()).expect("names fit");
     for (name, millis) in [
+        (b"policy.refresh_lead".as_slice(), 60_000),
         (b"policy.job_poll".as_slice(), 30_000),
         (b"tools.job_poll".as_slice(), 30_000),
         (b"policy.job_wait".as_slice(), 300_000),

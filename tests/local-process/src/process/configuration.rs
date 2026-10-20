@@ -442,6 +442,10 @@ pub fn prepared_accounts(
         sources,
         locations: skein_lib::List::with_capacity(0),
         lendable: skein_lib::Map::with_capacity(0),
-        limits: smith_local_shell::credentials::limits(io, 1),
+        limits: smith_local_shell::credentials::limits(
+            io,
+            1,
+            smith_agent_service::profile::standard().policy.refresh_lead,
+        ),
     }
 }

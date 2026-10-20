@@ -99,6 +99,7 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
         duration("write_deadline", policy.write_deadline),
         duration("cancel_grace", policy.cancel_grace),
         duration("exit_grace", policy.exit_grace),
+        duration("refresh_lead", policy.refresh_lead),
         duration("live_interval", policy.live_interval),
     ];
     for value in values {

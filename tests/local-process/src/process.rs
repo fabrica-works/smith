@@ -865,7 +865,11 @@ fn borrowed_accounts(
                 sources,
                 locations,
                 lendable,
-                limits: smith_local_shell::credentials::limits(io, 1),
+                limits: smith_local_shell::credentials::limits(
+                    io,
+                    1,
+                    smith_agent_service::profile::standard().policy.refresh_lead,
+                ),
             });
         }
         Borrowing::Env => {
@@ -895,5 +899,14 @@ fn borrowed_accounts(
     };
     assert!(sources.push(handed).is_ok(), "one selected source");
     locations.push(Location { account: 0, name: "codex".into(), source: descriptor }).expect("one selected location");
-    Some(Prepared { sources, locations, lendable, limits: smith_local_shell::credentials::limits(io, 1) })
+    Some(Prepared {
+        sources,
+        locations,
+        lendable,
+        limits: smith_local_shell::credentials::limits(
+            io,
+            1,
+            smith_agent_service::profile::standard().policy.refresh_lead,
+        ),
+    })
 }

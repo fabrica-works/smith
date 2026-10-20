@@ -4,7 +4,7 @@ use super::super::{Refusal, Settings};
 use super::{input, models::Model};
 use serde_json::{Value, json};
 
-pub(super) fn profile(settings: &Settings) -> Result<Value, Refusal> {
+pub(crate) fn profile(settings: &Settings) -> Result<Value, Refusal> {
     let mut document = json!({"name":input::text(settings,"profile")?,"declared":{},"policy":{}});
     let declared = [
         "conversations",
@@ -38,6 +38,7 @@ pub(super) fn profile(settings: &Settings) -> Result<Value, Refusal> {
         "write_deadline",
         "cancel_grace",
         "exit_grace",
+        "refresh_lead",
     ];
     for (key, sourced) in &settings.values {
         let Some(field) = key.strip_prefix("deployment.") else { continue };
