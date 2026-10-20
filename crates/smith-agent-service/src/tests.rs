@@ -756,8 +756,13 @@ fn standard_profile_accepts_provider_events_that_echo_tool_schemas() {
     assert_eq!(openai::decode_event(&json, &limits.native()), Ok(openai::Event::Created { echo: None }));
 }
 
+fn stream_limits() -> smith_events::Limits {
+    // Reuse the sink fixture's record bounds; codecs need no IO destinations.
+    crate::sinks::tests::limits(0).records
+}
+
 fn assert_stream_record(actual: &smith_events::Record, literal: &[u8]) {
-    let limits = smith_events::Limits { string: 256, content: 1024, items: 8 };
+    let limits = stream_limits();
     let expected = smith_events::read(literal, &limits).unwrap().unwrap();
     assert_eq!(*actual, expected);
 }
@@ -1052,7 +1057,7 @@ fn a_refused_completions_detail_is_content() {
             "{{\"v\":4,\"type\":\"response.completed\",\"t_ms\":4,\"run\":7,\"conversation\":0,\"response\":1,\"outcome\":\"failed\",\"blocks\":0,\"calls\":0,\"invalid\":0,\"oversized\":0,\"cut\":0,\"usage\":{{\"input_tokens\":null,\"cache_read_tokens\":null,\"cache_write_tokens\":null,\"output_tokens\":null,\"reasoning_tokens\":null}},\"spent\":0,\"request_bytes\":null,\"first_byte_ms\":null,\"largest_gap_ms\":null,\"duration_ms\":1,\"failure\":{{\"class\":\"refused\",\"evidence\":\"response\",\"status\":400,\"field\":\"effort\",\"code\":\"not_allowed\",\"request_id\":\"request-7\"{detail}}}}}",
             detail = row.detail
         );
-        let limits = smith_events::Limits { string: 256, content: 1024, items: 8 };
+        let limits = stream_limits();
         let expected = smith_events::read(literal.as_bytes(), &limits).unwrap().unwrap();
         assert_eq!(record, expected, "{}", row.name);
     }

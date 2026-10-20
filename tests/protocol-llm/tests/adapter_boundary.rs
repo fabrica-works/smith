@@ -201,10 +201,16 @@ fn completed_owner_is_preserved_and_a_different_owner_is_refused() {
     }
 }
 
+// The pinned fake provider emits HTTP Service Unavailable for both OpenAI routes.
+const OPENAI_OVERLOADED_STATUS: u16 = 503;
+
+// The pinned fake provider emits Anthropic's overloaded status, with no exported constant.
+const ANTHROPIC_OVERLOADED_STATUS: u16 = 529;
+
 fn overloaded_status(configuration: &Configuration) -> u16 {
     match configuration.endpoint.provider {
-        shared::Provider::OpenAi | shared::Provider::OpenAiCodex => 503,
-        shared::Provider::Anthropic => 529,
+        shared::Provider::OpenAi | shared::Provider::OpenAiCodex => OPENAI_OVERLOADED_STATUS,
+        shared::Provider::Anthropic => ANTHROPIC_OVERLOADED_STATUS,
     }
 }
 
