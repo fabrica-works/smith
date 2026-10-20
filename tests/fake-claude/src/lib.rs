@@ -1,4 +1,4 @@
-//! Scripted sign-in for Claude Code (protocol/programs.md, section 8;
+//! Scripted sign-in and turns for Claude Code (protocol/programs.md, sections 5 and 8;
 //! testing.md, section 4). The fake keeps one command, its story and queued
 //! I/O, and knows no person's home or credentials. [`Fake`] is the step
 //! machine, [`hosted`] its world factory and [`main`] its kernel entry point.
@@ -9,11 +9,15 @@ mod commands;
 mod faces;
 mod fake;
 mod output;
+mod print;
 mod story;
+mod stream;
 
-pub use faces::{config_root, hosted, main, observation_append};
+pub use faces::{config_root, hosted, main, mcp_root, observation_append};
 pub use fake::{Faces, Fake};
-pub use story::{Login, Logout, Observation, Status, Story, observations};
+pub use story::{
+    End, Init, Login, Logout, Observation, Resume, Seen, Status, Step, Story, Turn, Usage, observations, seen,
+};
 
 /// The environment variable naming this invocation's configuration directory.
 pub const CONFIG_DIR: &str = "CLAUDE_CONFIG_DIR";
@@ -26,3 +30,6 @@ pub const STORY_FILE: &str = "fake-claude.story";
 
 /// The configuration-directory file receiving appended invocation observations.
 pub const OBSERVATIONS_FILE: &str = "fake-claude.observations";
+
+/// The user settings file beneath the configuration directory.
+pub const SETTINGS_FILE: &str = "settings.json";

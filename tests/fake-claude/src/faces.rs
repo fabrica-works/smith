@@ -1,5 +1,5 @@
 //! Startup adapters for the same command machine (protocol/programs.md,
-//! sections 4.2 and 8; testing.md, section 4). Only this module reads the
+//! sections 4.2, 5 and 8; testing.md, section 4). Only this module reads the
 //! process's arguments/environment or opens kernel startup descriptors.
 
 use std::{os::unix::ffi::OsStrExt, path::Path, process::ExitCode};
@@ -22,6 +22,18 @@ pub fn config_root(spawn: &Spawn) -> Option<StartupRoot> {
     config_path(&spawn.env).map(|path| StartupRoot { name: b"config".as_slice().into(), path: path.into() })
 }
 
+/// Declares the startup root containing `--mcp-config`, named `mcp`.
+pub fn mcp_root(spawn: &Spawn) -> Option<StartupRoot> {
+    mcp_path(&spawn.args).map(|path| StartupRoot { name: b"mcp".as_slice().into(), path: path.into_boxed_slice() })
+}
+
+fn mcp_path(arguments: &[Box<[u8]>]) -> Option<Vec<u8>> {
+    let path = arguments.windows(2).find(|pair| pair[0].as_ref() == b"--mcp-config")?;
+    let path = Path::new(std::ffi::OsStr::from_bytes(&path[1]));
+    let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    Some(parent.as_os_str().as_bytes().to_vec())
+}
+
 /// Declares the observations append file for `World::host_startup`, alongside
 /// [`config_root`]. Both selectors return no descriptor when the variable is unset.
 pub fn observation_append(spawn: &Spawn) -> Option<StartupAppend> {
@@ -34,7 +46,7 @@ pub fn observation_append(spawn: &Spawn) -> Option<StartupAppend> {
 }
 
 /// A hosted factory; register it with [`config_root`] and [`observation_append`]
-/// through `World::host_startup`. Its default limit is one simultaneous invocation.
+/// and [`mcp_root`] through `World::host_startup`. Its default limit is one simultaneous invocation.
 pub fn hosted(program: &[u8]) -> HostedProgram<Fake> {
     HostedProgram { program: program.into(), make, instances: 1, operations: crate::fake::operations() }
 }
@@ -50,6 +62,7 @@ fn make(spawn: &Spawn, inherited: &Inherited) -> Fake {
             stderr: pipe(2),
             signal: inherited.signal,
             config: inherited.roots.iter().find(|(name, _)| name.as_ref() == b"config").map(|(_, fd)| *fd),
+            mcp: inherited.roots.iter().find(|(name, _)| name.as_ref() == b"mcp").map(|(_, fd)| *fd),
             observations: inherited
                 .appends
                 .iter()
@@ -98,10 +111,12 @@ pub fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let mcp = mcp_path(&arguments)
+        .and_then(|path| skein_shell::open_root(Path::new(std::ffi::OsStr::from_bytes(&path))).ok());
     let mut fake = Fake::new(
         &arguments,
         &environment,
-        Faces { stdin: Some(Fd::new(0)), stdout: Fd::new(1), stderr: Fd::new(2), signal, config, observations },
+        Faces { stdin: Some(Fd::new(0)), stdout: Fd::new(1), stderr: Fd::new(2), signal, config, observations, mcp },
     );
     let mut kernel = match skein_shell::Kernel::open(Config { operations: fake.operations() }) {
         Ok(kernel) => kernel,

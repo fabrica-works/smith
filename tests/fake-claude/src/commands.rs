@@ -1,4 +1,4 @@
-//! Command machines for sign-in (protocol/programs.md, sections 3, 4.1 and
+//! Command machines for sign-in (protocol/programs.md, sections 3, 4.1, 5 and
 //! 8; testing.md, section 4). Effects are driven by the shared fake host.
 
 use skein_io::{file, kernel};
@@ -14,6 +14,7 @@ pub(crate) enum Effect {
     Error(Vec<u8>),
     File(file::Request),
     ReadCode,
+    Seen(crate::Seen),
     End(u8),
 }
 
@@ -21,6 +22,7 @@ pub(crate) enum Effect {
 pub(crate) struct Config {
     pub root: Option<Token>,
     pub directory: Option<kernel::Fd>,
+    pub mcp: Option<Token>,
 }
 
 #[derive(Debug)]
@@ -28,6 +30,7 @@ pub(crate) enum Command {
     Status(StatusCommand),
     Login(LoginCommand),
     Logout(LogoutCommand),
+    Print(Box<crate::print::Print>),
     Unknown,
 }
 
@@ -49,7 +52,10 @@ impl Command {
                 }
                 _ => (Self::Unknown, error("unknown command", 2)),
             },
-            _ => (Self::Unknown, error("unknown command or flag", 2)),
+            _ => match crate::print::Print::start(arguments, story, config) {
+                Ok((state, effects)) => (Self::Print(Box::new(state)), effects),
+                Err(effects) => (Self::Unknown, effects),
+            },
         }
     }
 
@@ -58,6 +64,7 @@ impl Command {
             Self::Status(state) => state.file(event),
             Self::Login(state) => state.file(event),
             Self::Logout(state) => state.file(event),
+            Self::Print(state) => state.file(event),
             Self::Unknown => Vec::new(),
         }
     }
@@ -65,7 +72,15 @@ impl Command {
     pub fn input(&mut self, bytes: Option<&[u8]>, config: Config) -> Vec<Effect> {
         match self {
             Self::Login(state) => state.input(bytes, config),
+            Self::Print(state) => state.input(bytes),
             Self::Status(_) | Self::Logout(_) | Self::Unknown => Vec::new(),
+        }
+    }
+
+    pub fn interrupt(&mut self) -> Vec<Effect> {
+        match self {
+            Self::Print(state) => state.interrupt(),
+            Self::Status(_) | Self::Login(_) | Self::Logout(_) | Self::Unknown => vec![Effect::End(143)],
         }
     }
 }

@@ -1,6 +1,8 @@
 //! A parent invoking the sign-in fake through pipes in a simulated world
 //! (protocol/programs.md, section 8; testing.md, section 4).
 
+pub mod print;
+
 use std::collections::VecDeque;
 
 use skein_fake_machine::{How, Item, Machine as Files, Opened};
@@ -16,6 +18,9 @@ pub struct Invocation {
     env: Vec<String>,
     input: Vec<u8>,
     terminate: bool,
+    stream: bool,
+    no_input: bool,
+    signal: Option<(skein_io::kernel::ServiceSignal, String)>,
 }
 
 impl Invocation {
@@ -25,6 +30,9 @@ impl Invocation {
             env: vec!["HOME=home".into(), "CLAUDE_CONFIG_DIR=config".into()],
             input: Vec::new(),
             terminate: false,
+            stream: false,
+            no_input: false,
+            signal: None,
         }
     }
 
@@ -84,6 +92,10 @@ pub struct Parent {
     signal_waiting: bool,
     signal_at: Option<Time>,
     pub signalled: bool,
+    input_closed: bool,
+    output_ended: bool,
+    input_end: usize,
+    signal_ready: bool,
     sequence: u64,
     completions: Queue<Complete>,
     submissions: Queue<Submit>,
@@ -104,6 +116,10 @@ impl Parent {
             signal_waiting: false,
             signal_at: None,
             signalled: false,
+            input_closed: false,
+            output_ended: false,
+            input_end: 0,
+            signal_ready: false,
             sequence: 0,
             completions: Queue::with_capacity(8),
             submissions: Queue::with_capacity(8),
@@ -128,18 +144,39 @@ impl Parent {
                 let Done::Spawned { pidfd } = result else { panic!("child spawn") };
                 let Op::Spawn { spawn } = complete.kind else { panic!("spawn operation") };
                 self.child = Some(pidfd);
-                self.pipes = spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent pipe")).collect();
+                self.pipes = (0..3)
+                    .map(|number| {
+                        spawn
+                            .pipes
+                            .iter()
+                            .find(|pipe| pipe.child == number)
+                            .map(|pipe| pipe.parent.expect("parent pipe"))
+                            .unwrap_or(Fd::new(-1))
+                    })
+                    .collect();
                 self.input_from = 0;
+                self.input_end = 0;
+                self.input_closed = self.invocations.front().expect("invocation").no_input;
+                self.output_ended = false;
+                self.signal_ready = false;
+                self.signalled = false;
                 if self.invocations.front().expect("invocation").terminate {
                     self.signal_at = Some(now.saturating_add(Duration::from_millis(20)));
                 }
-                self.phase = Phase::Input;
+                self.phase =
+                    if self.invocations.front().expect("invocation").stream { Phase::Stdout } else { Phase::Input };
             }
             Phase::Input => {
                 let Done::Count(count) = result else { panic!("input write") };
                 self.input_from += count;
+                if self.invocations.front().expect("invocation").stream && self.input_from as usize == self.input_end {
+                    self.phase = Phase::Stdout;
+                }
             }
-            Phase::CloseInput => self.phase = Phase::Stdout,
+            Phase::CloseInput => {
+                self.input_closed = true;
+                self.phase = if self.output_ended { Phase::CloseStdout } else { Phase::Stdout };
+            }
             Phase::Stdout | Phase::Stderr => {
                 let Done::Count(count) = result else { panic!("output read") };
                 let Op::PipeRead { buf, .. } = complete.kind else { panic!("pipe read") };
@@ -147,7 +184,38 @@ impl Parent {
                     Phase::Stdout => {
                         self.record.stdout.extend_from_slice(&buf[..count as usize]);
                         if count == 0 {
-                            self.phase = Phase::CloseStdout;
+                            self.output_ended = true;
+                            if self.invocations.front().expect("invocation").stream && !self.input_closed {
+                                self.phase = Phase::CloseInput;
+                                self.issue(Op::Close { fd: self.pipes[0] });
+                                self.waiting = true;
+                            } else {
+                                self.phase = Phase::CloseStdout;
+                            }
+                        } else if self.record.stdout.last() == Some(&b'\n') {
+                            let line =
+                                self.record.stdout.split(|byte| *byte == b'\n').rev().nth(1).expect("output line");
+                            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(line) {
+                                let kind =
+                                    value["subtype"].as_str().unwrap_or_else(|| value["type"].as_str().unwrap_or(""));
+                                if !self.signalled
+                                    && self
+                                        .invocations
+                                        .front()
+                                        .expect("invocation")
+                                        .signal
+                                        .as_ref()
+                                        .is_some_and(|(_, after)| after == kind)
+                                {
+                                    self.signal_ready = true;
+                                }
+                                if self.invocations.front().expect("invocation").stream
+                                    && !self.input_closed
+                                    && (kind == "init" || value["type"] == "result")
+                                {
+                                    self.phase = Phase::Input;
+                                }
+                            }
                         }
                     }
                     Phase::Stderr => {
@@ -192,7 +260,9 @@ impl Parent {
                             Pipe { child: 1, way: Way::Out, parent: None },
                             Pipe { child: 2, way: Way::Out, parent: None },
                         ]
-                        .into(),
+                        .into_iter()
+                        .filter(|pipe| !invocation.no_input || pipe.child != 0)
+                        .collect(),
                     }),
                 },
                 None => {
@@ -201,15 +271,33 @@ impl Parent {
                 }
             },
             Phase::Input => {
+                let invocation = self.invocations.front().expect("invocation");
+                if invocation.stream
+                    && self.input_from as usize == self.input_end
+                    && self.input_end < invocation.input.len()
+                {
+                    self.input_end +=
+                        invocation.input[self.input_end..].iter().position(|byte| *byte == b'\n').expect("user line")
+                            + 1;
+                }
                 let bytes = &self.invocations.front().expect("invocation").input;
                 if self.input_from as usize == bytes.len() {
                     self.phase = Phase::CloseInput;
                     Op::Close { fd: self.pipes[0] }
                 } else {
-                    Op::PipeWrite { fd: self.pipes[0], bytes: bytes.as_slice().into(), from: self.input_from }
+                    if invocation.stream && self.input_from as usize == self.input_end {
+                        self.phase = Phase::Stdout;
+                        return;
+                    }
+                    let end = if invocation.stream { self.input_end } else { bytes.len() };
+                    Op::PipeWrite { fd: self.pipes[0], bytes: bytes[..end].into(), from: self.input_from }
                 }
             }
-            Phase::Stdout => Op::PipeRead { fd: self.pipes[1], buf: vec![0; 1024].into_boxed_slice() },
+            Phase::Stdout => Op::PipeRead {
+                fd: self.pipes[1],
+                buf: vec![0; if self.invocations.front().expect("invocation").stream { 1 } else { 1024 }]
+                    .into_boxed_slice(),
+            },
             Phase::Stderr => Op::PipeRead { fd: self.pipes[2], buf: vec![0; 1024].into_boxed_slice() },
             Phase::CloseStdout => Op::Close { fd: self.pipes[1] },
             Phase::CloseStderr => Op::Close { fd: self.pipes[2] },
@@ -239,7 +327,7 @@ impl Host for Parent {
                 to: Target::Child,
             });
         }
-        if !self.waiting && !self.signal_waiting {
+        if !self.waiting && !self.signal_waiting && (!self.signal_ready || self.signalled) {
             self.advance();
         }
     }
@@ -321,10 +409,20 @@ impl Host for Process {
 
 pub struct Judge {
     last_word: skein_world::LastWord,
+    controls: skein_world::Controls,
 }
 
 impl Referee<Process> for Judge {
-    fn act(&mut self, _now: Time, _procs: &mut [Process]) {}
+    fn act(&mut self, _now: Time, procs: &mut [Process]) {
+        if let Process::Parent(parent) = &mut procs[0]
+            && parent.signal_ready
+            && !parent.signalled
+        {
+            let signal = parent.invocations.front().expect("invocation").signal.as_ref().expect("signal").0;
+            self.controls.signal(1, signal);
+            parent.signalled = true;
+        }
+    }
     fn observe(&mut self, _now: Time, procs: &[Process]) {
         let Process::Parent(parent) = &procs[0] else { panic!("parent first") };
         if parent.signal_at.is_some() {
@@ -385,6 +483,10 @@ pub struct Run {
 }
 
 pub fn run(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocation>) -> Run {
+    run_files(story, login, invocations, Vec::new())
+}
+
+fn run_files(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocation>, extra: Vec<Item>) -> Run {
     let mut items = vec![Item::directory(b"home"), Item::directory(b"config")];
     if let Some(story) = story {
         items.push(Item::file(b"config/fake-claude.story", &story.encode()));
@@ -392,6 +494,7 @@ pub fn run(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocati
     if let Some(login) = login {
         items.push(Item::file(b"config/fake-claude.login", login));
     }
+    items.extend(extra);
     let mut files = Files::new();
     let base = files.lay(&items);
     let mut machine = MachineFiles { files, base };
@@ -402,8 +505,10 @@ pub fn run(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocati
         skein_world::LastWord::LastExpectation
     };
     let mut world =
-        skein_world::World::new(7, skein_sim::Config::calm(), Judge { last_word }, skein_world::Memory::Checked)
-            .with_machine(machine);
+        skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |controls| {
+            Judge { last_word, controls }
+        })
+        .with_machine(machine);
     let factory = smith_fake_claude::hosted(b"claude");
     world.host_startup(
         HostedProgram {
@@ -412,7 +517,7 @@ pub fn run(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocati
             instances: factory.instances,
             operations: factory.operations,
         },
-        |spawn| smith_fake_claude::config_root(spawn).into_iter().collect(),
+        |spawn| smith_fake_claude::config_root(spawn).into_iter().chain(smith_fake_claude::mcp_root(spawn)).collect(),
         |spawn| smith_fake_claude::observation_append(spawn).into_iter().collect(),
     );
     world.spawn_root(root, |fd| Process::Parent(Box::new(Parent::new(fd, invocations.clone()))));

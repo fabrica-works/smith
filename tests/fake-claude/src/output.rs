@@ -51,6 +51,10 @@ impl Output {
         self.token = None;
     }
 
+    pub fn drained(&self) -> bool {
+        self.bytes.is_empty() && !self.waiting
+    }
+
     pub fn is_empty(&self) -> bool {
         self.token.is_none() && self.bytes.is_empty()
     }

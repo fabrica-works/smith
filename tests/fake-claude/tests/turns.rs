@@ -1,0 +1,346 @@
+//! Print conversations through the simulated process face, per
+//! protocol/programs.md, sections 5 and 8.
+
+#[allow(dead_code)]
+mod support;
+
+use serde_json::{Value, json};
+use skein_io::kernel::{Exit, ServiceSignal};
+use smith_fake_claude::{End, Resume, Seen, Step, Story, Turn, seen};
+use support::print::{self, MCP, SESSION, messages, normal};
+
+#[global_allocator]
+static HEAP: skein_heap::Counting = skein_heap::Counting;
+
+fn story(steps: Vec<Step>, end: End) -> Story {
+    Story { turns: vec![Turn { steps, end }], ..Story::default() }
+}
+
+fn results(run: &support::Run) -> Vec<Value> {
+    messages(run).into_iter().filter(|value| value["type"] == "result").collect()
+}
+
+#[test]
+fn a_print_run_starts_with_its_init() {
+    let mut story = Story::default();
+    story.init.extra_tools.push("ungranted".into());
+    story.init.extra_servers.push("other".into());
+    story.init.capabilities.push("stream".into());
+    let run = normal(story, 0);
+    let init = &messages(&run)[0];
+    assert_eq!(init["subtype"], "init");
+    assert_eq!(init["tools"], json!(["Read", "Bash", "ungranted"]));
+    assert_eq!(
+        init["mcp_servers"],
+        json!([{"name":"smith", "status":"pending"}, {"name":"other", "status":"connected"}])
+    );
+    assert_eq!(init["capabilities"], json!(["stream"]));
+    assert_eq!(init["model"], "test-model");
+    assert_eq!(init["permissionMode"], "default");
+    assert_eq!(init["apiKeySource"], "none");
+    assert_eq!(run.records[0].exit, Some(Exit::Code(0)));
+}
+
+#[test]
+fn a_turn_answers_each_user_message_with_its_result() {
+    let run = normal(story(vec![Step::Text("one".into()), Step::Text("two".into())], End::default()), 2);
+    let result = results(&run);
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0]["result"], "two");
+    assert_eq!(
+        result[0]["usage"],
+        json!({"input_tokens":20,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0})
+    );
+    assert_eq!(result[1]["result"], "Done.");
+    for message in messages(&run) {
+        assert_eq!(message["session_id"], SESSION);
+    }
+    let assistant = messages(&run).into_iter().find(|value| value["type"] == "assistant").expect("assistant");
+    assert_eq!(assistant["message"]["role"], "assistant");
+    assert_eq!(assistant["message"]["model"], "test-model");
+    assert_eq!(assistant["message"]["usage"]["input_tokens"], 10);
+    assert!(assistant["message"]["id"].is_string());
+    assert!(assistant["parent_tool_use_id"].is_null());
+}
+
+#[test]
+fn partial_messages_come_only_when_asked() {
+    let run = normal(Story::default(), 1);
+    assert!(!messages(&run).iter().any(|message| message["type"] == "stream_event"));
+    let mut invocation = print::invocation(1);
+    invocation = invocation.arguments(
+        &print::arguments().iter().map(String::as_str).chain(["--include-partial-messages"]).collect::<Vec<_>>(),
+    );
+    let run = print::run(Story::default(), invocation, None, Some(MCP));
+    let messages = messages(&run);
+    assert_eq!(
+        messages[1..6].iter().map(|message| message["event"]["type"].as_str().expect("event")).collect::<Vec<_>>(),
+        ["message_start", "content_block_start", "content_block_delta", "content_block_stop", "message_stop"]
+    );
+    assert_eq!(messages[6]["type"], "assistant");
+}
+
+#[test]
+fn a_usage_limit_is_told_with_its_reset() {
+    let run = normal(story(vec![Step::RateLimit { resets_at: Some(123) }], End::default()), 1);
+    assert_eq!(messages(&run)[1]["rate_limit_info"], json!({"status":"rejected", "resetsAt":123}));
+}
+
+#[test]
+fn a_usage_limit_is_told_without_a_reset() {
+    let run = normal(story(vec![Step::RateLimit { resets_at: None }], End::default()), 1);
+    assert_eq!(messages(&run)[1]["rate_limit_info"], json!({"status":"rejected"}));
+}
+
+#[test]
+fn the_program_s_own_retry_is_told() {
+    let run = normal(story(vec![Step::Retry { attempt: 2, status: 503 }], End::default()), 1);
+    assert_eq!(
+        messages(&run)[1],
+        json!({"type":"system", "subtype":"api_retry", "attempt":2,"error_status":503,"session_id":SESSION})
+    );
+}
+
+#[test]
+fn a_turn_without_finish_ends_with_its_structured_output() {
+    let story = story(Vec::new(), End::Success { structured_output: Some(json!({"done":true})) });
+    assert!(results(&normal(story.clone(), 1))[0].get("structured_output").is_none());
+    let mut args = print::arguments();
+    args.extend(["--json-schema".into(), "{}".into()]);
+    let run = print::run(
+        story,
+        print::invocation(1).arguments(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+        None,
+        Some(MCP),
+    );
+    assert_eq!(results(&run)[0]["structured_output"], json!({"done":true}));
+}
+
+#[test]
+fn an_error_result_carries_its_status() {
+    let run = normal(
+        story(
+            Vec::new(),
+            End::Error {
+                api_error_status: Some(429),
+                terminal_reason: Some("limited".into()),
+                errors: vec!["limit".into()],
+            },
+        ),
+        1,
+    );
+    let result = &results(&run)[0];
+    assert_eq!(result["api_error_status"], 429);
+    assert_eq!(result["terminal_reason"], "limited");
+    assert_eq!(result["errors"], json!(["limit"]));
+    assert_eq!(result["is_error"], true);
+    assert_eq!(result["subtype"], "error_during_execution");
+}
+
+#[test]
+fn a_login_lost_mid_run_fails_the_next_turn_unauthorized() {
+    let run = normal(story(vec![Step::LoseLogin], End::default()), 2);
+    assert_eq!(results(&run)[0]["is_error"], false);
+    assert_eq!(results(&run)[1]["api_error_status"], 401);
+    assert!(run.login.is_none());
+}
+
+#[test]
+fn a_program_that_exits_before_its_result() {
+    let run = normal(story(Vec::new(), End::Exit(7)), 1);
+    assert!(results(&run).is_empty());
+    assert_eq!(run.records[0].exit, Some(Exit::Code(7)));
+}
+
+#[test]
+fn an_undecodable_line_ends_the_stream() {
+    let run = normal(story(Vec::new(), End::Undecodable), 1);
+    assert!(run.records[0].stdout.ends_with(b"not json\n"));
+    assert_eq!(run.records[0].exit, Some(Exit::Code(1)));
+}
+
+#[test]
+fn an_interrupt_ends_a_hanging_turn_then_the_next_message_runs() {
+    let invocation = print::signal(print::invocation(2), ServiceSignal::Interrupt, "assistant");
+    let run =
+        print::run(story(vec![Step::Text("waiting".into()), Step::Hang], End::default()), invocation, None, Some(MCP));
+    assert!(run.signalled);
+    assert_eq!(results(&run)[0]["terminal_reason"], "interrupted");
+    assert_eq!(results(&run)[1]["result"], "Done.");
+}
+
+#[test]
+fn an_interrupt_between_turns_changes_nothing() {
+    let invocation = print::signal(print::invocation(2), ServiceSignal::Interrupt, "success");
+    let run = print::run(Story::default(), invocation, None, Some(MCP));
+    assert!(run.signalled);
+    assert_eq!(results(&run).len(), 2);
+    assert!(results(&run).iter().all(|result| result["is_error"] == false));
+}
+
+#[test]
+fn a_termination_exits_143() {
+    let invocation = print::signal(print::invocation(1), ServiceSignal::Terminate, "assistant");
+    let run =
+        print::run(story(vec![Step::Text("waiting".into()), Step::Hang], End::default()), invocation, None, Some(MCP));
+    assert!(results(&run).is_empty());
+    assert_eq!(run.records[0].exit, Some(Exit::Code(143)));
+}
+
+#[test]
+fn refused_flags_exit_2() {
+    let args = print::arguments();
+    let mut cases = Vec::new();
+    for flag in [
+        "--bare",
+        "--permission-mode",
+        "--dangerously-skip-permissions",
+        "--allowedTools",
+        "--continue",
+        "--max-budget-usd",
+        "a prompt",
+        "--verbose",
+    ] {
+        let mut invalid = args.clone();
+        invalid.push(flag.into());
+        cases.push(invalid);
+    }
+    for index in 0..args.len() {
+        if args[index].starts_with('-') {
+            let mut invalid = args.clone();
+            invalid.remove(index);
+            if !["-p", "--verbose", "--strict-mcp-config"].contains(&args[index].as_str()) {
+                invalid.remove(index);
+            }
+            cases.push(invalid);
+        }
+    }
+    for (flag, value) in [
+        ("--session-id", "bad"),
+        ("--permission-prompt-tool", "bad"),
+        ("--tools", "Read,Web"),
+        ("--input-format", "text"),
+        ("--max-turns", "0"),
+        ("--max-turns", "-1"),
+        ("--json-schema", "{"),
+    ] {
+        let mut invalid = args.clone();
+        if let Some(index) = invalid.iter().position(|argument| argument == flag) {
+            invalid[index + 1] = value.into();
+        } else {
+            invalid.extend([flag.into(), value.into()]);
+        }
+        cases.push(invalid);
+    }
+    for invalid in cases {
+        let run = print::run(
+            Story::default(),
+            print::invocation(0).arguments(&invalid.iter().map(String::as_str).collect::<Vec<_>>()),
+            None,
+            Some(MCP),
+        );
+        assert_eq!(run.records[0].exit, Some(Exit::Code(2)), "{invalid:?}");
+        assert_eq!(run.records[0].stderr, b"fake claude: unknown command or flag\n");
+    }
+}
+
+#[test]
+fn the_settings_found_are_observed_by_their_rules() {
+    let run = print::run(
+        Story::default(),
+        print::invocation(0),
+        Some(br#"{"permissions":{"allow":["mcp__smith__*"],"ask":["Read"],"deny":["Bash"]},"private":"not recorded"}"#),
+        Some(MCP),
+    );
+    let observations = run.observations.expect("observations");
+    assert_eq!(
+        seen(&observations),
+        [Seen::Settings {
+            allow: vec!["mcp__smith__*".into()],
+            ask: vec!["Read".into()],
+            deny: vec!["Bash".into()],
+            keys: vec!["permissions".into(), "private".into()]
+        }]
+    );
+    assert!(!String::from_utf8_lossy(&observations).contains("not recorded"));
+    assert_eq!(smith_fake_claude::observations(&observations).len(), 1);
+    assert_eq!(seen(&normal(Story::default(), 0).observations.expect("observations")), [Seen::UnreadableSettings]);
+}
+
+#[test]
+fn a_resume_of_an_unknown_session_fails() {
+    let args: Vec<_> = print::arguments()
+        .into_iter()
+        .map(|argument| if argument == "--session-id" { "--resume".into() } else { argument })
+        .collect();
+    let invocation = print::invocation(1).arguments(&args.iter().map(String::as_str).collect::<Vec<_>>());
+    let run = print::run(Story { resume: Resume::Missing, ..Story::default() }, invocation.clone(), None, Some(MCP));
+    assert_eq!(run.records[0].exit, Some(Exit::Code(1)));
+    assert_eq!(run.records[0].stderr, format!("No conversation found with session ID: {SESSION}\n").as_bytes());
+    assert_eq!(results(&print::run(Story::default(), invocation, None, Some(MCP))).len(), 1);
+}
+
+#[test]
+fn an_invalid_configuration_exits_one() {
+    for configuration in [
+        None,
+        Some(b"{".as_slice()),
+        Some(br#"{"mcpServers":{}}"#),
+        Some(br#"{"mcpServers":{"other":{"command":"server"}}}"#),
+        Some(br#"{"mcpServers":{"smith":{"type":"http","command":"server"}}}"#),
+    ] {
+        let run = print::run(Story::default(), print::invocation(0), None, configuration);
+        assert_eq!(run.records[0].exit, Some(Exit::Code(1)));
+        assert!(!run.records[0].stderr.is_empty());
+    }
+}
+
+#[test]
+fn optional_flags_accept_values_in_any_order() {
+    let mut args = print::arguments();
+    let tool = args.iter().position(|argument| argument == "--tools").expect("tools");
+    args[tool + 1].clear();
+    let print = args.remove(0);
+    args.extend(["--effort".into(), "opaque-level".into(), "--max-turns".into(), "1".into(), print]);
+    let run = print::run(
+        Story::default(),
+        print::invocation(2).arguments(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+        None,
+        Some(MCP),
+    );
+    assert_eq!(messages(&run)[0]["tools"], json!([]));
+    assert_eq!(results(&run).len(), 2);
+}
+
+#[test]
+fn a_non_user_input_line_exits_one() {
+    for input in [
+        b"not json\n".as_slice(),
+        b"{\"type\":\"assistant\"}\n",
+        b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":1}}\n",
+        b"{\"type\":\"user\"}",
+    ] {
+        let invocation = print::unpaced(input);
+        let run = print::run(Story::default(), invocation, None, Some(MCP));
+        assert_eq!(run.records[0].exit, Some(Exit::Code(1)));
+        assert!(!run.records[0].stderr.is_empty());
+    }
+}
+
+#[test]
+fn input_eof_does_not_end_a_hanging_turn() {
+    let input = b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n";
+    let invocation = print::signal(print::unpaced(input), ServiceSignal::Terminate, "assistant");
+    let run =
+        print::run(story(vec![Step::Text("waiting".into()), Step::Hang], End::default()), invocation, None, Some(MCP));
+    assert!(run.signalled);
+    assert_eq!(run.records[0].exit, Some(Exit::Code(143)));
+}
+
+#[test]
+fn absent_standard_input_is_its_end() {
+    let run = print::run(Story::default(), print::without_input(), None, Some(MCP));
+    assert_eq!(messages(&run).len(), 1);
+    assert_eq!(messages(&run)[0]["subtype"], "init");
+    assert_eq!(run.records[0].exit, Some(Exit::Code(0)));
+}

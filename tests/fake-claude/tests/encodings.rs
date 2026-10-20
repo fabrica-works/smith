@@ -7,8 +7,13 @@ use smith_fake_claude::{Login, Logout, Observation, Status, Story, observations}
 fn a_story_reads_back_as_written() {
     for story in [
         Story::default(),
-        Story { status: Status::Unreadable, login: Login::Code("api\"key".into()), logout: Logout::Fails },
-        Story { status: Status::Silent, login: Login::Refused, logout: Logout::Succeeds },
+        Story {
+            status: Status::Unreadable,
+            login: Login::Code("api\"key".into()),
+            logout: Logout::Fails,
+            ..Story::default()
+        },
+        Story { status: Status::Silent, login: Login::Refused, logout: Logout::Succeeds, ..Story::default() },
     ] {
         assert_eq!(serde_json::from_slice::<Story>(&story.encode()).expect("story encoding"), story);
     }
@@ -27,4 +32,15 @@ fn observations_read_back_as_written() {
     }
     assert_eq!(observations(&bytes), expected);
     assert!(observations(b"").is_empty());
+}
+
+#[test]
+fn a_stage_one_story_still_decodes() {
+    assert_eq!(
+        serde_json::from_slice::<Story>(
+            br#"{"status":"Truthful","login":{"Immediate":"claude.ai"},"logout":"Succeeds"}"#
+        )
+        .expect("stage one story"),
+        Story::default()
+    );
 }

@@ -1,4 +1,4 @@
-//! One invocation's I/O and settlement (protocol/programs.md, section 8;
+//! One invocation's I/O and settlement (protocol/programs.md, sections 5 and 8;
 //! testing.md, section 4). Startup loads a story and appends names before
 //! entering a command; terminal exits wait for every descriptor to close.
 
@@ -27,7 +27,7 @@ const QUEUE: u32 = 64;
 const FILE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Descriptors transferred by the kernel entry point or hosted factory.
-/// `observations` is an append descriptor beneath `config`, when present.
+/// `observations` appends beneath `config`; `mcp` contains the MCP configuration.
 #[derive(Debug)]
 pub struct Faces {
     pub stdin: Option<Fd>,
@@ -36,6 +36,7 @@ pub struct Faces {
     pub signal: Fd,
     pub config: Option<Fd>,
     pub observations: Option<Fd>,
+    pub mcp: Option<Fd>,
 }
 
 /// One fake invocation, driven unchanged by a world or the kernel loop.
@@ -99,10 +100,13 @@ impl Fake {
         let signal = io.adopt_signals(faces.signal).expect("signal slot");
         let mut observation =
             Output::new(faces.observations.map(|fd| io.adopt_append(fd, FILE_TIMEOUT).expect("observation slot")));
-        let mut files = FileIo::new(1, FILE_BYTES, 1, FILE_TIMEOUT);
+        let mut files = FileIo::new(2, FILE_BYTES, 1, FILE_TIMEOUT);
         files.seed_randomness(7);
-        let config =
-            Config { root: faces.config.map(|fd| files.adopt_root(fd).expect("root slot")), directory: faces.config };
+        let config = Config {
+            root: faces.config.map(|fd| files.adopt_root(fd).expect("root slot")),
+            directory: faces.config,
+            mcp: faces.mcp.map(|fd| files.adopt_root(fd).expect("MCP root slot")),
+        };
         let arguments: Vec<_> = arguments.iter().map(|bytes| String::from_utf8_lossy(bytes).into_owned()).collect();
         let observed = Observation {
             arguments: arguments.clone(),
@@ -187,9 +191,18 @@ impl Fake {
                     assert!(self.file_request.is_none(), "one file request at a time");
                     self.file_request = Some(request);
                 }
+                Effect::Seen(seen) => {
+                    let mut bytes = serde_json::to_vec(&serde_json::json!({"seen":seen})).expect("seen JSON");
+                    bytes.push(b'\n');
+                    if self.observation.token().is_some() {
+                        self.observation.push(&bytes);
+                    }
+                }
                 Effect::ReadCode => {
                     if self.input_ended {
-                        self.end(1);
+                        let effects =
+                            self.command.as_mut().map(|command| command.input(None, self.config)).unwrap_or_default();
+                        self.effects(effects);
                     } else {
                         self.io_requests.push(Request::Stream {
                             stream: self.input.expect("code input is present"),
@@ -241,7 +254,15 @@ impl Fake {
 
     fn io_event(&mut self, event: Event) {
         match event {
-            Event::Shutdown { .. } => self.end(143),
+            Event::Shutdown { signal: kernel::ServiceSignal::Interrupt } => {
+                let effects = match &mut self.command {
+                    Some(command) => command.interrupt(),
+                    None if self.arguments.iter().any(|argument| argument == "-p") => Vec::new(),
+                    None => vec![Effect::End(143)],
+                };
+                self.effects(effects);
+            }
+            Event::Shutdown { signal: kernel::ServiceSignal::Terminate } => self.end(143),
             Event::Stream { owner, up } if Some(owner) == self.stdout.token() => {
                 let failed = matches!(up, Up::Failed(_));
                 self.stdout.event(up, &mut self.io_requests);
@@ -288,7 +309,7 @@ impl Fake {
     fn progress(&mut self, now: Time) {
         if self.code.is_none()
             && self.command.is_none()
-            && self.observation.is_empty()
+            && self.observation.drained()
             && let Some(story) = self.story.take()
         {
             let (command, effects) = Command::start(&self.arguments, story, self.config);
@@ -299,7 +320,7 @@ impl Fake {
             if let Some(request) = self.file_request.take() {
                 file_layer::down(&mut self.files, now, request, &mut self.file_events, &mut self.file_submissions);
             } else if self.code.is_some()
-                && let Some(root) = self.config.root.take()
+                && let Some(root) = self.config.root.take().or_else(|| self.config.mcp.take())
             {
                 self.root_closing = true;
                 file_layer::down(
@@ -313,7 +334,7 @@ impl Fake {
         }
         self.stdout.progress(self.code.is_some(), &mut self.io_requests);
         self.stderr.progress(self.code.is_some(), &mut self.io_requests);
-        self.observation.progress(true, &mut self.io_requests);
+        self.observation.progress(self.code.is_some(), &mut self.io_requests);
     }
 }
 
@@ -377,7 +398,7 @@ impl Host for Fake {
             || !self.file_events.is_empty()
             || !self.io_events.is_empty()
             || self.file_request.is_some()
-            || (self.code.is_some() && self.config.root.is_some() && self.files.takes())
+            || (self.code.is_some() && (self.config.root.is_some() || self.config.mcp.is_some()) && self.files.takes())
     }
 
     fn next_deadline(&self) -> Option<Time> {

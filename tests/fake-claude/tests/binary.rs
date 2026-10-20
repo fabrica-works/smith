@@ -93,3 +93,109 @@ fn the_binary_logout_accepts_an_absent_directory() {
     assert_eq!(output.stdout, b"Signed out.\n");
     assert!(!config.exists());
 }
+
+#[allow(dead_code)]
+mod support;
+
+use smith_fake_claude::{End, STORY_FILE, Step, Story, Turn};
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, Stdio};
+
+fn print_child(story: Story) -> (Scratch, Child) {
+    let scratch = Scratch::new("fake-claude-print");
+    let config = scratch.path().join("config");
+    let run = scratch.path().join("run");
+    fs::create_dir(&config).expect("configuration");
+    fs::create_dir(&run).expect("run directory");
+    fs::write(config.join(LOGIN_FILE), b"claude.ai").expect("login");
+    fs::write(config.join(STORY_FILE), story.encode()).expect("story");
+    fs::write(run.join("mcp.json"), support::print::MCP).expect("MCP configuration");
+    let child = Command::new(env!("CARGO_BIN_EXE_fake-claude"))
+        .env_clear()
+        .env("HOME", scratch.path())
+        .env(CONFIG_DIR, &config)
+        .current_dir(scratch.path())
+        .args(support::print::arguments())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("print child");
+    (scratch, child)
+}
+
+fn read_message(reader: &mut BufReader<std::process::ChildStdout>) -> serde_json::Value {
+    let mut line = String::new();
+    assert!(reader.read_line(&mut line).expect("read message") > 0, "message before EOF");
+    serde_json::from_str(&line).expect("JSON message")
+}
+
+fn send_user(child: &mut Child) {
+    child
+        .stdin
+        .as_mut()
+        .expect("input")
+        .write_all(b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n")
+        .expect("user message");
+}
+
+fn signal(child: &Child, name: &str, scratch: &Scratch) {
+    assert!(
+        Command::new("/bin/kill")
+            .env_clear()
+            .env("HOME", scratch.path())
+            .env(CONFIG_DIR, scratch.path().join("config"))
+            .args(["-s", name, &child.id().to_string()])
+            .status()
+            .expect("signal command")
+            .success()
+    );
+}
+
+#[test]
+fn the_binary_runs_a_turn() {
+    let (_scratch, mut child) = print_child(Story::default());
+    let mut reader = BufReader::new(child.stdout.take().expect("output"));
+    assert_eq!(read_message(&mut reader)["subtype"], "init");
+    send_user(&mut child);
+    assert_eq!(read_message(&mut reader)["type"], "assistant");
+    assert_eq!(read_message(&mut reader)["result"], "Done.");
+    child.stdin.take();
+    assert_eq!(child.wait().expect("exit").code(), Some(0));
+}
+
+#[test]
+fn the_binary_ends_a_turn_on_an_interrupt() {
+    let story = Story {
+        turns: vec![Turn { steps: vec![Step::Text("waiting".into()), Step::Hang], end: End::default() }],
+        ..Story::default()
+    };
+    let (scratch, mut child) = print_child(story);
+    let mut reader = BufReader::new(child.stdout.take().expect("output"));
+    assert_eq!(read_message(&mut reader)["subtype"], "init");
+    send_user(&mut child);
+    assert_eq!(read_message(&mut reader)["type"], "assistant");
+    signal(&child, "INT", &scratch);
+    assert_eq!(read_message(&mut reader)["terminal_reason"], "interrupted");
+    send_user(&mut child);
+    assert_eq!(read_message(&mut reader)["type"], "assistant");
+    assert_eq!(read_message(&mut reader)["subtype"], "success");
+    child.stdin.take();
+    assert_eq!(child.wait().expect("exit").code(), Some(0));
+}
+
+#[test]
+fn the_binary_exits_143_on_a_termination() {
+    let story = Story {
+        turns: vec![Turn { steps: vec![Step::Text("waiting".into()), Step::Hang], end: End::default() }],
+        ..Story::default()
+    };
+    let (scratch, mut child) = print_child(story);
+    let mut reader = BufReader::new(child.stdout.take().expect("output"));
+    assert_eq!(read_message(&mut reader)["subtype"], "init");
+    send_user(&mut child);
+    assert_eq!(read_message(&mut reader)["type"], "assistant");
+    child.stdin.take();
+    signal(&child, "TERM", &scratch);
+    assert_eq!(child.wait().expect("exit").code(), Some(143));
+}
