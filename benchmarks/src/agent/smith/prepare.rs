@@ -230,13 +230,15 @@ fn product_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
 }
 
 fn check_arguments(face: super::events::Shape, rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
-    let mut arguments = vec!["check".into(), "--json".into(), "exec".into()];
+    let mut arguments = vec!["check".into(), "--json".into()];
     match face {
-        super::events::Shape::Exec => arguments.push("--json".into()),
-        super::events::Shape::Chat => {}
+        super::events::Shape::Exec => {
+            arguments.extend(["exec".into(), "--json".into()]);
+            arguments.extend(product_arguments(rendered));
+            arguments.push("-".into());
+        }
+        super::events::Shape::Chat => arguments.extend(product_arguments(rendered)),
     }
-    arguments.extend(product_arguments(rendered));
-    arguments.push("-".into());
     arguments
 }
 
@@ -351,16 +353,19 @@ mod tests {
     }
 
     #[test]
-    fn check_keeps_one_event_destination_for_each_product_face() {
-        for (face, event_json) in [(Shape::Exec, true), (Shape::Chat, false)] {
+    fn check_names_the_invocation_each_face_starts() {
+        for face in [Shape::Exec, Shape::Chat] {
             let prepared = invocation(face);
             let command = smith_local_shell::command::parse(check_arguments(face, &prepared.rendered))
                 .expect("product check flags");
-            let smith_local_shell::command::Command::Check { json, execution: Some(execution), .. } = command else {
-                panic!("check keeps its exec invocation");
+            let smith_local_shell::command::Command::Check { json, execution, .. } = command else {
+                panic!("product startup check");
             };
             assert!(json, "{face:?}");
-            assert_eq!(execution.json, event_json, "{face:?}");
+            match face {
+                Shape::Exec => assert!(execution.expect("headless check's exec invocation").json),
+                Shape::Chat => assert!(execution.is_none(), "interactive check has no exec invocation"),
+            }
         }
     }
 
