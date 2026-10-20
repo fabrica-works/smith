@@ -77,7 +77,7 @@ impl Jobs {
         assert!(matches!(self.down.pop(), Some(Below::Spawn { .. })));
         let stdout = Token::new(PIPE_BASE + PIPE_COUNT * number);
         let stderr = Token::new(PIPE_BASE + PIPE_COUNT * number + 1);
-        self.event(Event::Spawned { owner, child: Token::new(CHILD_BASE + number), pipes: Box::new([stdout, stderr]) });
+        self.child(Event::Spawned { owner, child: Token::new(CHILD_BASE + number), pipes: Box::new([stdout, stderr]) });
         while self.down.pop().is_some() {}
         self.component.fire(&self.env, &mut self.up, &mut self.down);
         assert_eq!(
@@ -87,15 +87,19 @@ impl Jobs {
                 done: tools::Done::Held { head: Box::new([]), tail: Box::new([]), dropped: 0 }
             })
         );
-        self.event(Event::Stream {
+        self.pipe(Event::Stream {
             owner: stdout,
             up: Up::Bytes(vec![b'x'; usize::try_from(head + tail).expect("kept output")].into()),
         });
         while self.down.pop().is_some() {}
     }
 
-    fn event(&mut self, event: Event) {
+    fn child(&mut self, event: Event) {
         self.component.from_below(&self.env, BelowEvent::Process(event), &mut self.up, &mut self.down);
+    }
+
+    fn pipe(&mut self, event: Event) {
+        self.component.from_below(&self.env, BelowEvent::Pipe(event), &mut self.up, &mut self.down);
     }
 
     pub(super) fn check_captures(&mut self) {
