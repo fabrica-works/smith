@@ -1578,7 +1578,7 @@ fn advance(
                     break;
                 }
                 let bounded = history::tool_env(call, share, env);
-                let credit = owned_credit(call, &bounded.limits);
+                let credit = owned_credit(call, &bounded.limits).min(share);
                 let call = call.clone();
                 let deadline = env.now.saturating_add(env.limits.tools.tool_deadline).min(conversation.expires);
                 let metadata = tool_metadata(provider_id, name, input, crate::ToolSource::Workspace, effect, deadline);

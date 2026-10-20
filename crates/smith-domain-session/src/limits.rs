@@ -18,6 +18,10 @@ use crate::session::{Alarm, Ready, Run, Session, Slot};
 /// may be, and what bounds the requests a step emits.
 pub const MAX_PARALLEL: u32 = 8;
 
+/// Allowance for escaping and framing when estimating encoded bytes from the
+/// session's retained count; the protocol guard still measures the exact request.
+pub const ENCODED_BYTES: [u32; 2] = [5, 4];
+
 /// The session child domain's limits (programming-model.md, sections 4.5 and 6.3), handed by its parent to every
 /// step read-only.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

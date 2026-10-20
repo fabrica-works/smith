@@ -187,11 +187,16 @@ pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, failed: 
     let held = conversation.bytes.checked_add(conversation.reserved).expect("bounded retained bytes");
     let left = limits.history_bytes.checked_sub(held).expect("retained history fits");
     let future = minimum(limits).checked_mul(u64::from(following)).expect("bounded following results");
-    let available = left
+    let history_room = left
         .checked_sub(future)
         .expect("provider admission left each call an answer")
         .checked_sub(summary_cost().expect("bounded summary"))
         .expect("summary room reserved");
+    let minima = minimum(limits).checked_mul(u64::from(count)).expect("bounded batch minima");
+    let available = match line_room(conversation, future) {
+        Some(room) if room >= minima => room.min(history_room),
+        Some(_) | None => history_room,
+    };
     let share = if wanted <= available {
         u64::MAX
     } else {
@@ -210,7 +215,7 @@ pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, failed: 
         }
         let credit = match block {
             Block::ToolCall { call: Decoded::Owned { call }, .. } => {
-                super::owned_credit(call, &tool_limits(call, share, limits))
+                super::owned_credit(call, &tool_limits(call, share, limits)).min(share)
             }
             Block::ToolCall { call: Decoded::Delegated { .. }, .. } => super::delegated_credit(limits).min(share),
             Block::ToolCall {
@@ -226,6 +231,16 @@ pub(super) fn reserve_batch(conversation: &mut Conversation, next: u32, failed: 
     }
     conversation.reserved = conversation.reserved.checked_add(reserved).expect("reserved batch fits history");
     share
+}
+
+/// Estimate the guard's room, retaining overhead beyond the last prompt's payload baseline.
+fn line_room(conversation: &Conversation, future: u64) -> Option<u64> {
+    let prompt = conversation.window.last_prompt?;
+    let left = conversation.line.checked_sub(prompt.0)?;
+    let decoded =
+        left.checked_mul(u64::from(crate::ENCODED_BYTES[1]))?.checked_div(u64::from(crate::ENCODED_BYTES[0]))?;
+    let appended = conversation.bytes.checked_sub(conversation.window.last_prompt_bytes)?;
+    decoded.checked_sub(appended)?.checked_sub(conversation.reserved)?.checked_sub(future)
 }
 
 /// Select result caps for this call without changing its input or other calls.

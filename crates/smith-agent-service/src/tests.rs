@@ -1070,3 +1070,6 @@ fn a_refused_completions_detail_is_content() {
 }
 
 mod accounts;
+
+#[path = "tests/line.rs"]
+mod line;

@@ -461,6 +461,22 @@ window, history only grows (section 3).
   filled has no room for another completion, so the next is the
   compaction, whose request cuts the owed results to its own room (8.2).
 
+- **Nor do they cross the line** (revised 2026-10-20). Every batch, the first
+  included, also runs within an estimate of what is left below the line in
+  the guard's units: the line, less the last prompt's reported size, less
+  the retained byte count beyond that prompt's payload-byte baseline and
+  everything already reserved, at `ENCODED_BYTES` (5/4: an allowance for
+  escaping and framing as a request encodes them), less room for an answer
+  to each call after the batch. The retained count includes the completion's
+  answer, appended results and owned overhead. The smaller of this room and
+  the history's is shared as above. So a completion of many large reads is
+  answered with what fits, each result saying what it left out, and the next
+  completion can be sent where the guard would otherwise refuse it unsent
+  and the window compact without the results the reads were for. In a window
+  with no earlier prompt, or where this room cannot give each call its
+  minimum answer, the batch runs as before: the guard stays what makes the
+  line hold, and this rule only makes its refusals rare.
+
 ### 8.2 Compaction
 
 - **Its trigger:** a failed window check (8.1), a provider's *context

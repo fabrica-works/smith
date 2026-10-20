@@ -3137,3 +3137,6 @@ fn opens_window_is_true_of_first_and_window_turns_only() {
         assert_eq!(kind.opens_window(), expected, "{kind:?}");
     }
 }
+
+#[path = "tests/line.rs"]
+mod line;

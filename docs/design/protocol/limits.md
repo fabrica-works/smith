@@ -213,7 +213,10 @@ rules:
    window's history at its threshold, an answer, a request), a token is
    `TOKEN_BYTES` bytes. Where a byte count bounds tokens (a fresh
    window, a room), a byte is one token. One comparison never mixes the
-   two.
+   two. `TOKEN_BYTES` is skein's decoded bytes per declared token;
+   `smith-domain-session::ENCODED_BYTES` is the 5/4 allowance for escaping
+   and framing in a batch's estimate of room below the line
+   (domain/session.md, 8.1). The guard still measures the exact encoding.
 5. **Queues are charged at what can be queued at once:** their capacity
    in cells, plus the payload all their producers can have queued at
    once (sessions times one record, say). Never their capacity times the
@@ -709,6 +712,7 @@ reserve against the budget.
 | history that reaches the window's threshold | a compaction, not a failure (domain/session.md, section 8) |
 | results owed to a compaction past what its headroom leaves | cut with their markers in the compaction's request only (3.9) |
 | a completion's later batch past what is left of the history | each call runs with its share of what is left as its cap, its result saying what it left out; the next completion is the compaction (domain/session.md, 8.1) |
+| a completion's batch past what is left below the line | each call runs with its share of what is left as its cap, its result saying what it left out; the next completion is sent when the guard's exact measure fits (domain/session.md, 8.1) |
 | messages queued past one offer | they wait, in order, for the next offer (3.9) |
 | a provider's "context too long" | one compaction; a second in the same window fails the session |
 | a completion past `calls_per_response` | a typed limit failure of the completion; the tools' descriptions state the bound |
