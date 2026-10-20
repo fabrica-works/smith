@@ -777,15 +777,19 @@ For each repository's `docs/development/tech-debt.md`. Only smith and jig have o
 
 ## 10. Decisions
 
+The director, 10-20 07:00Z, under owners.md: only what still matters to owners is taken.
+
 | Proposal | Decision | Where |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
-| 5 | open | |
-| 6 | open | |
-| 7 | open | |
-| 8 | open | |
-| 9 | open | |
-| 10 | open | |
+| 1 | rejected | development.md is being retired (decision 177): no new run starts under it; forge-kit and real-loop finish as they are |
+| 2 | rejected | as 1 |
+| 3 | adopted, for owners | the disk floor's refusal names what fills the disk (the largest directories in tmp/ and the targets), so an owner frees it; skein scripts/dev |
+| 4 | rejected | as 1 |
+| 5 | adopted, already in force | owners.md 4.5 (every machine's gate; a slow test made cheaper, the budget never raised); smith's suite cause (section 9, smith 1) goes to o/smith-sources before it adds more tests |
+| 6 | rejected | as 1: owners keep no Done-when aims |
+| 7 | deferred | a later kit item; owners' reviewers check testing-strategy.md section 10 meanwhile |
+| 8 | rejected | as 1 |
+| 9 | rejected | as 1 |
+| 10 | rejected | as 1 |
+
+Section 9's debts go to the owners working there: smith's (1-6) and skein's 1 to o/smith-sources; jig's 3 and 4 and temper's 1, 2 and 4 to o/accounts-2; jig's 1 is fixed (jig ac8053a8); hearth's 1 waits for hearth's owner; the kit's to the next kit owner.
