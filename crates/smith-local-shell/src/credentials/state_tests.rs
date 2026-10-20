@@ -50,10 +50,10 @@ fn each_unusable_state_says_its_exit_3_words() {
     }
 }
 
-fn record(files: &Files, scopes: &[u8]) -> PathBuf {
+fn record(files: &Files, scopes: Option<&[u8]>) -> PathBuf {
     let mut record = env_record(b"key-for-work", false, Wall::from_nanos(0)).expect("synthetic record").record;
     record.expires_at = Wall::from_nanos(60_000_000_000);
-    record.granted_scopes = Some(scopes.into());
+    record.granted_scopes = scopes.map(Box::from);
     let bytes = skein_oauth::encode_record(&record, &sign_in::document_limits()).expect("bounded record");
     let path = files.0.join("record");
     let mut file =
@@ -65,16 +65,19 @@ fn record(files: &Files, scopes: &[u8]) -> PathBuf {
 #[test]
 fn an_expired_record_without_a_refresh_token_must_sign_in_again() {
     let files = Files::new();
-    let path = record(&files, b"chatgpt.tokens.use.direct");
-    let state =
-        inspect(&Source::SignIn { file: path, openai: true }, Wall::from_nanos(60_000_000_000), &ProgramStates::new());
+    let path = record(&files, Some(b"chatgpt.tokens.use.direct"));
+    let state = inspect(
+        &Source::SignIn { file: path, required_scopes: Some(b"chatgpt.tokens.use.direct".as_slice().into()) },
+        Wall::from_nanos(60_000_000_000),
+        &ProgramStates::new(),
+    );
     assert!(matches!(state, Credential::SignInAgain), "the reported state matches the contract");
 }
 
 #[test]
 fn a_record_without_the_plan_scope_is_signed_in_without_it() {
     let files = Files::new();
-    let path = record(&files, b"openid profile");
+    let path = record(&files, Some(b"openid profile"));
     let fields = BTreeMap::from([(
         "provider".into(),
         Sourced { value: toml::Value::String("openai".into()), origin: settings::Origin::BuiltIn },
@@ -89,7 +92,7 @@ fn a_record_without_the_plan_scope_is_signed_in_without_it() {
         Some(&Directory::from_base(files.0.clone()).expect("absolute scratch")),
     );
     let descriptor = match descriptor {
-        Source::SignIn { openai, .. } => Source::SignIn { file: path.clone(), openai },
+        Source::SignIn { required_scopes, .. } => Source::SignIn { file: path.clone(), required_scopes },
         Source::Borrow { .. } | Source::Env { .. } | Source::Key { .. } | Source::Program { .. } | Source::Nothing => {
             panic!("sign-in descriptor")
         }
@@ -104,7 +107,34 @@ fn a_record_without_the_plan_scope_is_signed_in_without_it() {
         "the reported state matches the contract"
     );
     assert!(
-        inspect(&Source::SignIn { file: path, openai: false }, Wall::from_nanos(0), &ProgramStates::new()).usable(),
+        inspect(&Source::SignIn { file: path, required_scopes: None }, Wall::from_nanos(0), &ProgramStates::new())
+            .usable(),
         "the reported state matches the contract"
+    );
+}
+
+#[test]
+fn a_record_is_checked_against_the_supplied_required_scopes() {
+    let files = Files::new();
+    let file = record(&files, Some(b"read"));
+    let source = Source::SignIn { file, required_scopes: Some(b"read upload".as_slice().into()) };
+    let credential = inspect(&source, Wall::from_nanos(0), &ProgramStates::new());
+    assert_eq!(
+        serde_json::to_value(credential).expect("redacted state"),
+        serde_json::json!({"state":"without_scope","scope":"upload"}),
+        "inspection uses the source's scopes rather than a provider name"
+    );
+}
+
+#[test]
+fn an_omitted_grant_scope_keeps_the_record_usable() {
+    let files = Files::new();
+    let file = record(&files, None);
+    let source = Source::SignIn { file, required_scopes: Some(b"read upload".as_slice().into()) };
+    let credential = inspect(&source, Wall::from_nanos(0), &ProgramStates::new());
+    assert_eq!(
+        serde_json::to_value(credential).expect("redacted state"),
+        serde_json::json!({"state":"usable","until":60_000_000_000_u64}),
+        "omission grants the requested scopes"
     );
 }

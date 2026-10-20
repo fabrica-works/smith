@@ -36,7 +36,7 @@ pub enum Kept {
 impl AccountReport {
     /// The catalog metadata line preceding the account's state.
     #[must_use]
-    pub fn line(&self, account: &str) -> String {
+    pub(crate) fn line(&self, account: &str) -> String {
         let mut line = format!("account {account}: ");
         if let Some(provider) = &self.provider {
             write!(line, "provider {provider}, ").expect("String formatting");

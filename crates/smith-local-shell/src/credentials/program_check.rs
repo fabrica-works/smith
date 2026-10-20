@@ -70,9 +70,15 @@ fn state(program: ProgramName, answer: Result<SourceAnswer, String>) -> Credenti
     }
 }
 
-pub(crate) const fn names(program: ProgramName) -> (&'static str, &'static str) {
+pub(crate) const fn key(program: ProgramName) -> &'static str {
     match program {
-        ProgramName::ClaudeCode => ("claude_code", "Claude Code"),
+        ProgramName::ClaudeCode => "claude_code",
+    }
+}
+
+pub(super) const fn shown(program: ProgramName) -> &'static str {
+    match program {
+        ProgramName::ClaudeCode => "Claude Code",
     }
 }
 
@@ -80,7 +86,7 @@ pub(super) fn serialize<S: serde::Serializer>(
     program: impl std::borrow::Borrow<ProgramName>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(names(*program.borrow()).0)
+    serializer.serialize_str(key(*program.borrow()))
 }
 
 #[cfg(test)]

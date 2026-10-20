@@ -7,6 +7,7 @@ use crate::{
 use serde::Serialize;
 use std::{collections::BTreeMap, ffi::OsString, os::unix::fs::PermissionsExt, path::PathBuf};
 
+mod accounts;
 pub(crate) mod warnings;
 
 /// A startup warning names its configuration source, never a variable's value.
@@ -129,18 +130,12 @@ fn report_for(
         Ok(warnings) => warnings,
         Err(why) => return Verdict::Refused(why),
     };
-    let catalog = crate::credentials::report::accounts(&resolved);
-    let states = crate::credentials::program_check::check(
-        &resolved,
-        catalog.values().filter(|account| account.source() == "program").map(|account| account.name.as_str()),
-        clock,
-    );
-    let credentials = crate::credentials::report(&resolved, wall, &states);
+    let credentials = accounts::report(&resolved, wall, clock);
     let programs = resolved
         .agent
         .programs
         .iter()
-        .map(|(name, program)| (crate::credentials::program_check::names(*name).0, program.path.clone()))
+        .map(|(name, program)| (crate::credentials::program_check::key(*name), program.path.clone()))
         .collect();
     for (account, state) in &credentials {
         if !state.required && !state.credential.usable() {

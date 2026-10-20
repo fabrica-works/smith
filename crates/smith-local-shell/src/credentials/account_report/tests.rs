@@ -68,8 +68,8 @@ fn the_report_omits_a_place_without_a_credentials_directory() {
         places.insert(source, account.get("kept").cloned());
     }
     assert_eq!(
-        serde_json::to_value(places).expect("places JSON"),
-        json!({"sign_in":null,"key":null,"program":null}),
+        places,
+        BTreeMap::from([("sign_in", None), ("key", None), ("program", None)]),
         "no absolute base means no kept location for any owned source"
     );
 }

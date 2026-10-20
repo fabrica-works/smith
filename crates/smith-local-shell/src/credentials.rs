@@ -6,6 +6,7 @@ use skein_lib::Wall;
 use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
 use std::{collections::BTreeMap, path::PathBuf};
 
+pub(crate) mod account_report;
 mod directory;
 mod host_id;
 pub(crate) mod key;
@@ -16,17 +17,16 @@ mod product;
 pub(crate) mod program_check;
 pub(crate) mod program_source;
 mod registration;
-pub(crate) mod report;
 pub(crate) mod sign_in;
 pub use crate::settings::resolve::Account;
+pub(crate) use account_report::unused_warnings;
+pub use account_report::{AccountReport, Kept, report};
 pub use directory::Directory;
 pub use key::KeyProblem;
 pub use login::{Environment, LoginOutcome, command, credential_words};
 pub(crate) use product::codex as product_codex;
 pub use product::{Location, Prepared, limits, prepare};
 use program_check::ProgramStates;
-pub(crate) use report::unused_warnings;
-pub use report::{AccountReport, Kept, report};
 pub use sign_in::{Registered, registration};
 use smith_agent_shell::config::ProgramName;
 
@@ -104,14 +104,14 @@ impl Credential {
             ),
             Self::ProgramNotSignedIn { program } => format!(
                 "account {account}: {} is not signed in: run `smith login {account}`",
-                program_check::names(*program).1
+                program_check::shown(*program)
             ),
             Self::ProgramSignedInOtherwise { program, method } => format!(
                 "account {account}: {} is signed in with {method}, not a subscription: run `smith login {account}`",
-                program_check::names(*program).1
+                program_check::shown(*program)
             ),
             Self::ProgramFailed { program, detail } => {
-                format!("account {account}: {} could not be checked: {detail}", program_check::names(*program).1)
+                format!("account {account}: {} could not be checked: {detail}", program_check::shown(*program))
             }
             Self::Expired { at, file, program } => format!(
                 "the {account} login borrowed from {} expired at {}. Run `{program}` once to refresh it, then try again.",
@@ -144,8 +144,8 @@ pub enum Source {
     /// The native driver keeps this account in its private state file.
     SignIn {
         file: PathBuf,
-        /// Whether the account selects the preset's required `OpenAI` scopes.
-        openai: bool,
+        /// Scopes required by the selected registration, absent for an explicit client.
+        required_scopes: Option<Box<[u8]>>,
     },
     /// A private key lent once by the shell, never refreshed (domain/host.md, 7).
     Key { file: PathBuf },
@@ -194,10 +194,19 @@ pub fn source(
         },
         "program" => Source::Program { name: name.into() },
         "none" => Source::Nothing,
-        _ => Source::SignIn {
-            openai: text("provider") == "openai",
-            file: directory.map_or_else(|| PathBuf::from("missing-token"), |directory| directory.token(name)),
-        },
+        _ => {
+            let required_scopes = if text("provider") == "openai" {
+                registration::openai("", None, &registration::Moved::default())
+                    .terms
+                    .and_then(|terms| terms.required_scopes)
+            } else {
+                None
+            };
+            Source::SignIn {
+                required_scopes,
+                file: directory.map_or_else(|| PathBuf::from("missing-token"), |directory| directory.token(name)),
+            }
+        }
     }
 }
 
@@ -233,7 +242,7 @@ pub fn inspect(source: &Source, wall: Wall, programs: &ProgramStates) -> Credent
             }
             None => Credential::Unset { variable: variable.clone() },
         },
-        Source::SignIn { file, openai } => sign_in::inspect(file, wall, *openai),
+        Source::SignIn { file, required_scopes } => sign_in::inspect(file, wall, required_scopes.as_deref()),
         Source::Key { file } => key::inspect(file),
         Source::Program { name } => programs.get(name).cloned().unwrap_or_else(|| Credential::ProgramFailed {
             program: ProgramName::ClaudeCode,

@@ -41,7 +41,11 @@ impl Prepared {
                     file.as_os_str().as_encoded_bytes().len().checked_add(program.len())?
                 }
                 Source::Env { variable, .. } => variable.len(),
-                Source::SignIn { file, .. } => file.as_os_str().as_encoded_bytes().len(),
+                Source::SignIn { file, required_scopes } => file
+                    .as_os_str()
+                    .as_encoded_bytes()
+                    .len()
+                    .checked_add(required_scopes.as_ref().map_or(0, |scopes| scopes.len()))?,
                 Source::Key { file } => {
                     bytes = bytes.checked_add(u64::from(crate::local_host::token_limits().token_bytes))?;
                     file.as_os_str().as_encoded_bytes().len()
@@ -162,9 +166,9 @@ pub fn prepare(
                 }
                 service::Source::Env { account: account.number, borrowed }
             }
-            Source::SignIn { file, openai } => {
+            Source::SignIn { file, required_scopes } => {
                 let interactive = interactive && !account.fields.contains_key("provider");
-                let credential = super::sign_in::inspect(&file, wall, openai);
+                let credential = super::sign_in::inspect(&file, wall, required_scopes.as_deref());
                 if !interactive && !credential.usable() {
                     return Err(unavailable(&account.name, credential));
                 }

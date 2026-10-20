@@ -19,10 +19,16 @@ fn refuses(scratch: &Scratch, path: &Path, reason: &str) {
         "the fake must receive no auth status for a refused directory"
     );
     assert_eq!(ran.code, 3, "an unsafe source refuses the needed account");
-    assert_eq!(report["credentials"]["work"]["state"], "program_failed", "an unsafe directory cannot be usable");
+    let account = report.pointer("/credentials/work").expect("work account");
     assert_eq!(
-        report["credentials"]["work"]["detail"],
-        format!("{}: {reason}", path.display()),
+        account.get("state").and_then(serde_json::Value::as_str),
+        Some("program_failed"),
+        "an unsafe directory cannot be usable"
+    );
+    let detail = format!("{}: {reason}", path.display());
+    assert_eq!(
+        account.get("detail").and_then(serde_json::Value::as_str),
+        Some(detail.as_str()),
         "the refusal names the path and its problem"
     );
 }
