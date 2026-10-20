@@ -27,14 +27,25 @@ fn the_terminal_modes_are_unchanged_after_smith_exits() {
 #[test]
 fn end_of_input_at_the_terminal_lets_the_run_answer_then_exits_0() {
     use smith_local_process_world::terminal::Action;
+    use std::os::unix::fs::PermissionsExt;
     let scratch = Scratch::new();
-    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
-    let (ran, queries) = support::chat(
+    let mut settings: toml::Value =
+        toml::from_str(std::str::from_utf8(&support::fake_provider_settings(&scratch)).unwrap()).unwrap();
+    settings["accounts"]["codex"] = toml::Value::try_from(serde_json::json!({"source":"key"})).unwrap();
+    settings["endpoints"]["codex"].as_table_mut().unwrap().insert("preset".into(), "openai".into());
+    let _file = support::user_layer(&scratch, toml::to_string(&settings).unwrap().as_bytes());
+    let token: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(scratch.path().join("auth.json")).unwrap()).unwrap();
+    let key = scratch.path().join("credentials/keys/codex");
+    std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+    std::fs::write(&key, token["tokens"]["access_token"].as_str().unwrap()).unwrap();
+    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let ran = support::key_chat(
         &scratch,
         vec![Action::Wait(b"> ".as_slice().into()), Action::Send(b"Ask first\n".as_slice().into()), Action::Eof],
     );
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
-    assert_eq!(queries.len(), 1);
+    assert!(String::from_utf8_lossy(&ran.stdout).contains("API key"));
     assert!(ran.stdout.windows(12).any(|bytes| bytes == b"First answer"));
 }
 

@@ -806,6 +806,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
         observe_initial_message(domain, message);
     }
     let source = RunStart {
+        live_text: domain.config.live_text,
         messages,
         identity: domain.chat.state.identity,
         activation: domain.chat.state.activation,
@@ -1127,7 +1128,7 @@ fn accept_turn(
     domain.chat.state.read = read;
     observe(domain, Fact::Turn { number });
     out.push(Request::SaveTurn { number, read, opens_window, turn });
-    if !shown.is_empty() {
+    if !domain.config.live_text && !shown.is_empty() {
         out.push(Request::Show { text: shown });
     }
 }

@@ -7,6 +7,8 @@ fn program_invocations_fit_the_standard_memory() {
     const PROGRAM_PATH_BYTES: usize = 4096;
     const PROGRAMS_SUFFIX_BYTES: usize = 9;
     const MEMORY: u64 = 2_281_701_376;
+    const BEFORE_CHAT: u64 = 885_273_688;
+    const LIVE_GROWTH: u64 = 64 * 1024;
     const MARGIN: u64 = 134_217_728;
     let credentials = format!(
         "/{}",
@@ -55,6 +57,12 @@ fn program_invocations_fit_the_standard_memory() {
             assert!(producer > 0, "a consumed product stream has a producer");
         } else {
             assert_eq!(producer, 0, "plain spawned exec composes no producer");
+        }
+        if interactive {
+            assert!(
+                worst <= BEFORE_CHAT.checked_add(LIVE_GROWTH).expect("live growth bound"),
+                "program chat grew beyond 64 KiB: before={BEFORE_CHAT}; after={worst}"
+            );
         }
         let margin = MEMORY.checked_sub(worst).expect("program invocation fits shipped cap");
         assert!(margin >= MARGIN, "{name}: worst_case={worst}; margin={margin}");

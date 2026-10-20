@@ -1109,6 +1109,7 @@ dependencies = [
  "skein-channel",
  "skein-fake-checkout",
  "skein-fake-llm-domain",
+ "skein-fake-llm-protocol",
  "skein-fake-machine",
  "skein-fake-oauth",
  "skein-fake-peers",

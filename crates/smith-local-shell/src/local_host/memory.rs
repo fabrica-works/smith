@@ -94,6 +94,8 @@ impl Local {
         let file_routes = Map::<Token, Route>::worst_case(operations)
             .and_then(|bytes| bytes.checked_sub(Map::<Token, Route>::worst_case(base_operations)?))
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
+        // Interactive prices the capped remote prefix and render scratch; the
+        // service already prices four live slots and one popped piece.
         worst = worst
             .checked_add(interactive.map_or(0, crate::front::interactive::Interactive::worst_case))
             .ok_or_else(|| configuration_failure(derivation_refusal("interactive_worst_case")))?;

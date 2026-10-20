@@ -247,3 +247,13 @@ pub fn client_limits() -> skein_oauth::ClientLimits {
         max_attempts: 3,
     }
 }
+
+/// Account words in both chat fronts (shell.md, section 4.1), without secrets.
+pub(crate) fn status_words(source: &Source, openai: bool) -> &'static str {
+    match source {
+        Source::Program { .. } => "through Claude Code",
+        Source::Key { .. } | Source::Env { .. } => "API key",
+        Source::SignIn { .. } | Source::Borrow { .. } if openai => "Using ChatGPT plan",
+        Source::SignIn { .. } | Source::Borrow { .. } | Source::Nothing => "",
+    }
+}

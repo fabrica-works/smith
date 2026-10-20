@@ -23,8 +23,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod borrowed;
+mod key;
 pub(crate) use borrowed::login_token;
 pub use borrowed::{Borrowing, login_at};
+pub use key::provider as key_provider;
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 

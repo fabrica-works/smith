@@ -82,6 +82,8 @@ pub struct Config {
     pub title_field: Box<[u8]>,
     /// Interactive waiting policy or the headless prompt carried at startup.
     pub mode: Mode,
+    /// Ask the spawned agent for text for the terminal presentation.
+    pub live_text: bool,
     /// Whether a saved transcript is supplied on start.
     pub resume: bool,
     /// Accounts for which grants must be fetched before a start.

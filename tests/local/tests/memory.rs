@@ -55,6 +55,7 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
         contract: Contract::Report(outcome::TextSpec { max: 2048, fields: Box::new([]) }),
         deliver: None,
         title_field: b"title".as_slice().into(),
+        live_text: false,
         mode: smith_local_domain::Mode::Chat { waiting: Duration::from_secs(30) },
         resume: true,
         accounts: Box::new([0]),

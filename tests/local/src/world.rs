@@ -642,6 +642,7 @@ impl World {
             Contract::Report(run::outcome::TextSpec { max: 2048, fields: Box::new([]) })
         };
         let config = local::Config {
+            live_text: false,
             protocol_allowances: Box::new([0]),
             reserve: run::charter::Reserve { turns: 2, time: Duration::from_secs(300) },
             chat: b"main".as_slice().into(),

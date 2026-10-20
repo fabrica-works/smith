@@ -187,6 +187,7 @@ pub(super) fn build(
             .unwrap_or("title")
             .as_bytes()
             .into(),
+        live_text: false,
         mode: local::Mode::Chat { waiting: Duration::from_secs(input::number(settings, "waiting_seconds")?) },
         resume: true,
         accounts: accounts.iter().filter(|account| account.source() != "none").map(|account| account.number).collect(),

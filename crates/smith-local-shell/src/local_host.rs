@@ -138,7 +138,7 @@ impl Local {
         admission: Admission,
     ) -> Result<Self, crate::startup::Failure> {
         let Admission { available_bytes, handed, front, producer, programs } = admission;
-        let (front, interactive) = match front {
+        let (front, mut interactive) = match front {
             Some(crate::front::Front::Headless(front)) => (Some(front), None),
             Some(crate::front::Front::Interactive(front)) => (None, Some(front)),
             None => (None, None),
@@ -153,6 +153,29 @@ impl Local {
             domain::Mode::Chat { .. } => None,
         });
         let lower_routes = lower.as_ref().map_or(0, |configuration| configuration.limits.routes);
+        if let Some(front) = &mut interactive {
+            let model = config.local.models.first().expect("configured main");
+            let endpoint = config.endpoints.name_for(model.endpoint.0).expect("configured endpoint");
+            front.remote_config(endpoint, config.local.budget);
+            if let Some(prepared) = &handed {
+                for location in &prepared.locations {
+                    let Some(account_model) =
+                        config.local.models.iter().find(|candidate| candidate.account == Some(location.account))
+                    else {
+                        continue;
+                    };
+                    let endpoint = lower.as_ref().or(producer.as_ref()).and_then(|configuration| {
+                        configuration.llm_endpoints.resolve(smith_domain::llm::Endpoint(account_model.endpoint.0))
+                    });
+                    let openai = endpoint.is_some_and(|endpoint| endpoint.provider == skein_llm::Provider::OpenAi);
+                    front.account(
+                        location.account,
+                        crate::credentials::status_words(&location.source, openai),
+                        Some(location.account) == model.account,
+                    );
+                }
+            }
+        }
         config.agent = match lower {
             Some(configuration) => {
                 config.limits.local.agent = domain::AgentLimits::inline(
@@ -174,6 +197,8 @@ impl Local {
             None if resources.effect_roots.is_empty() => service::AgentConfig::Spawned,
             None => return Err(configuration_failure("spawned mode cannot adopt inline roots".into())),
         };
+        config.local.live_text = interactive.as_ref().is_some_and(|front| !front.plain())
+            && matches!(config.agent, service::AgentConfig::Spawned);
         let launch_root = config.launch.root;
         let queue = config.limits.queue;
         let outer_queue =
@@ -405,8 +430,8 @@ impl Local {
     }
 
     fn files(&mut self) {
-        if let Some(turn) = self.service.take_told_turn()
-            && let Some(front) = &mut self.headless
+        if let Some(front) = &mut self.headless
+            && let Some(turn) = self.service.take_told_turn()
         {
             front.told(&turn, self.errors.as_mut());
         }
@@ -671,6 +696,13 @@ impl Local {
             return Some(text);
         }
         let front = self.interactive.as_mut()?;
+        front.remote_activation(self.service.remote_activation());
+        if let Some(piece) = self.service.pop_live() {
+            return front.piece(piece);
+        }
+        if let Some(turn) = self.service.take_remote_turn() {
+            return Some(front.remote_turn(&turn));
+        }
         front.record(self.service.pop_front()?)
     }
 

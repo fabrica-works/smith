@@ -75,7 +75,11 @@ pub(crate) fn prepare_start(
         }
     }
     Ok(host::Start {
-        live: None,
+        live: if source.live_text {
+            Some(channel::LiveAsk { text: true, reasoning: false, input: false })
+        } else {
+            None
+        },
         messages: source.messages,
         logical_run: skein_lib::Token::new(1),
         identity: Some(source.identity),
@@ -309,6 +313,7 @@ pub(crate) fn command(agent: &mut Agent, now: Time, wall: skein_lib::Wall, event
 /// The local policy's owned run values before sealing at the typed parent face.
 #[derive(Debug)]
 pub(crate) struct RunStart {
+    pub(crate) live_text: bool,
     pub(crate) messages: Box<[host::Message]>,
     pub(crate) identity: run::Identity,
     pub(crate) activation: u64,

@@ -25,6 +25,10 @@ impl StatusLine {
     /// Render reported counts without turning an unknown count into zero.
     #[must_use]
     pub fn text(&self) -> Box<[u8]> {
+        self.with_account("")
+    }
+
+    pub(super) fn with_account(&self, account: &str) -> Box<[u8]> {
         let remaining = self.remaining.as_ref().map_or_else(
             || "budget unavailable".into(),
             |budget| {
@@ -37,9 +41,10 @@ impl StatusLine {
             },
         );
         format!(
-            "\n{}/{}: in {}, cached {}, out {}; {} notional; {} ms; {}\n",
+            "\n{}/{}{}: in {}, cached {}, out {}; {} notional; {} ms; {}\n",
             String::from_utf8_lossy(smith_events::clip(&self.model.endpoint)),
             String::from_utf8_lossy(smith_events::clip(&self.model.model)),
+            if account.is_empty() { String::new() } else { format!("; {account}") },
             count(self.usage.input_tokens),
             count(self.usage.cache_read_tokens),
             count(self.usage.output_tokens),
@@ -69,6 +74,8 @@ struct Live {
     screen: Screen,
     models: Map<Token, Model>,
     remaining: Option<Remaining>,
+    account: &'static str,
+    accounts: Map<u32, &'static str>,
 }
 
 impl Live {
@@ -76,7 +83,13 @@ impl Live {
     #[must_use]
     pub fn new(plain: bool, conversations: u32) -> Self {
         let screen = if plain { Screen::Plain } else { Screen::Terminal { columns: u16::MAX } };
-        Self { screen, models: Map::with_capacity(conversations), remaining: None }
+        Self {
+            screen,
+            models: Map::with_capacity(conversations),
+            remaining: None,
+            account: "",
+            accounts: Map::with_capacity(0),
+        }
     }
 
     fn plain(&self) -> bool {
@@ -117,6 +130,7 @@ impl Live {
             }
             View::ResponseCompleted { conversation, usage, spent, duration_ms, .. } if !self.plain() => {
                 let model = self.models.get(&Token::new(conversation))?.clone();
+                let account = model.account.and_then(|number| self.accounts.get(&number)).copied().unwrap_or("");
                 Some(
                     self.status(
                         StatusLine {
@@ -126,7 +140,7 @@ impl Live {
                             elapsed: Duration::from_nanos(duration_ms.saturating_mul(1_000_000)),
                             remaining: self.remaining.clone(),
                         }
-                        .text(),
+                        .with_account(account),
                     ),
                 )
             }
@@ -235,6 +249,8 @@ fn verdict(value: &Verdict) -> &str {
 pub struct Interactive {
     screen: Live,
     memory: u64,
+    remote: super::remote::Remote,
+    remote_config: Option<(Box<[u8]>, smith_domain::run::Budget)>,
 }
 
 impl Interactive {
@@ -253,12 +269,53 @@ impl Interactive {
         // The writer can retain one popped view while the sink fills its slots.
         let memory = Live::worst_case(conversations, name_bytes)?
             .checked_add(View::worst_case(client.answer.max(client.strings))?)?;
-        Some(Self { screen: Live::new(plain, conversations), memory })
+        let mut screen = Live::new(plain, conversations);
+        screen.accounts = Map::with_capacity(limits.domain.accounts);
+        let memory = memory.checked_add(Map::<u32, &'static str>::worst_case(limits.domain.accounts)?)?;
+        Some(Self {
+            screen,
+            memory: memory.checked_add(super::remote::Remote::worst_case(super::remote::TEXT_BYTES)?)?,
+            remote: super::remote::Remote::new(super::remote::TEXT_BYTES),
+            remote_config: None,
+        })
+    }
+
+    pub(crate) fn account(&mut self, number: u32, words: &'static str, main: bool) {
+        assert!(
+            self.screen.accounts.insert(number, words).is_ok(),
+            "startup account sources fit the admitted inventory"
+        );
+        if main {
+            self.screen.account = words;
+        }
+    }
+
+    pub(crate) fn remote_activation(&mut self, activation: Option<u64>) {
+        self.remote.activation(activation);
+    }
+
+    pub(crate) fn piece(&mut self, piece: smith_local_service::LivePiece) -> Option<Box<[u8]>> {
+        self.remote.piece(piece)
+    }
+
+    pub(crate) fn remote_config(&mut self, endpoint: &[u8], budget: smith_domain::run::Budget) {
+        self.remote_config = Some((smith_events::clip(endpoint).into(), budget));
+    }
+
+    pub(crate) fn remote_turn(&mut self, turn: &smith_local_service::RemoteTurn) -> Box<[u8]> {
+        let (endpoint, budget) = self.remote_config.as_ref().expect("spawned chat configuration");
+        let text = self.remote.told(turn);
+        let status = self.remote.status(turn, endpoint, *budget).with_account(self.screen.account);
+        let status = self.screen.status(status);
+        let mut output = Vec::with_capacity(text.len().saturating_add(status.len()));
+        output.extend_from_slice(&text);
+        output.extend_from_slice(&status);
+        output.into_boxed_slice()
     }
 
     /// Update the status width from startup or an io window terminal.
     pub(crate) fn columns(&mut self, columns: u16) {
-        self.screen.screen = Screen::Terminal { columns };
+        self.screen.screen = Screen::Terminal { columns: if columns == 0 { u16::MAX } else { columns } };
     }
 
     /// Render the next typed record from the one sink's live queue.

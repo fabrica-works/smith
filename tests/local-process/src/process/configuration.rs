@@ -213,6 +213,7 @@ fn local_policy(lower: &agent::Config, change: bool, tools: bool) -> (local::Con
         },
         deliver: None,
         title_field: b"title".as_slice().into(),
+        live_text: false,
         mode: local::Mode::Chat { waiting: Duration::from_secs(30) },
         resume: true,
         accounts: Box::new([0]),

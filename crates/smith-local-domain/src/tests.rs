@@ -205,6 +205,7 @@ pub(super) fn config() -> Config {
         contract: Contract::Report(outcome::TextSpec { max: 256, fields: Box::new([]) }),
         deliver: None,
         title_field: Box::from(&b"title"[..]),
+        live_text: false,
         mode: crate::Mode::Chat { waiting: Duration::from_secs(30) },
         resume: true,
         accounts: Box::new([7]),

@@ -128,6 +128,7 @@ pub(super) fn config() -> Config {
             contract: local::Contract::Report(outcome::TextSpec { max: 256, fields: Box::new([]) }),
             deliver: None,
             title_field: Box::from(&b"title"[..]),
+            live_text: false,
             mode: smith_local_domain::Mode::Chat { waiting: Duration::from_secs(30) },
             resume: true,
             accounts: Box::new([7]),

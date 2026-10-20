@@ -194,6 +194,28 @@ pub fn run_scripted(scratch: &Scratch, arguments: &[&str], commands: Vec<Action>
     run_fixture(scratch, arguments, None, false, (Mode::Pipes, commands), false, window::Story::ProgramRun).0
 }
 
+/// A program chat on a terminal, with the same scratch and teardown as pipes.
+#[must_use]
+pub fn program_chat(scratch: &Scratch, commands: Vec<Action>) -> Ran {
+    run_fixture(scratch, &[], None, false, (Mode::Terminal, commands), false, window::Story::ProgramRun).0
+}
+
+/// An inline terminal chat whose fixture lends a key without an account id.
+#[must_use]
+pub fn key_chat(scratch: &Scratch, commands: Vec<Action>) -> Ran {
+    let credential = credential(scratch);
+    run_fixture(
+        scratch,
+        &[],
+        Some(world::key_provider(credential.value)),
+        false,
+        (Mode::Terminal, commands),
+        false,
+        window::Story::None,
+    )
+    .0
+}
+
 /// Start the product in a scratch repository with no commit, retaining provider requests.
 #[must_use]
 pub fn exec_without_head(scratch: &Scratch) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {

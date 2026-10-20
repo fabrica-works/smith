@@ -15,6 +15,7 @@ skein-http.workspace = true
 skein-fake-peers.workspace = true
 skein-fake-oauth.workspace = true
 skein-fake-llm-domain.workspace = true
+skein-fake-llm-protocol.workspace = true
 skein-llm.workspace = true
 skein-llm-connection.workspace = true
 smith-protocol-llm.workspace = true

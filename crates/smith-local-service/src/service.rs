@@ -184,6 +184,7 @@ pub fn memory_parts(limits: &Limits) -> Option<[(&'static str, u64); 6]> {
         .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?)?
         .checked_add(List::<u32>::worst_case(64)?)?
         .checked_add(agent::max_turn_bytes(&limits.local.smith)?)?
+        .checked_add(crate::live::Timing::worst_case(&limits.local.agent)?)?
         .checked_add(u64::try_from(size_of::<Service>()).ok()?)?
         .checked_add(*process.get(2)?)?;
     Some([
@@ -208,6 +209,8 @@ enum SnapshotState {
 pub struct Service {
     accounts: Option<crate::Accounts>,
     told: Option<agent::Turn>,
+    remote: bool,
+    remote_timing: crate::live::Timing,
     limits: Limits,
     local: local::Domain,
     below: Effects,
@@ -280,6 +283,7 @@ impl Service {
                 }
             }
         }
+        let remote = config.local.live_text;
         let capture_time = config.local.budget.time;
         let local = match local::Domain::new(config.local, &config.limits.local, seed) {
             Ok(local) => local,
@@ -294,6 +298,7 @@ impl Service {
         .ok_or(Error::Memory)?;
         let queue = config.limits.queue;
         let accounts = config.limits.local.smith.accounts;
+        let remote_timing = crate::live::Timing::new(&config.limits.local.agent);
         Ok(Self {
             accounts: None,
             limits: config.limits,
@@ -328,6 +333,8 @@ impl Service {
             failed: false,
             stream: None,
             told: None,
+            remote,
+            remote_timing,
         })
     }
 
@@ -483,9 +490,49 @@ impl Service {
         }
     }
 
+    /// Take text decoded beside the host domain; loss never holds the run.
+    pub fn pop_live(&mut self) -> Option<crate::LivePiece> {
+        let through = match &self.told {
+            Some(_) if self.remote => Some(self.remote_timing.number),
+            Some(_) | None => None,
+        };
+        self.below.process_mut().live.pop_through(through)
+    }
+
+    /// Live pieces omitted by the local front queue.
+    #[must_use]
+    pub fn live_lost(&self) -> u64 {
+        self.below.process().live.lost()
+    }
+
+    /// The activation whose text and told turns the interactive front shows.
+    #[must_use]
+    pub const fn remote_activation(&self) -> Option<u64> {
+        match self.capture_activation {
+            Some(_) => Some(self.remote_timing.generation),
+            None => None,
+        }
+    }
+
+    /// Move the existing retained turn into the spawned chat's front.
+    pub fn take_remote_turn(&mut self) -> Option<crate::RemoteTurn> {
+        if !self.remote {
+            return None;
+        }
+        Some(crate::RemoteTurn {
+            number: self.remote_timing.number,
+            elapsed: self.remote_timing.elapsed,
+            since_start: self.remote_timing.previous.saturating_since(self.remote_timing.started),
+            turn: self.told.take()?,
+        })
+    }
+
     /// Whether the product has a typed record to consume on its next pass.
     #[must_use]
     pub fn front_pending(&self) -> bool {
+        if self.below.process().live.pending() || (self.remote && self.told.is_some()) {
+            return true;
+        }
         match self.below.inline() {
             Some(effects) => effects.front_pending(),
             None => match &self.stream {
@@ -815,6 +862,9 @@ impl Service {
     fn route_local(&mut self, now: Time, request: local::Request) {
         match request {
             local::Request::Process(request) => {
+                if self.remote || self.local.headless() {
+                    self.remote_timing.sent(&request, now);
+                }
                 self.prepare_values(&request);
                 self.lower.push(request);
             }
@@ -891,7 +941,7 @@ impl Service {
                 }
             }
             local::Request::SaveTurn { number, read, opens_window, turn } => {
-                self.save_turn(number, read, opens_window, turn);
+                self.save_turn(now, number, read, opens_window, turn);
             }
             local::Request::SaveDelivery { record } => {
                 self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
@@ -903,6 +953,8 @@ impl Service {
     fn save_state(&mut self, now: Time, state: local::ChatState, fresh: bool) {
         if self.capture_activation != Some(state.activation) {
             self.capture_activation = Some(state.activation);
+            self.below.process_mut().live.clear();
+            self.remote_timing.activate(now);
             let (charter, messages) = self.local.charter();
             if let Some(effects) = self.below.inline_mut() {
                 effects.starting(state.activation, messages, &charter);
@@ -921,8 +973,9 @@ impl Service {
         });
     }
 
-    fn save_turn(&mut self, number: u32, read: Option<Token>, opens_window: bool, turn: agent::Turn) {
-        if self.local.headless() {
+    fn save_turn(&mut self, now: Time, number: u32, read: Option<Token>, opens_window: bool, turn: agent::Turn) {
+        if self.local.headless() || self.remote {
+            self.remote_timing.told(number, read, now);
             assert!(self.told.is_none(), "one told turn waits for the front end");
             self.told = Some(turn.clone());
         }
@@ -1221,6 +1274,11 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
         let Some(event) = service.local_events.pop() else { break };
         match &event {
             local::Event::Interrupt | local::Event::Drop => service.interrupt_program_requests(),
+            local::Event::Process(event) => {
+                if service.remote || service.local.headless() {
+                    service.remote_timing.received(event, now);
+                }
+            }
             local::Event::StateSaved
             | local::Event::Line { .. }
             | local::Event::Slash(_)
@@ -1235,8 +1293,7 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             | local::Event::StoreFailed { .. }
             | local::Event::Credential { .. }
             | local::Event::NoCredential { .. }
-            | local::Event::Below { .. }
-            | local::Event::Process(_) => {}
+            | local::Event::Below { .. } => {}
         }
         match event {
             local::Event::StateSaved => {
@@ -1383,3 +1440,6 @@ fn to_root_request(request: inline::Lower) -> agent::Request {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod live_tests;

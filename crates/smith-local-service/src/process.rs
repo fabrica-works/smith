@@ -87,6 +87,7 @@ enum WindowRead {
 
 #[derive(Debug)]
 pub(crate) struct ProcessAdapter {
+    pub(crate) live: crate::live::Live,
     limits: ProcessLimits,
     pub(crate) programs: Option<Box<crate::service::program_check::Checks>>,
     launch: Launch,
@@ -152,6 +153,7 @@ impl ProcessAdapter {
             programs: None,
             shell_output: None,
             shell_events: Queue::with_capacity(limits.queue),
+            live: crate::live::Live::new(),
             limits: *limits,
             launch,
             endpoints,
@@ -223,6 +225,7 @@ impl ProcessAdapter {
             .checked_add(4096)?
             .checked_add(List::<Box<[u8]>>::worst_case(64)?)?;
         let routing = child
+            .checked_add(crate::live::Live::worst_case()?)?
             .checked_add(Queue::<(file::Request, Time)>::worst_case(limits.queue)?)?
             .checked_add(Queue::<file::Event>::worst_case(limits.queue)?)?
             .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?.checked_mul(2)?)?
@@ -1039,7 +1042,7 @@ impl ProcessAdapter {
                 }
                 self.reading = false;
             }
-            host_events.push(to_host_event(event));
+            host_events.push(to_host_event(event, &mut self.live));
         }
     }
 
@@ -1218,6 +1221,11 @@ impl ProcessAdapter {
                 let process = self.process.as_mut().expect("Spawn precedes Send");
                 let sent = match message {
                     host::Down::Start { start, window } => {
+                        let asked = match start.live {
+                            Some(ask) => ask.text,
+                            None => false,
+                        };
+                        self.live.start(owner, asked);
                         let values = start_values.take().expect("Start values paired before Spawn");
                         process.send_start(
                             start,
@@ -1308,7 +1316,7 @@ fn read_terminal(event: &protocol::ProcessEvent) -> bool {
     }
 }
 
-fn to_host_event(event: protocol::ProcessEvent) -> host::Input {
+fn to_host_event(event: protocol::ProcessEvent, live: &mut crate::live::Live) -> host::Input {
     match event {
         protocol::ProcessEvent::Spawned { agent, process } => {
             host::Input::Process(host::process::Event::Spawned { owner: agent, process })
@@ -1322,7 +1330,7 @@ fn to_host_event(event: protocol::ProcessEvent) -> host::Input {
         protocol::ProcessEvent::Reaped { agent, detail } => {
             host::Input::Process(host::process::Event::Reaped { owner: agent, detail })
         }
-        protocol::ProcessEvent::Channel { agent, event } => channel_event(agent, *event),
+        protocol::ProcessEvent::Channel { agent, event } => live.receive(agent, *event),
     }
 }
 
@@ -1336,7 +1344,7 @@ pub const fn to_host_exit(exit: Option<kernel::Exit>) -> Option<host::Exit> {
     }
 }
 
-fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
+pub(crate) fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
     use protocol::OpenEvent;
     match event {
         OpenEvent::Opened { .. } => unreachable!("opened is emitted as Spawned"),

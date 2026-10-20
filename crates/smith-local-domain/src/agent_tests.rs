@@ -27,24 +27,37 @@ fn a_local_start_keeps_its_concrete_charter_and_run_identity() {
     let settings = smith_agent_world::Settings::calm(67);
     let charter = smith_agent_world::scripted_charter(&settings);
     let identity = run::Identity::new([0x83; 16]);
-    let source = RunStart {
-        messages: Box::new([]),
-        identity,
-        activation: 7,
-        charter: smith_agent_world::scripted_charter(&settings),
-        workspace: None,
-        transcript: None,
-        answered: Box::default(),
-        grants: Box::default(),
-    };
-    let prepared =
-        prepare_start(source, crate::tests::host_limits().charter_bytes, crate::tests::host_limits().transcript_bytes)
-            .expect("bounded concrete start");
-    assert_eq!(prepared.activation, 7);
-    assert_eq!(prepared.identity, Some(identity));
-    assert_eq!(prepared.logical_run, skein_lib::Token::new(1));
-    assert_eq!(prepared.charter.into_value(), charter);
-    assert!(prepared.transcript.is_none());
+    for live_text in [false, true] {
+        let source = RunStart {
+            live_text,
+            messages: Box::new([]),
+            identity,
+            activation: 7,
+            charter: smith_agent_world::scripted_charter(&settings),
+            workspace: None,
+            transcript: None,
+            answered: Box::default(),
+            grants: Box::default(),
+        };
+        let prepared = prepare_start(
+            source,
+            crate::tests::host_limits().charter_bytes,
+            crate::tests::host_limits().transcript_bytes,
+        )
+        .expect("bounded concrete start");
+        match prepared.live {
+            Some(ask) => {
+                assert!(live_text);
+                assert_eq!((ask.text, ask.reasoning, ask.input), (true, false, false));
+            }
+            None => assert!(!live_text),
+        }
+        assert_eq!(prepared.activation, 7);
+        assert_eq!(prepared.identity, Some(identity));
+        assert_eq!(prepared.logical_run, skein_lib::Token::new(1));
+        assert_eq!(prepared.charter.into_value(), charter);
+        assert!(prepared.transcript.is_none());
+    }
 }
 
 #[test]

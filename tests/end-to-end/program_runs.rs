@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use smith_real_world::Scratch;
 
 const ANSWER: &str = "Program answer";
+const TOLD_TEXT: &str = "Told program text";
 
 fn signed_in(story: &Value) -> Scratch {
     let scratch = Scratch::new();
@@ -31,7 +32,7 @@ fn signed_in(story: &Value) -> Scratch {
 }
 
 fn answer() -> Value {
-    json!({"steps":[{"Call":{"tool":"finish","input":{"form":"report","text":ANSWER,"fields":{}}}}]})
+    json!({"steps":[{"Text":TOLD_TEXT}, {"Call":{"tool":"finish","input":{"form":"report","text":ANSWER,"fields":{}}}}]})
 }
 
 fn invocations(scratch: &Scratch) -> Vec<Value> {
@@ -122,7 +123,10 @@ fn a_program_chat_answers_before_input_ends() {
         vec![Action::Send(b"Ask first\n".as_slice().into()), Action::Wait(ANSWER.as_bytes().into()), Action::Eof],
     );
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
-    assert!(String::from_utf8_lossy(&ran.stdout).contains(ANSWER));
+    let shown = String::from_utf8_lossy(&ran.stdout);
+    assert!(shown.contains(ANSWER));
+    assert_eq!(shown.matches(TOLD_TEXT).count(), 1);
+    assert!(!shown.contains("through Claude Code"), "plain has no live status");
 }
 
 #[test]
@@ -180,4 +184,51 @@ fn a_program_turn_exit_keeps_the_run_failure() {
     assert_eq!(failure.program.as_deref(), Some(b"claude_code".as_slice()));
     assert_eq!(failure.exit, Some(smith_events::AgentExit::Code(7)));
     assert_eq!(failure.detail, None);
+}
+
+#[test]
+fn a_program_chat_shows_text_before_interrupting_an_uncommitted_turn() {
+    use smith_local_process_world::terminal::Action;
+    let text = "Text before the hang";
+    let scratch = signed_in(&json!({"steps":[{"Text":text},"Hang"]}));
+    let ran = support::program_chat(
+        &scratch,
+        vec![
+            Action::Wait(b"> ".as_slice().into()),
+            Action::Send(b"Ask first\n".as_slice().into()),
+            Action::Wait(text.as_bytes().into()),
+            Action::Send(b"\x03".as_slice().into()),
+            Action::Eof,
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let shown = String::from_utf8_lossy(&ran.stdout);
+    assert_eq!(shown.matches(text).count(), 1);
+    assert!(!shown.contains("through Claude Code"), "no turn committed before the interruption");
+}
+
+#[test]
+fn a_program_chat_completes_its_live_view() {
+    use smith_local_process_world::terminal::Action;
+    let text = "Live settled text";
+    let scratch = signed_in(&json!({"steps":[{"Text":text},
+        {"Builtin":{"tool":"Read","input":{"file_path":"README.md"},"result":"file bytes"}},
+        {"Call":{"tool":"finish","input":{"form":"report","text":ANSWER,"fields":{}}}}
+    ]}));
+    let ran = support::program_chat(
+        &scratch,
+        vec![
+            Action::Wait(b"> ".as_slice().into()),
+            Action::Send(b"Ask first\n".as_slice().into()),
+            Action::Wait(ANSWER.as_bytes().into()),
+            Action::Eof,
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let shown = String::from_utf8_lossy(&ran.stdout);
+    assert_eq!(shown.matches(text).count(), 1, "{shown}");
+    assert!(shown.contains("tool Read: result"), "{shown}");
+    assert!(shown.contains("anthropic/claude-opus-5-5; through Claude Code: in "), "{shown}");
+    assert!(shown.contains(" turns, ") && shown.contains(" notional, "), "{shown}");
+    assert!(!shown.contains(" ms)"), "no invented tool duration");
 }
