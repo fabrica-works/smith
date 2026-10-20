@@ -501,7 +501,7 @@ mod tests {
 
     fn source() -> session::Limits {
         let mut profile = crate::profile::standard();
-        profile.declared.memory = 2_214_592_512;
+        profile.declared.memory = 2_281_701_376;
         let mut source = crate::profile::derive(&profile, &crate::tests::declarations(0)).unwrap().domain.session;
         source.sessions = 1;
         source.parallel_tools = 2;

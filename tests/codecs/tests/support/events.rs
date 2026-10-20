@@ -1661,7 +1661,7 @@ pub fn effective_record() -> Record {
         ("declared.window[endpoint=7,model=0]", smith_events::LimitValue::Integer(262_144)),
         ("declared.window[endpoint=7,model=1]", smith_events::LimitValue::Integer(131_072)),
         ("policy.compaction_threshold", smith_events::LimitValue::Fraction { numerator: 4, denominator: 5 }),
-        ("declared.memory", smith_events::LimitValue::Integer(2_214_592_512)),
+        ("declared.memory", smith_events::LimitValue::Integer(2_281_701_376)),
     ] {
         values.push(smith_events::EffectiveLimit { name: name.as_bytes().into(), value }).expect("fixture count");
     }

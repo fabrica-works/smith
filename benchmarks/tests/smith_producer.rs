@@ -29,7 +29,7 @@ search_hits=100
 search_bytes=16384
 list_entries=512
 llm_pool=134217728
-memory=2214592512
+memory=2281701376
 host_tools=2
 [models.'codex/gpt-6-luna']
 input_price=1.25

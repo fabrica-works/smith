@@ -501,7 +501,7 @@ fn the_default_inline_product_parts_fit_two_gibibytes() {
         crate::Local::memory_parts(&limits, &resolved.agent.service, resolved.agent.service.limits.routes).unwrap();
     let total = crate::Local::required_memory(&limits, resolved.agent.service.limits.routes).unwrap();
     assert_eq!(rows.iter().map(|(_, bytes)| bytes).sum::<u64>(), total);
-    assert!(total <= 2_214_592_512, "default product {total}");
+    assert!(total <= 2_281_701_376, "default product {total}");
     for (name, bytes) in &rows {
         println!("PRODUCT_PART {name}={bytes}");
     }
@@ -509,7 +509,7 @@ fn the_default_inline_product_parts_fit_two_gibibytes() {
     measure_effects(resolved.agent.service, &rows);
     measure_common(&limits, &rows);
     measure_product();
-    println!("PRODUCT_TOTAL {total}/2214592512");
+    println!("PRODUCT_TOTAL {total}/2281701376");
 }
 
 fn measure_domain(config: smith_local_domain::Config, limits: &smith_local_domain::Limits, rows: &[(&str, u64)]) {

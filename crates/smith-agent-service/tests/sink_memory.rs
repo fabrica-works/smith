@@ -33,7 +33,7 @@ mod tests {
         profile.declared.search_bytes = 16384;
         profile.declared.list_entries = 512;
         profile.declared.llm_pool = 134_217_728;
-        profile.declared.memory = 2_214_592_512;
+        profile.declared.memory = 2_281_701_376;
         let declarations = Configuration {
             role_bound: None,
             environment_bytes: 835,

@@ -1244,7 +1244,7 @@ mod tests {
         let mut document = shaped_document();
         document["profile"]["declared"].as_object_mut().expect("declarations").remove("memory");
         let configuration = parse_value(&document).expect("default memory fits");
-        assert_eq!(configuration.memory, 2_214_592_512);
+        assert_eq!(configuration.memory, 2_281_701_376);
     }
 
     #[test]
@@ -1613,7 +1613,7 @@ mod tests {
         );
         parse_value(&document).expect("product declarations pass every startup check");
         assert!(complete <= limits.memory, "complete {complete} > declared {}", limits.memory);
-        assert!(limits.memory - complete >= 460_000_000, "complete memory margin");
+        assert!(limits.memory - complete >= 527_108_864, "complete memory margin");
     }
     #[test]
     fn drawn_declarations_are_named_or_fit_complete_process_memory() {
