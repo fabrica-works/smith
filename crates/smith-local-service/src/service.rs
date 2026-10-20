@@ -342,7 +342,7 @@ impl Service {
         delivery: agent_service::sinks::Delivery,
     ) -> Result<(), kernel::Fd> {
         if let Some(stream) = &mut self.stream {
-            let token = self.below.process_mut().adopt_trace(fd)?;
+            let token = self.below.process_mut().adopt_trace(fd, stream.write_deadline)?;
             stream
                 .producer
                 .sinks()

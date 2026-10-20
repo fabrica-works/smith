@@ -311,8 +311,12 @@ impl ProcessAdapter {
         Env { now, wall, limits: self.limits.io }
     }
 
-    pub(crate) fn adopt_trace(&mut self, fd: kernel::Fd) -> Result<Token, kernel::Fd> {
-        self.io.adopt_append(fd, skein_lib::Duration::from_secs(30))
+    pub(crate) fn adopt_trace(
+        &mut self,
+        fd: kernel::Fd,
+        write_deadline: skein_lib::Duration,
+    ) -> Result<Token, kernel::Fd> {
+        self.io.adopt_append(fd, write_deadline)
     }
 
     pub(crate) fn adopt_store(&mut self, root: kernel::Fd) -> Option<()> {

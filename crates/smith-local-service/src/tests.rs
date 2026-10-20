@@ -784,3 +784,27 @@ fn an_inline_trace_whose_append_fails_is_given_up_once_with_why() {
     assert_eq!(service.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::WriteFailed }));
     assert_eq!(service.pop_given_up(), None, "the destination is named once");
 }
+
+#[test]
+fn a_spawned_trace_is_held_to_the_configured_write_deadline() {
+    use smith_agent_service::{Destination, GivenUp, Why, sinks};
+    let trace = skein_io::kernel::Fd::new(20);
+    let deadline = Duration::from_secs(1);
+    let mut product = smith_agent_process_world::configuration();
+    product.limits.events = Some(
+        smith_agent_service::EventLimits::derive(&product.limits, sinks::Capture::Calls, 1, 0, &[], deadline)
+            .expect("bounded event stream"),
+    );
+    let mut local = config();
+    local.limits.process.io = product.limits.io;
+    let mut service = Service::new(local, 8).expect("spawned service");
+    service.prepare_trace(&product);
+    service.adopt_trace(trace, Time::ZERO, session_started(), sinks::Delivery::Complete).expect("spawned trace");
+    drop(trace_append(&mut service, trace));
+    let before = Time::ZERO.checked_add(Duration::from_millis(999)).unwrap();
+    iterate(&mut service, before, Wall::EPOCH);
+    assert_eq!(service.pop_given_up(), None, "the write is still within its deadline");
+    iterate(&mut service, Time::ZERO.checked_add(deadline).unwrap(), Wall::EPOCH);
+    assert_eq!(service.pop_given_up(), Some(GivenUp { destination: Destination::Trace, why: Why::Behind }));
+    assert_eq!(service.pop_given_up(), None, "the destination is named once");
+}

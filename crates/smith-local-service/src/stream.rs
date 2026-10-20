@@ -273,6 +273,8 @@ const USAGE: skein_lib::Token = skein_lib::Token::new(u64::MAX - 1);
 pub(crate) struct Spawned {
     pub(crate) producer: smith_agent_service::events::Producer,
     capture: Capture,
+    /// Bounds each write to the adopted trace (protocol/events.md, section 5.2).
+    pub(crate) write_deadline: skein_lib::Duration,
     start: skein_lib::Time,
     pub(crate) exit: Option<u8>,
     measuring: bool,
@@ -283,9 +285,11 @@ pub(crate) struct Spawned {
 impl Spawned {
     pub(crate) fn configured(config: &smith_agent_service::Config) -> Option<Self> {
         let producer = smith_agent_service::events::Producer::configured(config)?;
+        let events = config.limits.events?;
         Some(Self {
             producer,
-            capture: config.limits.events?.capture,
+            capture: events.capture,
+            write_deadline: events.write_deadline,
             start: skein_lib::Time::ZERO,
             exit: None,
             measuring: false,
