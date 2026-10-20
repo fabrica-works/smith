@@ -183,7 +183,7 @@ fn parallel_tools_is_printed_as_a_policy_count() {
 }
 
 #[test]
-fn jobs_print_their_declared_and_derived_tools_counts() {
+fn tools_print_their_job_and_knowledge_counts() {
     let limits = derive(&profile(), &declarations()).expect("fixture derives");
     let named =
         effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
@@ -191,6 +191,7 @@ fn jobs_print_their_declared_and_derived_tools_counts() {
     for name in [b"declared.jobs".as_slice(), b"tools.jobs".as_slice()] {
         assert_eq!(value(&header, name), Some(LimitValue::Integer(4)));
     }
+    assert_eq!(value(&header, b"tools.known_files"), Some(LimitValue::Integer(256)));
 }
 
 #[test]

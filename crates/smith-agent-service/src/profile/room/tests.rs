@@ -157,6 +157,6 @@ fn configured_options_are_charged_only_to_their_endpoint() {
 fn the_compaction_material_is_the_summary_instruction_and_the_markers() {
     assert_eq!(
         super::compaction_material(standard().declared.calls_per_response, smith_domain::run::summary_bytes()),
-        Some(982)
+        Some(1007)
     );
 }

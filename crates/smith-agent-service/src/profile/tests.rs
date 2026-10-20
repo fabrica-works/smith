@@ -520,8 +520,8 @@ fn request_head_and_uncut_rendering_keep_the_actual_byte_sides() {
 fn window_first_holds_owned_and_delegated_batches_at_the_exact_byte_edge() {
     const COMPLETION_BYTES: u64 = 4096;
     const RESULT_BYTES: u64 = 100_000;
-    // (65536 window - 512 output - (390 summary + 2 * 37 markers)) * 8.
-    const LINE_BYTES: u64 = 516_480;
+    // (65536 window - 512 output - (415 summary + 2 * 37 markers)) * 8.
+    const LINE_BYTES: u64 = 516_280;
     let profile = profile();
     let configuration = declarations();
     let path = super::path::path(&profile, &configuration).expect("native declarations");

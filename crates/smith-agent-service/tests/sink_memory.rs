@@ -66,7 +66,11 @@ mod tests {
     fn an_actual_full_escaped_prompt_fits_sink_output_and_allocation_at_every_chunk() {
         use skein_lib::List;
         let limits = product_limits();
-        assert_eq!(limits.line_ceiling(Capture::Everything), Some(19_855_232), "same concrete V6 writer ceiling");
+        assert_eq!(
+            limits.line_ceiling(Capture::Everything),
+            Some(19_855_104),
+            "V6 writer ceiling with the 415-byte summary instruction",
+        );
         let mut messages = List::with_capacity(8);
         for _ in 0_u32..8 {
             let mut blocks = List::with_capacity(1);

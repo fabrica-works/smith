@@ -961,6 +961,55 @@ fn a_store_that_finds_nothing_on_its_path_is_not_found_and_the_kit_forgets_the_f
 }
 
 #[test]
+fn a_session_keeps_its_first_file_after_seventeen_reads() {
+    // One more file than the old product limit (domain/tools.md, section 4).
+    const READ_FILES: u8 = 17;
+    let mut h = Harness::new(derived_limits());
+    let kit = h.open(1, authority(ALL));
+    for file in 0..READ_FILES {
+        known(&mut h, kit, &[b'a' + file], b"old\n", 1);
+    }
+    let (owner, op) = h.start(kit, 2, write(b"a", 2));
+    assert_eq!(op, store(place(1, b"a"), b"xx", Expect::Is { version: version(1) }));
+    assert_eq!(h.end(owner, Done::Stored { version: version(18) }), (2, Outcome::Written { created: false }));
+}
+
+fn derived_limits() -> Limits {
+    crate::derive(&crate::Derivation {
+        conversations: LIMITS.kits,
+        calls_per_response: LIMITS.calls,
+        jobs: LIMITS.jobs,
+        parallel_tools: LIMITS.calls,
+        tool_payload: LIMITS.tool_payload,
+        file_bytes: LIMITS.file_bytes,
+        read_window: LIMITS.read_bytes,
+        shell_output: LIMITS.shell_output,
+        shell_head: LIMITS.shell_head,
+        shell_tail: LIMITS.shell_tail,
+        search_hits: LIMITS.search_hits,
+        search_bytes: LIMITS.search_bytes,
+        list_entries: LIMITS.list_entries,
+        tool_deadline: LIMITS.tool_deadline,
+        shell_timeout: LIMITS.shell_timeout,
+        job_poll: LIMITS.job_poll,
+        job_wait: LIMITS.job_wait,
+    })
+    .expect("fixture declarations derive")
+}
+
+#[test]
+fn knowledge_counts_the_extra_files_in_each_session() {
+    // 240 paths at 256 bytes, plus 48 additional 816-byte map nodes.
+    const EXTRA_PER_SESSION: u64 = 100_608;
+    let limits = derived_limits();
+    let old = Limits { known_files: 16, ..limits };
+    assert_eq!(
+        worst_case(&limits).expect("derived limits fit") - worst_case(&old).expect("old limits fit"),
+        EXTRA_PER_SESSION * u64::from(LIMITS.kits),
+    );
+}
+
+#[test]
 fn a_kit_that_forgot_a_file_must_read_it_again_to_change_it() {
     let mut h = Harness::new(Limits { known_files: 1, ..LIMITS });
     let kit = h.open(1, authority(ALL));

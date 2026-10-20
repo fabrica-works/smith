@@ -265,7 +265,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         repos: 4,
         path_bytes: 256,
         host_path_bytes: 4096,
-        known_files: 16,
+        known_files: 256,
         file_bytes: inputs.file_bytes,
         tool_payload: inputs.tool_payload,
         read_bytes: inputs.read_window,
