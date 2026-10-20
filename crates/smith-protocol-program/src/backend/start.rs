@@ -29,24 +29,7 @@ impl Names {
         for (target, source) in run.iter_mut().zip(run_hex) {
             *target = source;
         }
-        let mut session_hash = sha256::Sha256::new();
-        session_hash.update(entropy.expose());
-        session_hash.update(b"session");
-        let mut hash = session_hash.finish();
-        *hash.get_mut(6).expect("UUID version") = (*hash.get(6).expect("version") & 15) | 64;
-        *hash.get_mut(8).expect("UUID variant") = (*hash.get(8).expect("variant") & 63) | 128;
-        let hex = mcp::secret_text(&hash);
-        let mut session = [0; 36];
-        let mut source = 0;
-        for (index, byte) in session.iter_mut().enumerate() {
-            if [8, 13, 18, 23].contains(&index) {
-                *byte = b'-';
-            } else {
-                *byte = *hex.get(source).expect("UUID hex");
-                source = source.checked_add(1).expect("32 hex digits");
-            }
-        }
-        Self { mcp, run, session }
+        Self { mcp, run, session: [0; 36] }
     }
 }
 
@@ -82,6 +65,12 @@ impl Backend {
         };
         if !valid {
             self.fail(env, llm::Failure::SignedOut, b"smith: the program source grant is unavailable", up, below);
+            return;
+        }
+        if self.files.prepared() {
+            self.request = Some(request);
+            self.phase = Phase::Starting;
+            self.prepare_invocation(env, up, below);
             return;
         }
         let root = match self.settings.workspace.or(self.settings.directory) {
@@ -131,6 +120,7 @@ impl Backend {
         self.consume_stdout(env, up, below);
         self.checked(env, up, below);
         self.server_events(env, up, below);
+        self.switch_progress(env, up, below);
         if self.phase == Phase::Ending
             && self.child.is_none()
             && !self.spawning
@@ -235,7 +225,9 @@ impl Backend {
             );
             return;
         };
-        self.first_prompt_measure(env.now);
+        if !self.compaction() {
+            self.first_prompt_measure(env.now);
+        }
         self.io.push(io::Request::Spawn { owner: self.token(4), spawn: launch });
         self.spawning = true;
         self.deadline = Some(env.now.saturating_add(self.settings.startup));
@@ -248,6 +240,9 @@ impl Backend {
         below: &mut Queue<Below>,
     ) {
         self.server_ended = true;
+        if self.switching {
+            return;
+        }
         if self.phase == Phase::Running && self.child.is_some() {
             // Relay EOF can precede waitpid. Let the child and stderr settle
             // before choosing its program fault (programs.md, section 5.6).
@@ -258,7 +253,7 @@ impl Backend {
         }
     }
 
-    fn launch_spec(&mut self) -> Option<kernel::Spawn> {
+    pub(super) fn launch_spec(&mut self) -> Option<kernel::Spawn> {
         let prompt = match self.request.as_ref()? {
             FromDomain::Complete { prompt, .. } => prompt,
             FromDomain::Cancel { .. } => return None,
@@ -267,23 +262,35 @@ impl Backend {
             FromDomain::Complete { outcome, .. } => outcome,
             FromDomain::Cancel { .. } => return None,
         };
-        let schema = protocol::finish_schema(outcome, self.settings.contract_bytes).ok()?;
+        let schema = if super::compact::is_compaction(prompt) {
+            Box::default()
+        } else {
+            protocol::finish_schema(outcome, self.settings.contract_bytes).ok()?
+        };
         let root = self.settings.workspace.or(self.settings.directory)?;
         let directory = if self.settings.workspace.is_some() { Box::default() } else { self.run_relative() };
         let configuration = configuration_directory(&self.settings.program, &self.grant.as_ref()?.source).ok()?;
         let instructions = self.run_path(b"instructions.md");
         let mcp_file = self.run_path(b"mcp.json");
-        let arguments = arguments(
-            &prompt.model,
-            prompt.effort.as_deref(),
-            &instructions,
-            &mcp_file,
-            &schema,
-            self.settings.max_turns,
-            &self.names.session,
-            &super::policy::tools_flag(prompt.tools),
-        )?;
-        self.outgoing = super::stream::user_message(prompt, self.settings.input_bytes);
+        let arguments = if super::compact::is_compaction(prompt) {
+            super::compact::arguments(prompt, &instructions, &self.names.session)?
+        } else {
+            arguments(
+                &prompt.model,
+                prompt.effort.as_deref(),
+                &instructions,
+                &mcp_file,
+                &schema,
+                self.settings.max_turns,
+                &self.names.session,
+                &super::policy::tools_flag(prompt.tools),
+            )?
+        };
+        if super::compact::is_compaction(prompt) {
+            self.compaction_input()?;
+        } else {
+            self.outgoing = super::stream::user_message(prompt, self.settings.input_bytes);
+        }
         self.outgoing.as_ref()?;
         Some(kernel::Spawn {
             program: self.settings.program.claude.clone(),
@@ -385,7 +392,12 @@ impl Backend {
                         *pipe = None;
                     }
                 }
-                if self.child.is_none() && !self.spawning && self.pipes == [None; 3] && self.phase != Phase::Ending {
+                if self.child.is_none()
+                    && !self.spawning
+                    && self.pipes == [None; 3]
+                    && self.phase != Phase::Ending
+                    && !self.switching
+                {
                     let detail = self.error_tail();
                     self.fail(env, llm::Failure::Program { exit: self.exit }, &detail, up, below);
                 }

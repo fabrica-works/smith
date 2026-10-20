@@ -35,6 +35,7 @@ pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::O
     record::Opening {
         window_llm: None,
         spec: session::Spec {
+            backend: smith_domain_session::record::Backend::Direct,
             effort: None,
             final_turn: None,
             window: 65_536,

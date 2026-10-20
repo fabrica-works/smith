@@ -414,6 +414,7 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
 /// Caller-owned input with the same exact byte charge in every fill route.
 fn fill_spec(limits: &Limits) -> Spec {
     Spec {
+        backend: smith_domain_session::record::Backend::Direct,
         effort: None,
         final_turn: None,
         window: u32::MAX,
@@ -513,6 +514,7 @@ fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
         (completion, delegate)
     };
     let spec = Spec {
+        backend: smith_domain_session::record::Backend::Direct,
         effort: None,
         final_turn: None,
         window: u32::MAX,
@@ -601,6 +603,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let headroom = block + 256;
     let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve - headroom;
     let spec = Spec {
+        backend: smith_domain_session::record::Backend::Direct,
         effort: None,
         final_turn: None,
         window: u32::MAX,
@@ -707,6 +710,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         ]))]),
     };
     let spec = Spec {
+        backend: smith_domain_session::record::Backend::Direct,
         effort: None,
         final_turn: None,
         window: u32::MAX,

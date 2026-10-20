@@ -14,7 +14,11 @@ fn active() -> Backend {
     backend.child = Some(Token::new(30));
     backend.pipes = [Some(Token::new(31)), Some(Token::new(32)), Some(Token::new(33))];
     backend.owner = Some(Token::new(80));
-    backend.request = Some(request(&backend));
+    let request = request(&backend);
+    let FromDomain::Complete { prompt, .. } = &request else { panic!("complete") };
+    let session::Opening::New { id } = session::opening(prompt, None) else { panic!("new window") };
+    backend.running = Some(id);
+    backend.request = Some(request);
     backend
 }
 fn feed(backend: &mut Backend, value: serde_json::Value, up: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
@@ -48,7 +52,7 @@ fn a_nudge_after_stdin_closes_fails_with_the_exit() {
         role: llm::Role::User,
         content: Box::new([llm::Block::Text { text: b"continue".as_slice().into(), replay: None }]),
     }]);
-    backend.from_domain(&env(0), next, &mut up, &mut below);
+    backend.resume(&env(0), next, &mut up, &mut below);
     let Some(ToDomain::Failed { failure, .. }) = up.pop() else { panic!("exit terminal") };
     assert_eq!(failure, llm::Failure::Program { exit: Some(7) });
 }
@@ -328,7 +332,7 @@ fn stdout_progress_replaces_the_head_with_an_idle_deadline() {
     deadlines.idle = Duration::from_secs(2);
     let mut up = Queue::with_capacity(32);
     let mut below = Queue::with_capacity(64);
-    backend.from_domain(&env(0), next, &mut up, &mut below);
+    backend.resume(&env(0), next, &mut up, &mut below);
     assert_eq!(backend.next_deadline(), Some(env(3).now));
     backend.from_io(
         &env(2),

@@ -269,7 +269,6 @@ pub(super) fn install(
             let program = service.program.as_mut().ok_or(())?;
             if start.charter.llm.account != Some(name.account)
                 || !program.endpoints.contains(&start.charter.llm.endpoint.0)
-                || start.transcript.is_some()
             {
                 return Err(());
             }
@@ -339,12 +338,8 @@ pub(super) fn complete(service: &mut Service, request: llm::FromDomain) {
                 domain::llm::Asker::Main => true,
                 domain::llm::Asker::Child => false,
             };
-            let ordinary = match prompt.purpose {
-                domain::llm::Purpose::Ordinary { .. } => true,
-                domain::llm::Purpose::Compaction { .. } => false,
-            };
             match grant {
-                Some(name) if main && ordinary => match &service.program {
+                Some(name) if main => match &service.program {
                     Some(program) => program.backend.holds(*name),
                     None => false,
                 },

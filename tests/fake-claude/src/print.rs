@@ -53,16 +53,7 @@ impl Flags {
                 return None;
             }
         }
-        for flag in [
-            "-p",
-            "--verbose",
-            "--strict-mcp-config",
-            "--model",
-            "--append-system-prompt-file",
-            "--mcp-config",
-            "--permission-prompt-tool",
-            "--tools",
-        ] {
+        for flag in ["-p", "--verbose", "--model", "--append-system-prompt-file", "--tools"] {
             values.get(flag)?;
         }
         for (flag, value) in
@@ -88,8 +79,18 @@ impl Flags {
         {
             return None;
         }
-        let (server, tool) = values.get("--permission-prompt-tool")?.strip_prefix("mcp__")?.split_once("__")?;
-        if server.is_empty() || tool.is_empty() {
+        if values.contains_key("--mcp-config") {
+            values.get("--strict-mcp-config")?;
+            let (server, tool) = values.get("--permission-prompt-tool")?.strip_prefix("mcp__")?.split_once("__")?;
+            if server.is_empty() || tool.is_empty() {
+                return None;
+            }
+        } else if values.get("--tools")?.as_str() != ""
+            || values.contains_key("--permission-prompt-tool")
+            || values.contains_key("--json-schema")
+            || values.contains_key("--resume")
+            || values.get("--max-turns")?.as_str() != "1"
+        {
             return None;
         }
         if let Some(schema) = values.get("--json-schema") {
@@ -157,19 +158,23 @@ impl Print {
                 Effect::End(1),
             ]);
         }
-        let path = std::path::Path::new(&flags.values["--mcp-config"]);
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| error("invalid MCP configuration path", 1))?;
-        let root = config.mcp.ok_or_else(|| error("cannot read MCP configuration", 1))?;
-        let effects = vec![load(root, name)];
+        let compact = !flags.values.contains_key("--mcp-config");
+        let effects = if compact {
+            let mut init = stream::init(&story.init, &[], "", &flags.values["--model"]);
+            init["mcp_servers"] = json!([]);
+            vec![Effect::Output(stream::line(init, &flags.session)), Effect::ReadCode]
+        } else {
+            let path = std::path::Path::new(&flags.values["--mcp-config"]);
+            let name = path.file_name().and_then(|name| name.to_str()).ok_or_else(|| error("invalid MCP path", 1))?;
+            let root = config.mcp.ok_or_else(|| error("cannot read MCP configuration", 1))?;
+            vec![load(root, name)]
+        };
         Ok((
             Self {
                 flags,
                 story,
                 config,
-                phase: Phase::Configuration,
+                phase: if compact { Phase::Idle } else { Phase::Configuration },
                 server: String::new(),
                 input: Vec::new(),
                 next_turn: 0,
@@ -271,7 +276,11 @@ impl Print {
                 }
                 let received = serde_json::from_slice(&self.input).expect("validated user message");
                 self.input.clear();
-                self.turn = self.story.turns.get(self.next_turn).cloned().unwrap_or_default();
+                self.turn = if self.flags.values.contains_key("--mcp-config") {
+                    self.story.turns.get(self.next_turn).cloned().unwrap_or_default()
+                } else {
+                    Turn { steps: vec![Step::Text(self.story.summary.clone())], ..Turn::default() }
+                };
                 self.next_turn = self.next_turn.checked_add(1).expect("turn count fits");
                 self.step = 0;
                 self.texts = 0;
@@ -291,6 +300,7 @@ impl Print {
         while let Some(step) = self.turn.steps.get(self.step).cloned() {
             self.step = self.step.checked_add(1).expect("step count fits");
             match step {
+                Step::Compact => effects.push(self.emit(json!({"type":"system", "subtype":"compact_boundary"}))),
                 Step::Text(text) => {
                     self.texts = self.texts.checked_add(1).expect("text count fits");
                     let id = self

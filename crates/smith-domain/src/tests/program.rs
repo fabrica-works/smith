@@ -100,3 +100,21 @@ fn the_run_s_time_cancels_a_program_completion() {
         panic!("time budget answer: {emitted:?}");
     };
 }
+
+#[test]
+fn a_program_spec_names_its_backend() {
+    let mut h = program();
+    let (_, owner, _) = h.admit(7, charter());
+    h.step(Event::Completed {
+        owner,
+        completion: Completion {
+            reasoning_dropped: Box::default(),
+            content: Box::new([Said::Text { text: bytes(b"answer"), replay: None }]),
+            stop: Stop::EndTurn,
+            usage: Usage::ZERO,
+        },
+    });
+    let turn = h.turns.last().expect("program turn");
+    let session::record::Kind::First(opener) = &turn.kind else { panic!("opening") };
+    assert_eq!(opener.backend, session::record::Backend::Program { name: bytes(b"claude_code") });
+}

@@ -17,7 +17,6 @@ fn entropy_names_have_separate_domains() {
     assert!(names.mcp.expose() == repeated.mcp.expose());
     assert!(names.run == repeated.run);
     assert!(names.mcp.expose() != names.run);
-    assert_eq!(&names.session, b"9213b8f4-a680-416e-a34c-6718a9575807");
 }
 
 #[test]

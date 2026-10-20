@@ -58,6 +58,10 @@ impl Files {
             residue_source: None,
         }
     }
+    pub(super) fn prepared(&self) -> bool {
+        self.run.is_some()
+    }
+
     fn accept(&mut self, step: Step, event: file::Event, descriptor: Option<kernel::Fd>) -> bool {
         match event {
             file::Event::Opened { file, .. } => match step {
@@ -259,7 +263,7 @@ impl Backend {
                 root: self.files.run.expect("private run root"),
                 path: b"instructions.md".as_slice().into(),
                 bytes,
-                expected: file::Expect::Absent,
+                expected: file::Expect::Any,
                 no_follow: true,
             },
             now,
@@ -304,19 +308,8 @@ impl Backend {
                 env.now,
                 below,
             ),
-            Step::Run => {
-                let entropy: [u8; 32] = self.names.mcp.expose().try_into().expect("MCP entropy");
-                match mcp::Server::new(self.first, 0, &entropy, self.tools(), self.settings.mcp, &mut self.io) {
-                    Ok(server) => self.server = Some(server),
-                    Err(_) => self.fail(
-                        env,
-                        llm::Failure::Program { exit: None },
-                        b"smith: the MCP tool list exceeds its bound",
-                        up,
-                        below,
-                    ),
-                }
-            }
+            Step::Run => self.prepare_invocation(env, up, below),
+            Step::Instructions if self.compaction() => self.launch(env, up, below),
             Step::Instructions => {
                 let bytes = self.mcp_configuration();
                 self.file(
@@ -326,7 +319,7 @@ impl Backend {
                         root: self.files.run.expect("run root"),
                         path: b"mcp.json".as_slice().into(),
                         bytes,
-                        expected: file::Expect::Absent,
+                        expected: file::Expect::Any,
                         no_follow: true,
                     },
                     env.now,

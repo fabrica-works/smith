@@ -3,6 +3,8 @@
 #[path = "tests/builtin.rs"]
 mod builtin;
 
+mod program;
+
 use alloc::boxed::Box;
 use core::mem::size_of;
 
@@ -305,6 +307,7 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 
 fn spec() -> Spec {
     Spec {
+        backend: crate::record::Backend::Direct,
         effort: None,
         final_turn: None,
         window: 65_536,

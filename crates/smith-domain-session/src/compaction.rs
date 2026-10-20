@@ -266,6 +266,10 @@ pub(super) fn open_window(
 
 fn new_bytes(conversation: &Conversation, content: &[Block]) -> Option<u64> {
     spec_cost(&conversation.model, &conversation.system, &conversation.delegated, content)?
+        .checked_add(match &conversation.backend {
+            crate::record::Backend::Direct => 0,
+            crate::record::Backend::Program { name } => u64::try_from(name.len()).ok()?,
+        })?
         .checked_add(conversation.namespace.owned_bytes()?)?
         .checked_add(super::ticket_bytes(&conversation.choice))?
         .checked_add(super::choice_bytes(conversation.choice_names.as_deref()))?
@@ -510,7 +514,9 @@ pub(super) fn carry_over(
     let first = transcript.turns.first().expect("validated nonempty history");
     let same_opening = match &first.kind {
         Kind::First(opener) | Kind::Window(opener) => {
-            opener.account == conversation.account && opener.backend == Backend::Direct
+            opener.account == conversation.account
+                && opener.backend == Backend::Direct
+                && conversation.backend == Backend::Direct
         }
         Kind::Ordinary => unreachable!("validated opening kind"),
     };

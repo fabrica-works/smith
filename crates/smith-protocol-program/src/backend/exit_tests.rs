@@ -8,7 +8,11 @@ fn active() -> Backend {
     backend.phase = Phase::Running;
     backend.child = Some(backend.token(4));
     backend.owner = Some(Token::new(80));
-    backend.request = Some(request(&backend));
+    let request = request(&backend);
+    let FromDomain::Complete { prompt, .. } = &request else { panic!("complete") };
+    let session::Opening::New { id } = session::opening(prompt, None) else { panic!("new window") };
+    backend.running = Some(id);
+    backend.request = Some(request);
     backend
 }
 

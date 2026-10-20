@@ -267,6 +267,8 @@ pub enum Request {
 /// What a session is opened for.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Spec {
+    /// Transport named in this conversation's opening turns (session.md 8.2).
+    pub backend: crate::record::Backend,
     /// Account named by the charter, absent for uncredentialed calls.
     pub account: Option<u32>,
     /// A child's final answer; main's run supplies its own finishing prompts.

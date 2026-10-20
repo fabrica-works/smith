@@ -101,7 +101,7 @@ impl Backend {
 
     pub(super) fn stopped_result(&mut self, env: &Env<protocol::ComponentLimits>) {
         self.finish_stop();
-        if self.phase == Phase::Running {
+        if self.phase == Phase::Running && !self.switching {
             self.completion_deadline(env, true);
         }
     }

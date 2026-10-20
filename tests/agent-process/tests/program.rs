@@ -235,11 +235,6 @@ fn a_program_that_exits_before_its_init_fails_the_run() {
 }
 
 #[test]
-fn a_program_start_with_a_transcript_is_refused() {
-    refused(Case::Transcript, &charter(), &program(b"source"));
-}
-
-#[test]
 fn a_program_main_may_share_its_account_with_a_declared_child() {
     let charter = changed_charter(|parts| {
         parts.models = skein_lib::List::with_capacity(1);

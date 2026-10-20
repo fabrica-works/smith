@@ -168,6 +168,7 @@ pub(crate) struct Session {
 /// What a session holds in every state.
 #[derive(Debug)]
 struct Conversation {
+    backend: crate::record::Backend,
     account: Option<u32>,
     protocol_allowance: u64,
     /// The opener's token, echoed on every record back to it.
@@ -2145,6 +2146,10 @@ fn admit(
     let content: Box<[Block]> = Box::new([Block::Text { text: spec.prompt, replay: None }]);
     let final_turn = crate::final_turn::Final::new(spec.final_turn);
     let bytes = spec_cost(&spec.model, &spec.system, &spec.delegated, &content)?
+        .checked_add(match &spec.backend {
+            crate::record::Backend::Direct => 0,
+            crate::record::Backend::Program { name } => len(name)?,
+        })?
         .checked_add(spec.authority.namespace_bytes()?)?
         .checked_add(final_turn.note_bytes()?)?
         .checked_add(len(&task)?)?
@@ -2160,6 +2165,7 @@ fn admit(
     let mut transcript = List::with_capacity(limits.history_messages);
     transcript.push(Message { role: Role::User, content }).ok()?;
     let conversation = Conversation {
+        backend: spec.backend,
         account: spec.account,
         protocol_allowance: spec.protocol_allowance,
         opener,
@@ -3331,13 +3337,13 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
             crate::record::Kind::Window(Box::new(crate::record::Opener {
                 affinity: conversation.affinity,
                 account: conversation.account,
-                backend: crate::record::Backend::Direct,
+                backend: conversation.backend.clone(),
             }))
         } else if next == 1 {
             crate::record::Kind::First(Box::new(crate::record::Opener {
                 affinity: conversation.affinity,
                 account: conversation.account,
-                backend: crate::record::Backend::Direct,
+                backend: conversation.backend.clone(),
             }))
         } else {
             crate::record::Kind::Ordinary

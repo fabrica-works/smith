@@ -1033,6 +1033,7 @@ pub struct World {
     script: Option<Box<[skein_fake_llm_domain::api::Turn]>>,
     output: u32,
     release: Option<Release>,
+    saved_window: Option<Vec<Box<[u8]>>>,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -1066,12 +1067,18 @@ impl World {
             script: None,
             output: 0,
             release: None,
+            saved_window: None,
         }
     }
 
     /// Derive the scripted model's output capacity through the shipped profile.
     pub fn output_tokens(&mut self, output: u32) {
         self.output = output;
+    }
+
+    /// Restore independently observed turns through the host's Start frame.
+    pub fn restore(&mut self, turns: Vec<Box<[u8]>>) {
+        self.saved_window = Some(turns);
     }
 
     /// Supply the provider's turns in place of the scenario's default script.
@@ -1333,7 +1340,7 @@ impl World {
             5
         } else if matches!(self.tracing, Some((TraceCase::ChildAnswered | TraceCase::StoppedReasoning, _))) {
             3
-        } else if self.environment || self.tracing.is_some() {
+        } else if self.environment || self.tracing.is_some() || self.saved_window.is_some() {
             2
         } else {
             1
@@ -1419,6 +1426,10 @@ impl World {
                 self.live.clone(),
                 self.output,
             );
+            if let Some(turns) = &self.saved_window {
+                parent.peer = crate::host();
+                parent.peer.play(crate::program_world::start_with_window(&self.charter, &self.grant_value(), turns));
+            }
             parent.hold_channel = self.hold_channel;
             parent.refreshing.clone_from(&self.refreshing);
             Proc::Parent(Box::new(parent))

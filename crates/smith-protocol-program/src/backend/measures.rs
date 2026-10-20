@@ -124,7 +124,9 @@ impl Backend {
             }
             Some(FromDomain::Complete { observation: None, .. } | FromDomain::Cancel { .. }) | None => return,
         };
-        let (system, tools) = if observation.first {
+        let (system, tools) = if self.compaction() {
+            (Some(prompt.system.clone()), Some(List::with_capacity(0)))
+        } else if observation.first {
             let server = self.tools();
             let mut names = List::with_capacity(
                 u32::try_from(server.len())

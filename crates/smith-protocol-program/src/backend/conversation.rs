@@ -112,6 +112,9 @@ impl Backend {
             }
             return;
         }
+        if self.switching {
+            return;
+        }
         if kind == Some(b"stream_event") {
             self.flush_prompt_measure(env.now);
         }
@@ -169,10 +172,7 @@ impl Backend {
                 Some(())
             }
             Some(b"system") => match json::text_in(&document, json::field(&document, 0, b"subtype")) {
-                Some(b"compact_boundary" | b"compaction") => {
-                    self.fail(env, llm::Failure::Invalid, b"smith: compaction arrives in smith-09", up, below);
-                    return;
-                }
+                Some(b"compact_boundary" | b"compaction") => Some(()),
                 Some(b"api_retry") => {
                     self.retry_measure(env.now, &document);
                     self.turns.retry();
@@ -274,6 +274,9 @@ impl Backend {
         up: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
     ) {
+        if self.switching {
+            return;
+        }
         let Some(owner) = self.owner else {
             return;
         };
@@ -366,6 +369,10 @@ impl Backend {
         self.builtin_owners(owner, &completion);
         up.push(ToDomain::Completed { owner, completion });
         self.flush_builtins(up);
+        if self.compaction() {
+            self.switching = true;
+            self.stop(env.now, false, false);
+        }
     }
 
     pub(super) fn match_calls(&mut self) {
@@ -404,7 +411,11 @@ impl Backend {
     }
 
     pub(super) fn completion_deadline(&mut self, env: &Env<protocol::ComponentLimits>, head: bool) {
-        if self.owner.is_none() || self.phase != Phase::Running || self.stop != super::stop::Stop::None {
+        if self.owner.is_none()
+            || self.phase != Phase::Running
+            || self.switching
+            || self.stop != super::stop::Stop::None
+        {
             return;
         }
         match &self.request {

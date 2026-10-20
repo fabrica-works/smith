@@ -17,6 +17,9 @@ pub struct Story {
     pub usage: Usage,
     #[serde(default)]
     pub resume: Resume,
+    /// Text returned by the tool-free summary invocation.
+    #[serde(default)]
+    pub summary: String,
 }
 
 /// A status answer selected by the story, ending on output or a signal.
@@ -124,6 +127,8 @@ impl Default for Turn {
 /// A scripted action sent as stream messages or held until a signal.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Step {
+    /// Announces the program's own window compaction.
+    Compact,
     /// Sends text and, when requested, its partial messages.
     Text(String),
     /// Opens a text block and leaves its attempt unfinished for a retry.

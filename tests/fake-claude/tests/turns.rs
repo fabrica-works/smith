@@ -429,3 +429,42 @@ fn accepted_user_messages_are_observed() {
     assert_eq!(received[0]["message"]["role"], "user");
     assert_eq!(received[0]["message"]["content"], "hello");
 }
+
+#[test]
+fn a_compact_step_reports_the_programs_boundary() {
+    let run = normal(story(vec![Step::Compact, Step::Text("after boundary".into())], End::default()), 1);
+    let messages = messages(&run);
+    assert!(messages.iter().any(|value| value["type"] == "system" && value["subtype"] == "compact_boundary"));
+    assert!(messages.iter().any(|value| value["message"]["content"][0]["text"] == "after boundary"));
+}
+
+#[test]
+fn a_tool_free_invocation_answers_with_the_summary() {
+    let mut invocation = print::invocation(1);
+    invocation = invocation.arguments(&[
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--setting-sources",
+        "user",
+        "--model",
+        "test-model",
+        "--append-system-prompt-file",
+        "unread",
+        "--tools",
+        "",
+        "--max-turns",
+        "1",
+        "--session-id",
+        SESSION,
+    ]);
+    let run = print::run(Story { summary: "the summary".into(), ..Story::default() }, invocation, None, None);
+    let messages = messages(&run);
+    assert_eq!(messages[0]["tools"], json!([]));
+    assert_eq!(messages[0]["mcp_servers"], json!([]));
+    assert!(messages.iter().any(|value| value["message"]["content"][0]["text"] == "the summary"));
+    assert_eq!(run.records[0].exit, Some(Exit::Code(0)));
+}

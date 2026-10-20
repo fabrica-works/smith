@@ -14,11 +14,15 @@ use crate::{Command, Programs, mcp};
 
 mod builtins;
 mod calls;
+mod compact;
 mod conversation;
 mod diagnostics;
 mod files;
 mod intake;
 mod measures;
+mod memory;
+mod session;
+pub use memory::backend_worst_case;
 mod permission;
 mod policy;
 mod redaction;
@@ -43,6 +47,8 @@ mod measure_tests;
 mod reply_tests;
 #[cfg(test)]
 mod review_tests;
+#[cfg(test)]
+mod session_tests;
 #[cfg(test)]
 mod stop_tests;
 #[cfg(test)]
@@ -154,6 +160,9 @@ pub struct Backend {
     stopping: u8,
     stop: stop::Stop,
     winding: stop::WindDown,
+    switching: bool,
+    compactions: u32,
+    running: Option<[u8; 16]>,
     permitted: u64,
     response_phase: llm::Phase,
     run_time: Duration,
@@ -182,130 +191,6 @@ impl core::fmt::Debug for Backend {
             .field("owner", &self.owner)
             .finish_non_exhaustive()
     }
-}
-
-/// Complete additional protocol ownership, including transient copies (5.1–5.6).
-/// Native I/O tables and the shared file driver are priced by the service.
-#[must_use]
-pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
-    let mut paths = u64::try_from(settings.program.directory.len().max(4096)).ok()?;
-    paths = paths
-        .checked_add(u64::try_from(settings.program.claude.len()).ok()?)?
-        .checked_add(u64::try_from(settings.relay.len().max(4096)).ok()?)?;
-    let mut environment = 0_u64;
-    for entry in &settings.environment {
-        environment = environment
-            .checked_add(u64::try_from(entry.len()).ok()?)?
-            .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?;
-    }
-    // These workspaces run in separate step phases. A line's collected
-    // document survives decoding/correlation, whereas its collector has gone.
-    let document = skein_json::document::worst_case(&skein_json::document::Limits {
-        tokens: settings.adapter.client.tokens,
-        text: settings.line_bytes,
-    })?;
-    let left = skein_json::document::worst_case(&skein_json::document::Limits {
-        tokens: settings.adapter.client.tokens,
-        text: settings.mcp.message_bytes,
-    })?;
-    let input = settings.adapter.stated.call_input_bytes;
-    let decode_collect = stream::worst_case(input, settings.adapter.client.depth, input)?;
-    // The typed decoder builds fields/items after its collector has gone.
-    // The enclosing stream already admitted at most client.tokens records;
-    // an item-array capacity can overlap its nested field-array capacities.
-    let decode_build = skein_json::document::worst_case(&skein_json::document::Limits { tokens: input, text: input })?
-        .checked_add(
-            u64::from(input.min(settings.adapter.client.tokens)).checked_mul(
-                u64::try_from(
-                    size_of::<smith_domain::run::outcome::Field>()
-                        .checked_add(size_of::<smith_domain::run::outcome::Item>())?,
-                )
-                .ok()?,
-            )?,
-        )?
-        .checked_add(u64::from(input))?;
-    let decode = decode_collect.max(decode_build);
-    let compare =
-        stream::worst_case(settings.mcp.message_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
-            .checked_add(left)?
-            .checked_add(List::<(u32, u32)>::worst_case(settings.adapter.client.tokens)?)?;
-    let workspace =
-        stream::worst_case(settings.line_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
-            .max(document.checked_add(decode.max(compare))?)
-            .max(skein_json::writer::worst_case(&skein_json::writer::Limits {
-                depth: 8,
-                length: settings.input_bytes,
-            })?)
-            // Tail passes borrow text. Consumed served results replace prompt
-            // payloads; at most one input ceiling plus one temporary result
-            // coexists with the encoded line during this separate workspace.
-            .max(u64::from(settings.input_bytes).checked_add(u64::from(settings.adapter.rendered_result))?);
-    u64::try_from(size_of::<Backend>())
-        .ok()?
-        // Launch peak: settings paths; executable; instructions and MCP path
-        // temporaries; their two argv copies; relative cwd; source directory.
-        .checked_add(paths.checked_mul(8)?)?
-        // Settings, timeout derivation and the spawn each own command entries. The
-        // service prices its machine environment independently. Fixed room
-        // covers the synthesized config-directory entry, secret and argv cells.
-        .checked_add(environment.checked_mul(3)?.checked_add(32_768)?)?
-        .checked_add(
-            crate::command_worst_case(settings.receiving.max_failure_bytes)?
-                .checked_sub(u64::try_from(size_of::<Command>()).ok()?)?,
-        )?
-        .checked_add(mcp::mcp_worst_case(&settings.mcp)?.checked_sub(u64::try_from(size_of::<mcp::Server>()).ok()?)?)?
-        // Correlation moves payloads, with old/new MCP event slot arrays
-        // briefly coexisting while the held queue is rebuilt.
-        .checked_add(List::<mcp::Up>::worst_case(u32::from(settings.mcp.calls))?.checked_mul(2)?)?
-        .checked_add(u64::from(settings.mcp.message_bytes).checked_mul(u64::from(settings.mcp.calls))?)?
-        // Held neutral prompt and the instructions Store's system-text copy.
-        // Tool/schema inventories are already in the MCP bound, user encoding
-        // in the line terms; neither is a third neutral prompt allocation.
-        .checked_add(settings.prompt_bytes.checked_mul(2)?)?
-        // Held outcome/delivery contracts, finish_schema's bytes and their
-        // inline argv copy coexist during launch. MCP's schemas/list/escaping
-        // are in mcp_worst_case, rather than another thirteen contract copies.
-        .checked_add(u64::from(settings.contract_bytes).checked_mul(3)?)?
-        // Four queued completions plus the message currently being assembled.
-        .checked_add(settings.receiving.max_completion_bytes.checked_mul(5)?)?
-        // Stderr ring, chronological tail, and sanitized failure terminal.
-        // The sanitizer's List becomes that terminal Box without a fourth copy;
-        // the status command's capture/scratch is in command_worst_case.
-        .checked_add(u64::from(settings.receiving.max_failure_bytes).checked_mul(3)?)?
-        // Permission policy uses MCP's collector after Server::from_io returns;
-        // its byte-derived depth and scratch are already in mcp_worst_case.
-        // Verdict validation runs only after judge has dropped its document.
-        .checked_add(workspace)?
-        // Relative resolution retains cwd, its joining slash and the original path.
-        .checked_add(u64::from(settings.path_bytes.checked_mul(2)?.checked_add(1)?))?
-        // The old stdout accumulator and its replacement coexist at a line
-        // boundary. Collection/intake/encoding are in stream::worst_case.
-        // Input has its independent ceiling: the encoder body and newline
-        // copy coexist, then one prepared line remains during chunked writes.
-        // Native writer retention belongs to the service's two writer terms.
-        .checked_add(u64::from(settings.line_bytes).checked_mul(2)?)?
-        .checked_add(u64::from(settings.input_bytes))?
-        // MCP correlation retains at most five messages' provider fields and
-        // one rendered reply per ledger slot. Rebuilding moves payloads but
-        // briefly owns both old and new slot allocations.
-        .checked_add(
-            List::<calls::Call>::worst_case(settings.receiving.max_completion_blocks.checked_mul(5)?)?
-                .checked_mul(2)?,
-        )?
-        .checked_add(u64::from(settings.adapter.client.answer).checked_mul(5)?)?
-        .checked_add(
-            u64::from(settings.adapter.rendered_result)
-                .checked_mul(u64::from(settings.receiving.max_completion_blocks).checked_mul(5)?)?,
-        )?
-        // Joining user text temporarily owns the tail and a replacement reply.
-        .checked_add(u64::from(settings.adapter.rendered_result).checked_mul(2)?)?
-        .checked_add(Queue::<llm::Completion>::worst_case(4)?)?
-        .checked_add(measures::worst_case(settings)?)?
-        .checked_add(4096)? // deferred stdout intake
-        .checked_add(1024)? // retained API message ID
-        .checked_add(4096)? // a failed Store's bounded temporary leaf
-        .checked_add(Queue::<io::Request>::worst_case(32)?)?
-        .checked_add(Queue::<Below>::worst_case(32)?)
 }
 
 impl Backend {
@@ -345,6 +230,9 @@ impl Backend {
             stopping: 0,
             stop: stop::Stop::None,
             winding: stop::WindDown::Ordinary,
+            switching: false,
+            compactions: 0,
+            running: None,
             permitted: 1,
             response_phase: llm::Phase::Head,
             run_time: Duration::ZERO,
@@ -466,7 +354,7 @@ impl Backend {
                     return;
                 }
                 match self.phase {
-                    Phase::Running => self.resume(env, request, up, below),
+                    Phase::Running => self.window_request(env, request, up, below),
                     Phase::Idle | Phase::Checking | Phase::Starting | Phase::Ending | Phase::Ended => {
                         self.start(env, request, up, below);
                     }
@@ -525,7 +413,7 @@ impl Backend {
             Some(deadline) => env.now >= deadline,
             None => false,
         };
-        if due && self.stop != stop::Stop::None {
+        if due && (self.stop != stop::Stop::None || self.switching) {
             self.deadline = None;
             self.terminate(env.now);
         } else if due {

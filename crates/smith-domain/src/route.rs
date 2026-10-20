@@ -1001,7 +1001,10 @@ fn resumed_model(
             }
             match &first.kind {
                 session::record::Kind::First(opener) | session::record::Kind::Window(opener) => {
-                    if opener.account != main.account || opener.backend != session::record::Backend::Direct {
+                    if opener.account != main.account
+                        || opener.backend != session::record::Backend::Direct
+                        || config.program(main.endpoint).is_some()
+                    {
                         return Ok(None);
                     }
                 }

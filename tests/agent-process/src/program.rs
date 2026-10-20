@@ -13,6 +13,10 @@ use crate::world::Parent;
 
 #[path = "program/waiting.rs"]
 mod waiting;
+
+#[path = "program/carry.rs"]
+mod carry;
+pub use carry::{from_frames, start_with_window};
 pub(crate) use waiting::message;
 
 /// One startup scenario encoded in the hosted agent's arguments.
@@ -407,12 +411,8 @@ fn fixture(story: &Story, login: Option<&[u8]>) -> (Files, Opened) {
     (files, base)
 }
 
-/// Drive one hosted program scenario on the shared deterministic world and machine.
+/// Drive an ordinary scripted program on the deterministic machine.
 #[must_use]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one hosted fixture connects the program, relay, roots and independent observations"
-)]
 pub fn run(
     case: Case,
     story: &Story,
@@ -421,8 +421,34 @@ pub fn run(
     value: &smith_channel::GrantValue,
     refresh: Option<&smith_channel::GrantValue>,
 ) -> Run {
+    run_inner(case, story, login, charter, value, refresh, None)
+}
+
+/// Restore the host's recorded window through the shipped program composition.
+#[must_use]
+pub fn run_with_window(story: &Story, charter: &[u8], turns: &[Box<[u8]>]) -> Run {
+    run_inner(Case::Transcript, story, Some(b"claude.ai"), charter, &crate::program(b"source"), None, Some(turns))
+}
+
+/// Drive one hosted program scenario on the shared deterministic world and machine.
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one hosted fixture connects the program, relay, roots and independent observations"
+)]
+fn run_inner(
+    case: Case,
+    story: &Story,
+    login: Option<&[u8]>,
+    charter: &[u8],
+    value: &smith_channel::GrantValue,
+    refresh: Option<&smith_channel::GrantValue>,
+    history: Option<&[Box<[u8]>]>,
+) -> Run {
     let mut story = story.clone();
-    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events) && story.turns.is_empty() {
+    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events | Case::Transcript)
+        && story.turns.is_empty()
+    {
         story.turns.push(smith_fake_claude::Turn {
             steps: vec![smith_fake_claude::Step::Hang],
             end: smith_fake_claude::End::default(),
@@ -433,10 +459,10 @@ pub fn run(
     let machine = Machine { files, base };
     let mut world =
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
-            wait_for_exit: matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events),
+            wait_for_exit: matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events | Case::Transcript),
             ended: false,
             waiting: waiting::Release::new(case == Case::Waiting),
-            cancel: if matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events) {
+            cancel: if matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events | Case::Transcript) {
                 None
             } else {
                 Some(Time::ZERO.saturating_add(Duration::from_millis(50)))
@@ -529,7 +555,10 @@ pub fn run(
         }
         if case == Case::Transcript {
             parent.peer = crate::host();
-            parent.peer.play(with_transcript(charter, value));
+            parent.peer.play(match history {
+                Some(turns) => start_with_window(charter, value, turns),
+                None => with_transcript(charter, value),
+            });
         }
         Proc::Parent(Box::new(parent))
     });

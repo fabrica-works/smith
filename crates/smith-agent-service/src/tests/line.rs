@@ -284,6 +284,7 @@ fn insufficient_minima_keep_full_reads_and_the_guard_refuses() {
 
 fn opening(line: u64, budget: session::Budget) -> session::record::Opening {
     let spec = session::Spec {
+        backend: session::record::Backend::Direct,
         account: None,
         final_turn: None,
         endpoint: llm::Endpoint(0),

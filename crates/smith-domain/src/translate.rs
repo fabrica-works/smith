@@ -110,6 +110,10 @@ pub(crate) fn spec(
     }
     let run::Budget { turns, spend: _, time } = budget;
     let spec = Spec {
+        backend: match program {
+            Some(program) => session::record::Backend::Program { name: program.name.clone() },
+            None => session::record::Backend::Direct,
+        },
         final_turn: match final_turn {
             Some(final_turn) => Some(session::FinalTurn { note: final_turn.note, allowance: final_turn.allowance }),
             None => None,

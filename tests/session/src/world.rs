@@ -285,6 +285,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     let grants = Grants { inspect: true, modify: true, shell: true };
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {
+        backend: smith_domain_session::record::Backend::Direct,
         account: Some(0),
         effort: None,
         final_turn: None,

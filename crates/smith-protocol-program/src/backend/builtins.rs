@@ -26,6 +26,21 @@ impl Backend {
     ) {
         let depth = self.settings.adapter.client.depth;
         let tokens = self.settings.adapter.client.tokens;
+        if self.compaction() {
+            if super::compact::checked_init(bytes, depth, tokens).is_some() {
+                self.phase = Phase::Running;
+                self.completion_deadline(env, true);
+            } else {
+                self.fail(
+                    env,
+                    llm::Failure::Program { exit: None },
+                    b"smith: summary program offered tools",
+                    up,
+                    below,
+                );
+            }
+            return;
+        }
         let error = init_error(bytes, self.grants(), depth, tokens);
         if error.is_none() && stream::checked_init(bytes, &self.tools(), depth, tokens).is_some() {
             self.phase = Phase::Running;
