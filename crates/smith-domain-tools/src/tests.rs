@@ -885,6 +885,29 @@ fn a_write_that_conflicts_with_the_current_file_is_refused() {
 }
 
 #[test]
+fn a_write_over_a_file_moved_away_is_stale_and_the_next_write_creates_it() {
+    let mut h = Harness::new(LIMITS);
+    let kit = h.open(1, authority(ALL));
+    // A command moved the file the LLM read: the store finds nothing there.
+    known(&mut h, kit, b"src/lib.rs", b"a", 2);
+    let (owner, op) = h.start(kit, 1, write(b"src/lib.rs", 1));
+    assert_eq!(op, store(place(1, b"src/lib.rs"), b"x", Expect::Is { version: version(2) }));
+    assert_eq!(h.end(owner, Done::Conflict { now: None }), (1, Outcome::Stale));
+    assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), None, "the kit forgets the file");
+    let (owner, op) = h.start(kit, 2, write(b"src/lib.rs", 1));
+    assert_eq!(op, store(place(1, b"src/lib.rs"), b"x", Expect::Absent));
+    assert_eq!(h.end(owner, Done::Stored { version: version(3) }), (2, Outcome::Written { created: true }));
+    assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(3)));
+    // An edit whose file went between its load and its store forgets it too.
+    let (owner, _) = h.start(kit, 3, change(b"src/lib.rs", b"x", b"y"));
+    let op = h.next(owner, Done::Loaded { content: bytes(b"x"), version: version(3) });
+    assert_eq!(op, store(place(1, b"src/lib.rs"), b"y", Expect::Is { version: version(3) }));
+    assert_eq!(h.end(owner, Done::Conflict { now: None }), (3, Outcome::Stale));
+    let (_, op) = h.start(kit, 4, write(b"src/lib.rs", 1));
+    assert_eq!(op, store(place(1, b"src/lib.rs"), b"x", Expect::Absent));
+}
+
+#[test]
 fn every_other_end_of_a_store_answers_for_itself() {
     let table = [
         (Done::NotFile, Outcome::NotFile),

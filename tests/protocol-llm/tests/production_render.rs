@@ -156,6 +156,17 @@ fn an_unchanged_edit_reports_the_whole_batch() {
 }
 
 #[test]
+fn a_stale_change_says_to_read_again_or_to_write_a_gone_file_again() {
+    let (text, error) = adapter::render_outcome(&tools::Outcome::Stale, &tools::Namespace::One, 4096)
+        .expect("bounded failure rendering");
+    assert_eq!(
+        text.as_ref(),
+        b"file changed or is gone since it was read; read it again, or, if it is gone, write it again to create it"
+    );
+    assert!(error);
+}
+
+#[test]
 fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
     let outcome = tools::Outcome::Read {
         content: "saved – 界\n".as_bytes().into(),

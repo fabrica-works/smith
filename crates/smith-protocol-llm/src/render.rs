@@ -297,7 +297,7 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             true
         }
         Outcome::Stale => {
-            output.put(b"file changed; read it again")?;
+            output.put(b"file changed or is gone since it was read; read it again, or, if it is gone, write it again to create it")?;
             true
         }
         Outcome::EditFailed { edit, why } => {
