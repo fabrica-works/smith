@@ -10,6 +10,7 @@ use smith_host_domain as host;
 use smith_host_protocol as protocol;
 use std::os::unix::ffi::OsStrExt;
 
+pub mod program_world;
 pub mod referee;
 
 mod world;

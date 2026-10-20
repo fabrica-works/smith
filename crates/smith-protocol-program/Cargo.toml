@@ -1,0 +1,16 @@
+[package]
+name = "smith-protocol-program"
+description = "Program source environments, status records and child commands"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-lib.workspace = true
+skein-io.workspace = true
+skein-json.workspace = true
+
+[lints]
+workspace = true

@@ -30,7 +30,7 @@ const FILE_TIMEOUT: Duration = Duration::from_secs(1);
 /// `observations` is an append descriptor beneath `config`, when present.
 #[derive(Debug)]
 pub struct Faces {
-    pub stdin: Fd,
+    pub stdin: Option<Fd>,
     pub stdout: Fd,
     pub stderr: Fd,
     pub signal: Fd,
@@ -46,7 +46,7 @@ pub struct Fake {
     files: FileIo,
     limits: Limits,
     config: Config,
-    input: Token,
+    input: Option<Token>,
     input_ended: bool,
     signal: Token,
     stdout: Output,
@@ -93,7 +93,7 @@ impl Fake {
     pub fn new(arguments: &[Box<[u8]>], environment: &[Box<[u8]>], faces: Faces) -> Self {
         let limits = limits();
         let mut io = Io::new(&limits);
-        let input = io.adopt_read_pipe(faces.stdin).expect("input slot");
+        let input = faces.stdin.map(|fd| io.adopt_read_pipe(fd).expect("input slot"));
         let stdout = Output::new(Some(io.adopt_write_pipe(faces.stdout, None).expect("stdout slot")));
         let stderr = Output::new(Some(io.adopt_write_pipe(faces.stderr, None).expect("stderr slot")));
         let signal = io.adopt_signals(faces.signal).expect("signal slot");
@@ -153,7 +153,7 @@ impl Fake {
             limits,
             config,
             input,
-            input_ended: false,
+            input_ended: input.is_none(),
             signal,
             stdout,
             stderr,
@@ -192,7 +192,7 @@ impl Fake {
                         self.end(1);
                     } else {
                         self.io_requests.push(Request::Stream {
-                            stream: self.input,
+                            stream: self.input.expect("code input is present"),
                             down: Down::Demand { read: Read::Fill(1), room: 0 },
                         });
                     }
@@ -206,7 +206,9 @@ impl Fake {
         if self.code.is_none() {
             self.code = Some(code);
             self.file_request = None;
-            self.io_requests.push(Request::Abort { entity: self.input });
+            if let Some(input) = self.input {
+                self.io_requests.push(Request::Abort { entity: input });
+            }
             self.io_requests.push(Request::Abort { entity: self.signal });
             if !self.files.takes() {
                 file_layer::cancel(&mut self.files, FILE_OWNER, &mut self.file_submissions);
@@ -261,7 +263,7 @@ impl Fake {
                     self.end(1);
                 }
             }
-            Event::Stream { owner, up } if owner == self.input && self.code.is_none() => {
+            Event::Stream { owner, up } if Some(owner) == self.input && self.code.is_none() => {
                 if matches!(up, Up::End | Up::Failed(_)) {
                     self.input_ended = true;
                 }

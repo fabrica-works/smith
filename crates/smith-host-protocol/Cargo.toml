@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+smith-protocol-program.workspace = true
 skein-lib.workspace = true
 skein-channel.workspace = true
 skein-io.workspace = true

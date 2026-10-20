@@ -1016,6 +1016,7 @@ dependencies = [
  "smith-host-domain",
  "smith-host-world",
  "smith-protocol-channel",
+ "smith-protocol-program",
  "smith-transcript",
 ]
 
@@ -1043,6 +1044,7 @@ dependencies = [
  "skein-fake-llm-domain",
  "skein-fake-machine",
  "skein-fake-peers",
+ "skein-heap",
  "skein-io",
  "skein-lib",
  "skein-shell",
@@ -1054,6 +1056,7 @@ dependencies = [
  "smith-agent-shell",
  "smith-channel",
  "smith-charter",
+ "smith-fake-claude",
  "smith-host-domain",
  "smith-host-protocol",
  "smith-host-world",
@@ -1061,6 +1064,7 @@ dependencies = [
  "smith-local-service",
  "smith-local-shell",
  "smith-protocol-channel",
+ "smith-protocol-program",
 ]
 
 [[package]]
@@ -1326,6 +1330,15 @@ dependencies = [
  "skein-lib",
  "skein-world",
  "smith-domain",
+]
+
+[[package]]
+name = "smith-protocol-program"
+version = "0.0.0"
+dependencies = [
+ "skein-io",
+ "skein-json",
+ "skein-lib",
 ]
 
 [[package]]

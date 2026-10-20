@@ -45,7 +45,7 @@ fn make(spawn: &Spawn, inherited: &Inherited) -> Fake {
         &spawn.args,
         &spawn.env,
         Faces {
-            stdin: pipe(0),
+            stdin: inherited.pipes.iter().find(|(child, _)| *child == 0).map(|(_, fd)| *fd),
             stdout: pipe(1),
             stderr: pipe(2),
             signal: inherited.signal,
@@ -101,7 +101,7 @@ pub fn main() -> ExitCode {
     let mut fake = Fake::new(
         &arguments,
         &environment,
-        Faces { stdin: Fd::new(0), stdout: Fd::new(1), stderr: Fd::new(2), signal, config, observations },
+        Faces { stdin: Some(Fd::new(0)), stdout: Fd::new(1), stderr: Fd::new(2), signal, config, observations },
     );
     let mut kernel = match skein_shell::Kernel::open(Config { operations: fake.operations() }) {
         Ok(kernel) => kernel,

@@ -25,6 +25,7 @@ mod component;
 mod limits;
 mod live;
 mod process;
+mod program;
 mod translate;
 
 #[cfg(test)]
@@ -33,4 +34,5 @@ mod tests;
 pub use component::{Component, OpenEvent};
 pub use limits::{Error, Limits, MaxOut, max_out, output_bytes, worst_case};
 pub use process::{Launch, Process, ProcessEvent, process_worst_case};
+pub use program::{ProgramSource, SourceAnswer, SourceAsk, program_source_worst_case};
 pub use translate::{Values, encode_start, grant_form};

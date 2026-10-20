@@ -8,6 +8,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+smith-fake-claude.workspace = true
+smith-protocol-program.workspace = true
+skein-heap.workspace = true
 skein-fake-llm-domain.workspace = true
 smith-local-shell.workspace = true
 smith-local-process-world.workspace = true

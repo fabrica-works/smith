@@ -37,6 +37,8 @@ mod values;
 
 mod source_name;
 
+mod program;
+
 #[cfg(test)]
 mod tests;
 
@@ -57,6 +59,8 @@ pub use delivery::{
 pub use domain::{Domain, fire, max_out, step};
 
 pub use facts::Fact;
+
+pub use program::{FailureReason, ProgramCheck, ProgramFailure, ProgramMethod, ProgramSignOut};
 
 pub use inbox::Inbox;
 
