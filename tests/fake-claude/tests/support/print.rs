@@ -103,3 +103,12 @@ pub fn with_server(story: Story, invocation: Invocation, script: smith_fake_clau
     let config = serde_json::json!({"mcpServers":{"smith":{"command":"server","args":[script.encode()],"env":{"SERVER_TEST":"overridden"}}}});
     run(story, invocation, None, Some(&serde_json::to_vec(&config).expect("configuration")))
 }
+
+pub fn sequence(story: Story, invocations: Vec<Invocation>) -> Run {
+    super::run_files(
+        Some(story),
+        Some(b"claude.ai"),
+        invocations,
+        vec![Item::directory(b"run"), Item::file(b"run/mcp.json", MCP)],
+    )
+}

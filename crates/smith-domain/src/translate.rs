@@ -241,6 +241,9 @@ pub(crate) fn end(
         session::End::Failed { failure: llm::Failure::Program { exit }, detail, .. } => {
             run::End::Fault(run::Fault::Program { name: PROGRAM_NAME.into(), exit, detail })
         }
+        session::End::Failed { failure: llm::Failure::SessionGone, detail, .. } => {
+            run::End::Fault(run::Fault::Program { name: PROGRAM_NAME.into(), exit: None, detail })
+        }
         session::End::Failed { failure, evidence, attempts, .. } => run::End::Fault(run::Fault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
@@ -316,7 +319,9 @@ fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
         llm::Failure::Unavailable => run::CompletionFailure::Unavailable,
         llm::Failure::TimedOut { phase } => run::CompletionFailure::TimedOut { phase: completion_phase(phase) },
         llm::Failure::ContextTooLong => run::CompletionFailure::ContextTooLong,
-        llm::Failure::Invalid | llm::Failure::Program { .. } => run::CompletionFailure::Invalid,
+        llm::Failure::Invalid | llm::Failure::Program { .. } | llm::Failure::SessionGone => {
+            run::CompletionFailure::Invalid
+        }
         llm::Failure::Refused => run::CompletionFailure::Refused,
         llm::Failure::Unsupported => run::CompletionFailure::Unsupported,
         llm::Failure::SignedOut | llm::Failure::Unauthorized => run::CompletionFailure::Unauthorized,

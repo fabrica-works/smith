@@ -25,7 +25,7 @@ fn ordinary() -> llm::Prompt {
 #[test]
 fn the_session_id_follows_the_window() {
     let mut prompt = ordinary();
-    let session::Opening::New { id } = session::opening(&prompt, None) else { panic!("new") };
+    let session::Opening::New { id } = session::opening(&prompt, None, None) else { panic!("new") };
     let first = stream::user_message(&prompt, 4096).expect("first input");
     assert_eq!(id, session::session_id(prompt.affinity, &first));
     prompt.messages = Box::new([
@@ -33,18 +33,18 @@ fn the_session_id_follows_the_window() {
         message(llm::Role::Assistant, b"answer"),
         message(llm::Role::User, b"next"),
     ]);
-    assert_eq!(session::opening(&prompt, Some(id)), session::Opening::Running);
-    assert_eq!(session::opening(&prompt, None), session::Opening::New { id });
+    assert_eq!(session::opening(&prompt, Some(id), None), session::Opening::Running);
+    assert_eq!(session::opening(&prompt, None, None), session::Opening::Resume { id });
     prompt.messages[0] = message(llm::Role::User, b"new window");
-    assert_ne!(session::opening(&prompt, Some(id)), session::Opening::Running);
+    assert_ne!(session::opening(&prompt, Some(id), None), session::Opening::Running);
     prompt = ordinary();
     prompt.affinity.thread = 1;
-    assert_ne!(session::opening(&prompt, Some(id)), session::Opening::Running);
+    assert_ne!(session::opening(&prompt, Some(id), None), session::Opening::Running);
 }
 
 #[test]
 fn the_session_id_is_a_v4_uuid() {
-    let session::Opening::New { id } = session::opening(&ordinary(), None) else { panic!("new") };
+    let session::Opening::New { id } = session::opening(&ordinary(), None, None) else { panic!("new") };
     assert_eq!(id[6] >> 4_u32, 4_u8);
     assert_eq!(id[8] >> 6_u32, 2_u8);
     assert_eq!(session::uuid(id).len(), 36);
@@ -56,7 +56,7 @@ fn a_new_window_stops_the_old_session() {
     backend.phase = Phase::Running;
     backend.child = Some(backend.token(4));
     backend.pipes = [Some(Token::new(31)), Some(Token::new(32)), Some(Token::new(33))];
-    let session::Opening::New { id } = session::opening(&ordinary(), None) else { panic!("new") };
+    let session::Opening::New { id } = session::opening(&ordinary(), None, None) else { panic!("new") };
     backend.running = Some(id);
     backend.owner = Some(Token::new(80));
     backend.request = Some(request(&backend));

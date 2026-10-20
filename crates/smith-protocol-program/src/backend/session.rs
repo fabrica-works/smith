@@ -1,5 +1,6 @@
 //! A process follows one window (protocol/programs.md 5.8; domain/session.md 2).
-//! Keeps no transcript; affinity and the first rendered message identify it.
+//! Keeps the last recorded id, never the program's session contents.
+//! Affinity and the first rendered message identify the window.
 
 use super::{Backend, Below, Phase, compact, turns};
 use skein_lib::{Env, List, Queue, sha256::Sha256};
@@ -13,8 +14,7 @@ pub(crate) enum Opening {
     Running,
     /// No process holds the window; start its deterministic session.
     New { id: [u8; 16] },
-    /// The persisted window may be resumed (used by smith-09d).
-    #[expect(dead_code, reason = "the following part enables persistent resumption")]
+    /// Resume a persisted window after its process stopped.
     Resume { id: [u8; 16] },
 }
 
@@ -37,7 +37,7 @@ fn identify(affinity: Affinity, first: [u8; 32]) -> [u8; 16] {
     id
 }
 
-pub(crate) fn opening(prompt: &Prompt, running: Option<[u8; 16]>) -> Opening {
+pub(crate) fn opening(prompt: &Prompt, running: Option<[u8; 16]>, recorded: Option<[u8; 16]>) -> Opening {
     let mut first = Sha256::new();
     first.update(b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[");
     let mut separator = false;
@@ -62,7 +62,20 @@ pub(crate) fn opening(prompt: &Prompt, running: Option<[u8; 16]>) -> Opening {
     }
     first.update(b"]}}\n");
     let id = identify(prompt.affinity, first.finish());
-    if running == Some(id) { Opening::Running } else { Opening::New { id } }
+    if running == Some(id) {
+        return Opening::Running;
+    }
+    if running.is_none() {
+        if recorded == Some(id) {
+            return Opening::Resume { id };
+        }
+        for message in &prompt.messages {
+            if message.role == llm::Role::Assistant {
+                return Opening::Resume { id };
+            }
+        }
+    }
+    Opening::New { id }
 }
 
 fn quoted(hash: &mut Sha256, text: &[u8]) {
@@ -108,6 +121,12 @@ pub(super) fn uuid(id: [u8; 16]) -> [u8; 36] {
 }
 
 impl Backend {
+    pub(super) fn remember_session(&mut self) {
+        if self.phase == Phase::Running && !self.switching && !self.compaction() && self.outgoing.is_none() {
+            self.recorded = self.running;
+        }
+    }
+
     pub(super) fn window_request(
         &mut self,
         env: &Env<protocol::ComponentLimits>,
@@ -121,7 +140,7 @@ impl Backend {
         };
         let keep = !compact::is_compaction(prompt)
             && !self.switching
-            && match opening(prompt, self.running) {
+            && match opening(prompt, self.running, self.recorded) {
                 Opening::Running => true,
                 Opening::New { .. } | Opening::Resume { .. } => false,
             };
@@ -178,6 +197,7 @@ impl Backend {
         self.line = List::with_capacity(self.settings.line_bytes);
         self.stderr = List::with_capacity(self.settings.receiving.max_failure_bytes);
         self.tail = 0;
+        self.stderr_wrapped = false;
         self.written = 0;
         self.ledger =
             List::with_capacity(self.settings.receiving.max_completion_blocks.checked_mul(5).expect("ledger"));
@@ -203,11 +223,23 @@ impl Backend {
             Some(FromDomain::Cancel { .. }) | None => unreachable!("startup request"),
         };
         if compact::is_compaction(prompt) {
+            self.resuming = false;
             self.names.session = self.compaction_id();
             self.store_instructions(env.now, 0, below);
         } else {
-            match opening(prompt, None) {
-                Opening::New { id } | Opening::Resume { id } => {
+            match opening(prompt, None, self.recorded) {
+                kind @ (Opening::New { .. } | Opening::Resume { .. }) => {
+                    let id = match kind {
+                        Opening::New { id } => {
+                            self.resuming = false;
+                            id
+                        }
+                        Opening::Resume { id } => {
+                            self.resuming = true;
+                            id
+                        }
+                        Opening::Running => unreachable!("opening a process"),
+                    };
                     self.running = Some(id);
                     self.names.session = uuid(id);
                 }

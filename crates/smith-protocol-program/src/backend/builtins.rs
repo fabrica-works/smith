@@ -44,6 +44,7 @@ impl Backend {
         let error = init_error(bytes, self.grants(), depth, tokens);
         if error.is_none() && stream::checked_init(bytes, &self.tools(), depth, tokens).is_some() {
             self.phase = Phase::Running;
+            self.remember_session();
             self.completion_deadline(env, true);
         } else {
             let detail = match error {

@@ -22,7 +22,8 @@ pub fn start_with_window(
     value: &smith_channel::GrantValue,
     turns: &[Box<[u8]>],
 ) -> skein_channel::Frame {
-    let frame = crate::start_workspace_message(charter, 8, false, false, None, value, None);
+    let message = super::waiting::initial(true);
+    let frame = crate::start_workspace_message(charter, 8, false, false, message.as_ref(), value, None);
     let mut start = smith_channel::Start::decode(&smith_channel::CEILINGS, &mut Reader::new(&frame.bytes()[8..]))
         .expect("start")
         .into_parts();

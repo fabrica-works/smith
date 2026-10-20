@@ -16,7 +16,7 @@ fn active() -> Backend {
     backend.owner = Some(Token::new(80));
     let request = request(&backend);
     let FromDomain::Complete { prompt, .. } = &request else { panic!("complete") };
-    let session::Opening::New { id } = session::opening(prompt, None) else { panic!("new window") };
+    let session::Opening::New { id } = session::opening(prompt, None, None) else { panic!("new window") };
     backend.running = Some(id);
     backend.request = Some(request);
     backend

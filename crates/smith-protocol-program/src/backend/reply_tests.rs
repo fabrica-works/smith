@@ -24,7 +24,7 @@ pub(super) fn result(id: &[u8]) -> llm::Block {
 }
 
 #[test]
-fn user_text_joins_the_last_held_call_answer() {
+fn wait_s_messages_join_its_answer() {
     let mut backend = backend();
     assert!(backend.ledger.push(call(b"first")).is_ok());
     assert!(backend.ledger.push(call(b"last")).is_ok());

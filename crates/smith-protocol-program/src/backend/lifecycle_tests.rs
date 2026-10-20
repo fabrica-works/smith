@@ -240,7 +240,8 @@ fn an_accepted_init_uses_the_completion_head_deadline() {
     backend.deadline = Some(env(30).now);
     backend.owner = Some(Token::new(80));
     backend.request = Some(request(&backend));
-    backend.pipes[1] = Some(Token::new(32));
+    backend.child = Some(backend.token(4));
+    backend.pipes = [Some(Token::new(31)), Some(Token::new(32)), Some(Token::new(33))];
     let mut up = Queue::with_capacity(32);
     let mut below = Queue::with_capacity(64);
     backend.from_io(&env(1),BelowEvent::Io(io::Event::Stream { owner: Token::new(32),up: skein_lib::stream::Up::Bytes(br#"{"type":"system","subtype":"init","mcp_servers":[{"name":"smith","status":"connected"}],"tools":["mcp__smith__permission_prompt"]}
@@ -250,7 +251,10 @@ fn an_accepted_init_uses_the_completion_head_deadline() {
     backend.fire(&env(2), &mut up, &mut below);
     let Some(ToDomain::Failed { failure, .. }) = up.pop() else { panic!("completion head deadline") };
     assert_eq!(failure, llm::Failure::TimedOut { phase: llm::Phase::Head });
-    assert_eq!(backend.phase, Phase::Ending);
+    assert_eq!(backend.phase, Phase::Running);
+    assert!(backend.switching, "stops the expired invocation while retaining retry storage");
+    assert!(backend.stop == stop::Stop::Closing);
+    assert!(backend.owner.is_none());
 }
 #[test]
 fn private_diagnostics_redact_known_private_values() {

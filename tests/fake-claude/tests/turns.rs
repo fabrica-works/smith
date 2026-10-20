@@ -468,3 +468,23 @@ fn a_tool_free_invocation_answers_with_the_summary() {
     assert!(messages.iter().any(|value| value["message"]["content"][0]["text"] == "the summary"));
     assert_eq!(run.records[0].exit, Some(Exit::Code(0)));
 }
+
+#[test]
+fn a_recorded_session_id_cannot_be_reused() {
+    let mut resume = print::invocation(1);
+    let mut arguments = print::arguments();
+    *arguments.iter_mut().find(|value| value.as_str() == "--session-id").expect("new flag") = "--resume".into();
+    resume = resume.arguments(&arguments.iter().map(String::as_str).collect::<Vec<_>>());
+    let run = print::sequence(Story::default(), vec![print::invocation(1), print::invocation(1), resume]);
+    assert_eq!(run.records[0].exit, Some(Exit::Code(0)));
+    assert_eq!(run.records[1].exit, Some(Exit::Code(1)));
+    assert!(run.records[1].stdout.is_empty(), "refused before init");
+    assert_eq!(run.records[1].stderr, format!("Error: Session ID {SESSION} is already in use.\n").as_bytes());
+    assert_eq!(run.records[2].exit, Some(Exit::Code(0)));
+}
+
+#[test]
+fn an_unread_session_id_is_still_new() {
+    let run = print::sequence(Story::default(), vec![print::without_input(), print::invocation(1)]);
+    assert!(run.records.iter().all(|record| record.exit == Some(Exit::Code(0))));
+}

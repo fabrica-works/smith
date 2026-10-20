@@ -85,16 +85,7 @@ fn program_chat_interrupts_a_silent_recheck() {
 #[test]
 fn program_chat_runs_both_lines_after_input_ends() {
     let scratch = setup(&json!("Truthful"));
-    let ran = support::run_product_scripted(
-        &scratch,
-        &["--plain"],
-        vec![
-            Action::Send(b"Ask first\n".as_slice().into()),
-            Action::Wait(b"Program answer".as_slice().into()),
-            Action::Send(b"Ask second\n".as_slice().into()),
-            Action::Eof,
-        ],
-    );
+    let ran = support::run_product_scripted(&scratch, &["--plain"], two_lines());
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout).matches("Program answer").count(),
@@ -105,20 +96,13 @@ fn program_chat_runs_both_lines_after_input_ends() {
     );
     let calls = calls(&scratch);
     let print: Vec<_> = calls.iter().filter(|arguments| arguments[0] == "-p").collect();
-    assert_eq!(print.len(), 3, "{calls:?}");
-    let summary = print
-        .iter()
-        .find(|arguments| {
-            arguments.as_array().expect("argv").windows(2).any(|pair| pair == [json!("--tools"), json!("")])
-        })
-        .expect("tool-free summary process");
-    assert!(summary.as_array().expect("argv").windows(2).any(|pair| pair == [json!("--max-turns"), json!("1")]));
-    for forbidden in ["--mcp-config", "--permission-prompt-tool", "--json-schema", "--resume"] {
-        assert!(!summary.as_array().expect("argv").contains(&json!(forbidden)));
-    }
-    assert_eq!(print[1], *summary, "compaction lies between the ordinary runs");
-    for ordinary in [print[0], print[2]] {
+    assert_eq!(print.len(), 2, "{calls:?}");
+    let first = print[0].as_array().expect("argv");
+    let next = print[1].as_array().expect("argv");
+    let id = &first.windows(2).find(|pair| pair[0] == json!("--session-id")).expect("new session")[1];
+    assert!(next.windows(2).any(|pair| pair[0] == json!("--resume") && &pair[1] == id));
+    for ordinary in print {
         assert!(ordinary.as_array().expect("argv").contains(&json!("--mcp-config")));
     }
-    counts(&scratch, 4, 3);
+    counts(&scratch, 4, 2);
 }

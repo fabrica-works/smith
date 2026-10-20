@@ -25,6 +25,7 @@ mod session;
 pub use memory::backend_worst_case;
 mod permission;
 mod policy;
+mod recovery;
 mod redaction;
 mod replies;
 mod start;
@@ -45,6 +46,8 @@ mod lifecycle_tests;
 mod measure_tests;
 #[cfg(test)]
 mod reply_tests;
+#[cfg(test)]
+mod resume_tests;
 #[cfg(test)]
 mod review_tests;
 #[cfg(test)]
@@ -161,8 +164,10 @@ pub struct Backend {
     stop: stop::Stop,
     winding: stop::WindDown,
     switching: bool,
+    resuming: bool,
     compactions: u32,
     running: Option<[u8; 16]>,
+    recorded: Option<[u8; 16]>,
     permitted: u64,
     response_phase: llm::Phase,
     run_time: Duration,
@@ -180,6 +185,7 @@ pub struct Backend {
     turns: turns::Turns,
     stderr: List<u8>,
     tail: u32,
+    stderr_wrapped: bool,
     io: Queue<io::Request>,
 }
 
@@ -231,8 +237,10 @@ impl Backend {
             stop: stop::Stop::None,
             winding: stop::WindDown::Ordinary,
             switching: false,
+            resuming: false,
             compactions: 0,
             running: None,
+            recorded: None,
             permitted: 1,
             response_phase: llm::Phase::Head,
             run_time: Duration::ZERO,
@@ -250,6 +258,7 @@ impl Backend {
             turns,
             stderr: List::with_capacity(failure_bytes),
             tail: 0,
+            stderr_wrapped: false,
             io: Queue::with_capacity(32),
         }
     }
@@ -617,6 +626,7 @@ impl Backend {
         below: &mut Queue<Below>,
     ) {
         let detail = self.private_diagnostic(detail);
+        let restart = self.owner.is_some() && recovery::restartable(failure);
         if let Some(owner) = self.owner.take() {
             self.terminal_measure(env.now, owner);
             up.push(ToDomain::Failed {
@@ -629,7 +639,16 @@ impl Backend {
         } else if self.pending_failure.is_none() {
             self.pending_failure = Some((failure, detail));
         }
-        self.close(env, up, below);
+        if restart {
+            let active = self.active_turn();
+            self.switching = true;
+            self.phase = Phase::Running;
+            self.outgoing = None;
+            self.stop(env.now, active, false);
+            self.request = None;
+        } else {
+            self.close(env, up, below);
+        }
     }
 }
 

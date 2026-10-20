@@ -112,6 +112,8 @@ impl Flags {
 
 #[derive(Debug)]
 enum Phase {
+    Session,
+    Saving,
     Configuration,
     Settings,
     Connecting,
@@ -138,6 +140,7 @@ pub(crate) struct Print {
     texts: u64,
     last_text: String,
     interrupted: bool,
+    recorded: bool,
     server_config: Value,
     pending: Option<ToolCall>,
     next_tool: u64,
@@ -158,39 +161,60 @@ impl Print {
                 Effect::End(1),
             ]);
         }
-        let compact = !flags.values.contains_key("--mcp-config");
-        let effects = if compact {
-            let mut init = stream::init(&story.init, &[], "", &flags.values["--model"]);
-            init["mcp_servers"] = json!([]);
-            vec![Effect::Output(stream::line(init, &flags.session)), Effect::ReadCode]
-        } else {
-            let path = std::path::Path::new(&flags.values["--mcp-config"]);
-            let name = path.file_name().and_then(|name| name.to_str()).ok_or_else(|| error("invalid MCP path", 1))?;
-            let root = config.mcp.ok_or_else(|| error("cannot read MCP configuration", 1))?;
-            vec![load(root, name)]
+        let mut state = Self {
+            flags,
+            story,
+            config,
+            phase: Phase::Session,
+            server: String::new(),
+            input: Vec::new(),
+            next_turn: 0,
+            turn: Turn::default(),
+            step: 0,
+            texts: 0,
+            last_text: String::new(),
+            interrupted: false,
+            recorded: false,
+            server_config: Value::Null,
+            pending: None,
+            next_tool: 0,
+            expected_reply: None,
+            together: std::collections::VecDeque::new(),
         };
-        Ok((
-            Self {
-                flags,
-                story,
-                config,
-                phase: if compact { Phase::Idle } else { Phase::Configuration },
-                server: String::new(),
-                input: Vec::new(),
-                next_turn: 0,
-                turn: Turn::default(),
-                step: 0,
-                texts: 0,
-                last_text: String::new(),
-                interrupted: false,
-                server_config: Value::Null,
-                pending: None,
-                next_tool: 0,
-                expected_reply: None,
-                together: std::collections::VecDeque::new(),
-            },
-            effects,
-        ))
+        let effects = match config.root {
+            Some(root) => vec![load(root, &state.session_file())],
+            None => state.begin(),
+        };
+        Ok((state, effects))
+    }
+
+    fn session_file(&self) -> String {
+        format!("fake-claude.session.{}", self.flags.session)
+    }
+
+    fn begin(&mut self) -> Vec<Effect> {
+        if !self.flags.values.contains_key("--mcp-config") {
+            self.phase = Phase::Idle;
+            let mut init = stream::init(&self.story.init, &[], "", &self.flags.values["--model"]);
+            init["mcp_servers"] = json!([]);
+            vec![self.emit(init), Effect::ReadCode]
+        } else {
+            let path = std::path::Path::new(&self.flags.values["--mcp-config"]);
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                return error("invalid MCP path", 1);
+            };
+            let Some(root) = self.config.mcp else { return error("cannot read MCP configuration", 1) };
+            self.phase = Phase::Configuration;
+            vec![load(root, name)]
+        }
+    }
+
+    fn login(&mut self) -> Vec<Effect> {
+        self.phase = Phase::Login;
+        match self.config.root {
+            Some(root) => vec![load(root, LOGIN_FILE)],
+            None => self.finish(stream::failure(Some(401), None, vec!["not signed in".into()])),
+        }
     }
 
     fn emit(&self, value: Value) -> Effect {
@@ -199,6 +223,29 @@ impl Print {
 
     pub fn file(&mut self, event: file::Event) -> Vec<Effect> {
         match self.phase {
+            Phase::Session => {
+                match event {
+                    file::Event::Loaded { .. } if self.flags.values.contains_key("--session-id") => {
+                        return vec![
+                            Effect::Error(
+                                format!("Error: Session ID {} is already in use.\n", self.flags.session).into_bytes(),
+                            ),
+                            Effect::End(1),
+                        ];
+                    }
+                    file::Event::Loaded { .. } => self.recorded = true,
+                    file::Event::Failed { error: skein_io::kernel::Error::NotFound, .. } => {}
+                    _ => return error("cannot read session marker", 1),
+                }
+                self.begin()
+            }
+            Phase::Saving => match event {
+                file::Event::Stored { .. } => {
+                    self.recorded = true;
+                    if self.interrupted { self.interrupt_result() } else { self.login() }
+                }
+                _ => error("cannot record session", 1),
+            },
             Phase::Configuration => {
                 let bytes = match event {
                     file::Event::Loaded { bytes, .. } => bytes,
@@ -253,7 +300,13 @@ impl Print {
         match bytes {
             None if matches!(
                 self.phase,
-                Phase::Login | Phase::Removing | Phase::Hanging | Phase::Deaf | Phase::Calling | Phase::Connecting
+                Phase::Saving
+                    | Phase::Login
+                    | Phase::Removing
+                    | Phase::Hanging
+                    | Phase::Deaf
+                    | Phase::Calling
+                    | Phase::Connecting
             ) =>
             {
                 Vec::new()
@@ -286,11 +339,23 @@ impl Print {
                 self.texts = 0;
                 self.last_text.clear();
                 self.interrupted = false;
-                self.phase = Phase::Login;
-                match self.config.root {
-                    Some(root) => vec![Effect::Received(received), load(root, LOGIN_FILE)],
-                    None => self.finish(stream::failure(Some(401), None, vec!["not signed in".into()])),
+                let mut effects = vec![Effect::Received(received)];
+                if !self.recorded
+                    && let Some(root) = self.config.root
+                {
+                    self.phase = Phase::Saving;
+                    effects.push(Effect::File(file::Request::Store {
+                        owner: FILE_OWNER,
+                        root,
+                        path: self.session_file().as_bytes().into(),
+                        bytes: Box::new([1]),
+                        expected: file::Expect::Any,
+                        no_follow: true,
+                    }));
+                } else {
+                    effects.extend(self.login());
                 }
+                effects
             }
         }
     }
@@ -584,13 +649,17 @@ impl Print {
                 effects.extend(self.interrupt_result());
                 effects
             }
-            Phase::Login | Phase::Removing => {
+            Phase::Saving | Phase::Login | Phase::Removing => {
                 self.interrupted = true;
                 Vec::new()
             }
-            Phase::Configuration | Phase::Settings | Phase::Connecting | Phase::Idle | Phase::Deaf | Phase::Done => {
-                Vec::new()
-            }
+            Phase::Session
+            | Phase::Configuration
+            | Phase::Settings
+            | Phase::Connecting
+            | Phase::Idle
+            | Phase::Deaf
+            | Phase::Done => Vec::new(),
         }
     }
 }

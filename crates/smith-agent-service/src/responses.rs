@@ -924,7 +924,9 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         llm::Failure::ContextTooLong => (smith_events::FailureClass::ContextTooLong, None),
         llm::Failure::Refused => (smith_events::FailureClass::Refused, None),
         llm::Failure::Unsupported => (smith_events::FailureClass::Unsupported, None),
-        llm::Failure::Invalid | llm::Failure::Program { .. } => (smith_events::FailureClass::Invalid, None),
+        llm::Failure::Invalid | llm::Failure::Program { .. } | llm::Failure::SessionGone => {
+            (smith_events::FailureClass::Invalid, None)
+        }
         llm::Failure::SignedOut | llm::Failure::Unauthorized => (smith_events::FailureClass::Unauthorized, None),
         llm::Failure::RateLimited { retry_after } => {
             (smith_events::FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
@@ -966,6 +968,7 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::ContextTooLong
         | llm::Failure::Refused
         | llm::Failure::Program { .. }
+        | llm::Failure::SessionGone
         | llm::Failure::SignedOut
         | llm::Failure::Unsupported
         | llm::Failure::Invalid
@@ -986,6 +989,7 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::ContextTooLong
         | llm::Failure::Refused
         | llm::Failure::Program { .. }
+        | llm::Failure::SessionGone
         | llm::Failure::SignedOut
         | llm::Failure::Unsupported
         | llm::Failure::Invalid

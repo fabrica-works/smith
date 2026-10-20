@@ -1,4 +1,4 @@
-//! Opt-in checks of the real program's interrupt contract (programs.md 5.7, 8).
+//! Opt-in checks of the real program's interrupt and resume contracts (programs.md 5.7, 8).
 use std::os::unix::fs::PermissionsExt;
 use std::{
     io::{BufRead, BufReader, Write},
@@ -7,18 +7,39 @@ use std::{
     time::Duration,
 };
 
+struct Probe {
+    home: std::path::PathBuf,
+    session: String,
+}
+
+impl Probe {
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let number = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        assert!(number <= 0xffff_ffff_ffff, "probe sequence fits the session UUID");
+        let process = std::process::id();
+        let home = std::env::temp_dir().join(format!("smith-live-{process}-{number}"));
+        std::fs::create_dir(&home).expect("private test home");
+        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).expect("private test home permissions");
+        Self { home, session: format!("{process:08x}-d94e-4ada-98a0-{number:012x}") }
+    }
+}
+
+impl Drop for Probe {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.home).expect("remove private test home");
+    }
+}
+
 struct Live {
     child: Child,
-    home: std::path::PathBuf,
+    probe: Probe,
     messages: mpsc::Receiver<serde_json::Value>,
+    configuration: std::path::PathBuf,
 }
 
 impl Live {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "live protocol probe bounds blocking stdout; departure from testing-strategy.md 2.9"
-    )]
-    fn start() -> Self {
+    fn start(text: &str) -> Self {
         let configuration = std::env::var_os("CLAUDE_CONFIG_DIR")
             .expect("a Claude Code sign-in directory kept for live tests (smith-14 settles where), never ~/.claude or smith's own directories");
         let personal_home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME for directory exclusion"));
@@ -28,15 +49,27 @@ impl Live {
             .map_or_else(|| personal_home.join(".local/state"), std::path::PathBuf::from);
         let configuration = test_configuration(std::path::Path::new(&configuration), &personal_home, &config_home, &state_home)
             .expect("a Claude Code sign-in directory kept for live tests (smith-14 settles where), never ~/.claude or smith's own directories");
-        let home = std::env::temp_dir().join(format!("smith-live-interrupt-{}", std::process::id()));
-        std::fs::create_dir(&home).expect("private test home");
-        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).expect("private test home permissions");
+        let probe = Probe::new();
+        let (child, messages) = Self::spawn(&probe.home, &configuration, &["--session-id", &probe.session], text);
+        Self { child, probe, messages, configuration }
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "live protocol probe bounds blocking stdout; departure from testing-strategy.md 2.9"
+    )]
+    fn spawn(
+        home: &std::path::Path,
+        configuration: &std::path::Path,
+        arguments: &[&str],
+        text: &str,
+    ) -> (Child, mpsc::Receiver<serde_json::Value>) {
         let mut child = Command::new("claude")
             .env_clear()
             .env("PATH", std::env::var_os("PATH").expect("PATH for claude"))
-            .env("HOME", &home)
+            .env("HOME", home)
             .env("CLAUDE_CONFIG_DIR", configuration)
-            .current_dir(&home)
+            .current_dir(home)
             .args([
                 "-p",
                 "--input-format",
@@ -55,6 +88,7 @@ impl Live {
                 "--max-turns",
                 "1",
             ])
+            .args(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -64,7 +98,7 @@ impl Live {
             child.stdin.as_mut().expect("stdin"),
             "{}",
             serde_json::json!({"type":"user","message":{
-                "role":"user","content":"Count from one to ten thousand, writing every number."
+                "role":"user","content":text
             }})
         )
         .expect("user message");
@@ -80,7 +114,7 @@ impl Live {
                 }
             }
         });
-        Self { child, home, messages }
+        (child, messages)
     }
 
     fn message(&self) -> serde_json::Value {
@@ -92,14 +126,13 @@ impl Drop for Live {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        std::fs::remove_dir_all(&self.home).expect("remove private test home");
     }
 }
 
 #[test]
 #[ignore = "a Claude Code sign-in directory kept for live tests (smith-14 settles where), never ~/.claude or smith's own directories"]
 fn a_live_interrupt_ends_the_turn() {
-    let mut live = Live::start();
+    let mut live = Live::start("Count from one to ten thousand, writing every number.");
     for _ in 0..1000 {
         let message = live.message();
         assert_ne!(message["type"], "result", "the turn must still run when interrupted");
@@ -172,4 +205,65 @@ fn live_configuration_refuses_personal_or_smith_paths() {
     );
     assert!(test_configuration(std::path::Path::new("relative"), &home, &overrides[0], &overrides[1]).is_err());
     std::fs::remove_dir_all(root).expect("private live-directory fixture");
+}
+
+#[test]
+#[ignore = "a Claude Code sign-in directory kept for live tests (smith-14 settles where), never ~/.claude or smith's own directories"]
+fn a_live_resume_continues() {
+    let mut live = Live::start("Remember the word persimmon. Reply with OK.");
+    let id = live.probe.session.clone();
+    let mut finished = false;
+    for _ in 0..1000 {
+        let message = live.message();
+        if message["type"] == "result" {
+            assert_eq!(message["is_error"], false);
+            finished = true;
+            break;
+        }
+    }
+    assert!(finished, "first turn result");
+    drop(live.child.stdin.take());
+    assert!(live.child.wait().expect("first exit").success());
+    (live.child, live.messages) = Live::spawn(
+        &live.probe.home,
+        &live.configuration,
+        &["--resume", &id],
+        "Which word did I ask you to remember? Reply with that word only.",
+    );
+    let mut text = String::new();
+    for _ in 0..1000 {
+        let message = live.message();
+        if message["type"] == "assistant" {
+            for block in message["message"]["content"].as_array().expect("assistant blocks") {
+                if let Some(part) = block["text"].as_str() {
+                    text.push_str(part);
+                }
+            }
+        }
+        if message["type"] == "result" {
+            assert_eq!(message["is_error"], false);
+            assert!(text.to_lowercase().contains("persimmon"), "{text}");
+            drop(live.child.stdin.take());
+            return;
+        }
+    }
+    panic!("resumed turn did not finish");
+}
+
+#[test]
+fn live_probes_have_distinct_private_state() {
+    let first = Probe::new();
+    let second = Probe::new();
+    assert_ne!(first.home, second.home);
+    assert_ne!(first.session, second.session);
+    assert_eq!(first.session.len(), 36);
+    assert_eq!(second.session.len(), 36);
+    for home in [&first.home, &second.home] {
+        assert!(home.is_dir());
+        assert_eq!(std::fs::metadata(home).expect("private home").permissions().mode() & 0o777, 0o700);
+    }
+    let removed = first.home.clone();
+    drop(first);
+    assert!(!removed.exists());
+    assert!(second.home.is_dir(), "one probe does not remove another's home");
 }

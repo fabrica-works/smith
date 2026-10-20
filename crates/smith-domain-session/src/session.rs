@@ -169,6 +169,7 @@ pub(crate) struct Session {
 #[derive(Debug)]
 struct Conversation {
     backend: crate::record::Backend,
+    gone_window: Option<u32>,
     account: Option<u32>,
     protocol_allowance: u64,
     /// The opener's token, echoed on every record back to it.
@@ -849,7 +850,12 @@ pub(crate) fn failed(
     let state = mem::replace(&mut session.state, State::Closed);
     session.state = match state {
         State::Calling { attempt } => {
-            if compaction::context_failure(failure) {
+            if failure == Failure::SessionGone {
+                match compaction::session_gone(&mut session.conversation) {
+                    Some(end) => finish(end),
+                    None => call(&mut session.conversation, id, 0, env, out),
+                }
+            } else if compaction::context_failure(failure) {
                 match compaction::start(
                     &mut session.conversation,
                     &env.limits,
@@ -1872,6 +1878,7 @@ fn call_failed(
         | Failure::ContextTooLong
         | Failure::Refused
         | Failure::Program { .. }
+        | Failure::SessionGone
         | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
@@ -1888,6 +1895,7 @@ fn call_failed(
         | Failure::ContextTooLong
         | Failure::Refused
         | Failure::Program { .. }
+        | Failure::SessionGone
         | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
@@ -2166,6 +2174,7 @@ fn admit(
     transcript.push(Message { role: Role::User, content }).ok()?;
     let conversation = Conversation {
         backend: spec.backend,
+        gone_window: None,
         account: spec.account,
         protocol_allowance: spec.protocol_allowance,
         opener,
@@ -2448,6 +2457,7 @@ fn retry_decision(failure: Failure, attempt: u32, now: Time, expiry: Time, limit
         | Failure::ContextTooLong
         | Failure::Refused
         | Failure::Program { .. }
+        | Failure::SessionGone
         | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
@@ -2472,6 +2482,7 @@ fn backoff(failure: Failure, attempt: u32, limits: &Limits, rng: &mut Rng) -> Op
         Failure::ContextTooLong
         | Failure::Refused
         | Failure::Program { .. }
+        | Failure::SessionGone
         | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid

@@ -297,6 +297,7 @@ pub(super) fn context_failure(failure: Failure) -> bool {
         | Failure::Refused
         | Failure::SignedOut
         | Failure::Program { .. }
+        | Failure::SessionGone
         | Failure::Unsupported
         | Failure::Invalid
         | Failure::Unauthorized
@@ -510,13 +511,11 @@ pub(super) fn carry_over(
     conversation: &mut Conversation,
     transcript: &mut crate::record::Transcript,
 ) -> Result<u64, crate::record::Refusal> {
-    use crate::record::{Backend, Kind, Refusal};
+    use crate::record::{Kind, Refusal};
     let first = transcript.turns.first().expect("validated nonempty history");
     let same_opening = match &first.kind {
         Kind::First(opener) | Kind::Window(opener) => {
-            opener.account == conversation.account
-                && opener.backend == Backend::Direct
-                && conversation.backend == Backend::Direct
+            opener.account == conversation.account && opener.backend == conversation.backend
         }
         Kind::Ordinary => unreachable!("validated opening kind"),
     };
@@ -531,24 +530,27 @@ pub(super) fn carry_over(
     for turn in &mut transcript.turns {
         for message in &mut turn.messages {
             messages = messages.checked_add(1).ok_or(Refusal::TooLarge)?;
-            let before = content_cost(&message.content).ok_or(Refusal::TooLarge)?;
-            let content = mem::replace(&mut message.content, Box::new([]));
-            let mut kept = List::with_capacity(super::count(content.len()));
-            for block in content {
-                if let Some(block) = portable(block) {
-                    kept.push(block).expect("one retained slot per old block");
-                }
-            }
-            message.content = kept.into_boxed();
-            let after = content_cost(&message.content).ok_or(Refusal::TooLarge)?;
-            released =
-                released.checked_add(before.checked_sub(after).ok_or(Refusal::TooLarge)?).ok_or(Refusal::TooLarge)?;
+            released = released.checked_add(portable_message(message)?).ok_or(Refusal::TooLarge)?;
         }
     }
     conversation.window.stage = Stage::Used;
     conversation.window.following = messages;
     conversation.compaction = Compaction::CarryOver;
     Ok(released)
+}
+
+fn portable_message(message: &mut Message) -> Result<u64, crate::record::Refusal> {
+    use crate::record::Refusal;
+    let before = content_cost(&message.content).ok_or(Refusal::TooLarge)?;
+    let content = mem::replace(&mut message.content, Box::new([]));
+    let mut kept = List::with_capacity(super::count(content.len()));
+    for block in content {
+        if let Some(block) = portable(block) {
+            kept.push(block).expect("one retained slot per old block");
+        }
+    }
+    message.content = kept.into_boxed();
+    before.checked_sub(content_cost(&message.content).ok_or(Refusal::TooLarge)?).ok_or(Refusal::TooLarge)
 }
 
 fn portable(block: Block) -> Option<Block> {
@@ -570,4 +572,32 @@ fn portable(block: Block) -> Option<Block> {
             Some(Block::ToolResult { id, result })
         }
     }
+}
+
+/// A missing persisted session carries even a fresh restored window over once.
+pub(super) fn session_gone(conversation: &mut Conversation) -> Option<End> {
+    if conversation.gone_window == Some(conversation.window.number) || conversation.compaction.asking() {
+        return Some(End::Failed {
+            failure: Failure::SessionGone,
+            evidence: Evidence::Unsent,
+            detail: Box::default(),
+            attempts: 1,
+        });
+    }
+    conversation.gone_window = Some(conversation.window.number);
+    let mut messages = conversation.transcript.len().saturating_sub(1);
+    let mut released = 0_u64;
+    for index in 0..conversation.transcript.len() {
+        let message = conversation.transcript.get_mut(index).expect("history message");
+        if message.role == Role::Assistant {
+            messages = index.checked_add(1).expect("bounded history");
+        }
+        released =
+            released.checked_add(portable_message(message).expect("admitted portable content")).expect("history");
+    }
+    conversation.bytes = conversation.bytes.checked_sub(released).expect("portable history releases its bytes");
+    conversation.window.stage = Stage::Used;
+    conversation.window.following = messages;
+    conversation.compaction = Compaction::CarryOver;
+    None
 }

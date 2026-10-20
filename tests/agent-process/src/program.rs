@@ -29,6 +29,8 @@ pub enum Case {
     Turns,
     /// Hold wait until the host brings a message.
     Waiting,
+    /// Leave wait held until the idle policy parks the run.
+    ParkWaiting,
     /// Run workspace built-ins with a writable cwd and a read-only library.
     Tools,
     /// Record a program conversation with full content capture.
@@ -137,7 +139,11 @@ fn configuration(case: Case) -> smith_agent_service::Config {
     let variables = [
         smith_protocol_machine::Variable {
             name: b"WAIT_PROOF".as_slice().into(),
-            value: if case == Case::Waiting { b"1".as_slice().into() } else { b"0".as_slice().into() },
+            value: if matches!(case, Case::Waiting | Case::ParkWaiting) {
+                b"1".as_slice().into()
+            } else {
+                b"0".as_slice().into()
+            },
         },
         smith_protocol_machine::Variable { name: b"HOME".as_slice().into(), value: b"/home".as_slice().into() },
         smith_protocol_machine::Variable {
@@ -446,7 +452,7 @@ fn run_inner(
     history: Option<&[Box<[u8]>]>,
 ) -> Run {
     let mut story = story.clone();
-    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events | Case::Transcript)
+    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::ParkWaiting | Case::Events | Case::Transcript)
         && story.turns.is_empty()
     {
         story.turns.push(smith_fake_claude::Turn {
@@ -459,10 +465,16 @@ fn run_inner(
     let machine = Machine { files, base };
     let mut world =
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
-            wait_for_exit: matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events | Case::Transcript),
+            wait_for_exit: matches!(
+                case,
+                Case::Turns | Case::Tools | Case::Waiting | Case::ParkWaiting | Case::Events | Case::Transcript
+            ),
             ended: false,
             waiting: waiting::Release::new(case == Case::Waiting),
-            cancel: if matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events | Case::Transcript) {
+            cancel: if matches!(
+                case,
+                Case::Turns | Case::Tools | Case::Waiting | Case::ParkWaiting | Case::Events | Case::Transcript
+            ) {
                 None
             } else {
                 Some(Time::ZERO.saturating_add(Duration::from_millis(50)))
@@ -527,7 +539,7 @@ fn run_inner(
         operations: smith_agent_shell::relay::operations(),
     });
     world.spawn_root(skein_sim::Handle::new(root.raw()), |root| {
-        let initial = waiting::initial(case == Case::Waiting);
+        let initial = waiting::initial(matches!(case, Case::Waiting | Case::ParkWaiting));
         let mut parent = Parent::new(
             root,
             charter,

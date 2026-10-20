@@ -225,7 +225,7 @@ impl Backend {
             );
             return;
         };
-        if !self.compaction() {
+        if !self.compaction() && !self.resuming {
             self.first_prompt_measure(env.now);
         }
         self.io.push(io::Request::Spawn { owner: self.token(4), spawn: launch });
@@ -272,7 +272,7 @@ impl Backend {
         let configuration = configuration_directory(&self.settings.program, &self.grant.as_ref()?.source).ok()?;
         let instructions = self.run_path(b"instructions.md");
         let mcp_file = self.run_path(b"mcp.json");
-        let arguments = if super::compact::is_compaction(prompt) {
+        let mut arguments = if super::compact::is_compaction(prompt) {
             super::compact::arguments(prompt, &instructions, &self.names.session)?
         } else {
             arguments(
@@ -286,7 +286,14 @@ impl Backend {
                 &super::policy::tools_flag(prompt.tools),
             )?
         };
-        if super::compact::is_compaction(prompt) {
+        if self.resuming {
+            for argument in &mut arguments {
+                if argument.as_ref() == b"--session-id" {
+                    *argument = b"--resume".as_slice().into();
+                }
+            }
+            self.resume_input()?;
+        } else if super::compact::is_compaction(prompt) {
             self.compaction_input()?;
         } else {
             self.outgoing = super::stream::user_message(prompt, self.settings.input_bytes);
@@ -399,7 +406,8 @@ impl Backend {
                     && !self.switching
                 {
                     let detail = self.error_tail();
-                    self.fail(env, llm::Failure::Program { exit: self.exit }, &detail, up, below);
+                    let failure = self.exit_failure();
+                    self.fail(env, failure, &detail, up, below);
                 }
             }
             io::Event::Failed { owner, .. } => {
@@ -459,6 +467,7 @@ impl Backend {
                                 if finished {
                                     self.outgoing = None;
                                     self.written = 0;
+                                    self.remember_session();
                                 } else {
                                     self.send_input();
                                 }
@@ -523,6 +532,7 @@ impl Backend {
             if self.stderr.room() > 0 {
                 self.stderr.push(*byte).expect("tail room");
             } else if self.stderr.capacity() > 0 {
+                self.stderr_wrapped = true;
                 *self.stderr.get_mut(self.tail).expect("tail cell") = *byte;
                 self.tail = self
                     .tail

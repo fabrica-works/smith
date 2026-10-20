@@ -165,6 +165,7 @@ fn failed(
         | crate::llm::Failure::ContextTooLong
         | crate::llm::Failure::Invalid
         | crate::llm::Failure::Program { .. }
+        | crate::llm::Failure::SessionGone
         | crate::llm::Failure::Unsupported
         | crate::llm::Failure::Limit { .. }
         | crate::llm::Failure::ApplicationLimit
@@ -1002,8 +1003,13 @@ fn resumed_model(
             match &first.kind {
                 session::record::Kind::First(opener) | session::record::Kind::Window(opener) => {
                     if opener.account != main.account
-                        || opener.backend != session::record::Backend::Direct
-                        || config.program(main.endpoint).is_some()
+                        || match &opener.backend {
+                            session::record::Backend::Direct => config.program(main.endpoint).is_some(),
+                            session::record::Backend::Program { name } => match config.program(main.endpoint) {
+                                Some(program) => program.name != *name,
+                                None => true,
+                            },
+                        }
                     {
                         return Ok(None);
                     }

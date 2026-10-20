@@ -549,6 +549,8 @@ pub enum Failure {
     SignedOut,
     /// The backend program failed, with its exit code when known.
     Program { exit: Option<u32> },
+    /// The program cannot resume this window; the session carries it over once.
+    SessionGone,
     /// The provider refused the account; this call is never retried.
     Refused,
     /// The provider will not take a request field; this call is never retried.
