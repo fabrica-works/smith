@@ -271,13 +271,12 @@ fn run_fixture(
     };
     let mut world = real::World::new(window::Judge::new(
         Refusal {
-            now,
             foreign: foreign.then(|| scratch.path().join("runtime")),
-            deadline: now.saturating_add(watching.budget(sign_in)),
             trace: arguments
                 .windows(2)
                 .find(|pair| pair.first().is_some_and(|flag| *flag == "--trace"))
                 .map(|pair| (scratch.path().join(pair.get(1).expect("trace path")), false)),
+            ..Refusal::new(now, now.saturating_add(watching.budget(sign_in)))
         },
         watching,
         master,

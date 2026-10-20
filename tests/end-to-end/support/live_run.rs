@@ -24,7 +24,8 @@ pub struct Expectation {
 }
 
 struct Judge {
-    now: Time,
+    next_act: Option<Time>,
+    shutdown: bool,
     deadline: Time,
     checkout: Checkout,
     expectation: Expectation,
@@ -37,6 +38,8 @@ impl Referee<Process> for Judge {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
         let exit =
             procs.iter().find_map(|proc| if let Process::Binary(binary) = proc { binary.exit_status() } else { None });
+        self.next_act = None;
+        self.shutdown |= exit.is_some();
         for proc in procs {
             match proc {
                 Process::Script(Proc::Terminal(person)) => {
@@ -50,7 +53,11 @@ impl Referee<Process> for Judge {
         }
     }
     fn observe(&mut self, now: Time, procs: &[Process]) {
-        self.now = now;
+        if !self.shutdown
+            && procs.iter().any(|proc| matches!(proc, Process::Binary(binary) if binary.exit_status().is_some()))
+        {
+            self.next_act = Some(now);
+        }
         for proc in procs {
             if let Process::Binary(binary) = proc
                 && let Some(exit) = binary.exit_status()
@@ -118,7 +125,7 @@ impl Referee<Process> for Judge {
         self.reviewed = true;
     }
     fn next_deadline(&self) -> Option<Time> {
-        Some(self.now.saturating_add(Duration::from_millis(10)).min(self.deadline))
+        self.next_act.into_iter().chain([self.deadline]).min()
     }
     fn overdue(&self, now: Time) -> Option<String> {
         (now >= self.deadline).then(|| "live binary story did not settle before its deadline; output withheld".into())
@@ -178,7 +185,8 @@ fn run_with_peer(
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("live person on terminal") };
     let mut world = real::World::new(Judge {
-        now,
+        next_act: None,
+        shutdown: false,
         deadline: now.saturating_add(budget),
         checkout: scratch.checkout(),
         expectation,

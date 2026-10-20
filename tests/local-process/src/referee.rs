@@ -408,6 +408,45 @@ pub fn seen(procs: &[crate::process::Proc], saved_before_query: bool, pushed: bo
     }
 }
 
+/// Incremental sign-in URL observation from the scripted terminal's append bytes.
+#[derive(Default)]
+pub struct SignIn {
+    received: usize,
+    search: usize,
+    start: Option<usize>,
+    url: Option<Vec<u8>>,
+}
+
+impl SignIn {
+    /// Inspect only appended bytes, retaining a split prefix or unfinished URL.
+    pub fn observe(&mut self, shown: &[u8]) {
+        if self.url.is_some() || shown.len() == self.received {
+            return;
+        }
+        if self.start.is_none() {
+            let suffix = shown.get(self.search..).expect("terminal observations append");
+            if let Some(at) = suffix.windows(9).position(|bytes| bytes == b"Sign in: ") {
+                self.start = Some(self.search + at + 9);
+            } else {
+                self.search = shown.len().saturating_sub(8);
+            }
+        }
+        if let Some(start) = self.start {
+            let appended = start.max(self.received);
+            if let Some(end) = shown.get(appended..).expect("appended URL bytes").iter().position(|byte| *byte == b'\n')
+            {
+                self.url = Some(shown.get(start..appended + end).expect("complete URL").trim_ascii_end().to_vec());
+            }
+        }
+        self.received = shown.len();
+    }
+
+    /// The first complete URL, kept for the browser's one visit.
+    pub fn url(&self) -> Option<&[u8]> {
+        self.url.as_deref()
+    }
+}
+
 /// The same outside referee driven beside processes in either kernel loop.
 pub struct Run {
     seed: u64,
@@ -419,6 +458,9 @@ pub struct Run {
     controls: Option<skein_world::Controls>,
     interrupted: bool,
     facts: usize,
+    sign_in: SignIn,
+    observations: usize,
+    queries: usize,
     saved_before_query: bool,
     reviewed: bool,
     next_act: Option<Time>,
@@ -460,6 +502,9 @@ impl Run {
             controls: None,
             interrupted: false,
             facts: 0,
+            sign_in: SignIn::default(),
+            observations: 0,
+            queries: 0,
             saved_before_query: false,
             reviewed: false,
             next_act: None,
@@ -493,7 +538,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         use crate::process::Proc;
         self.end.get_or_insert_with(|| now.saturating_add(Duration::from_secs(120)));
         self.next_act = None;
-        let query = procs.iter().any(|p| matches!(p, Proc::Peer(peer) if crate::llm::queries(peer).next().is_some()));
+        let query = self.queries > 0;
         if query && let Some(path) = self.failed_turn.take() {
             std::fs::create_dir(path).expect("turn rename fault after the initial transcript load");
         }
@@ -510,17 +555,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         });
         let line = if wait { self.line_on_wait.take() } else { None };
         let exited = procs.iter().any(|p| matches!(p, Proc::Terminal(t) if t.exit().is_some()));
-        let url = procs.iter().find_map(|p| {
-            if let Proc::Terminal(t) = p {
-                let shown = t.shown();
-                shown.windows(9).position(|part| part == b"Sign in: ").and_then(|at| {
-                    let url = &shown[at + 9..];
-                    url.iter().position(|b| *b == b'\n').map(|end| &url[..end])
-                })
-            } else {
-                None
-            }
-        });
+        let url = self.sign_in.url();
         // Copy into the referee's stack; process storage was allocated at startup.
         let mut bytes = [0; 8192];
         let length = url.map_or(0, |url| {
@@ -583,14 +618,21 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         }
         let peer =
             procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p.as_ref()) } else { None }).expect("provider");
-        assert!(crate::llm::queries(peer).count() <= 64, "bounded provider work");
+        let observations = peer.observations();
+        for observation in observations.get(self.observations..).expect("peer observations append") {
+            if matches!(observation, skein_fake_peers::llm::Observation::Query { .. }) {
+                self.queries += 1;
+            }
+        }
+        self.observations = observations.len();
+        assert!(self.queries <= 64, "bounded provider work");
         if self.interrupt_on_query
             && let Some(delay) = peer.next_policy_deadline()
         {
             self.delay = Some(self.delay.map_or(delay, |known| known.max(delay)));
         }
         let authenticated = procs.iter().any(|p| matches!(p, Proc::Issuer(_)));
-        if authenticated && !self.saved_before_query && crate::llm::queries(peer).next().is_some() {
+        if authenticated && !self.saved_before_query && self.queries > 0 {
             let tokens = crate::credential_fixture::Tokens::new(
                 &self.token_directory,
                 smith_local_shell::local_host::token_limits(),
@@ -606,12 +648,9 @@ impl skein_world::Referee<crate::process::Proc> for Run {
             .iter()
             .find_map(|p| if let Proc::Terminal(p) = p { Some(p.as_ref()) } else { None })
             .expect("terminal");
-        let visit = procs.iter().any(|p| matches!(p,Proc::Browser(browser) if browser.pages()==0))
-            && terminal
-                .shown()
-                .windows(9)
-                .position(|bytes| bytes == b"Sign in: ")
-                .is_some_and(|at| terminal.shown()[at + 9..].contains(&b'\n'));
+        self.sign_in.observe(terminal.shown());
+        let visit = self.sign_in.url().is_some()
+            && procs.iter().any(|p| matches!(p, Proc::Browser(browser) if browser.pages() == 0));
         let wait = procs.iter().any(|proc| match proc {
             Proc::Local(local) => local.wait_seen(),
             Proc::Agent(_, _, wait) => *wait,
@@ -624,7 +663,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
             | Proc::LingeringAgent(_) => false,
         });
         if (self.line_on_wait.is_some() && wait)
-            || (self.interrupt_on_query && !self.interrupted && crate::llm::queries(peer).next().is_some())
+            || (self.interrupt_on_query && !self.interrupted && self.queries > 0)
             || visit
             || (terminal.exit().is_some() && !self.shutdown)
         {
@@ -688,4 +727,19 @@ impl skein_world::Referee<crate::process::Proc> for Run {
     fn last_word(&self) -> skein_world::LastWord {
         self.delay.map_or(skein_world::LastWord::LastExpectation, skein_world::LastWord::After)
     }
+}
+
+#[test]
+fn sign_in_observation_keeps_a_split_prefix() {
+    let bytes = b"unrelated terminal bytes\nSign in: http://127.0.0.1/authorize?code=fixture\r\n";
+    let mut sign_in = SignIn::default();
+    for end in 0..bytes.len() {
+        sign_in.observe(&bytes[..end]);
+        sign_in.observe(&bytes[..end]);
+        assert!(sign_in.url().is_none(), "a partial URL cannot start the browser");
+    }
+    sign_in.observe(bytes);
+    assert_eq!(sign_in.url(), Some(b"http://127.0.0.1/authorize?code=fixture".as_slice()));
+    sign_in.observe(b"unrelated terminal bytes\nSign in: http://127.0.0.1/authorize?code=fixture\r\nafter");
+    assert_eq!(sign_in.url(), Some(b"http://127.0.0.1/authorize?code=fixture".as_slice()));
 }

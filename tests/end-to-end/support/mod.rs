@@ -77,7 +77,10 @@ impl Host for Process {
     }
 }
 struct Judge {
-    now: Time,
+    next_act: Option<Time>,
+    sign_in: referee::SignIn,
+    visiting: bool,
+    shutdown: Option<Exit>,
     deadline: Time,
     saved: bool,
     tokens: std::path::PathBuf,
@@ -89,19 +92,9 @@ struct Judge {
 impl Referee<Process> for Judge {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
         let exit = procs.iter().find_map(|p| if let Process::Binary(p) = p { p.exit_status() } else { None });
-        let url = procs.iter().find_map(|p| {
-            if let Process::Script(Proc::Terminal(p)) = p {
-                let shown = p.shown();
-                shown.windows(9).position(|s| s == b"Sign in: ").and_then(|at| {
-                    let rest = shown.get(at.checked_add(9).expect("sign-in prefix position")..)?;
-                    rest.iter()
-                        .position(|b| *b == b'\n')
-                        .map(|end| rest.get(..end).expect("newline in sign-in suffix").trim_ascii_end().to_vec())
-                })
-            } else {
-                None
-            }
-        });
+        self.next_act = None;
+        let url = self.sign_in.url();
+        self.shutdown = exit.or(self.shutdown);
         for proc in procs {
             match proc {
                 Process::Script(Proc::Terminal(p)) => {
@@ -112,10 +105,11 @@ impl Referee<Process> for Judge {
                 Process::Script(Proc::Peer(p)) if exit.is_some() => p.shutdown(),
                 Process::Script(Proc::Issuer(p)) if exit.is_some() => p.shutdown(),
                 Process::Script(Proc::Browser(p)) => {
-                    if p.pages() == 0
-                        && let Some(url) = &url
+                    if !self.visiting
+                        && let Some(url) = url
                     {
                         p.visit(url);
+                        self.visiting = true;
                     }
                     if exit.is_some() {
                         p.shutdown();
@@ -126,7 +120,17 @@ impl Referee<Process> for Judge {
         }
     }
     fn observe(&mut self, now: Time, procs: &[Process]) {
-        self.now = now;
+        for proc in procs {
+            if let Process::Script(Proc::Terminal(person)) = proc {
+                self.sign_in.observe(person.shown());
+            }
+        }
+        if (!self.visiting && self.sign_in.url().is_some())
+            || (self.shutdown.is_none()
+                && procs.iter().any(|proc| matches!(proc, Process::Binary(binary) if binary.exit_status().is_some())))
+        {
+            self.next_act = Some(now);
+        }
         if now >= self.deadline {
             for proc in procs {
                 match proc {
@@ -181,7 +185,7 @@ impl Referee<Process> for Judge {
         }
     }
     fn next_deadline(&self) -> Option<Time> {
-        Some(self.now.saturating_add(Duration::from_millis(1)).min(self.deadline))
+        self.next_act.into_iter().chain([self.deadline]).min()
     }
     fn overdue(&self, now: Time) -> Option<String> {
         (now >= self.deadline).then(|| "shipped Smith binary story did not settle".into())
@@ -324,7 +328,10 @@ pub fn run_with_provider(
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("person on terminal") };
     let mut world = real::World::new(Judge {
-        now,
+        next_act: None,
+        sign_in: referee::SignIn::default(),
+        visiting: false,
+        shutdown: None,
         deadline: now.saturating_add(Duration::from_secs(5)),
         saved: false,
         tokens: scratch.path().join("credentials/tokens/fake"),
@@ -435,14 +442,37 @@ pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> 
 }
 
 struct Refusal {
-    now: Time,
+    poll: Time,
+    next_act: Option<Time>,
+    terminal_sign_in: referee::SignIn,
+    stderr_sign_in: referee::SignIn,
+    visiting: bool,
+    shutdown: bool,
     foreign: Option<std::path::PathBuf>,
     deadline: Time,
     trace: Option<(std::path::PathBuf, bool)>,
 }
+impl Refusal {
+    fn new(now: Time, deadline: Time) -> Self {
+        Self {
+            poll: now,
+            next_act: None,
+            terminal_sign_in: referee::SignIn::default(),
+            stderr_sign_in: referee::SignIn::default(),
+            visiting: false,
+            shutdown: false,
+            foreign: None,
+            deadline,
+            trace: None,
+        }
+    }
+}
+
 impl Referee<Process> for Refusal {
-    fn act(&mut self, _now: Time, procs: &mut [Process]) {
-        if let Some(runtime) = &self.foreign {
+    fn act(&mut self, now: Time, procs: &mut [Process]) {
+        if now >= self.poll
+            && let Some(runtime) = &self.foreign
+        {
             for entry in std::fs::read_dir(runtime).into_iter().flatten() {
                 let entry = entry.expect("private fixture entry");
                 if entry.file_name().as_encoded_bytes().starts_with(b".smith-exec-") {
@@ -454,21 +484,14 @@ impl Referee<Process> for Refusal {
             }
         }
         let exit = procs.iter().find_map(|p| if let Process::Binary(p) = p { p.exit_status() } else { None });
-        let url = procs.iter().find_map(|process| match process {
-            Process::Binary(binary) => binary.stderr().split_inclusive(|byte| *byte == b'\n').find_map(|line| {
-                line.strip_suffix(b"\n").and_then(|line| line.strip_prefix(b"Sign in: ")).map(Vec::from)
-            }),
-            Process::Script(Proc::Terminal(person)) => person
-                .shown()
-                .split_inclusive(|byte| *byte == b'\n')
-                .find_map(|line| line.trim_ascii_end().strip_prefix(b"Sign in: ").map(Vec::from)),
-            Process::Script(_) | Process::Sample(_) => None,
-        });
+        self.next_act = None;
+        let url = self.terminal_sign_in.url().or_else(|| self.stderr_sign_in.url());
         let listening = procs.iter().any(|process| {
             matches!(process,
             Process::Script(Proc::Issuer(issuer)) if issuer.peer().address().is_some())
         });
         if let Some(exit) = exit {
+            self.shutdown = true;
             for p in procs {
                 match p {
                     Process::Script(Proc::Terminal(p)) => p.finished(exit),
@@ -478,24 +501,48 @@ impl Referee<Process> for Refusal {
                     Process::Binary(_) | Process::Script(_) | Process::Sample(_) => {}
                 }
             }
-        } else if listening {
+        } else if listening && !self.visiting {
             for process in procs {
                 if let Process::Script(Proc::Browser(browser)) = process
                     && browser.pages() == 0
-                    && let Some(url) = &url
+                    && let Some(url) = url
                 {
                     browser.visit(url);
+                    self.visiting = true;
                 }
             }
         }
     }
     fn observe(&mut self, now: Time, procs: &[Process]) {
-        self.now = now;
-        if let Some((path, growing)) = &mut self.trace
+        for process in procs {
+            match process {
+                Process::Binary(binary) => self.stderr_sign_in.observe(binary.stderr()),
+                Process::Script(Proc::Terminal(person)) => self.terminal_sign_in.observe(person.shown()),
+                Process::Script(_) | Process::Sample(_) => {}
+            }
+        }
+        let visit = !self.visiting
+            && (self.terminal_sign_in.url().is_some() || self.stderr_sign_in.url().is_some())
+            && procs.iter().any(
+                |process| matches!(process, Process::Script(Proc::Issuer(issuer)) if issuer.peer().address().is_some()),
+            );
+        if visit
+            || (!self.shutdown
+                && procs.iter().any(|p| matches!(p, Process::Binary(binary) if binary.exit_status().is_some())))
+        {
+            self.next_act = Some(now);
+        }
+
+        if now >= self.poll
+            && let Some((path, growing)) = &mut self.trace
+            && !*growing
             && !procs.iter().any(|p| matches!(p, Process::Binary(binary) if binary.exit_status().is_some()))
         {
             let bytes = std::fs::read(path).unwrap_or_default();
             *growing |= bytes.contains(&b'\n');
+        }
+        if now >= self.poll {
+            self.poll = now.saturating_add(Duration::from_millis(1));
         }
         if now >= self.deadline {
             for process in procs {
@@ -517,7 +564,11 @@ impl Referee<Process> for Refusal {
         }
     }
     fn next_deadline(&self) -> Option<Time> {
-        Some(self.now.saturating_add(Duration::from_millis(1)).min(self.deadline))
+        // Foreign runtime entries and trace appends have no ring completion here.
+        // Binary/terminal observations and exit already wake the loop.
+        let poll =
+            (self.foreign.is_some() || self.trace.as_ref().is_some_and(|(_, growing)| !growing)).then_some(self.poll);
+        self.next_act.into_iter().chain(poll).chain([self.deadline]).min()
     }
     fn overdue(&self, now: Time) -> Option<String> {
         (now >= self.deadline).then(|| "startup refusal did not exit and drain".into())
@@ -550,12 +601,7 @@ fn refusal_program_code(
     let streams = binary.take_streams().expect("startup terminal");
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("startup on terminal") };
-    let mut world = real::World::new(Refusal {
-        now,
-        foreign: None,
-        deadline: now.saturating_add(Duration::from_secs(1)),
-        trace: None,
-    });
+    let mut world = real::World::new(Refusal::new(now, now.saturating_add(Duration::from_secs(1))));
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         Process::Script(Proc::Terminal(Box::new(Terminal::attached(
@@ -639,12 +685,7 @@ pub fn smith_with_environment(
     let Streams::Pipes { input: stdin, output } = streams else { unreachable!("product on pipes") };
     let clock = Clock::new();
     let now = clock.now().now;
-    let mut world = real::World::new(Refusal {
-        now,
-        foreign: None,
-        deadline: now.saturating_add(Duration::from_secs(1)),
-        trace: None,
-    });
+    let mut world = real::World::new(Refusal::new(now, now.saturating_add(Duration::from_secs(1))));
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         let mut commands = Vec::new();

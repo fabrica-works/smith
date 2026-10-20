@@ -206,12 +206,8 @@ pub fn terminal_key(scratch: &Scratch, name: &str) -> Ran {
     let streams = binary.take_streams().expect("credential fixture");
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!() };
-    let mut world = real::World::new(super::Refusal {
-        now: clock.now().now,
-        foreign: None,
-        deadline: clock.now().now.saturating_add(Duration::from_secs(1)),
-        trace: None,
-    });
+    let mut world =
+        real::World::new(super::Refusal::new(clock.now().now, clock.now().now.saturating_add(Duration::from_secs(1))));
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         Process::Script(Proc::Terminal(Box::new(Terminal::attached(stream, Vec::new()))))
