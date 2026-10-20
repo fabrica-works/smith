@@ -889,6 +889,8 @@ fn every_other_end_of_a_store_answers_for_itself() {
         (Done::NotFile, Outcome::NotFile),
         (Done::Linked, Outcome::Linked),
         (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
+        // More than io stores, named against the tools' own bound on a file.
+        (Done::TooLarge { size: 4096 }, Outcome::TooLarge { what: crate::SizePart::File, size: 4096, bound: 1024 }),
         (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
         (Done::Failed { fault: Fault::NoSpace }, Outcome::Failed { fault: Fault::NoSpace }),
         (Done::TimedOut, Outcome::TimedOut),
@@ -905,6 +907,33 @@ fn every_other_end_of_a_store_answers_for_itself() {
         // Whether or not the store happened, the next one's check settles it.
         assert_eq!(h.knowledge(kit).version(&place(1, b"link")), Some(version(2)));
     }
+}
+
+#[test]
+fn a_store_that_finds_nothing_on_its_path_is_not_found_and_the_kit_forgets_the_file() {
+    let mut h = Harness::new(LIMITS);
+    let kit = h.open(1, authority(ALL));
+    let gone = (1, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper/src/new_dir/file.rs") } });
+    // A create whose directory io could not make (temper-073).
+    let (owner, op) = h.start(kit, 1, write(b"src/new_dir/file.rs", 1));
+    assert_eq!(op, store(place(1, b"src/new_dir/file.rs"), b"x", Expect::Absent));
+    assert_eq!(h.end(owner, Done::Missing), gone);
+    // A replace or an edit of a file whose directory went since it was read.
+    known(&mut h, kit, b"src/new_dir/file.rs", b"a", 2);
+    let (owner, op) = h.start(kit, 1, write(b"src/new_dir/file.rs", 1));
+    assert_eq!(op, store(place(1, b"src/new_dir/file.rs"), b"x", Expect::Is { version: version(2) }));
+    assert_eq!(h.end(owner, Done::Missing), gone);
+    assert_eq!(h.knowledge(kit).version(&place(1, b"src/new_dir/file.rs")), None);
+    known(&mut h, kit, b"src/new_dir/file.rs", b"a", 3);
+    let (owner, op) = h.start(kit, 1, change(b"src/new_dir/file.rs", b"a", b"b"));
+    assert_eq!(op, Op::Load { at: place(1, b"src/new_dir/file.rs"), max: LIMITS.file_bytes });
+    let op = h.next(owner, Done::Loaded { content: bytes(b"a"), version: version(3) });
+    assert_eq!(op, store(place(1, b"src/new_dir/file.rs"), b"b", Expect::Is { version: version(3) }));
+    assert_eq!(h.end(owner, Done::Missing), gone);
+    assert_eq!(h.knowledge(kit).version(&place(1, b"src/new_dir/file.rs")), None);
+    // The kit lives on: the next write creates the file.
+    let (_, op) = h.start(kit, 2, write(b"src/new_dir/file.rs", 1));
+    assert_eq!(op, store(place(1, b"src/new_dir/file.rs"), b"x", Expect::Absent));
 }
 
 #[test]

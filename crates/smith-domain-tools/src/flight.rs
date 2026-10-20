@@ -44,6 +44,7 @@
 //! Storing    stored                      Done      written or edited; the new version is known
 //!            conflict, creating          Done      not read
 //!            conflict, replacing         Done      stale; a file now absent is forgotten
+//!            missing                     Done      not found; nothing is known there
 //!            any other                   Done      what it says
 //! Running    held                        Held      running, job number and output
 //!            exited                      Done      how it ended, and its output
@@ -295,7 +296,7 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
         State::Searching { reply_to, place } => found(&kit.checkout, reply_to, place, done),
         State::Editing { reply_to, editing } => to_edit(kit, id, reply_to, editing, done, env, out),
         State::Storing { reply_to, place, change } => {
-            stored(&kit.checkout, &mut kit.knowledge, reply_to, place, change, done)
+            stored(&kit.checkout, &mut kit.knowledge, reply_to, place, change, done, env.limits.file_bytes)
         }
         State::Running { reply_to, place, timeout, output, after } => match done {
             Done::Held { head, tail, dropped } => {
@@ -546,7 +547,8 @@ fn to_edit(
     Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
-/// Storing, ended: answer, and know the version written.
+/// Storing, ended: answer, and know the version written. `bound` is the
+/// whole-file bound a file larger than io would store is named against.
 fn stored(
     checkout: &Checkout,
     knowledge: &mut Knowledge,
@@ -554,6 +556,7 @@ fn stored(
     place: Place,
     change: Change,
     done: Done,
+    bound: u32,
 ) -> Next {
     let creating = change == Change::Create;
     let outcome = match done {
@@ -573,20 +576,23 @@ fn stored(
             knowledge.forget(&place);
             Outcome::Stale
         }
+        // A directory on the way is missing, or the file replaced is gone.
+        Done::Missing => {
+            knowledge.forget(&place);
+            Outcome::NotFound { path: authority::resolved(checkout, &place) }
+        }
         Done::NotFile => Outcome::NotFile,
         Done::Linked => Outcome::Linked,
         Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
+        Done::TooLarge { size } => Outcome::TooLarge { what: crate::SizePart::File, size, bound },
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Held { .. } | Done::Job { .. } => unreachable!("the tools issue no yield or job act yet"),
         Done::Cancelled => Outcome::Cancelled,
-        Done::Loaded { .. }
-        | Done::Listed { .. }
-        | Done::Missing
-        | Done::TooLarge { .. }
-        | Done::Exited { .. }
-        | Done::Found { .. } => unreachable!("io ends a store with a store's terminal"),
+        Done::Loaded { .. } | Done::Listed { .. } | Done::Exited { .. } | Done::Found { .. } => {
+            unreachable!("io ends a store with a store's terminal")
+        }
     };
     Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
