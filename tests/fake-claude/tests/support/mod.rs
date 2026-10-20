@@ -2,6 +2,7 @@
 //! (protocol/programs.md, section 8; testing.md, section 4).
 
 pub mod print;
+pub mod relay;
 
 use std::collections::VecDeque;
 

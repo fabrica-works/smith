@@ -834,6 +834,7 @@ dependencies = [
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-protocol-machine",
+ "smith-protocol-program",
  "smith-transcript",
 ]
 
@@ -993,6 +994,8 @@ dependencies = [
  "skein-shell",
  "skein-sim",
  "skein-world",
+ "smith-agent-shell",
+ "smith-protocol-program",
 ]
 
 [[package]]
@@ -1336,6 +1339,7 @@ dependencies = [
 name = "smith-protocol-program"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
  "skein-io",
  "skein-json",
  "skein-lib",

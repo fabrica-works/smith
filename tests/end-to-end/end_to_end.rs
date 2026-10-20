@@ -1,3 +1,4 @@
+mod relay;
 pub mod support;
 
 use smith_local_process_world::{Placement, referee::CheckoutRead};

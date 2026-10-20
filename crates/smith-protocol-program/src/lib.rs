@@ -8,6 +8,8 @@
 extern crate alloc;
 
 mod command;
+pub mod mcp;
+pub mod relay;
 mod source;
 mod status;
 

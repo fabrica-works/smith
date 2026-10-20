@@ -24,6 +24,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
+smith-protocol-program.workspace = true
+smith-agent-shell.workspace = true
 skein-fake-machine.workspace = true
 skein-heap.workspace = true
 skein-sim.workspace = true

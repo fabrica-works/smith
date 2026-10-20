@@ -13,6 +13,9 @@ fn main() -> ExitCode {
         eprintln!("smith-agent: usage: smith-agent CONFIG.json");
         return ExitCode::FAILURE;
     };
+    if configuration == smith_agent_shell::relay::FLAG {
+        return smith_agent_shell::relay::main();
+    }
     if arguments.next().is_some() {
         eprintln!("smith-agent: usage: smith-agent CONFIG.json");
         return ExitCode::FAILURE;
