@@ -43,7 +43,11 @@ pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
         let text = String::from_utf8(bytes.into_vec()).map_err(|_| refusal(origin, "settings", "expected UTF-8"))?;
         sources.push(Source { layer, path, text });
     }
-    merge(shared, workspace, &sources)
+    let mut shared = shared.clone();
+    for dir in &mut shared.dirs {
+        dir.path = current.join(&dir.path);
+    }
+    merge(&shared, workspace, &sources)
 }
 
 pub(crate) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> Result<Settings, Refusal> {
@@ -90,6 +94,25 @@ pub(crate) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> 
         schema::check(&value, schema::kind(&["trace".into(), "path".into()]).expect("trace flag"))
             .map_err(|problem| Refusal { origin: origin.clone(), key: "trace.path".into(), problem })?;
         settings.values.insert("trace.path".into(), Sourced { value, origin });
+    }
+    if !shared.dirs.is_empty() {
+        let origin = Origin::Flag { flag: "--dir".into() };
+        let mut rows = Vec::new();
+        for dir in &shared.dirs {
+            let path = dir
+                .path
+                .to_str()
+                .ok_or_else(|| refusal(origin.clone(), "workspace.directories", "expected UTF-8 path"))?;
+            rows.push(Value::Table(toml::Table::from_iter([
+                ("name".into(), Value::String(dir.name.clone())),
+                ("path".into(), Value::String(path.into())),
+                ("writable".into(), Value::Boolean(dir.writable)),
+            ])));
+        }
+        let value = Value::Array(rows);
+        schema::check(&value, schema::kind(&["workspace".into(), "directories".into()]).expect("dir flag"))
+            .map_err(|problem| Refusal { origin: origin.clone(), key: "workspace.directories".into(), problem })?;
+        settings.values.insert("workspace.directories".into(), Sourced { value, origin });
     }
     crate::presets::apply_prices(&mut settings);
     Ok(settings)

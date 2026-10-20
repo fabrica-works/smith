@@ -757,3 +757,110 @@ fn an_openai_endpoint_is_written_with_its_number() {
         WrittenEndpoint { provider: Some("openai"), dialect: Some(3), idle: Some(IDLE_MILLIS) }
     );
 }
+
+/// A fresh directory under the system's temporary directory, one per test process.
+fn scratch(label: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!("smith-dirs-{label}-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&path));
+    std::fs::create_dir_all(path.join("work")).expect("scratch working directory");
+    path
+}
+
+fn dir(name: &str, path: PathBuf, writable: bool) -> crate::command::Dir {
+    crate::command::Dir { name: name.into(), path, writable }
+}
+
+fn with_dirs(
+    root: &std::path::Path,
+    extra: &str,
+    dirs: Vec<crate::command::Dir>,
+) -> Result<super::resolve::Resolved, super::Refusal> {
+    let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
+    let text = format!(
+        "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
+    );
+    let shared = Shared { dirs, ..Shared::default() };
+    let decoded = merge(&shared, root.join("work"), &[source(Layer::User, &text)])?;
+    super::resolve::resolve(&decoded, &crate::command::Command::Check { shared, json: false, execution: None })
+}
+
+fn rows(resolved: &super::resolve::Resolved) -> Vec<(String, bool, bool)> {
+    let workspace = resolved.local.workspace.as_ref().expect("a workspace");
+    workspace
+        .directories
+        .iter()
+        .map(|row| (String::from_utf8(row.name.to_vec()).expect("UTF-8 name"), row.writable, row.git))
+        .collect()
+}
+
+#[test]
+fn without_dir_the_workspace_is_one_writable_row_named_workspace() {
+    let root = scratch("default");
+    let resolved = with_dirs(&root, "", Vec::new()).unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(rows(&resolved), [("workspace".into(), true, false)]);
+}
+
+#[test]
+fn a_dir_follows_the_working_directory_named_by_its_last_component() {
+    let root = scratch("rows");
+    std::fs::create_dir_all(root.join("plan")).unwrap();
+    let resolved = with_dirs(&root, "", vec![dir("plan", root.join("work/../plan"), false)])
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(rows(&resolved), [("work".into(), true, false), ("plan".into(), false, false)]);
+    let workspace = resolved.local.workspace.as_ref().unwrap();
+    let canonical = root.canonicalize().unwrap();
+    assert_eq!(&*workspace.directories[1].host, canonical.join("plan").as_os_str().as_encoded_bytes());
+    let roots = workspace.directories.iter().map(|row| row.root).collect::<Vec<_>>();
+    assert_eq!(roots, [skein_lib::Token::new(1), skein_lib::Token::new(2)]);
+}
+
+#[test]
+fn a_dir_inside_a_git_working_tree_is_a_repository() {
+    let root = scratch("git");
+    std::fs::create_dir_all(root.join("kit/.git")).unwrap();
+    std::fs::create_dir_all(root.join("kit/src")).unwrap();
+    let resolved = with_dirs(&root, "", vec![dir("kit", root.join("kit/src"), true)])
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(rows(&resolved), [("work".into(), true, false), ("kit".into(), true, true)]);
+}
+
+#[test]
+fn dir_flags_replace_a_workspace_directories_setting() {
+    let root = scratch("replace");
+    std::fs::create_dir_all(root.join("plan")).unwrap();
+    let setting = "[[workspace.directories]]\nname='main'\npath='.'\n";
+    let resolved = with_dirs(&root, setting, vec![dir("plan", root.join("plan"), true)])
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(rows(&resolved), [("work".into(), true, false), ("plan".into(), true, false)]);
+}
+
+#[test]
+fn a_dir_the_workspace_cannot_hold_is_refused_at_the_flag() {
+    let root = scratch("refused");
+    for name in ["a", "b", "c", "d"] {
+        std::fs::create_dir_all(root.join(name)).unwrap();
+    }
+    std::fs::write(root.join("file"), b"text").unwrap();
+    let refused = |dirs: Vec<crate::command::Dir>| {
+        let refusal = with_dirs(&root, "", dirs).err().expect("a refusal");
+        assert_eq!(refusal.origin, Origin::Flag { flag: "--dir".into() });
+        assert_eq!(refusal.key, "workspace.directories");
+        refusal.line()
+    };
+    let line = refused(vec![dir("a", root.join("a"), true), dir("a", root.join("b"), true)]);
+    assert!(line.contains("`a` names two directories"), "{line}");
+    let line = refused(vec![dir("work", root.join("a"), true)]);
+    assert!(line.contains("`work` is the working directory's name"), "{line}");
+    let line = refused(vec![dir("a", root.join("file"), true)]);
+    assert!(line.contains("is not a directory"), "{line}");
+    let line = refused(vec![dir("a", root.join("absent"), true)]);
+    assert!(line.contains("is not a directory"), "{line}");
+    let limits = &with_dirs(&root, "", Vec::new()).unwrap().agent.service.limits.domain;
+    let bound = limits.run.directories.min(limits.session.tools.repos);
+    let names = ["a", "b", "c", "d"].get(..usize::try_from(bound).unwrap()).expect("a bound of at most 4");
+    let line = refused(names.iter().map(|name| dir(name, root.join(name), true)).collect());
+    let count = bound + 1;
+    let expected = format!("{count} directories with the working directory exceed the profile's workspace of {bound}");
+    assert!(line.contains(&expected), "{line}");
+    assert!(line.starts_with("smith: --dir: workspace.directories: "), "{line}");
+}

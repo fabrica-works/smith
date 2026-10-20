@@ -12,6 +12,15 @@ pub struct Shared {
     pub chat: Option<String>,
     pub trace: Option<PathBuf>,
     pub overrides: Vec<String>,
+    pub dirs: Vec<Dir>,
+}
+
+/// One `--dir NAME=PATH[:ro|rw]`, another directory of the workspace (shell.md, section 4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dir {
+    pub name: String,
+    pub path: PathBuf,
+    pub writable: bool,
 }
 
 /// One product invocation, parsed before settings are read.
@@ -85,6 +94,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
             "--json" if !interactive => json = true,
             "--plain" if interactive => plain = true,
             "-C" => shared.directory = Some(value(&mut arguments, "-C")?.into()),
+            "--dir" => shared.dirs.push(dir(&text(&mut arguments, "--dir")?)?),
             "--trace" => shared.trace = Some(value(&mut arguments, "--trace")?.into()),
             "-m" => shared.model = Some(text(&mut arguments, "-m")?),
             "--effort" => shared.effort = Some(text(&mut arguments, "--effort")?),
@@ -128,12 +138,33 @@ fn login(arguments: Vec<OsString>) -> Result<Command, Usage> {
         let argument = argument.to_str().ok_or_else(|| Usage("an argument is not UTF-8".into()))?;
         match argument {
             "-C" => shared.directory = Some(value(&mut arguments, "-C")?.into()),
+            "--dir" => shared.dirs.push(dir(&text(&mut arguments, "--dir")?)?),
             "-c" => shared.overrides.push(text(&mut arguments, "-c")?),
             name if !name.starts_with('-') && account.is_none() => account = Some(name.into()),
             _ => return Err(Usage(format!("unexpected argument `{argument}`"))),
         }
     }
     Ok(Command::Login { shared, account: account.ok_or_else(|| Usage("smith login requires an account".into()))? })
+}
+
+/// `NAME=PATH`, `NAME=PATH:ro` or `NAME=PATH:rw`; the name is one safe path component.
+/// After the last `:` comes the mode, so a path holding `:` ends in `:rw` or `:ro`.
+fn dir(value: &str) -> Result<Dir, Usage> {
+    let malformed = || Usage(format!("--dir `{value}`: expected NAME=PATH[:ro|rw]"));
+    let (name, rest) = value.split_once('=').ok_or_else(malformed)?;
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return Err(Usage(format!("--dir `{value}`: the name must be one path component")));
+    }
+    let (path, writable) = match rest.rsplit_once(':') {
+        Some((path, "ro")) => (path, false),
+        Some((path, "rw")) => (path, true),
+        Some(_) => return Err(malformed()),
+        None => (rest, true),
+    };
+    if path.is_empty() {
+        return Err(malformed());
+    }
+    Ok(Dir { name: name.into(), path: path.into(), writable })
 }
 
 fn set_prompt(place: &mut Option<Prompt>, prompt: Prompt) -> Result<(), Usage> {
@@ -262,6 +293,41 @@ mod tests {
             panic!("checked exec")
         };
         assert!(json && !exec.json);
+    }
+
+    #[test]
+    fn every_command_with_dash_c_collects_dirs_in_order_with_their_modes() {
+        let dir = |name: &str, path: &str, writable| Dir { name: name.into(), path: path.into(), writable };
+        let flags = ["--dir", "a=x", "--dir", "b=../y:ro", "--dir", "c=/z:rw", "--dir", "d=w:x:rw"];
+        let expected = [dir("a", "x", true), dir("b", "../y", false), dir("c", "/z", true), dir("d", "w:x", true)];
+        let Command::Interactive { shared, .. } = parse(arguments(&flags)).expect("interactive dirs") else {
+            panic!("interactive invocation")
+        };
+        assert_eq!(shared.dirs, expected);
+        let checked = [["check"].as_slice(), &flags].concat();
+        let Command::Check { shared, .. } = parse(arguments(&checked)).expect("check dirs") else { panic!("check") };
+        assert_eq!(shared.dirs, expected);
+        let exec = [["exec"].as_slice(), &flags, &["message"]].concat();
+        let Command::Exec(exec) = parse(arguments(&exec)).expect("exec dirs") else { panic!("exec") };
+        assert_eq!(exec.shared.dirs, expected);
+        let login = [["login", "work"].as_slice(), &flags].concat();
+        let Command::Login { shared, .. } = parse(arguments(&login)).expect("login dirs") else { panic!("login") };
+        assert_eq!(shared.dirs, expected);
+        assert!(
+            parse(Vec::new())
+                .is_ok_and(|command| command == Command::Interactive { shared: Shared::default(), plain: false })
+        );
+    }
+
+    #[test]
+    fn a_malformed_dir_is_a_usage_refusal() {
+        for value in ["a", "=x", "a/b=x", "..=x", ".=x", "a=", "a=:ro", "a=x:rx"] {
+            assert!(
+                matches!(parse(arguments(&["check", "--dir", value])), Err(Usage(line)) if line.starts_with("--dir `")),
+                "{value}"
+            );
+        }
+        assert_eq!(parse(arguments(&["check", "--dir"])), Err(Usage("--dir requires a value".into())));
     }
 
     #[test]

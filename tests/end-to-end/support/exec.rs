@@ -36,6 +36,23 @@ pub fn exec_with_provider(scratch: &Scratch, arguments: &[&str], input: &[u8], r
     run(scratch, arguments, input, Some(provider(scratch, reply)))
 }
 
+/// Run the product against a provider that answers `@local-shell` with these turns in order.
+#[must_use]
+pub fn exec_with_turns(
+    scratch: &Scratch,
+    arguments: &[&str],
+    input: &[u8],
+    turns: Box<[skein_fake_llm_domain::api::Turn]>,
+) -> Ran {
+    let provider = smith_agent_process_world::fake::configured_transport(
+        Box::new([skein_fake_llm_domain::api::Script { cue: b"@local-shell".as_slice().into(), turns }]),
+        credential(scratch),
+        Duration::ZERO,
+        skein_fake_peers::Transport::Tls,
+    );
+    run(scratch, arguments, input, Some(provider))
+}
+
 #[must_use]
 pub fn exec_with_foreign_file(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
     run_fixture(

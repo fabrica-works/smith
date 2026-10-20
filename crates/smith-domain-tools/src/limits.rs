@@ -262,7 +262,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         kits: inputs.conversations,
         calls: inputs.parallel_tools.min(inputs.calls_per_response),
         jobs: inputs.jobs,
-        repos: 2,
+        repos: 4,
         path_bytes: 256,
         host_path_bytes: 4096,
         known_files: 16,

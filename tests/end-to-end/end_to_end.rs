@@ -683,6 +683,56 @@ fn smith_check_json_lists_the_effective_limits_by_name() {
     assert!(limits.iter().all(|limit| !limit["name"].as_str().expect("limit name").contains("endpoint=0")));
 }
 
+fn dir_turns(path: &str) -> Box<[skein_fake_llm_domain::api::Turn]> {
+    use skein_fake_llm_domain::api;
+    let write = format!(r#"{{"path":"{path}","content":"noted\n"}}"#);
+    let finish = r#"{"form":"report","text":"Wrote it","fields":{}}"#;
+    [("write", write.into_bytes()), ("finish", finish.as_bytes().to_vec())]
+        .into_iter()
+        .map(|(name, arguments)| api::Turn {
+            lines: Box::new([api::Line::Call { name: name.as_bytes().into(), arguments: arguments.into() }]),
+            finish: api::Finish::ToolCalls,
+            tokens: 1,
+        })
+        .collect()
+}
+
+#[test]
+fn a_dir_is_a_named_directory_the_run_writes_unless_it_is_read_only() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let plan = Scratch::new();
+    let kit = Scratch::new();
+    let flag = format!("plan={}", plan.path().display());
+    let ran =
+        support::exec_with_turns(&scratch, &["exec", "--dir", &flag, "-"], b"Note it\n", dir_turns("/plan/notes.txt"));
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(
+        std::fs::read(plan.path().join("notes.txt")).expect("the run wrote into the named directory"),
+        b"noted\n"
+    );
+    assert!(!scratch.path().join("plan").exists(), "the name is the directory's, not a path in the working directory");
+
+    let flag = format!("kit={}:ro", kit.path().display());
+    let ran = support::exec_with_turns(
+        &scratch,
+        &["exec", "--json", "--dir", &flag, "-"],
+        b"Note it\n",
+        dir_turns("/kit/notes.txt"),
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let verdicts: Vec<serde_json::Value> = ran
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).expect("event record"))
+        .filter(|record| record["type"] == "tool.completed" && record["tool"] == "write")
+        .map(|record| record["verdict"].clone())
+        .collect();
+    assert_eq!(verdicts, ["read_only"], "a read-only directory refuses the write");
+    assert!(!kit.path().join("notes.txt").exists(), "nothing was written into the read-only directory");
+}
+
 #[test]
 fn a_headless_run_that_would_wait_exits_5_naming_its_chat() {
     let scratch = Scratch::new();

@@ -1,6 +1,6 @@
 //! Local policy values and workspace roots (shell.md, 5.2–5.4 and 6.4).
 //! Native policy and limits retain these choices; no credential or directory is opened.
-use super::super::{Refusal, Settings};
+use super::super::{Origin, Problem, Refusal, Settings, Sourced};
 use super::{Account, input, models::Model};
 use skein_lib::{Duration, Token};
 use smith_domain::run::{self, charter, outcome};
@@ -198,19 +198,14 @@ fn directories(
     agent: &smith_agent_shell::config::Configuration,
 ) -> Result<Vec<run::Directory>, Refusal> {
     let mut directories = Vec::new();
-    let rows = settings
-        .values
-        .get("workspace.directories")
-        .and_then(|value| value.value.as_array())
-        .cloned()
-        .unwrap_or_else(|| {
-            vec![Value::Table(toml::Table::from_iter([
-                ("name".into(), Value::String("workspace".into())),
-                ("path".into(), Value::String(".".into())),
-                ("writable".into(), Value::Boolean(true)),
-                ("git".into(), Value::Boolean(settings.workspace.ancestors().any(|path| path.join(".git").exists()))),
-            ]))]
-        });
+    let sourced = settings.values.get("workspace.directories");
+    let rows = match sourced {
+        Some(sourced @ Sourced { origin: Origin::Flag { .. }, .. }) => flagged(settings, sourced, agent)?,
+        Some(_) | None => sourced
+            .and_then(|value| value.value.as_array())
+            .cloned()
+            .unwrap_or_else(|| vec![row("workspace", ".", true, repository(&settings.workspace))]),
+    };
     for (index, row) in rows.iter().enumerate() {
         let key = format!("workspace.directories[{index}]");
         let path = row
@@ -237,4 +232,75 @@ fn directories(
         });
     }
     Ok(directories)
+}
+
+/// `-C`'s directory named by its last component, then each `--dir` in order (shell.md, section 4).
+/// The checks that need the filesystem refuse here, as for the default row.
+fn flagged(
+    settings: &Settings,
+    sourced: &Sourced,
+    agent: &smith_agent_shell::config::Configuration,
+) -> Result<Vec<Value>, Refusal> {
+    let refuse = |problem: String| Refusal {
+        origin: sourced.origin.clone(),
+        key: "workspace.directories".into(),
+        problem: Problem::Input(problem),
+    };
+    let limits = &agent.service.limits.domain;
+    let bound = limits.run.directories.min(limits.session.tools.repos);
+    let name_bytes = usize::try_from(limits.run.directory_name_bytes).expect("name bound fits");
+    let own = settings
+        .workspace
+        .canonicalize()
+        .map_err(|why| refuse(format!("the working directory {}: {why}", settings.workspace.display())))?;
+    let own_name =
+        own.file_name().and_then(std::ffi::OsStr::to_str).filter(|name| name.len() <= name_bytes).ok_or_else(|| {
+            refuse(format!("the working directory {} has no last path component to name it", own.display()))
+        })?;
+    let flags = sourced.value.as_array().map_or(&[][..], Vec::as_slice);
+    let mut rows = vec![row(own_name, ".", true, repository(&own))];
+    let mut names = vec![own_name.to_owned()];
+    for flag in flags {
+        let name = flag.get("name").and_then(Value::as_str).expect("--dir rows hold a name");
+        let path = flag.get("path").and_then(Value::as_str).expect("--dir rows hold a path");
+        let writable = flag.get("writable").and_then(Value::as_bool).expect("--dir rows hold a mode");
+        if name == own_name {
+            return Err(refuse(format!("`{name}` is the working directory's name")));
+        }
+        if names.iter().any(|named| named == name) {
+            return Err(refuse(format!("`{name}` names two directories")));
+        }
+        if name.len() > name_bytes {
+            return Err(refuse(format!("`{name}` exceeds {name_bytes} bytes")));
+        }
+        let path = settings.workspace.join(path);
+        if !std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_dir()) {
+            return Err(refuse(format!("`{name}`: {} is not a directory", path.display())));
+        }
+        let path = path.canonicalize().map_err(|why| refuse(format!("`{name}`: {}: {why}", path.display())))?;
+        let text = path.to_str().ok_or_else(|| refuse(format!("`{name}`: expected a UTF-8 path")))?;
+        rows.push(row(name, text, writable, repository(&path)));
+        names.push(name.to_owned());
+    }
+    if rows.len() > usize::try_from(bound).expect("directory bound fits") {
+        let count = rows.len();
+        return Err(refuse(format!(
+            "{count} directories with the working directory exceed the profile's workspace of {bound}"
+        )));
+    }
+    Ok(rows)
+}
+
+fn row(name: &str, path: &str, writable: bool, git: bool) -> Value {
+    Value::Table(toml::Table::from_iter([
+        ("name".into(), Value::String(name.into())),
+        ("path".into(), Value::String(path.into())),
+        ("writable".into(), Value::Boolean(writable)),
+        ("git".into(), Value::Boolean(git)),
+    ]))
+}
+
+/// A directory inside a git working tree is a repository, as with `-C`.
+fn repository(path: &std::path::Path) -> bool {
+    path.ancestors().any(|path| path.join(".git").exists())
 }
