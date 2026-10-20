@@ -8,6 +8,8 @@ use serde::Serialize;
 use std::{collections::BTreeMap, ffi::OsString, os::unix::fs::PermissionsExt, path::PathBuf};
 
 mod accounts;
+#[cfg(test)]
+mod program;
 pub(crate) mod warnings;
 
 /// A startup warning names its configuration source, never a variable's value.
@@ -84,7 +86,8 @@ fn report_for(
         Ok(resolved) => resolved,
         Err(why) => return Verdict::Refused(why),
     };
-    let inventory = match invocation_limits(&mut resolved, execution, wall) {
+    let inventory = match startup_agent(&mut resolved).and_then(|()| invocation_limits(&mut resolved, execution, wall))
+    {
         Ok(inventory) => inventory,
         Err(reason) => {
             return Verdict::Refused(Refusal {
@@ -250,6 +253,15 @@ pub fn render_text(report: &Report) -> String {
     lines.join("\n")
 }
 
+fn startup_agent(resolved: &mut settings::resolve::Resolved) -> Result<(), String> {
+    if crate::compose::program_account(&resolved.settings).map_err(|why| why.line())? {
+        let host = crate::compose::host_limits(&resolved.agent, true)
+            .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
+        resolved.limits.agent = smith_local_domain::AgentLimits::Spawned(host);
+    }
+    Ok(())
+}
+
 fn invocation_limits(
     resolved: &mut settings::resolve::Resolved,
     execution: Option<&command::Exec>,
@@ -328,14 +340,26 @@ fn derive_invocation(
     wall: skein_lib::Wall,
     interactive: bool,
 ) -> Result<(smith_local_service::Limits, skein_lib::Duration), String> {
+    price_invocation(resolved, invocation, wall, interactive).map(|(limits, bound, _)| (limits, bound))
+}
+
+fn price_invocation(
+    resolved: &mut settings::resolve::Resolved,
+    invocation: &command::Exec,
+    wall: skein_lib::Wall,
+    interactive: bool,
+) -> Result<(smith_local_service::Limits, skein_lib::Duration, u64), String> {
     if let Some(chat) = crate::compose::invocation_chat(&invocation.shared, 0) {
         resolved.local.chat = chat;
     }
     let files = crate::compose::Files::prepare(invocation, resolved, 0).map_err(|why| why.line())?;
     let result_file = files.teardown_bound().map_err(|why| why.line())?;
-    let host = smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits)
-        .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
-    let mut limits = crate::startup::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
+    let host = crate::compose::host_limits(
+        &resolved.agent,
+        matches!(resolved.limits.agent, smith_local_domain::AgentLimits::Spawned(_)),
+    )
+    .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
+    let mut limits = crate::compose::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
     let available = if interactive {
         interactive_header(resolved, &mut limits, result_file)?
     } else {
@@ -367,6 +391,47 @@ fn derive_invocation(
         limits.local.smith.run.outcome_bytes,
     );
     let available = files.reserve(&mut front, available).map_err(|why| why.line())?;
+    let handed = handed_accounts(resolved)?;
+    let screen = if interactive {
+        Some(
+            crate::front::interactive::Interactive::new(false, &resolved.agent.service.limits)
+                .ok_or_else(|| "interactive footprint overflows".to_owned())?,
+        )
+    } else {
+        None
+    };
+    let lower_routes = match limits.local.agent {
+        smith_local_domain::AgentLimits::Inline(_) => resolved.agent.service.limits.routes,
+        smith_local_domain::AgentLimits::Spawned(_) => 0,
+    };
+    let (mut required, _) = crate::Local::startup_memory(
+        &limits,
+        lower_routes,
+        Some(&handed),
+        if interactive { None } else { Some(&front) },
+        screen.as_ref(),
+    )
+    .map_err(|why| why.detail().to_owned())?;
+    match limits.local.agent {
+        smith_local_domain::AgentLimits::Inline(_) => {}
+        smith_local_domain::AgentLimits::Spawned(_) => {
+            required = crate::Local::producer_memory(&resolved.agent.service)
+                .and_then(|bytes| required.checked_add(bytes))
+                .ok_or_else(|| "spawned trace memory bound overflows".to_owned())?;
+        }
+    }
+    smith_agent_service::profile::validate::memory(required, available)
+        .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
+    let complete = resolved
+        .agent
+        .memory
+        .checked_sub(available)
+        .and_then(|reservation| required.checked_add(reservation))
+        .ok_or_else(|| "complete startup memory bound overflows".to_owned())?;
+    Ok((limits, result_file, complete))
+}
+
+fn handed_accounts(resolved: &settings::resolve::Resolved) -> Result<crate::credentials::Prepared, String> {
     let count = u32::try_from(resolved.accounts.len()).map_err(|_| "too many account sources".to_owned())?;
     let mut locations = skein_lib::List::with_capacity(count);
     let directory = crate::credentials::Directory::of(&resolved.settings);
@@ -377,31 +442,12 @@ fn derive_invocation(
             .push(crate::credentials::Location { account: account.number, name: account.name.clone(), source })
             .expect("selected locations fit their account bound");
     }
-    let handed = crate::credentials::Prepared {
+    Ok(crate::credentials::Prepared {
         sources: skein_lib::List::with_capacity(count),
         lendable: skein_lib::Map::with_capacity(count),
         locations,
         limits: crate::credentials::limits(resolved.agent.service.limits.io, count.max(1)),
-    };
-    let screen = if interactive {
-        Some(
-            crate::front::interactive::Interactive::new(false, &resolved.agent.service.limits)
-                .ok_or_else(|| "interactive footprint overflows".to_owned())?,
-        )
-    } else {
-        None
-    };
-    let (required, _) = crate::Local::startup_memory(
-        &limits,
-        resolved.agent.service.limits.routes,
-        Some(&handed),
-        if interactive { None } else { Some(&front) },
-        screen.as_ref(),
-    )
-    .map_err(|why| why.detail().to_owned())?;
-    smith_agent_service::profile::validate::memory(required, available)
-        .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
-    Ok((limits, result_file))
+    })
 }
 
 fn interactive_header(

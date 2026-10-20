@@ -8,7 +8,22 @@ use smith_agent_service as agent;
 use smith_local_domain as domain;
 use smith_local_service as service;
 
+/// Product startup owners admitted together before a destination is adopted.
+pub(crate) struct Admission {
+    pub available_bytes: u64,
+    pub handed: Option<crate::credentials::Prepared>,
+    pub front: Option<crate::front::Front>,
+    pub producer: Option<agent::Config>,
+}
+
 impl Local {
+    pub(crate) fn producer_memory(configuration: &agent::Config) -> Option<u64> {
+        match configuration.limits.events {
+            Some(_) => agent::events::worst_case(&configuration.limits),
+            None => Some(0),
+        }
+    }
+
     /// Price the same startup owners for composition and invocation-aware check.
     pub(crate) fn startup_memory(
         limits: &service::Limits,

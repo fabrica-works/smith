@@ -214,16 +214,7 @@ impl Backend {
                     self.match_calls();
                 }
                 Some(mcp::Up::Ended(_)) => {
-                    self.server_ended = true;
-                    if self.phase != Phase::Ending && self.phase != Phase::Ended {
-                        self.fail(
-                            env,
-                            llm::Failure::Program { exit: self.exit },
-                            b"smith: the MCP server ended",
-                            up,
-                            below,
-                        );
-                    }
+                    self.mcp_ended(env, up, below);
                 }
                 None => break,
             }
@@ -249,6 +240,23 @@ impl Backend {
         self.io.push(io::Request::Spawn { owner: self.token(4), spawn: launch });
         self.spawning = true;
         self.deadline = Some(env.now.saturating_add(self.settings.startup));
+    }
+
+    pub(super) fn mcp_ended(
+        &mut self,
+        env: &Env<protocol::ComponentLimits>,
+        up: &mut Queue<ToDomain>,
+        below: &mut Queue<Below>,
+    ) {
+        self.server_ended = true;
+        if self.phase == Phase::Running && self.child.is_some() {
+            // Relay EOF can precede waitpid. Let the child and stderr settle
+            // before choosing its program fault (programs.md, section 5.6).
+            let until = env.now.saturating_add(self.settings.grace);
+            self.eof_deadline = Some(self.eof_deadline.unwrap_or(until).min(until));
+        } else if self.phase != Phase::Ending && self.phase != Phase::Ended {
+            self.fail(env, llm::Failure::Program { exit: self.exit }, b"smith: the MCP server ended", up, below);
+        }
     }
 
     fn launch_spec(&mut self) -> Option<kernel::Spawn> {

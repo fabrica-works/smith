@@ -55,7 +55,9 @@ pub(super) fn run(
         | host::RunFailure::Stale => append(text, b"run failed: "),
     }
     append(text, &words(&value, account_name, answered_at));
-    detail(text, diagnostic);
+    if value.program.is_none() {
+        detail(text, diagnostic);
+    }
 }
 
 pub(super) fn refused(text: &mut Shown, why: host::Refusal) {
@@ -247,8 +249,15 @@ fn failed(why: &host::RunFailure) -> AnswerFailure {
                 };
                 result
             }
-            host::ModelFault::Provider | host::ModelFault::Program { .. } => {
-                failure(AnswerClass::Model, Some(b"provider"))
+            host::ModelFault::Provider => failure(AnswerClass::Model, Some(b"provider")),
+            host::ModelFault::Program { name, exit, detail } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.program = Some(name.clone());
+                if let Some(code) = exit {
+                    result.exit = Some(smith_events::AgentExit::Code(i64::from(*code)));
+                }
+                result.detail = Some(detail.clone());
+                result
             }
             host::ModelFault::Refused { account, code } => {
                 let mut result = failure(AnswerClass::Model, None);
@@ -433,5 +442,26 @@ fn limit_name(which: host::Limit) -> &'static [u8] {
             host::Cap::AccessToken => b"access_token",
             host::Cap::AccountId => b"account_id",
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn program_failures_keep_their_terminal_metadata() {
+        for (exit, expected) in [(None, None), (Some(7), Some(smith_events::AgentExit::Code(7)))] {
+            let fault = host::RunFailure::Model(host::ModelFault::Program {
+                name: b"claude_code".as_slice().into(),
+                exit,
+                detail: b"program detail".as_slice().into(),
+            });
+            let value = failed(&fault);
+            assert_eq!(value.class, AnswerClass::Model);
+            assert_eq!(value.program.as_deref(), Some(b"claude_code".as_slice()));
+            assert_eq!(value.exit, expected);
+            assert_eq!(value.detail.as_deref(), Some(b"program detail".as_slice()));
+        }
     }
 }

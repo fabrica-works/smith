@@ -322,6 +322,19 @@ impl ProcessAdapter {
         self.io.adopt_append(fd, write_deadline)
     }
 
+    pub(crate) fn adopt_output(
+        &mut self,
+        descriptor: kernel::Fd,
+        append: bool,
+        write_deadline: skein_lib::Duration,
+    ) -> Result<Token, kernel::Fd> {
+        if append {
+            self.io.adopt_append(descriptor, write_deadline)
+        } else {
+            self.io.adopt_write_pipe(descriptor, Some(write_deadline))
+        }
+    }
+
     pub(crate) fn adopt_store(&mut self, root: kernel::Fd) -> Option<()> {
         let token = self.files.adopt_root(root)?;
         self.store = Some(local_protocol::Store::new(

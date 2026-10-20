@@ -12,6 +12,7 @@ use smith_agent_service::{Close, Step};
 
 mod accounts;
 mod choices;
+mod destinations;
 mod ending;
 use ending::Ending;
 use smith_domain as agent;
@@ -386,26 +387,6 @@ impl Service {
             effects.fact(&fact);
         }
         false
-    }
-
-    /// Adopt JSON standard output through the inline product's existing sink owner.
-    pub fn adopt_output(
-        &mut self,
-        descriptor: kernel::Fd,
-        append: bool,
-        delivery: agent_service::sinks::Delivery,
-    ) -> Result<(), kernel::Fd> {
-        match &mut self.below {
-            Effects::Inline { agent, local } => {
-                agent.adopt_destination(descriptor, agent_service::Destination::Output, delivery, append, local.io())
-            }
-            Effects::Spawned(_) => Err(descriptor),
-        }
-    }
-
-    /// Start an inline product stream after all its destinations are adopted.
-    pub fn start_session(&mut self, now: Time, header: smith_events::SessionStarted) {
-        self.below.inline_mut().expect("exec composes inline effects").start_session(now, header);
     }
 
     /// Queue a terminal, store, git or OAuth outcome from the shell.

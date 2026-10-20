@@ -159,8 +159,16 @@ fn failed(why: host::RunFailure) -> AnswerFailure {
                 };
                 result
             }
-            host::ModelFault::Provider | host::ModelFault::Program { .. } => {
-                failure(AnswerClass::Model, Some(b"provider"))
+            host::ModelFault::Provider => failure(AnswerClass::Model, Some(b"provider")),
+            host::ModelFault::Program { name, exit, detail } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.program = Some(name);
+                result.exit = match exit {
+                    Some(code) => Some(smith_events::AgentExit::Code(i64::from(code))),
+                    None => None,
+                };
+                result.detail = Some(detail);
+                result
             }
             host::ModelFault::Refused { account, code } => {
                 let mut result = failure(AnswerClass::Model, None);
@@ -428,5 +436,26 @@ pub(crate) fn exit(status: smith_local_domain::ExitStatus) -> u8 {
         smith_local_domain::ExitStatus::Budget => 4,
         smith_local_domain::ExitStatus::NeedsInput => 5,
         smith_local_domain::ExitStatus::Interrupted => 130,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn program_failures_keep_their_terminal_metadata() {
+        for (exit, expected) in [(None, None), (Some(7), Some(smith_events::AgentExit::Code(7)))] {
+            let fault = host::RunFailure::Model(host::ModelFault::Program {
+                name: b"claude_code".as_slice().into(),
+                exit,
+                detail: b"program detail".as_slice().into(),
+            });
+            let value = failed(fault);
+            assert_eq!(value.class, AnswerClass::Model);
+            assert_eq!(value.program.as_deref(), Some(b"claude_code".as_slice()));
+            assert_eq!(value.exit, expected);
+            assert_eq!(value.detail.as_deref(), Some(b"program detail".as_slice()));
+        }
     }
 }

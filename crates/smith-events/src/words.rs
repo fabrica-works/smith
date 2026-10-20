@@ -111,6 +111,18 @@ pub fn words(failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: 
 }
 
 fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: Option<Wall>) {
+    if let Some(program) = &failure.program {
+        let name = match program.as_ref() {
+            b"claude_code" => b"claude".as_slice(),
+            name => name,
+        };
+        put(line, clip(name));
+        put(line, if failure.exit.is_some() { b" exited before its answer: " } else { b" could not run: " });
+        if let Some(detail) = &failure.detail {
+            program_detail(line, detail);
+        }
+        return;
+    }
     if let Some(number) = failure.account {
         match &failure.state {
             Some(AccountState::Limited) => {
@@ -179,6 +191,26 @@ fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8
         put(line, b" after ");
         put(line, Decimal::of(attempts).as_bytes());
         put(line, b" attempts");
+    }
+}
+
+fn program_detail(line: &mut List<u8>, detail: &[u8]) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    // Clipping first bounds expansion at four times DETAIL_BYTES, inside
+    // the 4096-byte line even with its clipped name and fixed vocabulary.
+    for byte in clip(detail) {
+        if *byte < 0x20 || *byte == 0x7f {
+            put(line, b"\\x");
+            put(
+                line,
+                &[
+                    *HEX.get(usize::from(byte >> 4_u32)).expect("high hex digit"),
+                    *HEX.get(usize::from(byte & 15)).expect("low hex digit"),
+                ],
+            );
+        } else {
+            put(line, &[*byte]);
+        }
     }
 }
 

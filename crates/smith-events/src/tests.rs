@@ -339,3 +339,47 @@ fn an_account_failure_has_its_words() {
         );
     }
 }
+
+#[test]
+fn program_failures_name_their_terminal_form() {
+    for (exit, expected) in [
+        (None, b"claude could not run: program detail".as_slice()),
+        (Some(crate::AgentExit::Code(7)), b"claude exited before its answer: program detail".as_slice()),
+    ] {
+        let mut failure = word_failure(crate::AnswerClass::Model);
+        failure.program = Some(b"claude_code".as_slice().into());
+        failure.exit = exit;
+        failure.detail = Some(b"program detail".as_slice().into());
+        assert_eq!(crate::words(&failure, None, None).as_ref(), expected);
+    }
+}
+
+#[test]
+fn program_detail_stops_before_a_partial_character() {
+    // The 512-byte detail cap cuts through the following three-byte character.
+    const KEPT_ASCII: usize = 511;
+    let mut failure = word_failure(crate::AnswerClass::Model);
+    failure.program = Some(b"claude_code".as_slice().into());
+    let mut detail = "x".repeat(KEPT_ASCII);
+    detail.push_str("中tail");
+    failure.detail = Some(detail.into_bytes().into());
+    let mut expected = "claude could not run: ".to_owned();
+    expected.push_str(&"x".repeat(KEPT_ASCII));
+    assert_eq!(crate::words(&failure, None, None).as_ref(), expected.as_bytes());
+}
+
+#[test]
+fn program_detail_keeps_only_its_first_line() {
+    let mut failure = word_failure(crate::AnswerClass::Model);
+    failure.program = Some(b"claude_code".as_slice().into());
+    failure.detail = Some(b"first\nsecond".as_slice().into());
+    assert_eq!(crate::words(&failure, None, None).as_ref(), b"claude could not run: first");
+}
+
+#[test]
+fn program_detail_escapes_terminal_controls() {
+    let mut failure = word_failure(crate::AnswerClass::Model);
+    failure.program = Some(b"claude_code".as_slice().into());
+    failure.detail = Some(b"first\x1b[2J\t\x7f\nignored\x1b".as_slice().into());
+    assert_eq!(crate::words(&failure, None, None).as_ref(), b"claude could not run: first\\x1b[2J\\x09\\x7f");
+}

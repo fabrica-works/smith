@@ -11,6 +11,7 @@ mod header;
 mod lend;
 pub use header::View;
 mod memory;
+pub(crate) use memory::Admission;
 mod words;
 
 use skein_io::{self as io, kernel};
@@ -107,12 +108,8 @@ impl Local {
 
     /// Refuse the complete shell footprint above the caller's memory before stream adoption.
     /// Contract: protocol/limits.md, section 4.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "startup validates the shared store, terminal, credential and selected lower owners"
-    )]
     pub fn within_memory(
-        mut config: service::Config,
+        config: service::Config,
         lower: Option<agent::Config>,
         resources: Resources,
         errors: Box<dyn Write>,
@@ -120,6 +117,27 @@ impl Local {
         handed: Option<crate::credentials::Prepared>,
         front: Option<crate::front::Front>,
     ) -> Result<Self, crate::startup::Failure> {
+        Self::with_admission(
+            config,
+            lower,
+            resources,
+            errors,
+            Admission { available_bytes, handed, front, producer: None },
+        )
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "startup validates the shared store, terminal, credential and selected lower owners"
+    )]
+    pub(crate) fn with_admission(
+        mut config: service::Config,
+        lower: Option<agent::Config>,
+        resources: Resources,
+        errors: Box<dyn Write>,
+        admission: Admission,
+    ) -> Result<Self, crate::startup::Failure> {
+        let Admission { available_bytes, handed, front, producer } = admission;
         let (front, interactive) = match front {
             Some(crate::front::Front::Headless(front)) => (Some(front), None),
             Some(crate::front::Front::Interactive(front)) => (None, Some(front)),
@@ -168,11 +186,21 @@ impl Local {
             headless.as_ref(),
             interactive.as_ref(),
         )?;
+        let worst = worst
+            .checked_add(match &producer {
+                Some(configuration) => Self::producer_memory(configuration)
+                    .ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?,
+                None => 0,
+            })
+            .ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?;
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
         let mut service = service::Service::new(config, resources.seed)
             .map_err(|error| configuration_failure(format!("local service: {error:?}")))?;
+        if let Some(configuration) = producer {
+            service.prepare_trace(&configuration);
+        }
         service.adopt_store(resources.state_root).map_err(|error| host_failure(format!("chat store: {error:?}")))?;
         if let Some(front) = &interactive {
             service.line_mode(front.plain());
@@ -272,7 +300,7 @@ impl Local {
         configuration: &agent::Config,
         available: u64,
     ) -> Result<(), crate::startup::Failure> {
-        let bytes = agent::events::worst_case(&configuration.limits)
+        let bytes = Self::producer_memory(configuration)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?;
         let worst =
             self.worst.checked_add(bytes).ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?;

@@ -83,4 +83,42 @@ mod tests {
         assert_eq!(trace.path, Path::new("product.jsonl.agent"));
         assert!(trace.capture == smith_agent_service::sinks::Capture::Calls);
     }
+
+    #[test]
+    fn program_children_validate_with_their_hosts_derived_grace() {
+        let source = crate::settings::Source {
+            layer: crate::settings::Layer::User,
+            path: "program.toml".into(),
+            text: "credentials='/credentials'\nmodel='anthropic/claude-opus-5-5'\n[accounts.anthropic]\nsource='program'\n[endpoints.anthropic]\nprogram='claude_code'\n[programs]\nclaude_code='/bin/true'\n".into(),
+        };
+        let settings =
+            crate::settings::from_sources(&crate::command::Shared::default(), "/synthetic".into(), &[source]).unwrap();
+        assert!(crate::compose::program_account(&settings).unwrap());
+        let (_, bytes) = crate::settings::resolve::resolve_startup(&settings).unwrap();
+        for (close_ms, write_ms, teardown_seconds, grace_seconds) in [(5000, 30000, 40, 45), (2000, 11000, 15, 17)] {
+            let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            document["profile"]["policy"]["close"] = serde_json::json!(close_ms);
+            document["profile"]["policy"]["write_deadline"] = serde_json::json!(write_ms);
+            let agent = smith_agent_shell::config::from_value(document.clone()).unwrap();
+            assert!(agent.service.program.is_some());
+            assert!(agent.service.limits.events.is_none());
+            let host = crate::compose::host_limits(&agent, true).unwrap();
+            assert_eq!(host.teardown, skein_lib::Duration::from_secs(teardown_seconds));
+            assert_eq!(host.exit_grace, skein_lib::Duration::from_secs(grace_seconds));
+            let generated = generated(&serde_json::to_vec(&document).unwrap(), None, host.exit_grace)
+                .unwrap_or_else(|why| panic!("{}", why.line()));
+            let child = smith_agent_shell::config::from_value(serde_json::from_slice(&generated).unwrap()).unwrap();
+            assert!(child.service.program.is_some());
+            assert_eq!(child.profile.policy.exit_grace, host.exit_grace);
+            let teardown = child
+                .profile
+                .policy
+                .close
+                .checked_add(child.profile.policy.close)
+                .unwrap()
+                .checked_add(child.profile.policy.write_deadline)
+                .unwrap();
+            assert!(host.exit_grace > teardown);
+        }
+    }
 }

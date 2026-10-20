@@ -189,6 +189,11 @@ pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option
     run_fixture(scratch, arguments, provider, false, person(input), false, window::Story::None).0
 }
 
+#[must_use]
+pub fn run_scripted(scratch: &Scratch, arguments: &[&str], commands: Vec<Action>) -> Ran {
+    run_fixture(scratch, arguments, None, false, (Mode::Pipes, commands), false, window::Story::None).0
+}
+
 /// Start the product in a scratch repository with no commit, retaining provider requests.
 #[must_use]
 pub fn exec_without_head(scratch: &Scratch) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {

@@ -244,7 +244,16 @@ fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
             run::Fault::Declined => failure(AnswerClass::Model, Some(b"refused")),
             run::Fault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             run::Fault::Unauthorized { .. } => failure(AnswerClass::Model, Some(b"unauthorized")),
-            run::Fault::Program { .. } => failure(AnswerClass::Model, Some(b"program")),
+            run::Fault::Program { name, exit, detail } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.program = Some(name);
+                result.exit = match exit {
+                    Some(code) => Some(smith_events::AgentExit::Code(i64::from(code))),
+                    None => None,
+                };
+                result.detail = Some(detail);
+                result
+            }
             run::Fault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
         run::Failure::Budget { exhausted, used, bound } => {
@@ -591,5 +600,20 @@ mod tests {
         assert_eq!(failure.used, Some(1073));
         assert_eq!(failure.bound, Some(1000));
         assert_eq!(record.duration_ms, 17);
+    }
+    #[test]
+    fn program_failures_keep_their_terminal_metadata() {
+        for (exit, expected) in [(None, None), (Some(7), Some(smith_events::AgentExit::Code(7)))] {
+            let fault = run::Failure::Model(run::Fault::Program {
+                name: b"claude_code".as_slice().into(),
+                exit,
+                detail: b"program detail".as_slice().into(),
+            });
+            let value = failed(fault, skein_lib::Time::ZERO);
+            assert_eq!(value.class, AnswerClass::Model);
+            assert_eq!(value.program.as_deref(), Some(b"claude_code".as_slice()));
+            assert_eq!(value.exit, expected);
+            assert_eq!(value.detail.as_deref(), Some(b"program detail".as_slice()));
+        }
     }
 }

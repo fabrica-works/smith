@@ -28,6 +28,8 @@ mod builtin_tests;
 #[cfg(test)]
 mod conversation_tests;
 #[cfg(test)]
+mod exit_tests;
+#[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
 mod reply_tests;
@@ -133,6 +135,7 @@ pub struct Backend {
     written: u32,
     exit: Option<u32>,
     deadline: Option<Time>,
+    eof_deadline: Option<Time>,
     stopping: u8,
     response_phase: llm::Phase,
     run_time: Duration,
@@ -304,6 +307,7 @@ impl Backend {
             written: 0,
             exit: None,
             deadline: None,
+            eof_deadline: None,
             stopping: 0,
             response_phase: llm::Phase::Head,
             run_time: Duration::ZERO,
@@ -464,6 +468,14 @@ impl Backend {
         if let Some(server) = &mut self.server {
             server.fire(env.now, &mut self.io);
         }
+        let eof_due = match self.eof_deadline {
+            Some(deadline) => env.now >= deadline,
+            None => false,
+        };
+        if eof_due {
+            self.eof_deadline = None;
+            self.fail(env, llm::Failure::Program { exit: self.exit }, b"smith: the MCP server ended", up, below);
+        }
         let due = match self.deadline {
             Some(deadline) => env.now >= deadline,
             None => false,
@@ -521,6 +533,7 @@ impl Backend {
         }
         let mut earliest = self.deadline;
         for at in [
+            self.eof_deadline,
             match &self.check {
                 Some(check) => check.next_deadline(),
                 None => None,
@@ -601,6 +614,7 @@ impl Backend {
         self.answer_calls();
         self.request = None;
         self.outgoing = None;
+        self.eof_deadline = None;
         self.deadline = if self.child.is_some() || self.spawning {
             Some(env.now.saturating_add(self.settings.grace))
         } else {

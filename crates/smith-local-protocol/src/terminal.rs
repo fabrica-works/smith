@@ -738,7 +738,7 @@ mod failure_tests {
             (host::ModelFault::Unauthorized { account: 7 }, b"run failed: account work unauthorized\n".as_slice()),
             (
                 host::ModelFault::Program { name: b"login".as_slice().into(), exit: Some(2), detail: Box::default() },
-                b"run failed: provider\n".as_slice(),
+                b"run failed: login exited before its answer: \n".as_slice(),
             ),
             (host::ModelFault::Declined, b"run failed: refused\n".as_slice()),
             (host::ModelFault::Provider, b"run failed: provider\n".as_slice()),

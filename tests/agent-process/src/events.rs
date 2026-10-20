@@ -4,7 +4,16 @@
 
 use smith_events::{Event, Record};
 
-/// Check Smith's independently decoded process stream identities, cardinalities and response sums.
+/// Check the direct provider's stream identities, cardinalities and response sums.
+pub fn check(records: &[Record]) {
+    check_transport(records, false);
+}
+
+/// Check program stream conformance with the unknown request measures of events.md 3.5.
+pub fn check_program(records: &[Record]) {
+    check_transport(records, true);
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one exhaustive Smith record referee keeps all18 pairings and actual count/charge checks together"
@@ -13,7 +22,7 @@ use smith_events::{Event, Record};
     clippy::wildcard_enum_match_arm,
     reason = "the inner lookback selects one preceding provider call; the outer referee checks every event"
 )]
-pub fn check(records: &[Record]) {
+fn check_transport(records: &[Record], program: bool) {
     let Event::SessionStarted(header) = &records.first().expect("stream header").event else {
         panic!("session.started is first");
     };
@@ -100,8 +109,12 @@ pub fn check(records: &[Record]) {
                     usage = actual;
                     reported_usage = true;
                 }
-                if response.outcome == smith_events::Outcome::Completed {
-                    assert!(response.request_bytes.expect("actual completed request was encoded") > 0);
+                if program {
+                    assert_eq!(response.request_bytes, None, "events.md 3.5: the program owns its request");
+                    assert_eq!(response.first_byte_ms, None);
+                    assert_eq!(response.largest_gap_ms, None);
+                } else if response.outcome == smith_events::Outcome::Completed {
+                    assert!(response.request_bytes.expect("completed request was encoded") > 0);
                     assert!(response.first_byte_ms.is_some(), "the native peer sent plaintext response bytes");
                     assert!(response.largest_gap_ms.is_some(), "the native peer sent multiple SSE events");
                 }
@@ -114,7 +127,7 @@ pub fn check(records: &[Record]) {
                     smith_events::Capture::Calls | smith_events::Capture::Everything => {
                         let input = call.input.as_ref().expect("the actual call carries its provider arguments");
                         assert_eq!(u64::try_from(input.len()).expect("bounded input length"), call.input_bytes);
-                        if header.capture == smith_events::Capture::Everything {
+                        if header.capture == smith_events::Capture::Everything && !program {
                             let arguments = records
                                 .iter()
                                 .take(position)
