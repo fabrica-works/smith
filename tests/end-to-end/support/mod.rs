@@ -366,8 +366,9 @@ pub fn run_with_provider(
     let outcome = world.run(&clock, Duration::from_secs(6));
     assert!(outcome.procs.iter().all(Host::is_empty), "binary and scripted processes drained");
     let seen = observations(&outcome.procs, scenario.launch.authenticated);
-    before.assert_binary_expected(&scenario, &seen);
-    let records = read_trace(scratch.path(), &old_trace);
+    let mut resolved = resolved_settings(scratch.path());
+    before.assert_binary_expected(&scenario, &seen, &resolved);
+    let records = read_trace_resolved(&mut resolved, &old_trace);
     assert!(
         records.iter().any(|record| matches!(&record.event,
             smith_events::Event::ToolStarted(started) if started.tool.as_ref() == b"finish")),
@@ -385,6 +386,10 @@ pub fn run_with_provider(
 /// Each appended invocation is checked independently; a prior prefix stays untouched.
 #[must_use]
 pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> {
+    read_trace_resolved(&mut resolved_settings(directory), prefix)
+}
+
+fn resolved_settings(directory: &Path) -> smith_local_shell::settings::resolve::Resolved {
     let source = smith_local_shell::settings::Source {
         layer: smith_local_shell::settings::Layer::User,
         path: directory.join("config/smith/config.toml"),
@@ -396,12 +401,16 @@ pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> 
         &[source],
     )
     .expect("merged product settings");
-    let mut resolved = smith_local_shell::settings::resolve::resolve_startup(&settings)
-        .unwrap_or_else(|why| panic!("{}", why.line()))
-        .0;
+    smith_local_shell::settings::resolve::resolve_startup(&settings).unwrap_or_else(|why| panic!("{}", why.line())).0
+}
+
+fn read_trace_resolved(
+    resolved: &mut smith_local_shell::settings::resolve::Resolved,
+    prefix: &[u8],
+) -> Vec<smith_events::Record> {
     let trace = resolved.agent.trace.as_ref().expect("configured agent destination").path.clone();
-    let _limits = smith_local_shell::check::interactive_limits(&mut resolved).expect("actual producer limits");
-    let configuration = resolved.agent;
+    let _limits = smith_local_shell::check::interactive_limits(resolved).expect("producer limits");
+    let configuration = &resolved.agent;
     let events = configuration.service.limits.events.expect("configured event producer");
     let limits = events.sinks.records;
     let ceiling = events.sinks.line_ceiling(events.capture).expect("actual writer-derived line ceiling");

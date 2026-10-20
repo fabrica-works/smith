@@ -47,37 +47,36 @@ impl Before {
     }
 
     pub(crate) fn assert_expected(&self, scenario: &Scenario, seen: &Seen) {
-        self.assert_outputs(scenario, seen, false);
+        self.assert_outputs(scenario, seen, None);
     }
 
     /// A binary adds its generated configuration and configured trace to the shared scratch contract.
-    pub fn assert_binary_expected(&self, scenario: &Scenario, seen: &Seen) {
-        self.assert_outputs(scenario, seen, true);
+    pub fn assert_binary_expected(
+        &self,
+        scenario: &Scenario,
+        seen: &Seen,
+        resolved: &smith_local_shell::settings::resolve::Resolved,
+    ) {
+        self.assert_outputs(scenario, seen, Some(resolved));
     }
 
-    fn assert_outputs(&self, scenario: &Scenario, seen: &Seen, binary: bool) {
+    fn assert_outputs(
+        &self,
+        scenario: &Scenario,
+        seen: &Seen,
+        resolved: Option<&smith_local_shell::settings::resolve::Resolved>,
+    ) {
+        let binary = resolved.is_some();
         let root = &scenario.launch.root_path;
         let mut after = BTreeMap::new();
         entries(root, root, &mut after);
-        let (chat, endpoints) = if binary {
-            let source = smith_local_shell::settings::Source {
-                layer: smith_local_shell::settings::Layer::User,
-                path: root.join("config/smith/config.toml"),
-                text: std::fs::read_to_string(root.join("config/smith/config.toml")).unwrap(),
-            };
-            let settings = smith_local_shell::settings::from_sources(
-                &smith_local_shell::command::Shared::default(),
-                root.clone(),
-                &[source],
-            )
-            .unwrap();
-            let resolved = smith_local_shell::settings::resolve::resolve_startup(&settings).unwrap().0;
+        let (chat, endpoints) = if let Some(resolved) = resolved {
             let workspace = root.canonicalize().unwrap();
             let digest = skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes());
             let key = digest.0.iter().map(|part| format!("{part:016x}")).collect::<String>();
             let chat =
                 PathBuf::from("state/smith/chats").join(key).join(std::str::from_utf8(&resolved.local.chat).unwrap());
-            (chat, resolved.agent.service.channel_endpoints)
+            (chat, resolved.agent.service.channel_endpoints.clone())
         } else {
             (PathBuf::from("chat"), smith_local_process_world::process::lower_configuration().channel_endpoints)
         };
