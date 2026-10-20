@@ -70,7 +70,7 @@ pub(crate) fn yielded(asked: crate::Yield, limits: &Limits) -> (Option<Duration>
 /// Select a job read's wait under the same ceiling as a shell's yield.
 pub(crate) fn waited(asked: crate::Wait, limits: &Limits) -> Timed {
     match asked {
-        crate::Wait::Default => Timed { timeout: limits.job_wait, clamp: TimeoutClamp::Within },
+        crate::Wait::Default => Timed { timeout: limits.job_poll, clamp: TimeoutClamp::Within },
         crate::Wait::Asked(duration) => job_timed(duration, limits),
     }
 }

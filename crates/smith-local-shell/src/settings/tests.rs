@@ -703,11 +703,14 @@ fn parallel_tools_reaches_the_agents_policy_and_batch_limits() {
 }
 
 #[test]
-fn jobs_and_job_wait_reach_the_agents_tool_limits() {
-    let resolved = composed("[deployment]\njobs=2\njob_wait=7\n").unwrap_or_else(|why| panic!("{}", why.line()));
+fn jobs_job_poll_and_job_wait_reach_the_agents_tool_limits() {
+    let resolved =
+        composed("[deployment]\njobs=2\njob_poll=2\njob_wait=7\n").unwrap_or_else(|why| panic!("{}", why.line()));
     assert_eq!(resolved.agent.profile.declared.jobs, 2);
+    assert_eq!(resolved.agent.profile.policy.job_poll, skein_lib::Duration::from_secs(2));
     assert_eq!(resolved.agent.profile.policy.job_wait, skein_lib::Duration::from_secs(7));
     assert_eq!(resolved.agent.service.limits.domain.session.tools.jobs, 2);
+    assert_eq!(resolved.agent.service.limits.domain.session.tools.job_poll, skein_lib::Duration::from_secs(2));
     assert_eq!(resolved.agent.service.limits.domain.session.tools.job_wait, skein_lib::Duration::from_secs(7));
 }
 

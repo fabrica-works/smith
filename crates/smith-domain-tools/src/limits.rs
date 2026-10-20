@@ -54,7 +54,9 @@ pub struct Limits {
     pub file_timeout: Duration,
     /// The command duration when its call asks for no deadline.
     pub shell_timeout: Duration,
-    /// Default and ceiling of a job wait, and ceiling of a shell yield.
+    /// Default duration of a job wait.
+    pub job_poll: Duration,
+    /// Ceiling of a job wait and a shell yield.
     pub job_wait: Duration,
     /// Maximum duration any tool call may ask for; larger command requests are clamped.
     pub tool_deadline: Duration,
@@ -212,7 +214,9 @@ pub struct Derivation {
     pub list_entries: u32,
     pub tool_deadline: Duration,
     pub shell_timeout: Duration,
-    /// Default and ceiling of a job wait, and ceiling of a shell yield.
+    /// Default duration of a job wait.
+    pub job_poll: Duration,
+    /// Ceiling of a job wait and a shell yield.
     pub job_wait: Duration,
 }
 
@@ -272,6 +276,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         match_lines: 8,
         file_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
         shell_timeout: inputs.shell_timeout,
+        job_poll: inputs.job_poll,
         job_wait: inputs.job_wait,
         tool_deadline: inputs.tool_deadline,
         shell_output: inputs.shell_output,

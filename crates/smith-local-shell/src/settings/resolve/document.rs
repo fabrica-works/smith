@@ -29,6 +29,7 @@ pub(super) fn profile(settings: &Settings) -> Result<Value, Refusal> {
         "connection_keep",
         "tool_deadline",
         "shell_timeout",
+        "job_poll",
         "job_wait",
         "check_timeout",
         "wrap_up",

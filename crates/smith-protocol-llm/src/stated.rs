@@ -24,6 +24,7 @@ pub struct Stated {
     pub search_bytes: u32,
     pub shell_timeout: Duration,
     pub tool_deadline: Duration,
+    pub job_poll: Duration,
     pub job_wait: Duration,
     pub jobs: u32,
     /// Default kept command output, in bytes.
@@ -49,6 +50,7 @@ impl Stated {
             search_bytes: limits.search_bytes,
             shell_timeout: limits.shell_timeout,
             tool_deadline: limits.tool_deadline,
+            job_poll: limits.job_poll,
             job_wait: limits.job_wait,
             jobs: limits.jobs,
             shell_output: limits.shell_output,

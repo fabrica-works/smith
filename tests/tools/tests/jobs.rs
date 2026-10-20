@@ -61,6 +61,51 @@ fn a_command_past_its_yield_is_answered_running_then_read_to_its_end() {
     );
 }
 
+// Distinct small durations exercise domain/tools.md, section 5, Reading it.
+fn poll_with_separate_default_and_ceiling(wait: tools::Wait) -> Vec<Result<Outcome, JobProblem>> {
+    let mut settings = settings();
+    settings.tools.job_poll = Duration::from_secs(1);
+    settings.tools.job_wait = Duration::from_secs(3);
+    let poll = Call::Job { job: JobNumber(1), wait, output: tools::Budget::Default, stop: false };
+    let script = vec![Step::Calls(vec![shell_after(b"cargo build", 0)]), Step::Calls(vec![poll])];
+    let (answers, _) = run(settings, Fixture::new(), &build(), script);
+    answers
+}
+
+#[test]
+fn an_unasked_wait_uses_job_poll_before_the_job_ends() {
+    let answers = poll_with_separate_default_and_ceiling(tools::Wait::Default);
+    assert_eq!(
+        answers.get(1),
+        Some(&Ok(Outcome::Job {
+            job: JobNumber(1),
+            head: Box::default(),
+            tail: Box::default(),
+            dropped: 0,
+            output: BytesClamp::Within,
+            wait: TimeoutClamp::Within,
+            end: JobEnd::Running,
+        }))
+    );
+}
+
+#[test]
+fn a_wait_between_job_poll_and_job_wait_reaches_the_end() {
+    let answers = poll_with_separate_default_and_ceiling(tools::Wait::Asked(Duration::from_secs(2)));
+    assert_eq!(
+        answers.get(1),
+        Some(&Ok(Outcome::Job {
+            job: JobNumber(1),
+            head: b"Finished\n".as_slice().into(),
+            tail: Box::default(),
+            dropped: 0,
+            output: BytesClamp::Within,
+            wait: TimeoutClamp::Within,
+            end: JobEnd::Ended(tools::Exit::Code { code: 0 }),
+        }))
+    );
+}
+
 fn read_with_dropped_output() -> Vec<Result<Outcome, JobProblem>> {
     let mut fixture = Fixture::new();
     fixture.checkout.program(b"cargo build", program(4_000, b"start\nabcdefghijklmnopend\n", Exit::Code(0), &[]));
@@ -121,6 +166,7 @@ fn a_jobs_read_past_its_kept_ceiling_counts_the_dropped_bytes_once() {
 
 fn yield_and_read_with_clamps() -> Vec<Result<Outcome, JobProblem>> {
     let mut settings = settings();
+    settings.tools.job_poll = Duration::from_secs(1);
     settings.tools.job_wait = Duration::from_secs(1);
     let mut fixture = Fixture::new();
     fixture.checkout.program(b"cargo build", program(3_000, b"Compiling\nFinished\n", Exit::Code(0), &[]));

@@ -344,6 +344,7 @@ fn zero_model_idle_is_a_named_deadline_refusal() {
 fn shell_default_cannot_pass_its_tool_deadline() {
     let mut profile = profile();
     profile.policy.shell_timeout = Duration::from_secs(11);
+    profile.policy.job_poll = Duration::from_secs(10);
     profile.policy.job_wait = Duration::from_secs(10);
     profile.policy.tool_deadline = Duration::from_secs(10);
     let refusal = super::derive(&profile, &declarations()).expect_err("shell exceeds tool deadline");
@@ -737,6 +738,7 @@ fn a_job_wait_above_the_tool_deadline_is_refused() {
     let mut selected = profile();
     selected.policy.tool_deadline = Duration::from_secs(10);
     selected.policy.shell_timeout = Duration::from_secs(10);
+    selected.policy.job_poll = Duration::from_secs(10);
     selected.policy.job_wait = Duration::from_secs(11);
     assert_eq!(
         super::derive(&selected, &declarations()).expect_err("job wait exceeds tool deadline"),
@@ -774,7 +776,8 @@ fn the_worst_case_counts_each_sessions_jobs_at_their_kept_output() {
     assert_eq!(without.machine.processes, 8);
     assert_eq!(with.machine.processes, 20);
     assert_eq!(with.domain.session.tools.jobs, 4);
-    assert_eq!(with.domain.session.tools.job_wait, Duration::from_secs(30));
+    assert_eq!(with.domain.session.tools.job_poll, Duration::from_secs(30));
+    assert_eq!(with.domain.session.tools.job_wait, Duration::from_secs(300));
     let mut without_machine = without.machine;
     let mut with_machine = with.machine;
     without_machine.search_bytes = 0;
@@ -854,4 +857,48 @@ fn a_credential_value_cap_is_worded_credential_value() {
         bound: 7,
     }));
     assert!(words(&refusal).ends_with(b"request-head: credential-value bound=7"));
+}
+
+#[test]
+fn a_zero_job_poll_is_refused_before_deriving_limits() {
+    let mut selected = profile();
+    selected.policy.job_poll = Duration::ZERO;
+    assert_eq!(
+        super::derive(&selected, &declarations()).expect_err("zero job poll"),
+        Refusal::Broken {
+            check: Check::Deadlines,
+            left: LimitName::deployment(Layer::Policy, "job_poll").value(Value::Duration(Duration::ZERO)),
+            right: LimitName::deployment(Layer::Policy, "deadline_minimum").value(Value::Duration(Duration::ZERO)),
+        }
+    );
+}
+
+#[test]
+fn a_job_poll_above_the_job_wait_is_refused() {
+    let mut selected = profile();
+    selected.policy.job_poll = Duration::from_secs(301);
+    assert_eq!(
+        super::derive(&selected, &declarations()).expect_err("job poll exceeds job wait"),
+        Refusal::Broken {
+            check: Check::Deadlines,
+            left: LimitName::deployment(Layer::Policy, "job_poll").value(Value::Duration(Duration::from_secs(301))),
+            right: LimitName::deployment(Layer::Policy, "job_wait").value(Value::Duration(Duration::from_secs(300))),
+        }
+    );
+}
+
+#[test]
+fn a_job_poll_at_the_job_wait_is_accepted() {
+    let mut selected = profile();
+    selected.policy.job_poll = Duration::from_secs(300);
+    let limits = super::derive(&selected, &declarations()).expect("default reaches its ceiling");
+    assert_eq!(limits.domain.session.tools.job_poll, Duration::from_secs(300));
+    assert_eq!(limits.domain.session.tools.job_wait, Duration::from_secs(300));
+}
+
+#[test]
+fn standard_job_poll_and_job_wait_are_thirty_seconds_and_five_minutes() {
+    let selected = standard();
+    assert_eq!(selected.policy.job_poll, Duration::from_secs(30));
+    assert_eq!(selected.policy.job_wait, Duration::from_secs(300));
 }

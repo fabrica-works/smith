@@ -23,6 +23,7 @@ turns = 8
 "deployment.tool_deadline" = 1
 "deployment.shell_timeout" = 1
 "deployment.job_wait" = 1
+"deployment.job_poll" = 1
 [[outcome]]
 check = "end"
 end = "completed"

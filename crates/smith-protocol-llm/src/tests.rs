@@ -60,6 +60,7 @@ fn tools() -> tools::Limits {
         match_lines: 8,
         file_timeout: Duration::from_secs(30),
         jobs: 4,
+        job_poll: Duration::from_secs(30),
         job_wait: Duration::from_secs(30),
         shell_timeout: Duration::from_secs(30),
         tool_deadline: Duration::from_secs(120),
@@ -331,6 +332,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         list_entries: 11,
         search_hits: 13,
         search_bytes: 127,
+        job_poll: Duration::from_secs(2),
         job_wait: Duration::from_secs(7),
         jobs: 4,
         shell_timeout: Duration::from_secs(12),
@@ -364,7 +366,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             4,
         ),
         (
-            "Output since last answer; running or end. Max 4 jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.",
+            "Output since last answer; running or end. Max 4 jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked; with stop, write in call order. A poll is best asked to wait about as long as the job has left, so that one poll sees its end; it needs no deliberation of its own. Running jobs hold no later batch slot. Cuts marked.",
             4,
         ),
     ];
@@ -394,9 +396,10 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
                 text.contains("Seconds")
                     && text.contains("12 seconds")
                     && text.contains("43 seconds")
+                    && text.contains("Yield; no default; max 7 seconds; clamped.")
                     && text.contains("max 401 bytes")
             ),
-            b"job" => assert!(text.contains("default/max 7 seconds")),
+            b"job" => assert!(text.contains("Wait; default 2 seconds; max 7 seconds; clamped.")),
             _ => panic!("only the seven workspace tools"),
         }
     }
@@ -415,6 +418,7 @@ fn stated_quantities_copy_effective_limits_and_refuse_capture_overflow() {
     assert_eq!(stated.output_ceiling, 128);
     assert_eq!(stated.shell_output, 128);
     assert_eq!(stated.shell_timeout, Duration::from_secs(30));
+    assert_eq!(stated.job_poll, Duration::from_secs(30));
     assert_eq!(stated.job_wait, Duration::from_secs(30));
     assert_eq!(stated.jobs, 4);
     assert_eq!(stated.tool_deadline, Duration::from_secs(120));
@@ -449,6 +453,7 @@ fn path_descriptions_follow_the_actual_conversation_namespace() {
                 list_entries: 16,
                 search_hits: 8,
                 search_bytes: 256,
+                job_poll: Duration::from_secs(30),
                 job_wait: Duration::from_secs(30),
                 jobs: 4,
                 shell_timeout: Duration::from_secs(60),

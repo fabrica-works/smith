@@ -486,6 +486,7 @@ fn derive_tools(profile: &Profile) -> Result<tools::Limits, Refusal> {
         list_entries: declared.list_entries,
         tool_deadline: policy.tool_deadline,
         shell_timeout: policy.shell_timeout,
+        job_poll: policy.job_poll,
         job_wait: policy.job_wait,
     }) {
         Ok(limits) => Ok(limits),

@@ -96,6 +96,7 @@ struct PolicyOverrides {
     connection_keep: Option<u64>,
     tool_deadline: Option<u64>,
     shell_timeout: Option<u64>,
+    job_poll: Option<u64>,
     job_wait: Option<u64>,
     check_timeout: Option<u64>,
     wrap_up: Option<u64>,
@@ -756,6 +757,9 @@ fn apply_durations(
     if let Some(value) = overrides.shell_timeout {
         profile.policy.shell_timeout = duration(value, LimitName::deployment(Layer::Policy, "shell_timeout"))?;
     }
+    if let Some(value) = overrides.job_poll {
+        profile.policy.job_poll = duration(value, LimitName::deployment(Layer::Policy, "job_poll"))?;
+    }
     if let Some(value) = overrides.job_wait {
         profile.policy.job_wait = duration(value, LimitName::deployment(Layer::Policy, "job_wait"))?;
     }
@@ -1248,7 +1252,7 @@ mod tests {
         let mut document = shaped_document();
         document["profile"]["declared"]["conversations"] = 2.into();
         document["profile"]["declared"]["shell_tail"] = 64.into();
-        document["profile"]["policy"] = serde_json::json!({"inbox":3,"group_stop":7,"max_turns":9,"unacknowledged":2});
+        document["profile"]["policy"] = serde_json::json!({"inbox":3,"group_stop":7,"max_turns":9,"unacknowledged":2,"job_poll":2000,"job_wait":7000});
         let configured = parse_value(&document).expect("quantity overrides");
         let limits = configured.service.limits;
         assert_eq!(limits.domain.run.conversations, 2);
@@ -1258,6 +1262,12 @@ mod tests {
         assert_eq!(limits.domain.run.budget.turns, 9);
         assert_eq!(limits.channel.turns, 2);
         assert_eq!(limits.machine.group_stop, Duration::from_millis(7));
+        assert_eq!(configured.profile.policy.job_poll, Duration::from_secs(2));
+        assert_eq!(configured.profile.policy.job_wait, Duration::from_secs(7));
+        assert_eq!(limits.domain.session.tools.job_poll, Duration::from_secs(2));
+        assert_eq!(limits.domain.session.tools.job_wait, Duration::from_secs(7));
+        assert_eq!(limits.llm.adapter.stated.job_poll, Duration::from_secs(2));
+        assert_eq!(limits.llm.adapter.stated.job_wait, Duration::from_secs(7));
         assert_eq!(limits.domain.session.tools.shell_tail, 64);
         assert_eq!(limits.domain.run.check_tail, 64);
         assert_eq!(limits.domain.session.tools.tool_deadline, configured.profile.policy.tool_deadline);

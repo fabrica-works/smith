@@ -194,13 +194,18 @@ fn jobs_print_their_declared_and_derived_tools_counts() {
 }
 
 #[test]
-fn job_wait_prints_its_policy_and_derived_tools_durations() {
+fn job_poll_and_job_wait_print_their_policy_and_derived_tools_durations() {
     let limits = derive(&profile(), &declarations()).expect("fixture derives");
     let named =
         effective(&profile(), &declarations(), &limits, &endpoints(&declarations(), &limits)).expect("bounded list");
     let header = header(&named, &names(), &declarations()).expect("names fit");
-    for name in [b"policy.job_wait".as_slice(), b"tools.job_wait".as_slice()] {
-        assert_eq!(value(&header, name), Some(LimitValue::Integer(30_000)));
+    for (name, millis) in [
+        (b"policy.job_poll".as_slice(), 30_000),
+        (b"tools.job_poll".as_slice(), 30_000),
+        (b"policy.job_wait".as_slice(), 300_000),
+        (b"tools.job_wait".as_slice(), 300_000),
+    ] {
+        assert_eq!(value(&header, name), Some(LimitValue::Integer(millis)));
     }
 }
 

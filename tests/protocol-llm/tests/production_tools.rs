@@ -410,7 +410,7 @@ fn each_description_states_its_facts() {
             b"job",
             [
                 "Output since last answer",
-                "default/max 30 seconds",
+                "default 30 seconds; max 30 seconds",
                 "Max 4 jobs/session",
                 "held until end is answered",
                 "Without stop, read beside reads, lists and searches",
@@ -418,6 +418,7 @@ fn each_description_states_its_facts() {
                 "such a poll costs nothing",
                 "only with job calls alone does it wait as asked",
                 "with stop, write in call order",
+                "A poll is best asked to wait about as long as the job has left, so that one poll sees its end; it needs no deliberation of its own.",
                 "hold no later batch slot",
                 "Stop, then report end",
             ]

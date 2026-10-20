@@ -165,7 +165,7 @@ summary = "summaries/probes-tool-output-utf-8-c98a562d-20261015T113828Z.json"
 [[variant]]
 name = "timeout"
 replace_checks = true
-smith = { "deployment.tool_deadline" = 1, "deployment.shell_timeout" = 1, "deployment.job_wait" = 1 }
+smith = { "deployment.tool_deadline" = 1, "deployment.shell_timeout" = 1, "deployment.job_poll" = 1, "deployment.job_wait" = 1 }
 prompt = "Run exactly two shell calls: sleep 600 with timeout_seconds=1, then sleep 600 with timeout_seconds=9999. Omit output_bytes in both calls. The declared tool ceiling is one second; both commands must time out, and the excessive request must be clamped. Do not read or edit files or delegate. After both results finish with TIMEOUTS VERIFIED.\n"
 deciding = ["end", "exit-code", "answer", "tool-call", "tool-timeout", "protected-unchanged", "stream-whole", "tree-ended"]
 [[variant.outcome]]

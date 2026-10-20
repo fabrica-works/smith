@@ -78,7 +78,7 @@ fn words(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) 
         Tool::Job => {
             output.put(b"Output since last answer; running or end. Max ");
             output.number(u64::from(stated.jobs));
-            output.put(b" jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked; with stop, write in call order. Running jobs hold no later batch slot. Cuts marked.");
+            output.put(b" jobs/session, held until end is answered. Without stop, read beside reads, lists and searches; beside other calls it waits no longer than they run, so such a poll costs nothing; only with job calls alone does it wait as asked; with stop, write in call order. A poll is best asked to wait about as long as the job has left, so that one poll sees its end; it needs no deliberation of its own. Running jobs hold no later batch slot. Cuts marked.");
         }
         Tool::Shell => {
             output.put(b"Run a command; files may change. Max ");
@@ -174,7 +174,9 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
             output.put(br#""},"all":{"type":"boolean","description":"False requires one unique match; true replaces every match."}},"required":["old","new"]}}},"required":["path","edits"]}"#);
         }
         Tool::Job => {
-            output.put(br#""job":{"type":"integer","minimum":1,"description":"Job number answered running by this session."},"wait_seconds":{"type":"integer","minimum":0,"description":"Wait; default/max "#);
+            output.put(br#""job":{"type":"integer","minimum":1,"description":"Job number answered running by this session."},"wait_seconds":{"type":"integer","minimum":0,"description":"Wait; default "#);
+            output.number(stated.job_poll.as_nanos() / 1_000_000_000);
+            output.put(b" seconds; max ");
             job_wait(stated, output);
             output.put(br#""},"output_bytes":{"type":"integer","minimum":1,"description":""#);
             command_output(stated, output);

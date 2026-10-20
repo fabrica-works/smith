@@ -138,6 +138,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
         connection_keep: _,
         tool_deadline,
         shell_timeout,
+        job_poll,
         job_wait,
         check_timeout,
         wrap_up,
@@ -164,6 +165,7 @@ fn policy(inventory: &mut Inventory, limits: &super::super::Policy) -> Option<()
     inventory.value("parallel_tools", Value::Count(u64::from(parallel_tools)))?;
     inventory.value("tool_deadline", Value::Duration(tool_deadline))?;
     inventory.value("shell_timeout", Value::Duration(shell_timeout))?;
+    inventory.value("job_poll", Value::Duration(job_poll))?;
     inventory.value("job_wait", Value::Duration(job_wait))?;
     inventory.value("check_timeout", Value::Duration(check_timeout))?;
     inventory.value("wrap_up", Value::Duration(wrap_up))?;
@@ -361,6 +363,7 @@ fn tools(inventory: &mut Inventory, limits: &smith_domain::tools::Limits) -> Opt
         match_lines,
         file_timeout,
         shell_timeout,
+        job_poll,
         job_wait,
         tool_deadline,
         shell_output,
@@ -387,6 +390,7 @@ fn tools(inventory: &mut Inventory, limits: &smith_domain::tools::Limits) -> Opt
     inventory.value("match_lines", Value::Count(u64::from(match_lines)))?;
     inventory.value("file_timeout", Value::Duration(file_timeout))?;
     inventory.value("shell_timeout", Value::Duration(shell_timeout))?;
+    inventory.value("job_poll", Value::Duration(job_poll))?;
     inventory.value("job_wait", Value::Duration(job_wait))?;
     inventory.value("tool_deadline", Value::Duration(tool_deadline))?;
     inventory.value("shell_output", Value::Bytes(u64::from(shell_output)))?;

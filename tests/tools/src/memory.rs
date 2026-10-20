@@ -25,6 +25,7 @@ pub const LIMITS: Limits = Limits {
     file_timeout: Duration::from_secs(10),
 
     jobs: 4,
+    job_poll: Duration::from_secs(30),
     job_wait: Duration::from_secs(30),
     shell_timeout: Duration::from_secs(60),
     tool_deadline: Duration::from_secs(600),

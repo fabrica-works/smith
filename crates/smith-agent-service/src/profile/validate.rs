@@ -81,6 +81,7 @@ pub fn configured_models(configuration: &Configuration) -> Result<(), Refusal> {
     Ok(())
 }
 
+// Contract: protocol/limits.md, section 4, `deadlines`.
 fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
     let policy = profile.policy;
     let values = [
@@ -90,6 +91,7 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
         duration("tool_deadline", policy.tool_deadline),
         duration("check_timeout", policy.check_timeout),
         duration("shell_timeout", policy.shell_timeout),
+        duration("job_poll", policy.job_poll),
         duration("job_wait", policy.job_wait),
         duration("wrap_up", policy.wrap_up),
         duration("group_stop", policy.group_stop),
@@ -119,6 +121,13 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
             check: Check::GraceOverTeardown,
             left: duration("exit_grace", policy.exit_grace),
             right: teardown_name.value(Value::Duration(teardown)),
+        });
+    }
+    if policy.job_poll > policy.job_wait {
+        return Err(Refusal::Broken {
+            check: Check::Deadlines,
+            left: duration("job_poll", policy.job_poll),
+            right: duration("job_wait", policy.job_wait),
         });
     }
     if policy.job_wait > policy.tool_deadline {

@@ -90,7 +90,9 @@ pub struct Policy {
     pub tool_deadline: Duration,
     /// Default command duration.
     pub shell_timeout: Duration,
-    /// Default and ceiling for job waits and the ceiling for shell yields.
+    /// Default duration of a job wait.
+    pub job_poll: Duration,
+    /// Ceiling for job waits and shell yields.
     pub job_wait: Duration,
     /// Check deadline that a change-capable charter's finishing reserve must hold.
     pub check_timeout: Duration,
@@ -197,7 +199,8 @@ pub const fn standard() -> Profile {
             connection_keep: Duration::from_secs(30),
             tool_deadline: Duration::from_secs(20 * 60),
             shell_timeout: Duration::from_secs(2 * 60),
-            job_wait: Duration::from_secs(30),
+            job_poll: Duration::from_secs(30),
+            job_wait: Duration::from_secs(300),
             check_timeout: Duration::from_secs(5 * 60),
             wrap_up: Duration::from_secs(60),
             group_stop: Duration::from_secs(1),
