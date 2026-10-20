@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-19. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-20. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -243,9 +243,10 @@ child domain `smith-domain-session`, whose own child is the tools domain
     - **a `write` or an `edit` answered anything but `written` or
       `edited`,** by protocol/events.md, 3.6's verdicts: a path refused,
       a version not read or stale, an `old` that matched nothing or more
-      than once, an `old` equal to its `new` (`unchanged`: like every
-      failed edit, it applies none of the call's edits, tools.md, section
-      3), a size refused, `failed`, which may have stored part of its
+      than once, edits that together leave the file as it was
+      (`unchanged`: like every failed edit, it applies none of the
+      call's edits, tools.md, section 3; revised 2026-10-20), a size
+      refused, `failed`, which may have stored part of its
       change, and every other.
   - **Nothing else stops them:** a `shell` or a `job` call's answer,
     whatever it is but `invalid`, an exit that is not zero and

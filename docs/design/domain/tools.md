@@ -1,6 +1,6 @@
 # Tools
 
-Provisional, 2026-10-05, revised 2026-10-19. What a smith session does to
+Provisional, 2026-10-05, revised 2026-10-20. What a smith session does to
 its workspace, as a domain layer: read, list, search, write, edit, shell
 and job. It is the child domain `smith-domain-tools`, under the session
 (session.md). A run with no workspace has none of these tools; its LLM
@@ -132,13 +132,19 @@ modify (`write`, `edit`), shell (`shell`, `job`).
 - **`search { pattern, path?, glob? }`** answers the lines that match, in
   path order, within its caps on hits and bytes, and counts the rest.
 - **`write { path, content }`** makes the file hold `content`, creating
-  it if there is none.
+  it if there is none, and first the directories its path names that do
+  not exist, within the directory the path is in (added 2026-10-20). A
+  directory it made stays if the store then fails.
 - **`edit { path, edits }`** applies `edits` in order, each an `old`
   snippet, its `new` replacement and whether to replace `all`
   occurrences, each to the file as the edits before it left it. Each
   `old` must occur exactly once, or at least once with `all`. If any
   edit fails, none is applied, and the outcome names the first that
   failed and why. The file is stored once.
+  - **A no-op edit is a match** (added 2026-10-20). An `old` equal to
+    its `new` must match as any `old` does, and changes nothing. A call
+    is refused as unchanged only when its edits together leave the file
+    as it was loaded.
 - **`shell { command, timeout_seconds?, output_bytes?, yield_seconds? }`**
   runs `command` with a deadline and a budget for its kept output
   (section 5). With `yield_seconds`, a command still running that many
@@ -188,7 +194,9 @@ modify (`write`, `edit`), shell (`shell`, `job`).
   link on any part of their path, so a change lands in the directory its
   path names, and a path with a `.git` part, in any case, is refused: the
   host must not have to trust what a repository's own configuration
-  became.
+  became. The directories a `write` makes follow its store's rules: inside
+  a writable directory, no symbolic link on any part, no `.git` part
+  (added 2026-10-20).
 - **Limits are told.** Every limit a tool applies is stated to the LLM
   with its unit and its maximum: a read's window, what a write or an
   edit may carry, a command's deadline, yield and kept output, a job's
@@ -270,8 +278,10 @@ modify (`write`, `edit`), shell (`shell`, `job`).
     answered, with the count of bytes dropped between them. No later
     answer holds what one dropped. It then answers `running`, or the job's end: `exited` with
     its exit, `timed_out` naming the deadline it passed, `stopped`, or
-    `cancelled`. It waits for the end up to `wait_seconds`, whose default
-    and ceiling are `job_wait`, before it answers `running`.
+    `cancelled`. It waits for the end up to `wait_seconds`, or `job_poll`
+    when it asks for none, clamped to `job_wait`, before it answers
+    `running` (revised 2026-10-20: the default and the ceiling were one
+    value, so a poll could not wait longer than it waited by default).
   - **A wait ended early.** The session ends a `job` call's wait once
     every call beside it in its batch that is not a `job` call has
     answered, and as soon as it starts in a batch of `job` calls only
@@ -345,7 +355,10 @@ The machine's faces for files and processes, and the programs they run
 - **Changes:** files changed behind a session's back; a `write` of a file
   not read; edit lists that all match, one that fails so that none
   applies, edits that overlap or match twice, and an edit with no
-  earlier read; a file changed between an edit's load and its store.
+  earlier read; a file changed between an edit's load and its store; an
+  edit whose `old` equals its `new` beside one that changes the file,
+  stored, and alone, refused as unchanged; a `write` beneath directories
+  that do not exist, which it makes, and one whose making fails.
 - **Reads and listings:** a file paged window by window, at the default
   window and at one asked for; a request past a ceiling, clamped and
   said; a tree cut at its cap, with ignored entries left out.
@@ -358,8 +371,9 @@ The machine's faces for files and processes, and the programs they run
 - **Jobs:** a command past its yield, answered `running` and read until
   it exits; one read past its kept output's ceiling, the bytes dropped
   counted once; one stopped, and one stopped after it had exited; one
-  past its deadline, `timed_out`; a yield and a wait asked past
-  `job_wait`, clamped and said; a wait ended early by its session,
+  past its deadline, `timed_out`; a wait asked for none, `job_poll`; a
+  yield and a wait asked past `job_wait`, clamped and said; a wait
+  ended early by its session,
   answered `running` with the output so far; reads, edits and other
   commands while a job runs; a `shell` call with a yield while `jobs` jobs are running, and
   `job` calls naming an unknown number or an end already answered, each
@@ -379,6 +393,11 @@ prove on a real kernel.
 
 ## 8. Open questions
 
+- **A wait ended by output** (added 2026-10-20): whether a `job` call's
+  wait should also end when the job writes something new, so that a
+  poll sees a failure early. It would wake a streaming build at every
+  line, so a poll waits for the end, `job_poll` by default, as Codex's
+  does.
 - **A code graph:** indexing a workspace for codebase-memory-mcp, served
   as an MCP tool source, and who keeps the index.
 - **Workspaces beyond directories** (README.md, section 8).

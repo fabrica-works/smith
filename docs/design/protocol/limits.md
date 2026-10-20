@@ -1,6 +1,6 @@
 # Limits
 
-Provisional, 2026-10-09, revised 2026-10-19. How an agent's limits are
+Provisional, 2026-10-09, revised 2026-10-20. How an agent's limits are
 made:
 
 - the quantities a deployment declares;
@@ -135,7 +135,8 @@ name `smith check` and the event stream's header print it under
 | `connection_keep` | duration, per endpoint | how long an idle connection stays open in a live service; never how the process ends, since the pool closes at the answer (skein's `llm-connection.md`, section 7) |
 | `tool_deadline` | duration | a tool call's longest deadline: the most a command's call may ask for, and the most any tool call's deadline may be, a host tool's included (domain/tools.md, section 5) |
 | `shell_timeout` | duration | a command's deadline when its call asks for none |
-| `job_wait` | duration | the longest a `shell` call's yield or a `job` call's wait may be: the ceiling of `yield_seconds`, and the default and the ceiling of `wait_seconds` (domain/tools.md, section 5) |
+| `job_poll` | duration | a `job` call's wait when it asks for none: the default of `wait_seconds` (domain/tools.md, section 5; added 2026-10-20) |
+| `job_wait` | duration | the longest a `shell` call's yield or a `job` call's wait may be: the ceiling of `yield_seconds` and of `wait_seconds` (domain/tools.md, section 5; revised 2026-10-20, when it was also the default) |
 | `check_timeout` | duration | the checks' deadline (domain/run.md, 8.1), cut at the run's end; a charter that allows a change keeps at least this much time in its reserve (domain/run.md, 9.1) |
 | `group_stop` | duration | each of the three steps that stop a command's group (agent.md, section 2) |
 | `close` | duration | io's close deadline (section 7) |
@@ -600,7 +601,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `environment` | the configured environment's names are valid and distinct |
 | `request-head` | a request's head holds a credential at its bound (2.4), the affinity's headers and the endpoint's configured headers, none of which is a reserved name |
 | `ceilings-in-vocabulary` | the policy ceilings fit the charter's and the channel's schemas |
-| `deadlines` | every deadline is positive, `shell_timeout` ≤ `tool_deadline`, so no command's deadline, asked for or not, passes what the session allows one tool call, and `job_wait` ≤ `tool_deadline`, so no yield or wait does either |
+| `deadlines` | every deadline is positive, `shell_timeout` ≤ `tool_deadline`, so no command's deadline, asked for or not, passes what the session allows one tool call, and `job_poll` ≤ `job_wait` ≤ `tool_deadline`, so no yield or wait does either, the default included |
 | `memory` | the sum of every worst case, with the LLM pool at its size, fits `memory` |
 | `cancel-over-close` | `cancel_grace` is at least twice io's `close`: a cancelled call settles within one `close` against a peer that keeps its connection open (skein's `shell.md`, section 13), so a grace no longer than `close` drops a run whose cancel would have settled; the second `close` is the margin |
 
@@ -850,7 +851,8 @@ version of it (events.md, section 6).
     at the first.
 - **Jobs and batches,** in the session's world with small values: a
   `shell` call with a yield refused while `jobs` jobs are held; a yield and a
-  wait clamped to `job_wait`; more adjacent reads than `parallel_tools`,
+  wait clamped to `job_wait`; a wait asked for none, `job_poll`; more
+  adjacent reads than `parallel_tools`,
   the rest run as the next batch once the first has answered.
 
 ## 12. From temper

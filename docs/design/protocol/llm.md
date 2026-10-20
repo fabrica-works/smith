@@ -1,6 +1,6 @@
 # LLM calls
 
-Provisional, 2026-10-07, revised 2026-10-19. `smith-protocol-llm` is the
+Provisional, 2026-10-07, revised 2026-10-20. `smith-protocol-llm` is the
 agent's component for LLM calls. It translates `smith-domain`'s LLM
 vocabulary to skein's LLM client and back:
 
@@ -138,7 +138,7 @@ A completion's prompt is built from what the domain gives:
 | `write` | `path`, and `content`, the whole file, at most the tool payload in bytes |
 | `edit` | `path`, and `edits`, each an `old`, a `new` and optionally `all`, in the dialect's edit format |
 | `shell` | `command`; optionally `timeout_seconds`, at most the effective maximum, `output_bytes`, at most the output ceiling, and `yield_seconds`, at most `job_wait` |
-| `job` | `job`, the number of a job its session answered `running`; optionally `wait_seconds`, at most `job_wait`, `output_bytes`, at most the output ceiling, and `stop`, a boolean |
+| `job` | `job`, the number of a job its session answered `running`; optionally `wait_seconds`, by default `job_poll` and at most `job_wait`, `output_bytes`, at most the output ceiling, and `stop`, a boolean |
 | `finish` | the result contract's forms (below) |
 | `deliver` | the change's required fields |
 | `wait` | nothing |
@@ -148,7 +148,8 @@ A completion's prompt is built from what the domain gives:
 - **Descriptions say what the domain enforces, with units and limits.**
   Every parameter has a description, and each limit it meets is given
   with its unit and its maximum: the read ceiling, the tool payload, the
-  output ceiling, the deadline's maximum, `job_wait` and `jobs`. They
+  output ceiling, the deadline's maximum, `job_poll`, `job_wait` and
+  `jobs`. They
   are the effective values (section 8), written in when the conversation
   opens, so the LLM meets no hidden cap. Paths are described as
   domain/tools.md, section 2 says: with one directory, relative to the
@@ -167,8 +168,11 @@ A completion's prompt is built from what the domain gives:
     job's number, and goes on as that job under its timeout, counted
     from its start;
   - `job`: that it reads a job's output since its last answer, and its
-    end once it has ended; `wait_seconds` in seconds, its default and
-    its ceiling `job_wait`; that beside any other call of its response
+    end once it has ended; `wait_seconds` in seconds, its default
+    `job_poll` and its ceiling `job_wait` (revised 2026-10-20); that a
+    poll is best asked to wait about as long as the job has left, so
+    that one poll sees its end, and needs no deliberation of its own
+    (added 2026-10-20); that beside any other call of its response
     it waits no longer than they run, so such a poll costs nothing, and
     that it waits as it asks only in a response of `job` calls alone;
     `stop`, which

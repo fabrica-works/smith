@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-19. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-20. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -272,12 +272,23 @@ Shared flags:
 | Flag | Meaning |
 |---|---|
 | `-C DIR` | the workspace: one directory, writable; a git working tree is a repository. The current directory by default |
+| `--dir NAME=PATH[:ro\|rw]` | another directory of the workspace, beside `-C`'s, called `NAME` (one safe path component), read-only with `:ro`, writable without a suffix or with `:rw`; repeatable (added 2026-10-20; see below) |
 | `-m ENDPOINT/NAME` | the main model |
 | `--effort LEVEL` | its reasoning effort |
 | `--account NAME` | the account main's endpoint runs on, for this invocation (5.2) |
 | `--chat NAME` | the chat to resume or start |
 | `-c KEY=VALUE` | a setting, by its dotted path, as a TOML value; repeatable (5.1) |
 | `--trace PATH` | append the event stream to `PATH` |
+
+- **Several directories** (added 2026-10-20). With `--dir`, the
+  workspace holds `-C`'s directory first, as the working directory, and
+  each `--dir` after it in the order given (domain/tools.md, section 2).
+  The working directory is then named by its own last path component,
+  and the others as `/NAME/...`. A name repeated, the working
+  directory's name, a name that is not one safe path component, a path
+  that is not a directory, or more directories than the profile's
+  workspace holds, is a usage error. A directory that is a git working
+  tree is a repository, as with `-C`.
 
 ### 4.1 `smith`
 
@@ -413,7 +424,11 @@ One run, then exit:
 - **`--chat NAME`** resumes or starts that chat. Without it, the run
   starts a new chat, named in `session.started` and on standard error.
 - **`--ephemeral`** keeps no chat: its files live in a private temporary
-  directory removed at exit. The credentials directory is kept as
+  directory removed at exit. That directory is made beneath
+  `$XDG_RUNTIME_DIR` when it is set, else beneath the system's temporary
+  directory (`$TMPDIR`, else `/tmp`), and never beneath the state
+  directory, so a run's chat sits apart from the disk the run's own
+  builds fill (revised 2026-10-20). The credentials directory is kept as
   usual. A run on a program leaves the program's own session in the
   source's configuration directory, where no later run looks for it
   (protocol/programs.md, 5.8).
@@ -1011,7 +1026,8 @@ names (section 2.3):
 | `shell_timeout` | 2 minutes | provisional; the tool-output probe |
 | `check_timeout` | 5 minutes, which the default reserve's 5 minutes holds (domain/run.md, 9.1) | provisional |
 | `tool_deadline` | 20 minutes, the most a command's call may ask for | provisional; the tool-output probe |
-| `job_wait` | 30 s, the longest yield or wait a call may ask for, and a `job` call's wait when it asks for none | provisional; the tool-output probe's `background` |
+| `job_poll` | 30 s, a `job` call's wait when it asks for none (added 2026-10-20) | provisional; the tool-output probe's `background` |
+| `job_wait` | 5 minutes, the longest yield or wait a call may ask for (revised 2026-10-20: 30 s, which was also the default) | provisional; the dogfood's polls |
 | `parallel_tools` | 4 adjacent reads run at once | provisional; the parallel-read probe |
 | `group_stop` | 1 s for each of its three steps | provisional; the process-tree probe |
 | `close` | 5 s | provisional |
@@ -1028,21 +1044,26 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
 - **One text, at most 4 KiB,** the same for every model, and for chats
   and tasks alike.
 - **Its topics, in this order:**
-  1. carrying the request to its end, within its scope;
+  1. carrying the request to its end, within its scope, by the plan or
+     the steps it gives, in their order, and never by what it rules out
+     (revised 2026-10-20);
   2. finding files, with `list` and `search` first, then reading the
      lines the work needs: a window from where a search found them, a
      whole file only when the work needs all of it;
   3. batching in one response every call that waits on no other's
      answer: reads, lists, searches and commands that change nothing,
      with a running job's poll beside them; and a change's edits,
-     across its files, then the command that checks them;
+     across its files, one `edit` per file in one response, then the
+     command that checks them (revised 2026-10-20);
   4. changing files with `edit` and `write`, never through the shell,
      the smallest change first, with every replacement one file needs
      in one `edit`;
   5. running the tests the change needs, and long commands as jobs
      whose polls go beside other work (domain/tools.md, section 5);
   6. not reverting changes the model did not make;
-  7. the report that `finish` carries;
+  7. the report that `finish` carries, as soon as the work is done and
+     checked, with no reading or running for the report alone (revised
+     2026-10-20);
   8. that a compaction does not end the work.
 - **It names only smith's own tools** (domain/run.md, section 5.1), and
   says nothing that the run's own sections of the system text already
@@ -1373,5 +1394,10 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
 - **A chat's account between invocations:** a chat resumed with another
   account is carried over (4.1). Default: allowed, said once on the
   status line.
+- **A chat's directories between invocations** (added 2026-10-20): a
+  chat resumed with other `--dir` directories than it began with.
+  Default: the workspace is the resumed invocation's, and the
+  transcript's paths into a directory no longer named are read as they
+  were written.
 - **An `isolate` option,** once contained trees make spawning contain
   more than one process does.

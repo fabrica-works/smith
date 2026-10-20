@@ -1,6 +1,6 @@
 # Events
 
-Provisional, 2026-10-09, revised 2026-10-19. The event vocabulary: one
+Provisional, 2026-10-09, revised 2026-10-20. The event vocabulary: one
 versioned stream of JSON lines that says what a process running smith
 did, from its start to its end. `smith exec --json` writes it to
 standard output, and a trace file is the same stream. Its records,
@@ -534,10 +534,18 @@ projection.
   (programming-model.md, section 7).
 - **`best_effort`:** a counted record that finds its destination behind
   is dropped and counted; the run never waits for it.
-- **Abandoned.** A destination that stays behind past io's write deadline
-  is given up: the sink writes nothing more to it, counts every later
-  record as lost, and says so on standard error (agent.md, section 6).
-  The run goes on.
+- **Abandoned.** A destination that stays behind past io's write deadline,
+  or whose write fails (a full disk, a closed pipe), is given up: the
+  sink writes no more counted records to it, counts every later one as
+  lost, and says so on standard error, naming the destination and why
+  (agent.md, section 6). The run goes on (revised 2026-10-20: a failed
+  write ended the destination's records, its authoritative ones too).
+- **An abandoned destination still gets its end** (added 2026-10-20).
+  Each authoritative record still to come, `run.completed` and
+  `session.ended`, is tried there once, in its reserved room, under the
+  write deadline, so a destination given up for a full disk that has
+  room again ends as 5.1 says. A try that fails too is said on standard
+  error, and the run's exit and its last line still say how it ended.
 - **One destination, one sink.** With standard output and a trace file,
   each has its own policy state and its own count, and each gets its own
   `session.ended`.
