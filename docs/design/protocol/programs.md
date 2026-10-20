@@ -351,12 +351,17 @@ open is section 9.
 ### 5.8 Parking, resuming and carrying over
 
 - **The program's session** is named by `--session-id`, a UUID derived
-  from the run's identity and main's thread (domain/session.md,
-  section 2), so that a later activation finds it. Claude Code keeps it
-  in the source's configuration directory.
+  from the run's identity, main's thread and the window's first message
+  (domain/session.md, section 2), so that a later activation finds it
+  and a new window gets a session of its own. Claude Code keeps it in
+  the source's configuration directory. A window's first call retried
+  after the program took its user message resumes that session rather
+  than naming it again.
 - **Parking:** when the run parks (domain/run.md, section 6), the agent
   ends the program after its turn by closing its input, and answers
-  parked. The program's session stays.
+  parked. A turn held on `wait` has no end of its own: the agent stops
+  the program with SIGINT, as a cancel does (5.7). The program's
+  session stays.
 - **Resuming on the same source and host:** when the transcript's
   opening turn names this backend and account (transcript.md, section 2)
   and the configuration directory holds the program's session, the
@@ -406,10 +411,16 @@ conditions. smith keeps each as a rule of its own:
   reserving each one's most first, so a run may pass its ordinary pool
   by one completion, which the reserve takes, and stops at its next
   turn (5.7).
-- **The program's, not smith's:** compaction within its session, the
-  bounds on a tool's output, a command's timeout, read before write and
-  match before edit. The transcript tells what the program did; it does
-  not make it smith's.
+- **The program's, not smith's:** the bounds on a tool's output, a
+  command's timeout, read before write and match before edit. The
+  transcript tells what the program did; it does not make it smith's.
+- **Two compactions:** the program compacts within its session as it
+  judges, and smith still compacts at its own line (domain/session.md,
+  8.2). The program's own compactions cost what they cost, uncounted:
+  a completion's usage is what its assistant message reports (5.7).
+- **A retried first call:** when a window's first call fails after the
+  program took its user message, the retry resumes the session (5.8)
+  and sends the message again, so the program's session holds it twice.
 - **Symbolic links:** the prompt judges a built-in call's paths by
   their names, reading nothing (5.4), and the program follows a link
   that a workspace tool's write would not (domain/tools.md, section 4),
