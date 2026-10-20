@@ -28,7 +28,7 @@ pub fn fake_provider_settings(scratch: &Scratch) -> Vec<u8> {
     let document = serde_json::json!({"tokens": {"access_token": std::str::from_utf8(&token).expect("scratch token text"), "account_id": "acc", "refresh_token": "UNISSUED_NEVER_COPY"}});
     std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&document).expect("scratch login encoding"))
         .expect("scratch login file");
-    format!("model='codex/gpt-6-luna'\neffort='low'\ninstructions='@local-shell Assist'\n[accounts.codex]\nsource='borrow'\nfile='{}'\nformat='codex'\nprogram='codex'\n[endpoints.codex]\naddress='{}:34443'\nserver_name='skein.test'\ntrust.system=false\ntrust.der=['{}']\n", scratch.path().join("auth.json").display(), smith_real_world::loopback(), scratch.path().join("root.der").display()).into_bytes()
+    format!("credentials='{}'\nmodel='codex/gpt-6-luna'\neffort='low'\ninstructions='@local-shell Assist'\n[accounts.codex]\nsource='borrow'\nfile='{}'\nformat='codex'\nprogram='codex'\n[endpoints.codex]\naddress='{}:34443'\nserver_name='skein.test'\ntrust.system=false\ntrust.der=['{}']\n", scratch.path().join("credentials").display(), scratch.path().join("auth.json").display(), smith_real_world::loopback(), scratch.path().join("root.der").display()).into_bytes()
 }
 
 #[must_use]

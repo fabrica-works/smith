@@ -96,7 +96,7 @@ pub(in crate::settings) fn endpoints(settings: &Settings, models: &[Model]) -> R
             "address":input::text(settings,&format!("{prefix}address"))?,"server_name":input::text(settings,&format!("{prefix}server_name"))?,
             "connect":input::millis(settings,&format!("{prefix}connect"))?,"handshake":input::millis(settings,&format!("{prefix}handshake"))?,
             "models":declared,"headers":headers});
-        for (setting, field) in [(&format!("{prefix}identity"), "identity")] {
+        for (setting, field) in [(&format!("{prefix}identity"), "identity"), (&format!("{prefix}program"), "program")] {
             if let Some(value) = settings.values.get(setting) {
                 endpoint
                     .as_object_mut()

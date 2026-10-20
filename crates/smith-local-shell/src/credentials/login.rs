@@ -51,6 +51,7 @@ pub fn command(arguments: &[std::ffi::OsString], clock: &Clock) -> Option<u8> {
 
 fn run(shared: &crate::command::Shared, name: &str, clock: &Clock) -> Result<LoginOutcome, String> {
     let settings = settings::read(shared).map_err(|why| why.line())?;
+    let settings = settings::resolve::checked(&settings).map_err(|why| why.line())?;
     let prefix = format!("accounts.{}.", settings::name(name));
     let fields = settings
         .values
@@ -72,12 +73,18 @@ fn run(shared: &crate::command::Shared, name: &str, clock: &Clock) -> Result<Log
                 })
             })
     });
-    let source = super::source(&account.fields, &settings.workspace, codex, name);
+    let directory = super::Directory::of(&settings);
+    let source = super::source(&account.fields, &settings, codex, name, directory.as_ref());
     match source {
-        Source::Borrow { .. } | Source::Env { .. } => {
+        Source::Borrow { .. } | Source::Env { .. } | Source::Key { .. } | Source::Program { .. } | Source::Nothing => {
             let credential = super::inspect(&source, clock.now().wall);
-            if let Source::Borrow { file, .. } = &source {
-                eprintln!("account {name}: reads the login from {}", file.display());
+            match &source {
+                Source::Borrow { file, .. } => eprintln!("account {name}: reads the login from {}", file.display()),
+                Source::Env { .. }
+                | Source::SignIn { .. }
+                | Source::Key { .. }
+                | Source::Program { .. }
+                | Source::Nothing => {}
             }
             eprintln!("{}", credential_words(name, &credential));
             Ok(if credential.usable() { LoginOutcome::Usable } else { LoginOutcome::Unavailable })

@@ -1,4 +1,5 @@
 mod relay;
+mod sources;
 pub mod support;
 
 use smith_local_process_world::{Placement, referee::CheckoutRead};
@@ -74,7 +75,11 @@ fn the_interactive_default_fits_its_memory() {
         let file = if source == "borrow" { "file='auth.json'\n" } else { "" };
         let _file = support::user_layer(
             &scratch,
-            format!("model='{model}'\n[accounts.{account}]\nsource='{source}'\n{file}").as_bytes(),
+            format!(
+                "credentials='{}'\nmodel='{model}'\n[accounts.{account}]\nsource='{source}'\n{file}",
+                scratch.path().join("credentials").display()
+            )
+            .as_bytes(),
         );
         let ran = support::smith_with_environment(
             &scratch,
@@ -89,6 +94,7 @@ fn the_interactive_default_fits_its_memory() {
             .as_u64()
             .expect("memory bytes");
         let settings = settings::Settings {
+            paths: settings::Paths::default(),
             workspace: scratch.path().into(),
             values: report["settings"]["values"]
                 .as_object()
@@ -98,7 +104,11 @@ fn the_interactive_default_fits_its_memory() {
                     (
                         name.clone(),
                         settings::Sourced {
-                            value: serde_json::from_value(sourced["value"].clone()).expect("checked setting"),
+                            value: if name == "credentials" {
+                                toml::Value::String(scratch.path().join("credentials").display().to_string())
+                            } else {
+                                serde_json::from_value(sourced["value"].clone()).expect("checked setting")
+                            },
                             origin: settings::Origin::BuiltIn,
                         },
                     )
@@ -238,7 +248,7 @@ fn smith_on_a_terminal_signs_in_and_commits_in_place() {
     );
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
     assert!(String::from_utf8_lossy(&ran.stdout).contains(&format!("Sign in: http://{host}:34444/authorize")));
-    assert!(scratch.path().join("state/smith/tokens/636f646578.token").is_file());
+    assert!(scratch.path().join("credentials/tokens/636f646578.token").is_file());
     let checkout = scratch.checkout();
     let after = checkout.head().unwrap();
     assert_ne!(before, after);
@@ -996,8 +1006,14 @@ fn ephemeral_directories(scratch: &Scratch) -> Vec<std::path::PathBuf> {
 fn login_settings(scratch: &Scratch, registration: &str) {
     let directory = scratch.path().join("config/smith");
     std::fs::create_dir_all(&directory).expect("scratch user layer");
-    std::fs::write(directory.join("config.toml"), format!("[accounts.test]\nsource='sign_in'\n{registration}"))
-        .expect("scratch registration");
+    std::fs::write(
+        directory.join("config.toml"),
+        format!(
+            "credentials='{}'\n[accounts.test]\nsource='sign_in'\n{registration}",
+            scratch.path().join("credentials").display()
+        ),
+    )
+    .expect("scratch registration");
 }
 
 #[test]
@@ -1014,7 +1030,7 @@ fn smith_login_signs_in_against_the_fake_issuer_and_exits_0() {
     let ran = support::login::sign_in(&scratch);
     assert_eq!(ran.code, 0);
     assert!(String::from_utf8_lossy(&ran.stderr).contains("account test: signed in"));
-    let file = scratch.path().join("state/smith/tokens/74657374.token");
+    let file = scratch.path().join("credentials/tokens/74657374.token");
     let secret = skein_shell::read_private_file(
         &file,
         smith_local_shell::local_host::token_limits().record_bytes,
@@ -1023,8 +1039,9 @@ fn smith_login_signs_in_against_the_fake_issuer_and_exits_0() {
     .expect("kept private record");
     let record = skein_oauth::decode_record(secret.expose(), &smith_local_shell::local_host::token_limits())
         .expect("native record");
-    assert_eq!(record.access_token.as_ref(), b"access-new");
-    assert_eq!(record.refresh_token.as_deref(), Some(b"refresh-new".as_slice()));
+    assert!(record.access_token.as_ref() == b"access-new", "access credential retained");
+    assert!(record.refresh_token.as_deref() == Some(b"refresh-new".as_slice()), "refresh credential retained");
+    assert!(!scratch.path().join("state/smith/tokens").exists(), "credentials kept apart from chat state");
 }
 
 #[test]

@@ -149,7 +149,7 @@ impl Before {
             assert_eq!(new_deliveries, returned, "only observed delivery terminals were persisted");
         }
         if scenario.launch.authenticated {
-            expected.insert(PathBuf::from(if binary { "state/smith/tokens/66616b65.token" } else { "tokens/0.json" }));
+            expected.insert(PathBuf::from(if binary { "credentials/tokens/66616b65.token" } else { "tokens/0.json" }));
         }
         let repo = root.join("repo");
         if scenario.launch.change {

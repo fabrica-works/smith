@@ -150,8 +150,8 @@ impl Referee<Process> for Judge {
         if authenticated && !self.saved && procs.iter().any(|p| matches!(p, Process::Script(Proc::Peer(p)) if smith_local_process_world::llm::queries(p).next().is_some())) {
             let bytes = std::fs::read(&self.tokens).expect("saved before grant use");
             let record = skein_oauth::decode_record(&bytes, &smith_local_shell::local_host::token_limits()).expect("private token record");
-            let directory = self.tokens.ancestors().nth(4).expect("scratch state path");
-            assert_eq!(record.access_token, fixture_access(directory), "token persists before provider query");
+            let directory = self.tokens.ancestors().nth(3).expect("scratch credential path");
+            assert!(record.access_token == fixture_access(directory), "token persists before provider query");
             self.saved = true;
         }
         let shown = procs
@@ -262,7 +262,7 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) -> Box<[u8]> {
     std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&login).expect("synthetic login JSON"))
         .expect("synthetic login file");
     let mut text = format!(
-        "model='fake/fake'\nchat='chat'\ninstructions='@local-shell Assist'\nwaiting_seconds=30\n\
+        "credentials='{}'\nmodel='fake/fake'\nchat='chat'\ninstructions='@local-shell Assist'\nwaiting_seconds=30\n\
         [budget]\nturns=512\nspend=25.0\nseconds=3600\n\
         [deployment]\nmemory=4294967296\nconversations=2\nllm_pool=134217728\ngroup_stop=1\n\
         [models.'fake/fake']\nwindow=2097152\noutput=65536\nreasoning_item=2048\nhead=60\nidle=30\n\
@@ -270,6 +270,7 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) -> Box<[u8]> {
         [endpoints.fake]\npreset='codex'\naccount='fake'\naddress='{}:34443'\nserver_name='skein.test'\n\
         identity='plain'\ntrust.system=false\ntrust.der=['{}']\n\
         [environment]\ninherit=[]\n[trace]\npath='{}'\ncapture='calls'\n",
+        scratch.path().join("credentials").display(),
         smith_real_world::loopback(),
         scratch.path().join("root.der").display(),
         scratch.path().join("agent-trace.jsonl").display()
@@ -326,7 +327,7 @@ pub fn run_with_provider(
         now,
         deadline: now.saturating_add(Duration::from_secs(5)),
         saved: false,
-        tokens: scratch.path().join("state/smith/tokens/66616b65.token"),
+        tokens: scratch.path().join("credentials/tokens/66616b65.token"),
         checkout: if scenario.launch.change { scratch.checkout() } else { smith_real_world::Checkout::default() },
         ending: scenario.ending.clone(),
         seed: scenario.launch.seed,

@@ -57,3 +57,14 @@ fn an_env_account_lends_its_variable() {
     assert_eq!(world.login_writes(), 0, "env credentials are not kept in a login file");
     review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(44);
 }
+
+#[test]
+fn a_key_account_lends_its_key_to_the_run() {
+    let files = Files::new();
+    let mut world = World::borrowed(45, &files, Borrowing::Key);
+    world.settle();
+    assert!(!world.queries().is_empty(), "the key grant reaches the provider");
+    assert_eq!(world.login_reads(), 0, "a key reads no borrowed login");
+    assert!(!world.shown().windows(b"key-for-work".len()).any(|bytes| bytes == b"key-for-work"), "no key in output");
+    review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(45);
+}

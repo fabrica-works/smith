@@ -126,12 +126,12 @@ impl Model {
             "efforts":self.declared.efforts.iter().map(|name|std::str::from_utf8(name).expect("settings UTF-8")).collect::<Vec<_>>()})
     }
 
-    pub fn local(&self, endpoint: u32, dialect: u32, account: u32) -> charter::Llm {
+    pub fn local(&self, endpoint: u32, dialect: u32, account: Option<u32>) -> charter::Llm {
         charter::Llm {
             effort: None,
             prices: self.prices,
             dialect,
-            account: Some(account),
+            account,
             endpoint: charter::Endpoint(endpoint),
             model: self.declared.name.clone(),
             window: self.declared.window,

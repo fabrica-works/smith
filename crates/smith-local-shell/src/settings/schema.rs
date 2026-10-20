@@ -21,6 +21,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
     let parts: Vec<_> = path.iter().map(String::as_str).collect();
     match parts.as_slice() {
         ["model"] => Some(Kind::Text(193)),
+        ["endpoints", _, "program"] => Some(Kind::Choice(&["claude_code"])),
         ["effort"] => Some(Kind::Text(u64::from(smith_charter::CEILINGS.llm_effort_some))),
         ["workspace", "contract", "form"] => Some(Kind::Text(32)),
         ["models", _, "efforts"] => Some(Kind::Efforts),
@@ -48,7 +49,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ] => Some(seconds()),
         [
             "budget" | "models" | "endpoints" | "accounts" | "deployment" | "workspace" | "environment" | "build"
-            | "trace",
+            | "trace" | "programs",
         ]
         | ["budget", "reserve"]
         | ["models" | "endpoints" | "accounts", _]
@@ -72,7 +73,9 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ["budget", "spend"]
         | ["models", _, "input_price" | "cached_price" | "cache_write_price" | "output_price"]
         | ["deployment", "max_spend"] => Some(Kind::Number),
-        ["endpoints", _, "preset" | "dialect" | "address" | "server_name" | "identity" | "account"]
+        ["credentials"]
+        | ["programs", "claude_code"]
+        | ["endpoints", _, "preset" | "dialect" | "address" | "server_name" | "identity" | "account"]
         | [
             "accounts",
             _,
@@ -85,7 +88,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ["endpoints" | "accounts", _, "trust", "der" | "pem"] | ["environment", "inherit"] | ["build", "caches"] => {
             Some(Kind::Strings)
         }
-        ["accounts", _, "source"] => Some(Kind::Choice(&["sign_in", "borrow", "env"])),
+        ["accounts", _, "source"] => Some(Kind::Choice(&["sign_in", "borrow", "env", "key", "program", "none"])),
         ["accounts", _, "token_format"] => Some(Kind::Choice(&["json", "form"])),
         ["accounts", _, "format"] => Some(Kind::Choice(&["codex"])),
         ["deployment", "memory" | "llm_pool"] => Some(Kind::Integer(i64::MAX.unsigned_abs())),
@@ -161,7 +164,7 @@ pub(super) fn authority(path: &[String]) -> bool {
     let parts: Vec<_> = path.iter().map(String::as_str).collect();
     matches!(
         parts.as_slice(),
-        ["endpoints" | "accounts" | "trust" | "trace" | "deployment", ..]
+        ["endpoints" | "accounts" | "trust" | "trace" | "deployment" | "credentials" | "programs", ..]
             | ["environment", "inherit", ..]
             | ["build", "caches", ..]
     )

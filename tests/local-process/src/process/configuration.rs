@@ -70,7 +70,13 @@ pub fn configuration_with_tools(
 
 pub(super) fn configuration_for_launch(root: kernel::Fd, launch: &Launch) -> (service::Config, agent::Config) {
     let configured = smith_agent_shell::config::from_value(agent_document(launch)).expect("generated fixture JSON");
-    configuration_for(root, launch.change, launch.tools, specialize(configured.service))
+    let (mut local, lower) = configuration_for(root, launch.change, launch.tools, specialize(configured.service));
+    if launch.borrowing == Some(crate::world::Borrowing::Key) {
+        for model in &mut local.local.models {
+            model.dialect = 2;
+        }
+    }
+    (local, lower)
 }
 
 fn configuration_for(
@@ -340,6 +346,11 @@ pub fn agent_document(launch: &Launch) -> serde_json::Value {
         "identity":"plain","address":format!("{}:{}", smith_agent_process_world::fake::loopback(), if launch.tls {34_443} else {443}),
         "transport":if launch.tls {"tls"} else {"plaintext"},
         "headers":[{"name":"originator","value":"skein-world"}]});
+    if launch.borrowing == Some(crate::world::Borrowing::Key) {
+        endpoint["provider"] = serde_json::json!("anthropic");
+        endpoint["dialect"] = serde_json::json!(2);
+        endpoint.as_object_mut().expect("endpoint object").remove("identity");
+    }
     if launch.tls {
         endpoint["server_name"] = serde_json::json!("skein.test");
         endpoint["trust_der"] = serde_json::json!(launch.trust_der);

@@ -9,6 +9,7 @@ pub enum Borrowing {
     Expired,
     Renewed,
     Env,
+    Key,
 }
 
 pub(crate) fn login_token(expired: bool) -> Box<[u8]> {
@@ -62,6 +63,14 @@ impl World {
             world.scenario.ending = Ending::Unavailable;
         }
         let machine = world.machine.as_mut().expect("unsettled fixture");
+        if borrowing == Borrowing::Key {
+            use std::os::unix::fs::PermissionsExt;
+            let key = files.path().join("key");
+            std::fs::write(&key, b"key-for-work").expect("scratch key");
+            std::fs::set_permissions(key, std::fs::Permissions::from_mode(0o600)).expect("private key");
+            world.check_memory();
+            return world;
+        }
         machine.login_checks = true;
         machine.renew_login = borrowing == Borrowing::Renewed;
         let file =

@@ -1,15 +1,19 @@
 //! Credential source inspection for startup and check (shell.md, section 7).
 //! Reports retain names, locations and expiry only. Login bytes and variable
-//! values leave this module only as access-only records for the service.
+//! values leave this module only for the service's credential storage.
 use crate::settings::{self, Sourced};
 use skein_lib::Wall;
 use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
 use std::{collections::BTreeMap, path::PathBuf};
 
+mod directory;
+pub(crate) mod key;
 mod login;
 mod product;
 mod sign_in;
 pub use crate::settings::resolve::Account;
+pub use directory::Directory;
+pub use key::KeyProblem;
 pub use login::{LoginOutcome, command, credential_words};
 pub(crate) use product::codex as product_codex;
 pub use product::{Location, Prepared, limits, prepare};
@@ -27,6 +31,8 @@ pub enum Credential {
     Expired { at: u64, file: PathBuf, program: String },
     /// The named login cannot be read or decoded.
     Unreadable { file: PathBuf },
+    /// A private key failed inspection; startup reports only its fixed problem class.
+    KeyUnreadable { problem: KeyProblem },
     /// The named environment variable supplies no credential.
     Unset { variable: String },
     /// A named variable holds an access token past its stated expiry.
@@ -42,6 +48,7 @@ impl Credential {
             Self::NotSignedIn
             | Self::Expired { .. }
             | Self::Unreadable { .. }
+            | Self::KeyUnreadable { .. }
             | Self::Unset { .. }
             | Self::ExpiredVariable { .. } => false,
         }
@@ -60,6 +67,7 @@ impl Credential {
                 time(*at)
             ),
             Self::Unreadable { file } => format!("account {account}: unreadable login at {}", file.display()),
+            Self::KeyUnreadable { problem } => format!("account {account}: key {}", problem.words()),
             Self::Unset { variable } => format!("account {account}: variable {variable} is unset"),
             Self::ExpiredVariable { at, variable } => {
                 format!("account {account}: variable {variable} expired at {}", time(*at))
@@ -75,7 +83,7 @@ pub(crate) fn time(nanos: u64) -> String {
 }
 
 /// Account descriptors for a selected run; this preparation reads no sign-in source.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Source {
     /// The shell opens this directory once; the service loads its file read-only.
     Borrow { file: PathBuf, format: LoginFormat, program: String },
@@ -83,24 +91,56 @@ pub enum Source {
     Env { variable: String, codex: bool },
     /// The native driver keeps this account in its private state file.
     SignIn { file: PathBuf },
+    /// A private key lent once by the shell, never refreshed (domain/host.md, 7).
+    Key { file: PathBuf },
+    /// The program owns this account's login; the shell lends its name (domain/host.md, 7).
+    Program { name: String },
+    /// This account lends nothing; its models name no account (domain/host.md, 7).
+    Nothing,
+}
+
+impl std::fmt::Debug for Source {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Borrow { .. } => "Source::Borrow",
+            Self::Env { .. } => "Source::Env",
+            Self::SignIn { .. } => "Source::SignIn",
+            Self::Key { .. } => "Source::Key",
+            Self::Program { .. } => "Source::Program",
+            Self::Nothing => "Source::Nothing",
+        })
+    }
 }
 
 /// Resolve one account descriptor without exposing a variable's value.
 #[must_use]
-pub fn source(fields: &BTreeMap<String, Sourced>, workspace: &std::path::Path, codex: bool, name: &str) -> Source {
+pub fn source(
+    fields: &BTreeMap<String, Sourced>,
+    settings: &settings::Settings,
+    codex: bool,
+    name: &str,
+    directory: Option<&Directory>,
+) -> Source {
     let text = |key: &str| fields.get(key).and_then(|field| field.value.as_str()).unwrap_or_default();
     match text("source") {
         "borrow" => {
             let file = text("file");
             let file = if let Some(relative) = file.strip_prefix("~/") {
-                std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(relative)
+                settings.paths.home.as_ref().map(PathBuf::from).unwrap_or_default().join(relative)
             } else {
-                workspace.join(file)
+                settings.workspace.join(file)
             };
             Source::Borrow { file, format: LoginFormat::Codex, program: text("program").into() }
         }
         "env" => Source::Env { variable: text("variable").into(), codex },
-        _ => Source::SignIn { file: sign_in::record_path(name) },
+        "key" => Source::Key {
+            file: directory.map_or_else(|| PathBuf::from("missing-key"), |directory| directory.key(name)),
+        },
+        "program" => Source::Program { name: name.into() },
+        "none" => Source::Nothing,
+        _ => Source::SignIn {
+            file: directory.map_or_else(|| PathBuf::from("missing-token"), |directory| directory.token(name)),
+        },
     }
 }
 
@@ -137,6 +177,8 @@ pub fn inspect(source: &Source, wall: Wall) -> Credential {
             None => Credential::Unset { variable: variable.clone() },
         },
         Source::SignIn { file } => sign_in::inspect(file, wall),
+        Source::Key { file } => key::inspect(file),
+        Source::Program { .. } | Source::Nothing => Credential::Usable { until: None },
     }
 }
 
@@ -150,13 +192,8 @@ pub fn environment(variable: &str, codex: bool, wall: Wall) -> Option<Borrowed> 
 /// Decode one handed-in variable value, with the endpoint's dialect supplied by resolution.
 #[must_use]
 pub fn env_record(value: &[u8], codex: bool, wall: Wall) -> Option<Borrowed> {
-    if value.is_empty() || value.len() > usize::try_from(crate::local_host::token_limits().token_bytes).ok()? {
+    if !valid_key(value) {
         return None;
-    }
-    for byte in value {
-        if !(0x21..=0x7e).contains(byte) {
-            return None;
-        }
     }
     let (account_id, expires_at) = if codex {
         let selector = skein_oauth::ClaimSelector {
@@ -190,6 +227,13 @@ pub fn env_record(value: &[u8], codex: bool, wall: Wall) -> Option<Borrowed> {
     })
 }
 
+pub(crate) fn valid_key(value: &[u8]) -> bool {
+    !value.is_empty()
+        && u64::try_from(value.len()).expect("key length fits u64")
+            <= u64::from(crate::local_host::token_limits().token_bytes)
+        && value.iter().all(|byte| (0x21..=0x7e).contains(byte))
+}
+
 /// Inspect every catalog account and mark only the selected accounts as required.
 #[must_use]
 pub fn report(resolved: &settings::resolve::Resolved, wall: Wall) -> BTreeMap<String, AccountReport> {
@@ -212,10 +256,11 @@ fn catalog(
     include_required: bool,
 ) -> BTreeMap<String, AccountReport> {
     let settings = &resolved.settings;
+    let directory = Directory::of(settings);
     let mut fields = BTreeMap::<String, BTreeMap<String, Sourced>>::new();
     for (key, value) in &settings.values {
-        if let Some((account, field)) = key.strip_prefix("accounts.").and_then(|rest| rest.rsplit_once('.')) {
-            let account = serde_json::from_str(account).unwrap_or_else(|_| account.to_string());
+        if let Some(rest) = key.strip_prefix("accounts.") {
+            let (account, field) = settings::named_field(rest).expect("validated account key");
             fields.entry(account).or_default().insert(field.into(), value.clone());
         }
     }
@@ -227,7 +272,7 @@ fn catalog(
                 return None;
             }
             let codex = needed.is_some_and(|needed| product::codex(resolved, needed.number));
-            let credential = inspect(&source(&fields, &settings.workspace, codex, &account), wall);
+            let credential = inspect(&source(&fields, settings, codex, &account, directory.as_ref()), wall);
             Some((account, AccountReport { required: needed.is_some(), credential }))
         })
         .collect()
@@ -271,4 +316,4 @@ impl Refusal {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

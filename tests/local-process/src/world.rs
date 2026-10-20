@@ -1033,6 +1033,13 @@ impl Scenario {
     /// Provider scripts and credentials are scenario data, shared across tiers.
     #[must_use]
     pub fn provider(&self) -> crate::llm::Peer {
+        if self.launch.borrowing == Some(Borrowing::Key) {
+            return self.provider_with(skein_llm::Credential {
+                value: b"key-for-work".as_slice().into(),
+                account_id: Box::new([]),
+                scheme: skein_llm::Scheme::Key,
+            });
+        }
         let token = if self.launch.borrowing.is_some() {
             login_token(false)
         } else if self.launch.authenticated {
@@ -1123,6 +1130,9 @@ impl Scenario {
                     arguments: br#"{"path":"original.txt"}"#.as_slice().into(),
                 }]);
             }
+        }
+        if self.launch.borrowing == Some(Borrowing::Key) {
+            return smith_agent_process_world::fake::configured_anthropic(provider_scripts, credential);
         }
         smith_agent_process_world::fake::configured_transport(
             provider_scripts,

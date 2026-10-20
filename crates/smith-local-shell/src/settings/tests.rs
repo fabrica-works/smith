@@ -3,12 +3,14 @@ use crate::command::Shared;
 use std::fmt::Write;
 use std::path::PathBuf;
 
-fn source(layer: Layer, text: &str) -> Source {
+pub(super) fn source(layer: Layer, text: &str) -> Source {
     Source { layer, path: PathBuf::from("fixture.toml"), text: text.into() }
 }
 
-fn settings(sources: &[Source]) -> Result<super::Settings, super::Refusal> {
-    merge(&Shared::default(), PathBuf::from("/workspace"), sources)
+pub(super) fn settings(sources: &[Source]) -> Result<super::Settings, super::Refusal> {
+    let mut settings = merge(&Shared::default(), PathBuf::from("/workspace"), sources)?;
+    settings.paths.path = std::env::var_os("PATH");
+    Ok(settings)
 }
 
 #[test]
@@ -175,8 +177,13 @@ fn gpt_six_one_sol_is_declared_with_its_list_prices() {
     }
 }
 
-fn selection(text: &str) -> Result<super::resolve::Selection, super::Refusal> {
-    let settings = settings(&[source(Layer::User, text)])?;
+pub(super) fn selection(text: &str) -> Result<super::resolve::Selection, super::Refusal> {
+    let mut settings = settings(&[source(Layer::User, text)])?;
+    let files = crate::credentials::tests::Files::new();
+    settings.values.entry("credentials".into()).or_insert(super::Sourced {
+        value: toml::Value::String(files.0.display().to_string()),
+        origin: Origin::BuiltIn,
+    });
     super::resolve::select(&settings)
 }
 
@@ -208,7 +215,7 @@ fn sub_agents_on_adds_the_models_of_every_account_with_a_source() {
     );
     assert_eq!(
         selected.accounts.iter().map(|account| (account.name.as_str(), account.number)).collect::<Vec<_>>(),
-        [("codex", 0), ("anthropic", 1)]
+        [("codex", 1_474_186_484), ("anthropic", 3_339_635_307)]
     );
 }
 
@@ -244,10 +251,10 @@ fn a_custom_endpoint_inherits_its_preset_and_keeps_supplied_values() {
 
 #[test]
 fn dotted_custom_names_keep_their_account_and_model_bindings() {
-    let selected = selection("model='custom.endpoint/gpt-6-luna'\n[endpoints.'custom.endpoint']\npreset='codex'\naccount='named.account'\n[accounts.'named.account']\nsource='env'\nvariable='TEST_CREDENTIAL'\n")
+    let selected = selection("model='custom.endpoint/gpt-6-luna'\n[endpoints.'custom.endpoint']\npreset='codex'\naccount='named-account'\n[accounts.'named-account']\nsource='env'\nvariable='TEST_CREDENTIAL'\n")
         .expect("dotted names");
     assert_eq!(selected.models, ["custom.endpoint/gpt-6-luna"]);
-    assert_eq!(selected.accounts[0].name, "named.account");
+    assert_eq!(selected.accounts[0].name, "named-account");
     assert_eq!(
         selected.settings.values["models.\"custom.endpoint/gpt-6-luna\".window"].value.as_integer(),
         Some(272_000)
@@ -316,7 +323,7 @@ fn composition_adds_every_model_of_accounts_with_a_source() {
     );
     assert!(resolved.outside_models.is_empty());
     assert_eq!(resolved.agent.declarations.endpoints.len(), 2);
-    assert_eq!(resolved.local.accounts.as_ref(), [0, 1]);
+    assert_eq!(resolved.local.accounts.as_ref(), [1_474_186_484, 3_339_635_307]);
 }
 
 #[test]

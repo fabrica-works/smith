@@ -3,9 +3,9 @@ use crate::settings::{Origin, Sourced};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
-struct Files(PathBuf);
+pub(crate) struct Files(pub(crate) PathBuf);
 impl Files {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let serial = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("smith-credential-inspection-{}-{serial}", std::process::id()));
         std::fs::create_dir_all(&path).expect("scratch directory");
@@ -56,7 +56,7 @@ fn resolved(files: &Files, needed_file: PathBuf) -> settings::resolve::Resolved 
         .filter_map(|(key, value)| key.strip_prefix("accounts.codex.").map(|field| (field.into(), value.clone())))
         .collect();
     settings::resolve::Resolved {
-        settings: settings::Settings { workspace: files.0.clone(), values },
+        settings: settings::Settings { paths: settings::Paths::default(), workspace: files.0.clone(), values },
         accounts: vec![Account { name: "codex".into(), number: 0, fields }],
         agent: smith_agent_shell::config::Configuration {
             programs: BTreeMap::new(),
@@ -156,4 +156,60 @@ fn an_identifier_past_the_drivers_receiving_bound_is_not_reported_usable() {
         serde_json::Value::String("a".repeat(smith_local_service::Source::account_id_bytes() + 1));
     std::fs::write(&file, serde_json::to_vec(&login).expect("bounded fixture")).expect("scratch login");
     assert!(!inspect(&descriptor(file), wall()).usable(), "inspection uses the driver's account-id bound");
+}
+
+fn resolved_source(files: &Files, source: &str) -> settings::resolve::Resolved {
+    let mut resolved = resolved(files, files.login("valid.json"));
+    let value = Sourced { value: toml::Value::String(source.into()), origin: Origin::BuiltIn };
+    resolved.accounts[0].fields.insert("source".into(), value.clone());
+    resolved.settings.values.insert("accounts.codex.source".into(), value);
+    resolved.settings.values.insert(
+        "credentials".into(),
+        Sourced { value: toml::Value::String(files.0.display().to_string()), origin: Origin::BuiltIn },
+    );
+    resolved
+}
+
+fn private_key(files: &Files) {
+    use std::os::unix::fs::PermissionsExt;
+    let key = files.0.join("keys/codex");
+    std::fs::create_dir_all(key.parent().expect("keys parent")).expect("keys directory");
+    std::fs::write(&key, b"key-for-work").expect("scratch key");
+    std::fs::set_permissions(key, std::fs::Permissions::from_mode(0o600)).expect("private key");
+}
+
+#[test]
+fn preparing_refuses_a_key_account_without_a_key() {
+    let files = Files::new();
+    for interactive in [false, true] {
+        let refusal = prepare(&resolved_source(&files, "key"), wall(), interactive).err().expect("missing key");
+        assert_eq!(refusal.exit_code(), 3, "credentials refusal");
+        assert!(refusal.line().contains("codex") && refusal.line().contains("smith login"), "account and next action");
+    }
+}
+
+fn no_source(source: &str) {
+    let files = Files::new();
+    if source == "key" {
+        private_key(&files);
+    }
+    let prepared = prepare(&resolved_source(&files, source), wall(), false).expect("usable source");
+    assert!(prepared.sources.is_empty(), "the shell owns this source");
+    assert_eq!(prepared.locations.len(), 1, "one selected location");
+    assert_eq!(prepared.locations.iter().next().expect("location").name, "codex", "selected account");
+}
+
+#[test]
+fn preparing_a_key_account_hands_no_source() {
+    no_source("key");
+}
+
+#[test]
+fn preparing_a_program_account_hands_no_source() {
+    no_source("program");
+}
+
+#[test]
+fn preparing_a_none_account_hands_no_source() {
+    no_source("none");
 }

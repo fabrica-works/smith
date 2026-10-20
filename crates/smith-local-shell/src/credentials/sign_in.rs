@@ -168,19 +168,6 @@ fn trust(account: &Account, workspace: &std::path::Path) -> Result<skein_tls::Co
     smith_agent_shell::config::configured_trust(&sources).map_err(|why| refuse(account, "trust", &why))
 }
 
-pub(super) fn record_path(name: &str) -> std::path::PathBuf {
-    use std::fmt::Write;
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/state")))
-        .unwrap_or_default();
-    let mut file = String::new();
-    for byte in name.as_bytes() {
-        write!(&mut file, "{byte:02x}").expect("a string accepts the filename");
-    }
-    base.join("smith/tokens").join(format!("{file}.token"))
-}
-
 pub(super) fn inspect(file: &std::path::Path, wall: skein_lib::Wall) -> super::Credential {
     if !file.is_absolute() {
         return super::Credential::NotSignedIn;

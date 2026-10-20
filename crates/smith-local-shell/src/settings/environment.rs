@@ -40,7 +40,13 @@ fn valid_name(name: &str) -> bool {
 }
 
 fn inherit(values: &mut BTreeMap<String, String>, name: &str, settings: &Settings) -> Result<(), Refusal> {
-    if let Some(value) = std::env::var_os(name) {
+    let value = match name {
+        "HOME" => settings.paths.home.clone(),
+        "XDG_STATE_HOME" => settings.paths.state_home.clone(),
+        "PATH" => settings.paths.path.clone(),
+        _ => std::env::var_os(name),
+    };
+    if let Some(value) = value {
         let value = value
             .into_string()
             .map_err(|_| refusal(settings, "environment.inherit", "inherited value is not UTF-8"))?;

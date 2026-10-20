@@ -14,9 +14,14 @@ const BUILT_IN: &str = "profile='standard'\nchat='default'\nsub_agents=false\nwa
 pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
     let current = std::env::current_dir().map_err(|why| refusal(Origin::BuiltIn, "workspace", &why.to_string()))?;
     let workspace = shared.directory.as_ref().map_or_else(|| current.clone(), |path| current.join(path));
+    let path_environment = super::Paths {
+        home: std::env::var_os("HOME"),
+        state_home: std::env::var_os("XDG_STATE_HOME"),
+        path: std::env::var_os("PATH"),
+    };
     let user = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")));
+        .or_else(|| path_environment.home.as_ref().map(|home| PathBuf::from(home).join(".config")));
     let mut sources = Vec::new();
     let mut root = workspace.clone();
     for ancestor in workspace.ancestors() {
@@ -47,11 +52,13 @@ pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
     for dir in &mut shared.dirs {
         dir.path = current.join(&dir.path);
     }
-    merge(&shared, workspace, &sources)
+    let mut settings = merge(&shared, workspace, &sources)?;
+    settings.paths = path_environment;
+    Ok(settings)
 }
 
 pub(crate) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> Result<Settings, Refusal> {
-    let mut settings = Settings { workspace, values: BTreeMap::new() };
+    let mut settings = Settings { paths: super::Paths::default(), workspace, values: BTreeMap::new() };
     document(&mut settings, BUILT_IN, &Origin::BuiltIn)?;
     for preset in [crate::presets::Preset::Codex, crate::presets::Preset::Anthropic] {
         document(&mut settings, crate::presets::built_in(preset), &Origin::BuiltIn)?;

@@ -9,6 +9,8 @@ mod layers;
 pub mod resolve;
 mod schema;
 #[cfg(test)]
+mod sources_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use layers::merge;
@@ -24,7 +26,37 @@ pub fn from_sources(
 }
 
 pub(crate) fn name(part: &str) -> String {
-    if part.contains('.') { serde_json::to_string(part).expect("setting name") } else { part.into() }
+    if part.is_empty() || part.contains(['.', '"', '\\']) {
+        serde_json::to_string(part).expect("setting name")
+    } else {
+        part.into()
+    }
+}
+
+/// Split one encoded setting name from its field without dropping malformed input.
+pub(crate) fn named_field(path: &str) -> Result<(String, &str), ()> {
+    if path.starts_with('"') {
+        let mut parts = serde_json::Deserializer::from_str(path).into_iter::<String>();
+        let name = parts.next().ok_or(())?.map_err(|_| ())?;
+        let field = path.get(parts.byte_offset()..).and_then(|rest| rest.strip_prefix('.')).ok_or(())?;
+        Ok((name, field))
+    } else {
+        path.split_once('.').map(|(name, field)| (name.into(), field)).ok_or(())
+    }
+}
+
+/// Startup's supplied path environment (protocol/hosts.md, section 5.2).
+#[derive(Clone, Default)]
+pub struct Paths {
+    pub home: Option<std::ffi::OsString>,
+    pub state_home: Option<std::ffi::OsString>,
+    pub path: Option<std::ffi::OsString>,
+}
+
+impl std::fmt::Debug for Paths {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Paths")
+    }
 }
 
 /// One file's precedence below command overrides and flags.
@@ -67,10 +99,18 @@ pub struct Source {
 }
 
 /// Decoded leaves by their dotted paths, before run resolution.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Settings {
+    #[serde(skip)]
+    pub paths: Paths,
     pub workspace: PathBuf,
     pub values: BTreeMap<String, Sourced>,
+}
+
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Settings")
+    }
 }
 
 /// A strict layer refusal, naming the key and the source that supplied it.

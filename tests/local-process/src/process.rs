@@ -521,7 +521,10 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
     let launch = Launch::read(spawn);
     let path = launch.root_path.as_os_str().as_encoded_bytes();
     let mut roots = vec![StartupRoot { name: b"launch".as_slice().into(), path: path.into() }];
-    if launch.borrowing.is_some() && launch.borrowing != Some(crate::world::Borrowing::Env) {
+    if matches!(
+        launch.borrowing,
+        Some(crate::world::Borrowing::Valid | crate::world::Borrowing::Expired | crate::world::Borrowing::Renewed)
+    ) {
         roots.push(StartupRoot { name: b"login".as_slice().into(), path: path.into() });
     }
     roots.push(StartupRoot {
@@ -842,6 +845,16 @@ fn borrowed_accounts(
     let mut sources = skein_lib::List::with_capacity(1);
     let mut locations = skein_lib::List::with_capacity(1);
     let (handed, descriptor) = match borrowing {
+        Borrowing::Key => {
+            locations
+                .push(Location {
+                    account: 0,
+                    name: "codex".into(),
+                    source: Source::Key { file: launch.token_directory.parent().expect("scratch parent").join("key") },
+                })
+                .expect("one key location");
+            return Some(Prepared { sources, locations, limits: smith_local_shell::credentials::limits(io, 1) });
+        }
         Borrowing::Env => {
             let variable = "SMITH_FIXTURE_TOKEN";
             let value = spawn

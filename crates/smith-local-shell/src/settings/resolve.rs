@@ -9,6 +9,8 @@ mod inherit;
 mod input;
 mod local;
 pub(super) mod models;
+mod numbers;
+pub(super) mod programs;
 pub(super) mod relationships;
 
 /// Main first, followed by eligible child models, with their needed accounts.
@@ -25,6 +27,14 @@ pub struct Account {
     pub name: String,
     pub number: u32,
     pub fields: BTreeMap<String, Sourced>,
+}
+
+impl Account {
+    /// The source's configured name, empty when absent.
+    #[must_use]
+    pub fn source(&self) -> &str {
+        self.fields.get("source").and_then(|field| field.value.as_str()).unwrap_or_default()
+    }
 }
 
 /// Native agent and local policy values, with only the run's account descriptors.
@@ -54,7 +64,22 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
     let children = input::sourced(&settings, "sub_agents")?.value.as_bool().expect("decoded delegation");
     for model in catalog(&settings) {
         if !active.contains(&model) {
-            outside_models.insert(model, if children { "account has no source" } else { "sub_agents is off" });
+            let program = account(&settings, &model).ok().is_some_and(|name| {
+                settings
+                    .values
+                    .get(&format!("accounts.{}.source", super::name(&name)))
+                    .is_some_and(|field| field.value.as_str() == Some("program"))
+            });
+            outside_models.insert(
+                model,
+                if program {
+                    "a program runs no sub-agent"
+                } else if children {
+                    "account has no source"
+                } else {
+                    "sub_agents is off"
+                },
+            );
         }
     }
     let profile_document = document::profile(&settings)?;
@@ -62,8 +87,12 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
         .map_err(|why| relationships::native(&settings, &models, why))?;
     relationships::budget(&settings, &profile)?;
     let endpoints = document::endpoints(&settings, &models)?;
+    let programs = programs::document(&settings, &endpoints)?;
     let mut generated = serde_json::json!({"profile":profile_document,"endpoints":endpoints,
         "environment":document::environment(&settings)?});
+    if let Some(programs) = programs {
+        generated.as_object_mut().expect("configuration object").insert("programs".into(), programs);
+    }
     let trace: BTreeMap<_, _> = settings
         .values
         .iter()
@@ -111,10 +140,18 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
     Ok((resolved, bytes))
 }
 
-/// Expand preset defaults, then select only models whose account names a source.
-pub fn select(settings: &Settings) -> Result<Selection, super::Refusal> {
+/// Check the declarations shared by login and run startup without selecting a model.
+pub(crate) fn checked(settings: &Settings) -> Result<Settings, super::Refusal> {
     let mut settings = settings.clone();
     inherit::apply(&mut settings)?;
+    numbers::check(&settings)?;
+    programs::check_sources(&settings)?;
+    Ok(settings)
+}
+
+/// Expand preset defaults, then select only models whose account names a source.
+pub fn select(settings: &Settings) -> Result<Selection, super::Refusal> {
+    let settings = checked(settings)?;
     let main = input::text(&settings, "model")?.to_string();
     let main_account = account(&settings, &main)?;
     input::text(&settings, &format!("accounts.{}.source", super::name(&main_account)))?;
@@ -127,7 +164,13 @@ pub fn select(settings: &Settings) -> Result<Selection, super::Refusal> {
                 continue;
             }
             let account = account(&settings, &model)?;
-            if settings.values.contains_key(&format!("accounts.{}.source", super::name(&account))) {
+            let source = settings.values.get(&format!("accounts.{}.source", super::name(&account)));
+            if model.split_once('/').is_some_and(|(endpoint, _)| endpoint != main_endpoint)
+                && source.is_some_and(|field| field.value.as_str() == Some("program"))
+            {
+                continue;
+            }
+            if source.is_some() {
                 models.push(model);
             }
         }
@@ -144,11 +187,8 @@ pub fn select(settings: &Settings) -> Result<Selection, super::Refusal> {
             .iter()
             .filter_map(|(key, value)| key.strip_prefix(&prefix).map(|field| (field.into(), value.clone())))
             .collect();
-        accounts.push(Account {
-            name,
-            number: u32::try_from(accounts.len()).expect("accounts fit settings input"),
-            fields,
-        });
+        let number = numbers::number(&name);
+        accounts.push(Account { name, number, fields });
     }
     Ok(Selection { models, accounts, settings })
 }

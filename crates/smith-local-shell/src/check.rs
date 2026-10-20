@@ -131,7 +131,10 @@ fn report_for(settings: &Settings, wall: skein_lib::Wall, execution: Option<&com
     }
     let mut redacted = settings.clone();
     for (key, value) in &mut redacted.values {
-        if key.starts_with("environment.set.") || key.starts_with("endpoints.") && key.contains(".headers.") {
+        if key == "credentials"
+            || key.starts_with("environment.set.")
+            || key.starts_with("endpoints.") && key.contains(".headers.")
+        {
             value.value = toml::Value::String("<redacted>".into());
         }
     }
@@ -348,8 +351,10 @@ fn derive_invocation(
     let available = files.reserve(&mut front, available).map_err(|why| why.line())?;
     let count = u32::try_from(resolved.accounts.len()).map_err(|_| "too many account sources".to_owned())?;
     let mut locations = skein_lib::List::with_capacity(count);
+    let directory = crate::credentials::Directory::of(&resolved.settings);
     for account in &resolved.accounts {
-        let source = crate::credentials::source(&account.fields, &resolved.settings.workspace, false, &account.name);
+        let source =
+            crate::credentials::source(&account.fields, &resolved.settings, false, &account.name, directory.as_ref());
         locations
             .push(crate::credentials::Location { account: account.number, name: account.name.clone(), source })
             .expect("selected locations fit their account bound");
@@ -526,7 +531,11 @@ mod tests {
             },
             local: local.local,
             limits: local.limits.local,
-            settings: Settings { workspace: "/workspace".into(), values: BTreeMap::new() },
+            settings: Settings {
+                paths: settings::Paths::default(),
+                workspace: "/workspace".into(),
+                values: BTreeMap::new(),
+            },
             accounts: Vec::new(),
             outside_models: BTreeMap::new(),
         }
@@ -600,7 +609,7 @@ mod tests {
             .push(crate::credentials::Location {
                 account: account.number,
                 name: account.name.clone(),
-                source: crate::credentials::source(&account.fields, &settings.workspace, false, &account.name),
+                source: crate::credentials::source(&account.fields, &settings, false, &account.name, None),
             })
             .expect("one handed credential location");
         let handed = crate::credentials::Prepared {

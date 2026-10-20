@@ -36,6 +36,16 @@ impl Local {
                 None => Credential::Unset { variable: variable.clone() }.line(&location.name),
             },
             Source::SignIn { .. } => Credential::NotSignedIn.line(&location.name),
+            Source::Key { .. } => match reason {
+                domain::CredentialFailure::Missing => Credential::NotSignedIn.line(&location.name),
+                domain::CredentialFailure::Refresh
+                | domain::CredentialFailure::BorrowedExpiring { .. }
+                | domain::CredentialFailure::BorrowedExpired { .. } => {
+                    Credential::KeyUnreadable { problem: crate::credentials::KeyProblem::Unreadable }
+                        .line(&location.name)
+                }
+            },
+            Source::Program { .. } | Source::Nothing => return None,
         };
         let cap = usize::try_from(self.service.show_bytes().checked_sub(1)?).ok()?;
         if line.len() > cap {

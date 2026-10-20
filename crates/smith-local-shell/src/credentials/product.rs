@@ -26,6 +26,7 @@ impl Prepared {
     pub fn worst_case(&self) -> Option<u64> {
         let mut bytes = service::accounts_worst_case(&self.limits)?
             .checked_add(List::<Location>::worst_case(self.locations.capacity())?)?
+            .checked_add(List::<u32>::worst_case(self.locations.capacity())?)?
             .checked_add(Queue::<smith_local_service::CredentialRequest>::worst_case(service::ACCOUNTS_MAX_OUT)?)?
             .checked_add(
                 u64::from(self.limits.client.document.token_bytes).checked_mul(u64::from(service::ACCOUNTS_MAX_OUT))?,
@@ -36,7 +37,9 @@ impl Prepared {
                     file.as_os_str().as_encoded_bytes().len().checked_add(program.len())?
                 }
                 Source::Env { variable, .. } => variable.len(),
-                Source::SignIn { file } => file.as_os_str().as_encoded_bytes().len(),
+                Source::SignIn { file } | Source::Key { file } => file.as_os_str().as_encoded_bytes().len(),
+                Source::Program { name } => name.len(),
+                Source::Nothing => 0,
             };
             let length = location.name.len().checked_add(source)?.checked_add(256)?;
             bytes = bytes.checked_add(u64::try_from(length).ok()?.checked_mul(4)?)?;
@@ -80,12 +83,29 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
     })?;
     let mut sources = List::with_capacity(count);
     let mut locations = List::with_capacity(count);
+    let directory = super::Directory::of(&resolved.settings);
     for account in &resolved.accounts {
-        let descriptor =
-            source(&account.fields, &resolved.settings.workspace, codex(resolved, account.number), &account.name);
+        let descriptor = source(
+            &account.fields,
+            &resolved.settings,
+            codex(resolved, account.number),
+            &account.name,
+            directory.as_ref(),
+        );
         locations
             .push(Location { account: account.number, name: account.name.clone(), source: descriptor.clone() })
             .expect("selected locations fit their account bound");
+        match &descriptor {
+            Source::Key { file } => {
+                let credential = super::key::inspect(file);
+                if !credential.usable() {
+                    return Err(unavailable(&account.name, credential));
+                }
+                continue;
+            }
+            Source::Program { .. } | Source::Nothing => continue,
+            Source::Borrow { .. } | Source::Env { .. } | Source::SignIn { .. } => {}
+        }
         let handed = match descriptor {
             Source::Borrow { file, format, program } => {
                 let credential =
@@ -128,6 +148,9 @@ pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Pre
                     interactive,
                 )
                 .map_err(|_| unavailable(&account.name, Credential::Unreadable { file }))?
+            }
+            Source::Key { .. } | Source::Program { .. } | Source::Nothing => {
+                unreachable!("shell-owned source handled above")
             }
         };
         assert!(sources.push(handed).is_ok(), "selected sources fit their account bound");

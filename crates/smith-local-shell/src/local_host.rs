@@ -8,6 +8,7 @@ use std::io::Write;
 
 mod credentials;
 mod header;
+mod lend;
 pub use header::View;
 mod memory;
 mod words;
@@ -65,6 +66,7 @@ pub struct Local {
     headless: Option<crate::front::headless::Headless>,
     interactive: Option<crate::front::interactive::Interactive>,
     credential_locations: skein_lib::List<crate::credentials::Location>,
+    lent: lend::Lent,
     writer: Option<io::Io>,
     env: Env<io::Limits>,
     output: Option<Token>,
@@ -204,6 +206,7 @@ impl Local {
             ephemeral_directory: None,
             headless,
             interactive,
+            lent: lend::Lent::with_capacity(credential_locations.capacity()),
             credential_locations,
             writer,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: io_limits },
@@ -438,7 +441,12 @@ impl Local {
     }
 
     fn credential(&mut self, account: u32) {
-        self.service.local_event(domain::Event::NoCredential { account, reason: domain::CredentialFailure::Missing });
+        match self.lent.answer(&self.credential_locations, account) {
+            lend::Answer::Lend(grant, value) => self.service.credential(grant, value),
+            lend::Answer::Missing => self
+                .service
+                .local_event(domain::Event::NoCredential { account, reason: domain::CredentialFailure::Missing }),
+        }
     }
 
     fn writer_up(&mut self) {

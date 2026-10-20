@@ -190,8 +190,12 @@ fn compose(
         resolved.local.resume = true;
     }
     let prepared = credentials::prepare(&resolved, wall, interactive.is_some()).map_err(Refused::Credentials)?;
-    let (workspace, chat_path) =
-        chat_paths(&resolved.settings.workspace, &resolved.local.chat, files.temporary.as_deref())?;
+    let (workspace, chat_path) = chat_paths(
+        &resolved.settings.workspace,
+        &resolved.local.chat,
+        files.temporary.as_deref(),
+        &resolved.settings.paths,
+    )?;
     deliver_contract(&mut resolved.local, invocation.deliver);
     let WorkspaceRoots { paths, delivery_roots, effect_roots } = workspace_roots(&resolved.local, kind)?;
     let host_limits =
@@ -390,7 +394,12 @@ fn workspace_roots(local: &smith_local_domain::Config, kind: &AgentKind) -> Resu
     Ok(WorkspaceRoots { paths, delivery_roots, effect_roots })
 }
 
-fn chat_paths(workspace: &Path, chat_name: &[u8], temporary: Option<&Path>) -> Result<(PathBuf, PathBuf), Refused> {
+fn chat_paths(
+    workspace: &Path,
+    chat_name: &[u8],
+    temporary: Option<&Path>,
+    paths: &settings::Paths,
+) -> Result<(PathBuf, PathBuf), Refused> {
     use std::{fmt::Write, os::unix::fs::DirBuilderExt, path::PathBuf};
     let chat = std::str::from_utf8(chat_name).expect("decoded chat");
     if chat == "." || chat == ".." || chat.contains(['/', '\\', '\0']) {
@@ -405,9 +414,11 @@ fn chat_paths(workspace: &Path, chat_name: &[u8], temporary: Option<&Path>) -> R
     for part in digest.0 {
         write!(&mut key, "{part:016x}").expect("writing a string");
     }
-    let base = std::env::var_os("XDG_STATE_HOME")
+    let base = paths
+        .state_home
+        .as_ref()
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .or_else(|| paths.home.as_ref().map(|home| PathBuf::from(home).join(".local/state")))
         .ok_or_else(|| Refused::Usage(Usage("HOME or XDG_STATE_HOME is required for chats".into())))?;
     let chat_path = base.join("smith/chats").join(key).join(chat);
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&chat_path).map_err(|why| host(&why))?;

@@ -106,7 +106,11 @@ pub(super) fn build(
             .iter()
             .find(|entry| entry.name == account_name)
             .ok_or_else(|| input::refuse(settings, &account_field, "account is not configured"))?;
-        configured.push(model.local(endpoint.number, endpoint.dialect, account.number));
+        configured.push(model.local(
+            endpoint.number,
+            endpoint.dialect,
+            (account.source() != "none").then_some(account.number),
+        ));
         let declaration =
             agent.declarations.endpoints.iter().find(|entry| entry.number == endpoint.number).expect("declaration");
         allowances.push(
@@ -187,7 +191,7 @@ pub(super) fn build(
             .into(),
         mode: local::Mode::Chat { waiting: Duration::from_secs(input::number(settings, "waiting_seconds")?) },
         resume: true,
-        accounts: accounts.iter().map(|account| account.number).collect(),
+        accounts: accounts.iter().filter(|account| account.source() != "none").map(|account| account.number).collect(),
         workspace: Some(run::Workspace { directories: directories.into_boxed_slice() }),
         push,
     })

@@ -33,9 +33,10 @@ pub(super) fn apply(settings: &mut Settings) -> Result<(), Refusal> {
             input::default(settings, format!("endpoints.{encoded}.{field}"), value.clone());
         }
         let endpoint: String = serde_json::from_str(&encoded).unwrap_or(encoded);
-        let main = input::text(settings, "model")?.to_string();
         let mut names = super::catalog(settings);
-        names.insert(main);
+        if let Some(main) = settings.values.get("model").and_then(|field| field.value.as_str()) {
+            names.insert(main.into());
+        }
         for full in names {
             let Some((used, model)) = full.split_once('/') else { continue };
             if used != endpoint {
