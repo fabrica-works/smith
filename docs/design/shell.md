@@ -1048,8 +1048,13 @@ settings set no `instructions` (5.2; domain/run.md, section 3.1).
      the steps it gives, in their order, and never by what it rules out
      (revised 2026-10-20);
   2. finding files, with `list` and `search` first, then reading the
-     lines the work needs: a window from where a search found them, a
-     whole file only when the work needs all of it;
+     lines the work needs: the documents the request names (its task,
+     its plan, the guides it points to) read together in the first
+     response, each from its start in the default window; code, a
+     window from where a search found it, one window wide enough for
+     the part the work needs rather than several small ones, and a
+     whole file only when the work needs all of it (revised
+     2026-10-20);
   3. batching in one response every call that waits on no other's
      answer: reads, lists, searches and commands that change nothing,
      with a running job's poll beside them; and a change's edits,
