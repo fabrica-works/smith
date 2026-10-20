@@ -128,6 +128,7 @@ fn tree_leftovers_fail_even_after_supervisor_cleanup_and_missing_observation_is_
         tree: TreeStatus {
             live_pids: Vec::new(),
             live_at_leader_exit: Some(Vec::new()),
+            interrupted_pids: Vec::new(),
             terminated_pids: Vec::new(),
             killed_pids: Vec::new(),
             forced_cleanup: false,

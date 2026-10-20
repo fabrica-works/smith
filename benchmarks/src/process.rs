@@ -686,6 +686,7 @@ pub fn execute_script(
             skein_world::end_to_end::TreeStatus {
                 live_pids: tree.live_pids.clone(),
                 live_at_leader_exit: tree.live_at_leader_exit.clone(),
+                interrupted_pids: tree.interrupted_pids.clone(),
                 terminated_pids: tree.terminated_pids.clone(),
                 killed_pids: tree.killed_pids.clone(),
                 forced_cleanup: tree.forced_cleanup,
