@@ -85,7 +85,12 @@ pub fn start(seed: u64, job: smith_agent_world::Job) -> host::Start {
         transcript: None,
         answered: Box::default(),
         directories: Box::default(),
-        grants: Box::from([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]),
+        grants: Box::from([host::Grant {
+            account: 0,
+            generation: 1,
+            valid: Duration::from_secs(7200),
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+        }]),
     }
 }
 

@@ -697,6 +697,7 @@ impl World {
                 account: 3,
                 generation: 4,
                 valid: skein_lib::Duration::from_nanos(5),
+                form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             }]),
         };
         if let Half::Host(host) = &mut self.host.half {
@@ -938,7 +939,12 @@ impl World {
     pub fn host_refreshes_grant(&mut self, account: u32, generation: u64, credential: agent::GrantValue) {
         if let Half::Host(host) = &mut self.host.half {
             host.send_grant(
-                smith_host_domain::channel::Grant { account, generation, valid: skein_lib::Duration::from_nanos(50) },
+                smith_host_domain::channel::Grant {
+                    account,
+                    generation,
+                    valid: skein_lib::Duration::from_nanos(50),
+                    form: smith_host_protocol::grant_form(&credential).expect("refresh value has a form"),
+                },
                 credential,
                 skein_lib::Token::new(32),
                 &mut self.host.host_events,

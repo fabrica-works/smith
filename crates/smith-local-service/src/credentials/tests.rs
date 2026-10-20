@@ -131,10 +131,18 @@ fn settle(
     }
     panic!("bounded account transitions settle");
 }
-fn ready(out: &mut Queue<CredentialRequest>, generation: u64, seconds: u64, value: &[u8]) {
-    let Some(CredentialRequest::Ready { event: local::Event::Credential { grant }, value: token }) = out.pop() else {
+fn ready(
+    out: &mut Queue<CredentialRequest>,
+    generation: u64,
+    seconds: u64,
+    value: &[u8],
+    expected: smith_host_domain::Form,
+) {
+    let Some(CredentialRequest::Ready { event: local::Event::Credential { grant, form }, value: token }) = out.pop()
+    else {
         panic!("one ready grant")
     };
+    assert_eq!(form, expected);
     assert_eq!(grant.name, smith_domain::GrantName { account: 7, generation });
     assert_eq!(grant.valid, Duration::from_secs(seconds));
     assert_eq!(token.as_ref(), value);
@@ -149,7 +157,7 @@ fn a_borrowed_login_is_loaded_at_startup_and_its_file_is_never_written() {
     assert!(out.is_empty());
     assert!(owner.request(7));
     settle(&mut owner, &fixture("valid.json"), Time::ZERO, &mut out, &mut closed);
-    ready(&mut out, 2, 20, b"header.eyJleHAiOjEyMH0.signature");
+    ready(&mut out, 2, 20, b"header.eyJleHAiOjEyMH0.signature", smith_host_domain::Form::Withdrawn);
     assert_eq!(owner.account_id(7), Some(b"acc".as_slice()));
     owner.close(smith_agent_service::Close::Graceful, Time::ZERO, wall());
     settle(&mut owner, &fixture("valid.json"), Time::ZERO, &mut out, &mut closed);
@@ -170,22 +178,28 @@ fn a_login_changed_by_its_program_is_loaded_for_the_next_grant() {
     settle(&mut owner, &fixture("expired.json"), Time::ZERO, &mut out, &mut closed);
     assert!(owner.request(7));
     settle(&mut owner, &fixture("valid.json"), Time::ZERO, &mut out, &mut closed);
-    ready(&mut out, 2, 20, b"header.eyJleHAiOjEyMH0.signature");
+    ready(&mut out, 2, 20, b"header.eyJleHAiOjEyMH0.signature", smith_host_domain::Form::Withdrawn);
     assert!(out.is_empty());
 }
 
 #[test]
 fn an_env_account_lends_the_handed_in_value_without_a_file_operation() {
-    let borrowed =
-        decode_login(LoginFormat::Codex, &fixture("valid.json"), &limits().client.document).expect("fixture record");
-    let mut owner = accounts(Source::Env { account: 7, borrowed });
-    let mut out = Queue::with_capacity(ACCOUNTS_MAX_OUT);
-    let mut closed = List::with_capacity(8);
-    assert!(owner.request(7));
-    settle(&mut owner, b"", Time::ZERO, &mut out, &mut closed);
-    ready(&mut out, 1, 20, b"header.eyJleHAiOjEyMH0.signature");
-    assert!(owner.submissions().is_empty());
-    assert!(closed.is_empty());
+    for (identifier, form) in [
+        (b"acc".as_slice(), smith_host_domain::Form::Withdrawn),
+        (b"".as_slice(), smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer)),
+    ] {
+        let mut borrowed = decode_login(LoginFormat::Codex, &fixture("valid.json"), &limits().client.document)
+            .expect("fixture record");
+        borrowed.account_id = Box::from(identifier);
+        let mut owner = accounts(Source::Env { account: 7, borrowed });
+        let mut out = Queue::with_capacity(ACCOUNTS_MAX_OUT);
+        let mut closed = List::with_capacity(8);
+        assert!(owner.request(7));
+        settle(&mut owner, b"", Time::ZERO, &mut out, &mut closed);
+        ready(&mut out, 1, 20, b"header.eyJleHAiOjEyMH0.signature", form);
+        assert!(owner.submissions().is_empty());
+        assert!(closed.is_empty());
+    }
 }
 
 #[test]
@@ -210,7 +224,7 @@ fn a_borrowed_grant_announces_its_lead_and_ends_at_expiry() {
     let mut closed = List::with_capacity(8);
     assert!(owner.request(7));
     settle(&mut owner, &fixture("valid.json"), Time::ZERO, &mut out, &mut closed);
-    ready(&mut out, 1, 20, b"header.eyJleHAiOjEyMH0.signature");
+    ready(&mut out, 1, 20, b"header.eyJleHAiOjEyMH0.signature", smith_host_domain::Form::Withdrawn);
     owner.advance(Time::from_nanos(10_000_000_000), wall(), &mut out);
     let Some(CredentialRequest::Notice { account: 7, reason: local::CredentialFailure::BorrowedExpiring { .. } }) =
         out.pop()
@@ -233,7 +247,7 @@ fn releasing_a_finished_runs_grants_prevents_a_later_grant_failure() {
     let mut closed = List::with_capacity(8);
     assert!(owner.request(7));
     settle(&mut owner, &fixture("valid.json"), Time::ZERO, &mut out, &mut closed);
-    ready(&mut out, 1, 20, b"header.eyJleHAiOjEyMH0.signature");
+    ready(&mut out, 1, 20, b"header.eyJleHAiOjEyMH0.signature", smith_host_domain::Form::Withdrawn);
     owner.release_all(Time::ZERO, wall());
     owner.advance(Time::from_nanos(20_000_000_000), wall(), &mut out);
     assert!(out.is_empty());

@@ -189,6 +189,14 @@ fn configured_driver(
     }
 }
 
+fn account_form(identifier: &[u8]) -> smith_host_domain::Form {
+    if identifier.is_empty() {
+        smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer)
+    } else {
+        smith_host_domain::Form::Withdrawn
+    }
+}
+
 fn claim_identifier(account: &mut Account, token: &[u8], wall: Wall, limits: &skein_oauth::Limits) -> bool {
     match &account.source {
         Origin::SignIn { claim: Some(claim), .. } => match skein_oauth::read_claims(token, claim, wall, limits) {
@@ -674,6 +682,7 @@ impl Accounts {
                     }
                     out.push(CredentialRequest::Ready {
                         event: local::Event::Credential {
+                            form: account_form(&account.identifier),
                             grant: smith_domain::Grant {
                                 name: smith_domain::GrantName { account: account.number, generation },
                                 valid,

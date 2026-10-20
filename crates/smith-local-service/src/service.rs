@@ -544,6 +544,13 @@ impl Service {
 
     /// Lend a credential value only beside the domain's grant name.
     pub fn credential(&mut self, grant: agent::Grant, value: smith_protocol_channel::GrantValue) {
+        let Ok(form) = smith_host_protocol::grant_form(&value) else {
+            self.local_events.push(local::Event::NoCredential {
+                account: grant.name.account,
+                reason: local::CredentialFailure::Missing,
+            });
+            return;
+        };
         let bytes = match &value {
             channel::GrantValue::Bearer(bytes)
             | channel::GrantValue::Key(bytes)
@@ -567,7 +574,7 @@ impl Service {
             return;
         }
         self.values.insert(grant.name.account, value).expect("configured account capacity");
-        self.local_events.push(local::Event::Credential { grant });
+        self.local_events.push(local::Event::Credential { grant, form });
     }
 
     #[cfg(test)]
@@ -1362,3 +1369,6 @@ fn to_root_request(request: inline::Lower) -> agent::Request {
         inline::Lower::Abort { owner } => agent::Request::Abort { owner },
     }
 }
+
+#[cfg(test)]
+mod tests;

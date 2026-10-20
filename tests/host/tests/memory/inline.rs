@@ -29,6 +29,7 @@ fn two_full_inline_slots_and_their_emitted_prompts_fit_the_worst_case() {
                 account,
                 generation: u64::MAX,
                 valid: skein_lib::Duration::from_secs(7200),
+                form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             })
             .collect();
         meter.start();

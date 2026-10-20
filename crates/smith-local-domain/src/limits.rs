@@ -152,6 +152,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     agent
         .checked_add(configuration)?
         .checked_add(lines)?
+        .checked_add(skein_lib::List::<smith_host_domain::Grant>::worst_case(limits.smith.accounts)?)?
         .checked_add(u64::from(limits.line_bytes.max(20)))?
         .checked_add(32)?
         .checked_add(Queue::<smith_host_domain::Message>::worst_case(inbox)?)?

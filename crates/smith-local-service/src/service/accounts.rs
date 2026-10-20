@@ -51,7 +51,7 @@ impl Service {
         accounts.advance(now, wall, &mut out);
         for _ in 0..crate::ACCOUNTS_MAX_OUT {
             match out.pop() {
-                Some(crate::CredentialRequest::Ready { event: local::Event::Credential { grant }, value }) => {
+                Some(crate::CredentialRequest::Ready { event: local::Event::Credential { grant, .. }, value }) => {
                     let identifier = accounts.account_id(grant.name.account).expect("selected account");
                     // accounts-sources moves the presets to their own sources.
                     let value = if identifier.is_empty() {

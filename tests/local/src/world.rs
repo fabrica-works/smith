@@ -1276,6 +1276,7 @@ impl World {
                     return;
                 }
                 self.events.push_back(Event::Credential {
+                    form: local::Form::Credential(local::Scheme::Bearer),
                     grant: agent::Grant {
                         name: agent::GrantName { account, generation: u64::from(self.credential_requests) },
                         valid: Duration::from_secs(7200),

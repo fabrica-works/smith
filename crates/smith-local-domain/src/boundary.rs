@@ -193,7 +193,7 @@ pub enum Event {
         reason: StoreFailure,
     },
     /// Terminal for one Credential request.
-    Credential { grant: agent::Grant },
+    Credential { grant: agent::Grant, form: smith_host_domain::Form },
     /// Terminal for one Credential request that could not be served.
     NoCredential { account: u32, reason: CredentialFailure },
     /// One terminal below an inline run, routed under its agent handle.

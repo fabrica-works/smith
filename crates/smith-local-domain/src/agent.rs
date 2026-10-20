@@ -74,17 +74,6 @@ pub(crate) fn prepare_start(
             return Err(BridgeError::Terminal);
         }
     }
-    let Ok(count) = u32::try_from(source.grants.len()) else {
-        return Err(BridgeError::Values);
-    };
-    let mut grants = List::with_capacity(count);
-    for grant in source.grants {
-        let item =
-            channel::Grant { account: grant.name.account, generation: grant.name.generation, valid: grant.valid };
-        if grants.push(item).is_err() {
-            return Err(BridgeError::Values);
-        }
-    }
     Ok(host::Start {
         live: None,
         messages: source.messages,
@@ -96,7 +85,7 @@ pub(crate) fn prepare_start(
         transcript,
         answered: answered.into_boxed(),
         directories,
-        grants: grants.into_boxed(),
+        grants: source.grants,
     })
 }
 
@@ -327,7 +316,7 @@ pub(crate) struct RunStart {
     pub(crate) workspace: Option<run::Workspace>,
     pub(crate) transcript: Option<root::Transcript>,
     pub(crate) answered: Box<[root::AnsweredCall]>,
-    pub(crate) grants: Box<[root::Grant]>,
+    pub(crate) grants: Box<[host::Grant]>,
 }
 
 /// Separate accepted text from the typed failure notice the terminal renders.

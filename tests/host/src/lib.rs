@@ -172,7 +172,12 @@ pub fn start() -> Start {
             },
         }]),
         directories: Box::new([]),
-        grants: Box::new([Grant { account: 1, generation: 1, valid: Duration::from_secs(60) }]),
+        grants: Box::new([Grant {
+            account: 1,
+            generation: 1,
+            valid: Duration::from_secs(60),
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+        }]),
     }
 }
 

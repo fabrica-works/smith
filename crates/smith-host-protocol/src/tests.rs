@@ -51,7 +51,12 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
             git: true,
             conflicts: Box::from([Box::from(*b"file")]),
         }]),
-        grants: Box::from([channel::Grant { account: 5, generation: 6, valid: Duration::from_nanos(7) }]),
+        grants: Box::from([channel::Grant {
+            account: 5,
+            generation: 6,
+            valid: Duration::from_nanos(7),
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+        }]),
     };
     let values = crate::Values {
         paths: Box::from([Box::from(*b"/tmp/src")]),
@@ -131,7 +136,7 @@ fn the_host_sends_open_before_the_domain_hears_anything() {
     }
 }
 
-fn process_limits() -> Limits {
+pub(super) fn process_limits() -> Limits {
     Limits {
         bodies: smith_channel::CEILINGS,
         charter: smith_charter::CEILINGS,
@@ -317,7 +322,7 @@ fn host_stop_signals_keep_the_child_identity() {
     assert_eq!(below.pop(), Some(IoRequest::Signal { child, to: kernel::Target::Child, signal: kernel::Signal::Kill }));
 }
 
-fn endpoints() -> smith_protocol_channel::Endpoints {
+pub(super) fn endpoints() -> smith_protocol_channel::Endpoints {
     let mut names = skein_lib::List::with_capacity(1);
     names.push(smith_protocol_channel::Endpoint { name: Box::new([]), number: 0, dialect: 0 }).expect("one endpoint");
     smith_protocol_channel::Endpoints::new(names)

@@ -55,7 +55,12 @@ fn maximum_start(limits: Limits) -> Start {
             })
             .collect(),
         grants: (0..limits.accounts)
-            .map(|account| Grant { account, generation: 1, valid: Duration::from_secs(100) })
+            .map(|account| Grant {
+                account,
+                generation: 1,
+                valid: Duration::from_secs(100),
+                form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+            })
             .collect(),
     }
 }

@@ -468,6 +468,7 @@ pub(super) fn spawned_chat_with_saved_hello() -> (Domain, Env<Limits>, Queue<Req
         &mut domain,
         &env,
         Event::Credential {
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             grant: smith_domain::Grant {
                 name: smith_domain::GrantName { account: 7, generation: 1 },
                 valid: Duration::from_secs(60),
@@ -488,6 +489,7 @@ pub(super) fn spawned_chat_with_saved_hello() -> (Domain, Env<Limits>, Queue<Req
     assert_eq!(start.messages[0].label.as_ref(), b"person");
     assert_eq!(start.messages[0].text.as_ref(), b"hello");
     assert_eq!(start.grants.len(), 1);
+    assert_eq!(start.grants[0].form, smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer));
     assert_eq!(start.charter.into_value().instructions.as_ref(), b"Assist the person");
     assert!(match out.pop() {
         Some(Request::Process(process::Request::Wait { .. })) => true,
@@ -679,6 +681,7 @@ fn an_inline_runs_facts_wait_for_the_service() {
         &mut domain,
         &env,
         Event::Credential {
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             grant: smith_domain::Grant {
                 name: smith_domain::GrantName { account: 7, generation: 1 },
                 valid: Duration::from_secs(60),
@@ -848,6 +851,7 @@ fn a_headless_start_reading_its_repository_head() -> (Domain, Env<Limits>, Queue
         &mut domain,
         &env,
         Event::Credential {
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             grant: smith_domain::Grant {
                 name: smith_domain::GrantName { account: 7, generation: 1 },
                 valid: Duration::from_secs(60),

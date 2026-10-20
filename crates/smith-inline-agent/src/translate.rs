@@ -30,6 +30,10 @@ pub(crate) fn start(client: Token, source: host::Start, limits: &Limits) -> Resu
     }
     let mut grants = List::with_capacity(count);
     for item in source.grants {
+        match item.form {
+            host::Form::Program(_) => return Err(host::Invalid::Grants),
+            host::Form::Credential(_) | host::Form::Withdrawn => {}
+        }
         grants.push(grant(item)).expect("checked count");
     }
     let count = checked_count(source.answered.len())?;

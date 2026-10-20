@@ -33,6 +33,14 @@ pub fn encode_start(
     transcript_limits: &smith_transcript::v6::Limits,
     endpoints: &smith_protocol_channel::Endpoints,
 ) -> Result<Frame, Error> {
+    if start.grants.len() != values.credentials.len() {
+        return Err(Error::MissingValue);
+    }
+    for (grant, credential) in start.grants.iter().zip(values.credentials.iter()) {
+        if grant_form(credential)? != grant.form {
+            return Err(Error::Grants);
+        }
+    }
     let mut messages = List::with_capacity(limits.start_messages);
     for message in start.messages {
         let item = wire::Message::new(
@@ -79,9 +87,6 @@ pub fn encode_start(
         if answered.push(item).is_err() {
             return Err(Error::MissingValue);
         }
-    }
-    if start.grants.len() != values.credentials.len() {
-        return Err(Error::MissingValue);
     }
     let mut grants = List::with_capacity(limits.start_grants);
     for (grant, credential) in start.grants.into_iter().zip(values.credentials) {
@@ -298,6 +303,21 @@ pub(crate) fn encode_reply(
     let mut frame = frame_writer(0x0102, record.measure())?;
     frame.put(&body.finish())?;
     Ok(frame.finish()?)
+}
+
+/// The form a service-owned value lends, checked against its grant
+/// (protocol/hosts.md, section 2).
+pub fn grant_form(value: &smith_protocol_channel::GrantValue) -> Result<host::Form, Error> {
+    use smith_protocol_channel::GrantValue;
+    match value {
+        GrantValue::Bearer(_) => Ok(host::Form::Credential(host::Scheme::Bearer)),
+        GrantValue::Key(_) => Ok(host::Form::Credential(host::Scheme::Key)),
+        GrantValue::Program(name) => {
+            let name = host::SourceName::new(name).ok_or(Error::Grants)?;
+            Ok(host::Form::Program(name))
+        }
+        GrantValue::Withdrawn { .. } => Ok(host::Form::Withdrawn),
+    }
 }
 
 pub(crate) fn grant_value(

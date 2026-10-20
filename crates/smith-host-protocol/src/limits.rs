@@ -29,7 +29,7 @@ pub enum Error {
     Channel(SchemaError),
     /// A service omitted a workspace path or credential value.
     MissingValue,
-    /// A lent credential envelope cannot form a withdrawn grant.
+    /// A lent value cannot form its grant, or disagrees with the grant's form.
     Grants,
     /// A live call name is repeated, unknown, or beyond capacity.
     Calls,

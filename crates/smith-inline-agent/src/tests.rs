@@ -57,12 +57,37 @@ fn start() -> host::Start {
         transcript: None,
         answered: Box::default(),
         directories: Box::default(),
-        grants: Box::from([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]),
+        grants: Box::from([host::Grant {
+            account: 0,
+            generation: 1,
+            valid: Duration::from_secs(7200),
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+        }]),
     }
 }
 
 fn env() -> Env<Limits> {
     Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bounds() }
+}
+
+#[test]
+fn a_start_lending_a_program_source_is_refused_as_invalid_grants() {
+    let env = env();
+    let mut agent = Domain::new(&env.limits, configuration(), 1);
+    let mut out = Queue::with_capacity(crate::max_out(&env.limits));
+    let mut source = start();
+    source.grants[0].form = host::Form::Program(host::SourceName::new(b"claude-code").expect("source name"));
+    step(&mut agent, &env, Input::Parent(parent::Event::Spawn { client: Token::new(1), start: source }), &mut out);
+    assert_eq!(
+        out.pop(),
+        Some(Output::Parent(parent::Request::Gone {
+            client: Token::new(1),
+            end: host::End::Invalid(host::Invalid::Grants),
+            detail: Box::default(),
+        }))
+    );
+    assert!(out.is_empty());
+    assert_eq!(agent.hosted(), 0);
 }
 
 #[test]

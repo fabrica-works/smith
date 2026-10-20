@@ -210,7 +210,12 @@ fn carried_start_messages_cross_the_wire_in_order_and_an_overfull_start_is_refus
         start.charter = composed_charter();
         start.transcript = None;
         start.answered = Box::default();
-        start.grants = Box::new([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]);
+        start.grants = Box::new([host::Grant {
+            account: 0,
+            generation: 1,
+            valid: Duration::from_secs(7200),
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+        }]);
         start.messages = (0..count)
             .map(|name| host::Message {
                 name: Token::new(99 - name),
@@ -321,7 +326,12 @@ fn an_empty_start_waits_without_a_fence_and_the_first_wire_message_opens_main() 
     start.charter = host::Charter::new(charter, 1_000_000).expect("bounded typed charter");
     start.transcript = None;
     start.answered = Box::default();
-    start.grants = Box::new([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]);
+    start.grants = Box::new([host::Grant {
+        account: 0,
+        generation: 1,
+        valid: Duration::from_secs(7200),
+        form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+    }]);
     let mut wire = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     wire.settle();
     wire.send_domain_start(
@@ -398,7 +408,12 @@ fn composed_host() -> (smith_host_world::World, agent::Limits) {
     start.charter = charter;
     start.transcript = None;
     start.answered = Box::default();
-    start.grants = Box::from([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]);
+    start.grants = Box::from([host::Grant {
+        account: 0,
+        generation: 1,
+        valid: Duration::from_secs(7200),
+        form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+    }]);
     host_world.spawn(start);
     host_world.spawned();
     (host_world, limits)

@@ -369,7 +369,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::Git { owner, result } => git_result(domain, env, owner, result, out),
         Event::PlainStatus { owner, changed } => plain_status(domain, env, owner, changed, out),
         Event::StoreFailed { turn, reason } => store_failed(domain, env, turn, reason, out),
-        Event::Credential { grant } => credential(domain, env, grant, out),
+        Event::Credential { grant, form } => credential(domain, env, grant, form, out),
         Event::NoCredential { account, reason } => no_credential(domain, env, account, reason, out),
         Event::Below { agent, terminal } => agent_terminal(domain, env, agent, terminal),
         Event::Process(event) => domain.agent.process(env.now, env.wall, event),
@@ -684,10 +684,12 @@ fn state_saved(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     }
 }
 
-fn credential(domain: &mut Domain, env: &Env<Limits>, grant: agent::Grant, out: &mut Queue<Request>) {
+fn credential(domain: &mut Domain, env: &Env<Limits>, grant: agent::Grant, form: host::Form, out: &mut Queue<Request>) {
+    let grant =
+        host::Grant { account: grant.name.account, generation: grant.name.generation, valid: grant.valid, form };
     match domain.chat.phase {
         Phase::Starting => {
-            assert!(domain.config.accounts.contains(&grant.name.account), "grant names a requested account");
+            assert!(domain.config.accounts.contains(&grant.account), "grant names a requested account");
             assert!(domain.grants.awaiting > 0, "one terminal per account request");
             domain.grants.awaiting = domain.grants.awaiting.checked_sub(1).expect("pending account");
             domain.grants.values.push(grant).expect("validated account capacity");
@@ -697,14 +699,7 @@ fn credential(domain: &mut Domain, env: &Env<Limits>, grant: agent::Grant, out: 
             &mut domain.agent,
             env.now,
             env.wall,
-            parent::Event::Grant {
-                agent: domain.run.expect("grant belongs to the admitted child"),
-                grant: host::Grant {
-                    account: grant.name.account,
-                    generation: grant.name.generation,
-                    valid: grant.valid,
-                },
-            },
+            parent::Event::Grant { agent: domain.run.expect("grant belongs to the admitted child"), grant },
         ),
         Phase::Answered { .. } => {}
         Phase::Loading | Phase::Idle | Phase::Done => unreachable!("grant answers a live account request"),

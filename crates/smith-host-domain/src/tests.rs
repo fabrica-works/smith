@@ -543,7 +543,12 @@ fn a_notice_for_an_account_not_lent_is_refused_as_rules() {
 fn notice_fault(message: crate::Up, admit: bool) -> Option<crate::Fault> {
     let limits = crate::Limits { accounts: 1, ..limits() };
     let mut start = start();
-    start.grants = Box::new([crate::Grant { account: 7, generation: 1, valid: Duration::from_secs(60) }]);
+    start.grants = Box::new([crate::Grant {
+        account: 7,
+        generation: 1,
+        valid: Duration::from_secs(60),
+        form: crate::Form::Credential(crate::Scheme::Bearer),
+    }]);
     let mut domain = Domain::new(&limits);
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(crate::max_out(&limits));
@@ -567,4 +572,36 @@ fn notice_fault(message: crate::Up, admit: bool) -> Option<crate::Fault> {
         }
     }
     None
+}
+
+#[test]
+fn a_source_name_takes_the_channel_s_set() {
+    use crate::SourceName;
+    for (name, accepted) in [
+        (b"a".as_slice(), true),
+        (b"abcdefghijklmnopqrstuvwxyz01234-".as_slice(), true),
+        (b"".as_slice(), false),
+        (b"abcdefghijklmnopqrstuvwxyz012345-".as_slice(), false),
+        (b"A".as_slice(), false),
+        (b"_".as_slice(), false),
+        (b" ".as_slice(), false),
+    ] {
+        assert_eq!(SourceName::new(name).is_some(), accepted, "{name:?}");
+    }
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_macros,
+    reason = "unit tests format the public source name's Debug output (programming-model.md, section 10.2)"
+)]
+fn a_source_name_reads_back_its_bytes() {
+    for (bytes, debug) in [
+        (b"a".as_slice(), "SourceName(\"a\")"),
+        (b"abcdefghijklmnopqrstuvwxyz01234-".as_slice(), "SourceName(\"abcdefghijklmnopqrstuvwxyz01234-\")"),
+    ] {
+        let name = crate::SourceName::new(bytes).expect("channel name");
+        assert_eq!(name.as_bytes(), bytes);
+        assert_eq!(format!("{name:?}"), debug);
+    }
 }

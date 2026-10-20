@@ -157,7 +157,12 @@ fn start(live: Option<host::channel::LiveAsk>) -> host::Start {
         transcript: None,
         answered: Box::new([]),
         directories: Box::new([]),
-        grants: Box::new([host::Grant { account: 0, generation: 1, valid: Duration::from_secs(7200) }]),
+        grants: Box::new([host::Grant {
+            account: 0,
+            generation: 1,
+            valid: Duration::from_secs(7200),
+            form: smith_host_domain::Form::Withdrawn,
+        }]),
     }
 }
 

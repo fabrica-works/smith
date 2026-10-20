@@ -80,7 +80,12 @@ fn message(world: &mut World, name: u64, bytes: usize) {
 fn grant(world: &mut World, generation: u64) {
     world.event(Input::Parent(parent::Event::Grant {
         agent: world.agent(),
-        grant: Grant { account: 1, generation, valid: Duration::from_secs(60) },
+        grant: Grant {
+            account: 1,
+            generation,
+            valid: Duration::from_secs(60),
+            form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+        },
     }));
 }
 fn count_answers(world: &World, wanted: Token) -> usize {
@@ -167,7 +172,12 @@ fn admission_refusals_preserve_separate_process_rights() {
                 Invalid::Answered
             }
             3 => {
-                request.grants = Box::new([Grant { account: 1, generation: 0, valid: Duration::ZERO }]);
+                request.grants = Box::new([Grant {
+                    account: 1,
+                    generation: 0,
+                    valid: Duration::ZERO,
+                    form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
+                }]);
                 Invalid::Grants
             }
             4 => {

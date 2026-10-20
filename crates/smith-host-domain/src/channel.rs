@@ -4,6 +4,7 @@
 //! No framing, secrets, policy decoding or V1 compatibility. All payloads are
 //! checked against receiving Limits before retained state changes. Durable decisions
 //! belong to the parent, which scopes `CallName` by the same logical run after restart.
+pub use crate::source_name::SourceName;
 use crate::{Charter, Declared, Delivery, Fields, Transcript, TurnValue};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Time, Token};
@@ -102,7 +103,8 @@ pub struct Directory {
     pub conflicts: Box<[Box<[u8]>]>,
 }
 
-/// Credential name forwarded to the protocol; never credential bytes.
+/// Credential name and value form forwarded to the protocol; never credential bytes
+/// (domain/host.md, section 7).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Grant {
     /// Known parent credential account.
@@ -111,6 +113,28 @@ pub struct Grant {
     pub generation: u64,
     /// Relative lifetime; protocol resolves the secret.
     pub valid: Duration,
+    /// What the grant's value lends (protocol/channel.md, section 6).
+    pub form: Form,
+}
+
+/// What a grant's value lends, named by the host (protocol/channel.md, section 6).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Form {
+    /// A credential, sent as its provider takes this scheme.
+    Credential(Scheme),
+    /// A program source, by its name; the run takes the program backend.
+    Program(SourceName),
+    /// The withdrawn id-and-bearer form, removed by the second part of LLM accounts once its last host has moved.
+    Withdrawn,
+}
+
+/// A credential's scheme, named by the host (protocol/channel.md, section 6).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Scheme {
+    /// A bearer credential sent as the provider takes it.
+    Bearer,
+    /// A key credential sent as the provider takes it.
+    Key,
 }
 
 /// Durable transcript-derived operation identity, separate from callback Token.

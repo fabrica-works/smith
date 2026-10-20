@@ -279,6 +279,9 @@ impl Component {
         if self.phase != Phase::Admitted {
             return Err(Error::Order);
         }
+        if crate::grant_form(&credential)? != grant.form {
+            return Err(Error::Grants);
+        }
         let value = crate::translate::grant_value(credential, &self.bodies)?;
         let grant = smith_channel::Grant::new(
             &self.bodies,
@@ -773,3 +776,7 @@ mod tests {
         assert_eq!(outcome.into_value(), source);
     }
 }
+
+#[cfg(test)]
+#[path = "component/tests.rs"]
+mod grant_tests;
