@@ -334,9 +334,11 @@ open is section 9.
   (domain/run.md, 9.1). From then on the agent refuses every call but
   `finish`, and `deliver` when granted: a built-in's at its permission
   prompt (5.4), and its own server's tools' as it answers them, each
-  with the wind-down's reason. Main then has the reserve's turns and time; a
-  program that has not finished within them, or whose spend passes the
-  budget, is stopped as a cancel is, and the run fails for its budget.
+  answered as not run, naming the calls allowed, as a call outside a
+  completion's tool choice is (domain/session.md, section 5). Main then
+  has the reserve's turns and time; a program that has not finished
+  within them, or whose spend passes the budget, is stopped as a cancel
+  is, and the run fails for its budget.
 - **Turns:** each completion counts as a turn, as on the direct backend,
   and `--max-turns` is the charter's turns, a guard behind the agent's
   own count.
