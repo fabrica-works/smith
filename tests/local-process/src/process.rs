@@ -124,8 +124,7 @@ fn issuer_with_token(transport: skein_fake_peers::Transport, port: u16, access_t
         rotations: 4,
         plans: 4,
     };
-    // The issuer bounds redirects with an issued client id and token replies.
-    let response_bytes = limits.uri_bytes + 6 * limits.document.string_bytes + 267;
+    let response_bytes = skein_fake_peers::oauth::least_response(&limits).expect("issuer response floor fits u32");
     let host = smith_agent_process_world::fake::loopback();
     let redirect = smith_agent_process_world::fake::redirect_port();
     let mut issuer = Issuer::new(
