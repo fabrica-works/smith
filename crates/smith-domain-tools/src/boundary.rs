@@ -323,7 +323,7 @@ pub enum Done {
         /// Whether IO ended the process or search at its deadline.
         timed_out: bool,
     },
-    /// Load, List: nothing is at the place.
+    /// Load, List, Store: nothing is at the place.
     Missing,
     /// Load, Store: what is at the place is not a regular file.
     NotFile,
@@ -333,7 +333,7 @@ pub enum Done {
     /// List: what is at the place is not a directory. Any operation: a
     /// directory on the way to the place is not one.
     NotDirectory,
-    /// Load: the file is `size` bytes, more than asked for.
+    /// Load: the file is `size` bytes, more than asked for; Store: the content is.
     TooLarge {
         /// Observed file size which exceeds the receiving byte cap.
         size: u64,

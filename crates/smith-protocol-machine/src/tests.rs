@@ -101,11 +101,7 @@ fn store_uses_no_follow_and_returns_digest() {
         &env(),
         FromDomain::Op {
             owner: Token::new(1),
-            op: tools::Op::Store {
-                at: place(b"src/a"),
-                content: Box::from(&b"new"[..]),
-                expect: tools::Expect::Absent,
-            },
+            op: tools::Op::Store { at: place(b"a"), content: Box::from(&b"new"[..]), expect: tools::Expect::Absent },
             deadline: Time::from_nanos(u64::MAX),
         },
         &mut to_domain,
@@ -117,7 +113,7 @@ fn store_uses_no_follow_and_returns_digest() {
             request: file::Request::Store {
                 owner: Token::new(1),
                 root: Token::new(10),
-                path: Box::from(&b"src/a"[..]),
+                path: Box::from(&b"a"[..]),
                 bytes: Box::from(&b"new"[..]),
                 expected: file::Expect::Absent,
                 no_follow: true,
@@ -146,29 +142,292 @@ fn a_symbolic_link_refusal_becomes_linked() {
     let mut component = component();
     let mut to_domain = Queue::with_capacity(2);
     let mut below = Queue::with_capacity(2);
+    component.from_domain(&env(), create(1, b"link/a", FAR), &mut to_domain, &mut below);
+    // The file's directory is probed without following a link, so a link
+    // there is refused before anything is made through it.
+    assert_eq!(below.pop(), Some(probe(1, b"link", FAR)));
+    component.from_below(&env(), failed(1, kernel::Error::TooManyLinks), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner: Token::new(1), done: tools::Done::Linked }));
+    assert!(below.is_empty());
+    assert_closed(component);
+}
+
+const FAR: Time = Time::from_nanos(u64::MAX);
+
+/// A create of `path` with the content `new`.
+fn create(owner: u64, path: &[u8], deadline: Time) -> FromDomain {
+    FromDomain::Op {
+        owner: Token::new(owner),
+        op: tools::Op::Store { at: place(path), content: Box::from(&b"new"[..]), expect: tools::Expect::Absent },
+        deadline,
+    }
+}
+
+fn probe(owner: u64, path: &[u8], deadline: Time) -> Below {
+    Below::File {
+        request: file::Request::Load {
+            owner: Token::new(owner),
+            root: Token::new(10),
+            path: Box::from(path),
+            max: 0,
+            no_follow: true,
+        },
+        deadline,
+    }
+}
+
+fn make(owner: u64, path: &[u8]) -> Below {
+    Below::File {
+        request: file::Request::MakeDirectory {
+            owner: Token::new(owner),
+            root: Token::new(10),
+            path: Box::from(path),
+            mode: 0o777,
+        },
+        deadline: FAR,
+    }
+}
+
+fn stores(owner: u64, path: &[u8]) -> Below {
+    Below::File {
+        request: file::Request::Store {
+            owner: Token::new(owner),
+            root: Token::new(10),
+            path: Box::from(path),
+            bytes: Box::from(&b"new"[..]),
+            expected: file::Expect::Absent,
+            no_follow: true,
+        },
+        deadline: FAR,
+    }
+}
+
+fn failed(owner: u64, error: kernel::Error) -> BelowEvent {
+    BelowEvent::File(file::Event::Failed { owner: Token::new(owner), error, committed: false, residue: None })
+}
+
+fn made(owner: u64) -> BelowEvent {
+    BelowEvent::File(file::Event::Made { owner: Token::new(owner) })
+}
+
+fn answer(owner: u64, done: tools::Done) -> ToDomain {
+    ToDomain::Done { owner: Token::new(owner), done }
+}
+
+/// The component retains nothing once every answer is given.
+fn assert_closed(mut component: Component) {
+    let mut below = Queue::with_capacity(2);
+    component.close(&mut below);
+    assert!(component.closed());
+    assert!(below.is_empty());
+}
+
+#[test]
+fn a_create_in_a_missing_directory_makes_each_directory_from_the_top_then_stores() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(2);
+    let mut below = Queue::with_capacity(2);
+    component.from_domain(&env(), create(1, b"a/b/c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(1, b"a/b", FAR)));
+    component.from_below(&env(), failed(1, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a")));
+    component.from_below(&env(), made(1), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a/b")));
+    component.from_below(&env(), made(1), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(stores(1, b"a/b/c.txt")));
+    assert!(to_domain.is_empty());
+    let version = digest::digest(b"new");
+    component.from_below(
+        &env(),
+        BelowEvent::File(file::Event::Stored { owner: Token::new(1), digest: version }),
+        &mut to_domain,
+        &mut below,
+    );
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::Stored { version: tools::Version::new(version.0) })));
+    assert!(below.is_empty());
+    assert_closed(component);
+}
+
+#[test]
+fn a_directory_that_exists_counts_as_made_and_an_existing_directory_is_stored_in_at_once() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(2);
+    let mut below = Queue::with_capacity(2);
+    // `a` was there and `a/b` was made by another writer in between.
+    component.from_domain(&env(), create(1, b"a/b/c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(1, b"a/b", FAR)));
+    component.from_below(&env(), failed(1, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a")));
+    component.from_below(&env(), failed(1, kernel::Error::Exists), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a/b")));
+    component.from_below(&env(), failed(1, kernel::Error::Exists), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(stores(1, b"a/b/c.txt")));
+    // The store's own answers stay the store's: here the file came first.
+    component.from_below(
+        &env(),
+        BelowEvent::File(file::Event::Conflict { owner: Token::new(1), now: None }),
+        &mut to_domain,
+        &mut below,
+    );
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::Conflict { now: None })));
+
+    component.from_domain(&env(), create(2, b"src/new.rs", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(2, b"src", FAR)));
+    component.from_below(&env(), failed(2, kernel::Error::IsADirectory), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(stores(2, b"src/new.rs")));
+    // Its directories gone before the store, the file is missing.
+    component.from_below(&env(), failed(2, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(2, tools::Done::Missing)));
+    assert!(below.is_empty());
+    assert_closed(component);
+}
+
+#[test]
+fn a_file_where_a_directory_should_be_answers_not_directory_and_makes_nothing() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(2);
+    let mut below = Queue::with_capacity(2);
+    let found = [
+        BelowEvent::File(file::Event::Loaded { owner: Token::new(1), bytes: Box::new([]) }),
+        BelowEvent::File(file::Event::TooLarge { owner: Token::new(1), size: 3 }),
+        failed(1, kernel::Error::NotAFile),
+        // A file higher up the path.
+        failed(1, kernel::Error::NotADirectory),
+    ];
+    for event in found {
+        component.from_domain(&env(), create(1, b"a/b/c.txt", FAR), &mut to_domain, &mut below);
+        assert_eq!(below.pop(), Some(probe(1, b"a/b", FAR)));
+        component.from_below(&env(), event, &mut to_domain, &mut below);
+        assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::NotDirectory)));
+        assert!(below.is_empty());
+    }
+    // A file put at `a` by another writer between the probe and the make.
+    component.from_domain(&env(), create(1, b"a/b/c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(1, b"a/b", FAR)));
+    component.from_below(&env(), failed(1, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a")));
+    component.from_below(&env(), failed(1, kernel::Error::Exists), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a/b")));
+    component.from_below(&env(), failed(1, kernel::Error::NotADirectory), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::NotDirectory)));
+    assert!(below.is_empty());
+    assert_closed(component);
+}
+
+#[test]
+fn a_directory_that_cannot_be_made_answers_as_its_failure_maps() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(2);
+    let mut below = Queue::with_capacity(2);
+    for (error, done) in [
+        (kernel::Error::NoSpace, tools::Done::Failed { fault: tools::Fault::NoSpace }),
+        (kernel::Error::Permission, tools::Done::Failed { fault: tools::Fault::Denied }),
+        (kernel::Error::TooManyLinks, tools::Done::Linked),
+        (kernel::Error::NameTooLong, tools::Done::Failed { fault: tools::Fault::Other }),
+    ] {
+        component.from_domain(&env(), create(1, b"a/c.txt", FAR), &mut to_domain, &mut below);
+        assert_eq!(below.pop(), Some(probe(1, b"a", FAR)));
+        component.from_below(&env(), failed(1, kernel::Error::NotFound), &mut to_domain, &mut below);
+        assert_eq!(below.pop(), Some(make(1, b"a")));
+        component.from_below(&env(), failed(1, error), &mut to_domain, &mut below);
+        assert_eq!(to_domain.pop(), Some(answer(1, done)));
+        assert!(below.is_empty());
+    }
+    // The probe's own failures map the same way.
+    component.from_domain(&env(), create(1, b"a/c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(1, b"a", FAR)));
+    component.from_below(&env(), failed(1, kernel::Error::Permission), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::Failed { fault: tools::Fault::Denied })));
+    assert!(below.is_empty());
+    assert_closed(component);
+}
+
+#[test]
+fn a_replace_and_a_create_at_the_top_store_at_once_and_make_nothing() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(2);
+    let mut below = Queue::with_capacity(2);
+    let version = tools::Version::new(digest::digest(b"old").0);
     component.from_domain(
         &env(),
         FromDomain::Op {
             owner: Token::new(1),
-            op: tools::Op::Store { at: place(b"link/a"), content: Box::from(&b"x"[..]), expect: tools::Expect::Absent },
-            deadline: Time::from_nanos(u64::MAX),
+            op: tools::Op::Store {
+                at: place(b"a/b/c.txt"),
+                content: Box::from(&b"new"[..]),
+                expect: tools::Expect::Is { version },
+            },
+            deadline: FAR,
         },
         &mut to_domain,
         &mut below,
     );
-    assert!(below.pop().is_some());
+    assert_eq!(
+        below.pop(),
+        Some(Below::File {
+            request: file::Request::Store {
+                owner: Token::new(1),
+                root: Token::new(10),
+                path: Box::from(&b"a/b/c.txt"[..]),
+                bytes: Box::from(&b"new"[..]),
+                expected: file::Expect::Digest(digest::digest(b"old")),
+                no_follow: true,
+            },
+            deadline: FAR,
+        })
+    );
+    // A replace's missing directory is the file gone.
+    component.from_below(&env(), failed(1, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::Missing)));
+    assert!(below.is_empty());
+
+    component.from_domain(&env(), create(2, b"c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(stores(2, b"c.txt")));
+    component.from_below(&env(), failed(2, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(2, tools::Done::Missing)));
+    assert!(below.is_empty());
+    assert_closed(component);
+}
+
+#[test]
+fn a_create_cancelled_or_past_its_deadline_between_steps_sends_nothing_more() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(2);
+    let mut below = Queue::with_capacity(2);
+    // The cancel reaches io after the make it was meant to stop.
+    component.from_domain(&env(), create(1, b"a/b/c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(1, b"a/b", FAR)));
+    component.from_below(&env(), failed(1, kernel::Error::NotFound), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(make(1, b"a")));
+    component.from_domain(&env(), FromDomain::Cancel { owner: Token::new(1) }, &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(Below::CancelFile { owner: Token::new(1) }));
+    component.from_below(&env(), made(1), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::Cancelled)));
+    assert!(below.is_empty());
+
+    // The cancel stops the probe itself.
+    component.from_domain(&env(), create(1, b"a/b/c.txt", FAR), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(1, b"a/b", FAR)));
+    component.from_domain(&env(), FromDomain::Cancel { owner: Token::new(1) }, &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(Below::CancelFile { owner: Token::new(1) }));
     component.from_below(
         &env(),
-        BelowEvent::File(file::Event::Failed {
-            owner: Token::new(1),
-            error: kernel::Error::TooManyLinks,
-            committed: false,
-            residue: None,
-        }),
+        BelowEvent::File(file::Event::Cancelled { owner: Token::new(1) }),
         &mut to_domain,
         &mut below,
     );
-    assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner: Token::new(1), done: tools::Done::Linked }));
+    assert_eq!(to_domain.pop(), Some(answer(1, tools::Done::Cancelled)));
+    assert!(below.is_empty());
+
+    // The deadline passes while the probe is answered.
+    let deadline = Time::from_nanos(100);
+    component.from_domain(&env(), create(2, b"a/c.txt", deadline), &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(probe(2, b"a", deadline)));
+    let late = Env { now: deadline, ..env() };
+    component.from_below(&late, failed(2, kernel::Error::IsADirectory), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(answer(2, tools::Done::TimedOut)));
+    assert!(below.is_empty());
+    assert_closed(component);
 }
 
 #[test]
@@ -531,7 +790,11 @@ fn directory_request(operation: u32, path: &[u8]) -> FromDomain {
         0 => FromDomain::Op { owner, op: tools::Op::Load { at: place(path), max: 16 }, deadline },
         1 => FromDomain::Op {
             owner,
-            op: tools::Op::Store { at: place(path), content: Box::new([]), expect: tools::Expect::Absent },
+            op: tools::Op::Store {
+                at: place(path),
+                content: Box::new([]),
+                expect: tools::Expect::Is { version: tools::Version::new(digest::digest(b"").0) },
+            },
             deadline,
         },
         2 => FromDomain::Op {

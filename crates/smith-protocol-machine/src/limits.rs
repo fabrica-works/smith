@@ -66,7 +66,11 @@ pub const fn max_out(limits: &Limits) -> MaxOut {
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Installing a new workspace temporarily coexists with the old root list.
     let roots = List::<Root>::worst_case(limits.roots)?.checked_mul(2)?;
-    let operations = Map::<Token, Pending>::worst_case(limits.operations)?;
+    // A create in a directory hands io one directory path of its own at a
+    // time, the probe's or a make's (domain/tools.md, section 3); its content
+    // and file path stay the domain's.
+    let operations = Map::<Token, Pending>::worst_case(limits.operations)?
+        .checked_add(u64::from(limits.path_bytes).checked_mul(u64::from(limits.operations))?)?;
     let guides = Map::<Token, crate::guide::Guide>::worst_case(limits.operations)?
         .checked_add(u64::from(limits.file_bytes).checked_mul(u64::from(limits.operations))?)?;
     // Each pending listing retains one encoded glob, its line, previous

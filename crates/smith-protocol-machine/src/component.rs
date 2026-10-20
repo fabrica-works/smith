@@ -1,7 +1,9 @@
 //! Workspace authority, file and process ownership (protocol/agent.md,
 //! sections 2 and 3; domain/tools.md, sections 4–6).
-//! The component keeps root tokens and in-flight owners. It never knows
-//! descriptors, file content before io reports it, or the domain's state.
+//! The component keeps root tokens and in-flight owners, and holds a
+//! create's new content while it makes the file's directories. It never
+//! knows descriptors, file content before io reports it, or the domain's
+//! state.
 
 use alloc::boxed::Box;
 
@@ -30,10 +32,24 @@ pub(crate) enum Kind {
     Store,
 }
 
-/// One file operation kept until io's terminal, even after cancellation.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Pending {
-    pub(crate) kind: Kind,
+/// One file operation kept until its last io terminal, even after
+/// cancellation.
+#[derive(Debug)]
+pub(crate) enum Pending {
+    /// One request, whose terminal answers the operation.
+    One { kind: Kind },
+    /// A create still making its directories (domain/tools.md, section 3).
+    Create(crate::files::Create),
+}
+
+impl Pending {
+    /// The domain cancelled: a create sends no further request.
+    fn cancel(&mut self) {
+        match self {
+            Pending::One { .. } => {}
+            Pending::Create(create) => create.cancel(),
+        }
+    }
 }
 
 /// Workspace authority and in-flight requests; io keeps the filesystem.
@@ -95,7 +111,8 @@ impl Component {
                 self.admit_tool(env, owner, op, deadline, to_domain, below);
             }
             FromDomain::Cancel { owner } => {
-                if self.pending.contains_key(&owner) {
+                if let Some(pending) = self.pending.get_mut(&owner) {
+                    pending.cancel();
                     below.push(Below::CancelFile { owner });
                 } else if let Some(process) = self.processes.get_mut(&owner) {
                     process.cancel_job();
@@ -192,8 +209,8 @@ impl Component {
         }
         match op {
             tools::Op::Load { .. } | tools::Op::Store { .. } => {
-                match crate::files::request(&self.roots, &env.limits, owner, op) {
-                    Ok((kind, request)) => match self.pending.insert(owner, Pending { kind }) {
+                match crate::files::request(&self.roots, &env.limits, owner, op, deadline) {
+                    Ok((pending, request)) => match self.pending.insert(owner, pending) {
                         Ok(None) => below.push(Below::File { request, deadline }),
                         Ok(Some(_)) => unreachable!("owner checked"),
                         Err(_) => to_domain.push(ToDomain::Done { owner, done: other() }),
@@ -363,8 +380,18 @@ impl Component {
                     process.directory_event(owner, event, below);
                     self.advance(owner, env.now, to_domain, below);
                 } else {
-                    let pending = self.pending.remove(&owner).expect("file terminal has admitted owner");
-                    to_domain.push(ToDomain::Done { owner, done: crate::files::terminal(pending.kind, event) });
+                    let done = match self.pending.remove(&owner).expect("file terminal has admitted owner") {
+                        Pending::One { kind } => crate::files::terminal(kind, event),
+                        Pending::Create(create) => match create.event(owner, env.now, event) {
+                            crate::files::Next::Request { pending, request, deadline } => {
+                                self.pending.insert(owner, pending).expect("pending slot returned");
+                                below.push(Below::File { request, deadline });
+                                return;
+                            }
+                            crate::files::Next::Done(done) => done,
+                        },
+                    };
+                    to_domain.push(ToDomain::Done { owner, done });
                 }
             }
             BelowEvent::Process(event) => self.process_event(env.now, event, to_domain, below),
