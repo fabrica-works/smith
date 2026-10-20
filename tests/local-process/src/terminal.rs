@@ -44,6 +44,7 @@ pub struct Terminal {
     commands: VecDeque<Action>,
     sending: Option<Box<[u8]>>,
     shown: Vec<u8>,
+    wait_searched: usize,
     errors: Vec<u8>,
     exit: Option<kernel::Exit>,
     right: u64,
@@ -132,6 +133,7 @@ impl Terminal {
             commands: commands.into(),
             sending: None,
             shown: Vec::new(),
+            wait_searched: 0,
             errors: Vec::new(),
             exit: None,
             right: 1,
@@ -240,10 +242,11 @@ impl Terminal {
                 for _ in 0..16 {
                     let Some(action) = self.commands.front() else { break };
                     if let Action::Wait(needle) = action
-                        && !self.shown.windows(needle.len()).any(|part| part == needle.as_ref())
+                        && !appeared(&self.shown, needle, &mut self.wait_searched)
                     {
                         break;
                     }
+                    self.wait_searched = 0;
                     match self.commands.pop_front().expect("script action") {
                         Action::Send(bytes) => {
                             self.sending = Some(bytes);
@@ -363,11 +366,12 @@ impl Terminal {
         for _ in 0..16 {
             let Some(command) = self.commands.front() else { break };
             match command {
-                Action::Wait(needle) if !self.shown.windows(needle.len()).any(|bytes| bytes == needle.as_ref()) => {
+                Action::Wait(needle) if !appeared(&self.shown, needle, &mut self.wait_searched) => {
                     break;
                 }
                 _ => {}
             }
+            self.wait_searched = 0;
             match self.commands.pop_front().expect("announced command") {
                 Action::Send(bytes) => {
                     assert!(bytes.len() <= 8192 && !bytes.is_empty());
@@ -487,5 +491,46 @@ impl Host for Terminal {
     }
     fn operations(&self) -> u32 {
         io::operations(&self.env.limits).expect("terminal operations") + 1
+    }
+}
+
+fn appeared(shown: &[u8], needle: &[u8], searched: &mut usize) -> bool {
+    assert!(!needle.is_empty(), "a terminal wait names output");
+    if *searched == shown.len() {
+        return false;
+    }
+    let from = searched.saturating_sub(needle.len() - 1);
+    let found = shown[from..].windows(needle.len()).any(|part| part == needle);
+    *searched = shown.len();
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Action, Terminal, appeared};
+    use skein_io::kernel::Fd;
+    use skein_lib::Token;
+
+    #[test]
+    fn terminal_wait_finds_each_split_match() {
+        let shown = b"before\xffanswer\0after";
+        let needle = b"\xffanswer\0";
+        for split in 0..=shown.len() {
+            let mut searched = 0;
+            let first = appeared(&shown[..split], needle, &mut searched);
+            assert!(first || appeared(shown, needle, &mut searched), "split {split}");
+        }
+    }
+
+    #[test]
+    fn a_later_wait_can_match_previously_shown_output() {
+        let mut person = Terminal::new(
+            Fd::new(10),
+            vec![Action::Wait(b"second answer".as_slice().into()), Action::Wait(b"first answer".as_slice().into())],
+        );
+        person.input = Some(Token::new(1));
+        person.shown.extend_from_slice(b"first answer then second answer");
+        person.commands();
+        assert!(person.commands.is_empty(), "both waits can use the same output history");
     }
 }
