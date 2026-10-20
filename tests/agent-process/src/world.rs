@@ -35,6 +35,7 @@ pub(crate) struct Parent {
     frames_at_release: usize,
     refreshing: Option<smith_channel::GrantValue>,
     pub(crate) cancel_pending: bool,
+    pub(crate) program_host_answers: Option<usize>,
 }
 
 impl Parent {
@@ -98,6 +99,7 @@ impl Parent {
             frames_at_release: 0,
             refreshing: None,
             cancel_pending: false,
+            program_host_answers: None,
         };
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
@@ -309,6 +311,7 @@ impl Host for Parent {
         while let Some(complete) = self.completions.pop() {
             self.completed(complete);
         }
+        crate::program_world::answer_host(self);
         self.acknowledge();
         for _ in self.signalled..self.signal {
             self.signalled = self.signalled.checked_add(1).expect("finite requested signals");

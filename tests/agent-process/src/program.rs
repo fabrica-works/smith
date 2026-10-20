@@ -19,6 +19,8 @@ pub enum Case {
     Ordinary,
     /// Let a scripted conversation reach its domain terminal.
     Turns,
+    /// Run workspace built-ins with a writable cwd and a read-only library.
+    Tools,
     /// The main endpoint does not select the configured program.
     Unbound,
     /// The programs directory could not be opened by the shell.
@@ -121,8 +123,28 @@ fn configuration(case: Case) -> smith_agent_service::Config {
     config.limits.domain.run.check_tail = config.limits.domain.run.check_tail.min(256);
     config.limits.domain.run.host_reply_bytes = config.limits.domain.run.host_reply_bytes.min(4096);
     config.limits.domain.run.message_bytes = config.limits.domain.run.message_bytes.min(4096);
+    if case == Case::Tools {
+        config.limits.domain.run.outcome_bytes = 512;
+        config.limits.domain.run.answer_bytes = 512;
+        config.limits.domain.run.host_reply_bytes = 512;
+        config.limits.domain.run.message_bytes = 512;
+        config.limits.domain.run.check_tail = 64;
+    }
     config.limits.domain.session.delegated_result_bytes =
         smith_domain::feedback_worst_case(&config.limits.domain.run).expect("complete bounded feedback");
+    if case == Case::Tools {
+        config.limits.events = Some(
+            smith_agent_service::EventLimits::derive(
+                &config.limits,
+                smith_agent_service::sinks::Capture::None,
+                1,
+                0,
+                &[],
+                Duration::from_secs(1),
+            )
+            .expect("event bounds"),
+        );
+    }
     config.limits.machine.env_bytes = 4096;
     config.environment = smith_protocol_machine::Environment::encode(&variables, &config.limits.machine)
         .expect("private test environment");
@@ -140,7 +162,15 @@ fn make_agent(spawn: &Spawn, inherited: &Inherited) -> Proc {
         smith_agent_shell::config::Configuration {
             memory: configuration.limits.memory,
             service: configuration,
-            trace: None,
+            trace: if case == Case::Tools {
+                Some(smith_agent_shell::trace::TraceConfig {
+                    path: "/home/events.jsonl".into(),
+                    capture: smith_agent_service::sinks::Capture::None,
+                    delivery: smith_agent_service::sinks::Delivery::Complete,
+                })
+            } else {
+                None
+            },
             profile: crate::profile(),
             declarations: crate::declarations(4096),
             programs: std::collections::BTreeMap::new(),
@@ -153,8 +183,19 @@ fn make_agent(spawn: &Spawn, inherited: &Inherited) -> Proc {
             signals: inherited.signal,
             seed: 7,
             pid: 101,
-            trace: None,
-            roots: None,
+            trace: inherited.appends.first().map(|(_, fd)| *fd),
+            roots: if case == Case::Tools {
+                Some(
+                    inherited
+                        .roots
+                        .iter()
+                        .filter(|(name, _)| name.as_ref() != b"programs")
+                        .map(|(_, fd)| *fd)
+                        .collect(),
+                )
+            } else {
+                None
+            },
             programs: Some(smith_agent_shell::ProgramResources {
                 relay: "/programs/smith-agent".into(),
                 entropy: Secret::new(Box::new([7; 32])),
@@ -242,6 +283,7 @@ impl skein_world::Machine for Machine {
 struct Judge {
     cancel: Option<Time>,
     wait_for_exit: bool,
+    ended: bool,
 }
 
 impl Referee<Proc> for Judge {
@@ -257,6 +299,9 @@ impl Referee<Proc> for Judge {
         }
     }
     fn observe(&mut self, _now: Time, procs: &[Proc]) {
+        if let Proc::Parent(parent) = &procs[0] {
+            self.ended = parent.peer.observed().iter().any(|frame| frame.kind == 0x0110);
+        }
         if self.wait_for_exit
             && let Proc::Parent(parent) = &procs[0]
             && parent.peer.observed().iter().any(|frame| frame.kind == 0x0110)
@@ -275,7 +320,7 @@ impl Referee<Proc> for Judge {
         None
     }
     fn passed(&self) -> bool {
-        self.cancel.is_none()
+        self.cancel.is_none() && (!self.wait_for_exit || self.ended)
     }
     fn last_word(&self) -> skein_world::LastWord {
         skein_world::LastWord::LastExpectation
@@ -290,6 +335,7 @@ pub struct Run {
     pub exits: Vec<Exit>,
     pub errors: Vec<u8>,
     pub run_directories: Vec<Vec<u8>>,
+    pub events: Vec<smith_events::Record>,
 }
 
 impl Run {
@@ -307,6 +353,9 @@ fn fixture(story: &Story, login: Option<&[u8]>) -> (Files, Opened) {
     let mut files = Files::new();
     let mut items = vec![
         Item::directory(b"home").mode(0o700),
+        Item::directory(b"work").mode(0o700),
+        Item::directory(b"work/repo").mode(0o700),
+        Item::directory(b"library").mode(0o700),
         Item::directory(b"programs").mode(0o700),
         Item::directory(b"programs/source").mode(0o700),
         Item::file(b"programs/source/fake-claude.story", &story.encode()),
@@ -320,6 +369,10 @@ fn fixture(story: &Story, login: Option<&[u8]>) -> (Files, Opened) {
 
 /// Drive one hosted program scenario on the shared deterministic world and machine.
 #[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one hosted fixture connects the program, relay, roots and independent observations"
+)]
 pub fn run(
     case: Case,
     story: &Story,
@@ -329,7 +382,7 @@ pub fn run(
     refresh: Option<&smith_channel::GrantValue>,
 ) -> Run {
     let mut story = story.clone();
-    if case != Case::Turns && story.turns.is_empty() {
+    if !matches!(case, Case::Turns | Case::Tools) && story.turns.is_empty() {
         story.turns.push(smith_fake_claude::Turn {
             steps: vec![smith_fake_claude::Step::Hang],
             end: smith_fake_claude::End::default(),
@@ -340,28 +393,60 @@ pub fn run(
     let machine = Machine { files, base };
     let mut world =
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
-            wait_for_exit: case == Case::Turns,
-            cancel: if case == Case::Turns { None } else { Some(Time::ZERO.saturating_add(Duration::from_millis(50))) },
+            wait_for_exit: matches!(case, Case::Turns | Case::Tools),
+            ended: false,
+            cancel: if matches!(case, Case::Turns | Case::Tools) {
+                None
+            } else {
+                Some(Time::ZERO.saturating_add(Duration::from_millis(50)))
+            },
         })
         .with_machine(machine);
     let operations = smith_agent_service::program_operations(&configuration(case))
         .expect("program operation bound")
         .checked_add(8)
         .expect("shell routes");
-    world.host_roots(
+    world.host_startup(
         HostedProgram { program: b"smith".as_slice().into(), make: make_agent, instances: 1, operations },
         |spawn| {
             let case: Case = serde_json::from_slice(&spawn.args[0]).expect("case");
             if case == Case::MissingRoot {
                 Vec::new()
             } else {
-                vec![skein_world::StartupRoot {
+                let mut roots = vec![skein_world::StartupRoot {
                     name: b"programs".as_slice().into(),
                     path: b"/programs".as_slice().into(),
+                }];
+                if case == Case::Tools {
+                    roots.extend([
+                        skein_world::StartupRoot {
+                            name: b"cwd".as_slice().into(),
+                            path: b"/work/repo".as_slice().into(),
+                        },
+                        skein_world::StartupRoot {
+                            name: b"library".as_slice().into(),
+                            path: b"/library".as_slice().into(),
+                        },
+                    ]);
+                }
+                roots
+            }
+        },
+        |spawn| {
+            let case: Case = serde_json::from_slice(&spawn.args[0]).expect("scenario");
+            if case == Case::Tools {
+                vec![skein_world::StartupAppend {
+                    name: b"trace".as_slice().into(),
+                    root: b"/home".as_slice().into(),
+                    path: b"events.jsonl".as_slice().into(),
+                    mode: 0o600,
                 }]
+            } else {
+                vec![]
             }
         },
     );
+
     let factory = smith_fake_claude::hosted(b"/programs/claude");
     world.host_startup(
         HostedProgram { program: factory.program, make: make_fake, instances: 2, operations: factory.operations },
@@ -391,6 +476,11 @@ pub fn run(
         );
         parent
             .program_arguments(Box::new([serde_json::to_vec(&case).expect("case arguments").into()]), refresh.cloned());
+        if case == Case::Tools {
+            parent.peer = crate::host();
+            parent.peer.play(tools_start(charter, value));
+            parent.program_host_answers = Some(0);
+        }
         if case == Case::Transcript {
             parent.peer = crate::host();
             parent.peer.play(with_transcript(charter, value));
@@ -423,6 +513,15 @@ pub fn run(
         seen: smith_fake_claude::seen(&bytes),
         exits: outcome.procs.iter().filter_map(Host::exit).collect(),
         run_directories,
+        events: if case == Case::Tools {
+            let file = outcome.machine.files.open(base, b"home/events.jsonl", How::Read).expect("trace file");
+            let size = u32::try_from(outcome.machine.files.stat(file).size).expect("trace size");
+            let bytes = outcome.machine.files.read(file, 0, size).expect("event stream");
+            outcome.machine.files.close(file);
+            crate::events::read(&bytes, configuration(case).limits.events.as_ref().expect("event limits"))
+        } else {
+            Vec::new()
+        },
     };
     outcome.machine.files.close(base);
     assert_eq!(outcome.machine.files.open_handles(), 0, "fixture handles settle");
@@ -481,4 +580,68 @@ fn redacted_invocations(bytes: &[u8]) -> Vec<smith_fake_claude::Observation> {
         }
     }
     invocations
+}
+
+fn tools_start(charter: &[u8], value: &smith_channel::GrantValue) -> skein_channel::Frame {
+    let frame = crate::start_workspace_message(charter, 8, false, false, None, value, None);
+    let mut start = smith_channel::Start::decode(&smith_channel::CEILINGS, &mut Reader::new(&frame.bytes()[8..]))
+        .expect("start")
+        .into_parts();
+    let mut directories = skein_lib::List::with_capacity(2);
+    for (name, path, writable) in
+        [(b"repo".as_slice(), b"/work/repo".as_slice(), true), (b"library".as_slice(), b"/library".as_slice(), false)]
+    {
+        directories
+            .push(
+                smith_channel::Directory::new(
+                    &smith_channel::CEILINGS,
+                    smith_channel::DirectoryParts {
+                        name: name.into(),
+                        path: path.into(),
+                        writable,
+                        git: false,
+                        conflicts: skein_lib::List::with_capacity(0),
+                    },
+                )
+                .expect("workspace directory"),
+            )
+            .expect("two roots");
+    }
+    start.workspace = Some(
+        smith_channel::Workspace::new(&smith_channel::CEILINGS, smith_channel::WorkspaceParts { directories })
+            .expect("workspace"),
+    );
+    let start = smith_channel::Start::new(&smith_channel::CEILINGS, start).expect("workspace start");
+    let mut bytes = skein_lib::Writer::new(start.measure() as usize);
+    start.encode(&mut bytes).expect("start body");
+    let mut frame = skein_channel::frame_writer(0x0100, start.measure()).expect("start frame");
+    frame.put(&bytes.finish()).expect("start bytes");
+    frame.finish().expect("workspace start frame")
+}
+
+pub(crate) fn answer_host(parent: &mut Parent) {
+    if let Some(answered) = parent.program_host_answers {
+        let calls: Vec<_> =
+            parent.peer.observed().iter().filter(|frame| frame.kind == 0x0107).skip(answered).cloned().collect();
+        for frame in calls {
+            let call = smith_channel::Call::decode(&smith_channel::CEILINGS, &mut Reader::new(&frame.body))
+                .expect("host call");
+            let reply = smith_channel::HostReply::new(
+                &smith_channel::CEILINGS,
+                smith_channel::HostReplyParts { error: false, text: b"found".as_slice().into() },
+            )
+            .expect("host reply");
+            let answer = smith_channel::HostAnswer::new(
+                &smith_channel::CEILINGS,
+                smith_channel::HostAnswerParts { name: call.name().clone(), reply: smith_channel::Reply::Host(reply) },
+            )
+            .expect("host answer");
+            let mut body = skein_lib::Writer::new(answer.measure() as usize);
+            answer.encode(&mut body).expect("answer body");
+            let mut frame = skein_channel::frame_writer(0x0102, answer.measure()).expect("host frame");
+            frame.put(&body.finish()).expect("host body");
+            parent.peer.play(frame.finish().expect("host answer frame"));
+            parent.program_host_answers = Some(parent.program_host_answers.expect("enabled host") + 1);
+        }
+    }
 }

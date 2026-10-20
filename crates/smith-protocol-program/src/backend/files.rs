@@ -219,11 +219,8 @@ impl Backend {
         let mut tools = List::with_capacity(u32::try_from(count).expect("admitted tool count"));
         for schema in schemas {
             match schema.kind {
-                protocol::ToolKind::SubAgent => {}
-                protocol::ToolKind::Owned(_)
-                | protocol::ToolKind::Wait
-                | protocol::ToolKind::Deliver
-                | protocol::ToolKind::Finish => {
+                protocol::ToolKind::SubAgent | protocol::ToolKind::Owned(_) => {}
+                protocol::ToolKind::Wait | protocol::ToolKind::Deliver | protocol::ToolKind::Finish => {
                     tools
                         .push(mcp::Tool {
                             name: schema.name,

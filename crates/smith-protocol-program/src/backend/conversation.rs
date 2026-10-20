@@ -41,6 +41,9 @@ impl Backend {
             for block in message.content {
                 match block {
                     llm::Block::ToolResult { id, result } => {
+                        if id.as_ref() != b"smith-structured-finish" && !self.awaits_answer(&id) {
+                            continue;
+                        }
                         let Some(answer) = calls::render(result, prompt, &self.settings.adapter) else {
                             self.fail(
                                 env,
@@ -176,7 +179,7 @@ impl Backend {
                 Some(b"api_retry") => Some(()),
                 Some(_) | None => None,
             },
-            Some(b"user") => Some(()),
+            Some(b"user") => self.builtin_results(&document, up),
             Some(_) | None => None,
         };
         if result.is_none() {
@@ -246,6 +249,9 @@ impl Backend {
             let call = self.ledger.get_mut(index)?;
             call.eligible = call.message >= floor;
         }
+        if !self.reply_room(0) {
+            return None;
+        }
         Some(())
     }
 
@@ -271,8 +277,9 @@ impl Backend {
             &mut self.ledger,
             List::with_capacity(self.settings.receiving.max_completion_blocks.checked_mul(5).expect("call slots")),
         );
+        let delivered = self.turns.closed.checked_sub(u64::from(self.turns.ready.len())).expect("delivered message");
         for call in old.into_boxed() {
-            if !call.answered && (call.eligible || call.rpc.is_some()) {
+            if !call.answered && (call.eligible || call.rpc.is_some() || (call.builtin && call.message >= delivered)) {
                 assert!(self.ledger.push(call).is_ok(), "bounded outstanding calls");
             }
         }
@@ -280,7 +287,12 @@ impl Backend {
         for block in &mut completion.content {
             match block {
                 llm::Said::ToolCall { name, input, call, .. } => {
-                    *call = decode(name, input, prompt, outcome, deliver.as_ref(), &self.settings.adapter);
+                    match call {
+                        llm::Decoded::Builtin { .. } => {}
+                        llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } | llm::Decoded::Invalid { .. } => {
+                            *call = decode(name, input, prompt, outcome, deliver.as_ref(), &self.settings.adapter);
+                        }
+                    }
                     decoded = match call.owned_bytes() {
                         Some(bytes) => decoded.checked_add(bytes),
                         None => None,
@@ -328,7 +340,9 @@ impl Backend {
         if text > 0 {
             up.push(ToDomain::Text { owner, bytes: text });
         }
+        self.builtin_owners(owner, &completion);
         up.push(ToDomain::Completed { owner, completion });
+        self.flush_builtins(up);
     }
 
     pub(super) fn match_calls(&mut self) {
@@ -380,10 +394,11 @@ impl Backend {
     pub(super) fn answer_calls(&mut self) {
         for index in 0..self.ledger.len() {
             let call = self.ledger.get_mut(index).expect("ledger cell");
-            if self.phase == Phase::Ending && !call.answered && call.answer.is_none() {
+            if !call.builtin && self.phase == Phase::Ending && !call.answered && call.answer.is_none() {
                 call.answer = Some(mcp::Answer::Error(b"smith: the program turn was cancelled".as_slice().into()));
             }
-            if let Some(rpc) = call.rpc
+            if !call.builtin
+                && let Some(rpc) = call.rpc
                 && let Some(answer) = call.answer.take()
             {
                 self.server.as_mut().expect("MCP reply").answer(rpc, answer, &mut self.io);
@@ -396,7 +411,7 @@ impl Backend {
 fn register_blocks(ledger: &mut List<calls::Call>, blocks: &[llm::Said], message: u64) -> Option<()> {
     for block in blocks {
         match block {
-            llm::Said::ToolCall { id, name, input, .. } if id.as_ref() != b"smith-structured-finish" => {
+            llm::Said::ToolCall { id, name, input, call, .. } if id.as_ref() != b"smith-structured-finish" => {
                 let mut known = false;
                 for call in ledger.iter() {
                     if call.id == *id {
@@ -414,6 +429,13 @@ fn register_blocks(ledger: &mut List<calls::Call>, blocks: &[llm::Said], message
                             answered: false,
                             eligible: true,
                             message,
+                            builtin: match call {
+                                llm::Decoded::Builtin { .. } => true,
+                                llm::Decoded::Owned { .. }
+                                | llm::Decoded::Served { .. }
+                                | llm::Decoded::Invalid { .. } => false,
+                            },
+                            owner: None,
                         })
                         .ok()?;
                 }

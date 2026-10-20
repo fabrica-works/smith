@@ -74,6 +74,7 @@ fn command_keeps_the_inline_schema_in_one_argument() {
         br#"{"type":"object","description":"spaces stay inline"}"#,
         9,
         b"9213b8f4-a680-416e-a34c-6718a9575807",
+        b"",
     )
     .expect("bounded command");
     let flag = arguments.iter().position(|argument| argument.as_ref() == b"--json-schema").expect("schema flag");

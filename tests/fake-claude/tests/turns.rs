@@ -378,3 +378,32 @@ fn a_tool_message_is_framed_before_its_mcp_reply() {
     assert_eq!(messages[3]["event"]["delta"]["type"], "input_json_delta");
     assert_eq!(messages[8]["message"]["content"][0]["type"], "tool_result");
 }
+
+#[test]
+fn together_calls_share_one_assistant_message() {
+    let run = print::with_server(
+        story(
+            vec![Step::Together(vec![
+                Step::Call { tool: "lookup".into(), input: json!({"q":"one"}) },
+                Step::Builtin { tool: "Read".into(), input: json!({"file_path":"a"}), result: "file text".into() },
+            ])],
+            End::default(),
+        ),
+        print::invocation(1),
+        smith_fake_claude::ServerScript {
+            tools: vec![smith_fake_claude::Tool {
+                name: "lookup".into(),
+                answer: smith_fake_claude::Answer::Text("found".into()),
+            }],
+            ..Default::default()
+        },
+    );
+    let messages = messages(&run);
+    let assistants: Vec<_> = messages.iter().filter(|message| message["type"] == "assistant").collect();
+    assert_eq!(assistants.len(), 1);
+    assert_eq!(assistants[0]["message"]["content"].as_array().expect("tool blocks").len(), 2);
+    let users: Vec<_> = messages.iter().filter(|message| message["type"] == "user").collect();
+    assert_eq!(users.len(), 2);
+    assert_eq!(users[0]["message"]["content"][0]["tool_use_id"], assistants[0]["message"]["content"][0]["id"]);
+    assert_eq!(users[1]["message"]["content"][0]["tool_use_id"], assistants[0]["message"]["content"][1]["id"]);
+}

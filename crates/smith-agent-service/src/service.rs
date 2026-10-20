@@ -898,7 +898,7 @@ impl Service {
                 }
             };
             let lapses = self.domain_env.now.saturating_add(grant.valid);
-            if program::install(self, &start, grant.name, &value, lapses).is_err() {
+            if program::install(self, &start, grant.name, &value, lapses, workspace.as_ref()).is_err() {
                 self.refuse_start(run::Invalid::Grants);
                 return;
             }

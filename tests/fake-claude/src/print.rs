@@ -139,6 +139,7 @@ pub(crate) struct Print {
     server_config: Value,
     pending: Option<ToolCall>,
     next_tool: u64,
+    together: std::collections::VecDeque<(ToolCall, Effect)>,
 }
 
 impl Print {
@@ -174,6 +175,7 @@ impl Print {
                 server_config: Value::Null,
                 pending: None,
                 next_tool: 0,
+                together: std::collections::VecDeque::new(),
             },
             effects,
         ))
@@ -335,6 +337,10 @@ impl Print {
                     effects.extend(self.tool(tool, input, Some(result)));
                     return effects;
                 }
+                Step::Together(steps) => {
+                    effects.extend(self.together(steps));
+                    return effects;
+                }
                 Step::Hang => {
                     self.phase = Phase::Hanging;
                     return effects;
@@ -454,10 +460,56 @@ impl Print {
                     }
                 };
                 let mut effects = vec![Effect::Seen(observation), self.emit(json!({"type":"user", "message":{"role":"user", "content":[{"type":"tool_result", "tool_use_id":pending.id, "content":text, "is_error":failed}]}}))];
-                effects.extend(self.steps());
+                if let Some((pending, call)) = self.together.pop_front() {
+                    self.pending = Some(pending);
+                    self.phase = Phase::Calling;
+                    effects.push(call);
+                } else {
+                    effects.extend(self.steps());
+                }
                 effects
             }
         }
+    }
+
+    fn together(&mut self, steps: Vec<Step>) -> Vec<Effect> {
+        let mut blocks = Vec::new();
+        for step in steps {
+            let effects = match step {
+                Step::Call { tool, input } => self.tool(tool, input, None),
+                Step::Builtin { tool, input, result } => self.tool(tool, input, Some(result)),
+                _ => return error("Together requires Call or Builtin", 1),
+            };
+            let pending = self.pending.take().expect("tool prepared");
+            let name = if pending.result.is_some() {
+                pending.tool.clone()
+            } else {
+                format!("mcp__{}__{}", self.server, pending.tool)
+            };
+            blocks.push(json!({"type":"tool_use","id":pending.id,"name":name,"input":pending.input}));
+            let call = effects.into_iter().find(|effect| matches!(effect, Effect::McpCall { .. })).expect("tool RPC");
+            self.together.push_back((pending, call));
+        }
+        if blocks.is_empty() {
+            return self.steps();
+        }
+        // The group is one API message, regardless of its number of calls.
+        self.texts = self
+            .texts
+            .checked_sub(u64::try_from(blocks.len()).expect("group size"))
+            .and_then(|count| count.checked_add(1))
+            .expect("message count");
+        let mut assistant = stream::assistant(
+            "",
+            &self.flags.values["--model"],
+            usize::try_from(self.next_tool).expect("message ID fits"),
+            &self.story.usage,
+        );
+        assistant["message"]["content"] = json!(blocks);
+        let (pending, call) = self.together.pop_front().expect("nonempty group");
+        self.pending = Some(pending);
+        self.phase = Phase::Calling;
+        vec![self.emit(assistant), call]
     }
 
     fn finish(&mut self, value: Value) -> Vec<Effect> {

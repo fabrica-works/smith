@@ -16,12 +16,14 @@ pub(super) struct Call {
     pub answered: bool,
     pub eligible: bool,
     pub message: u64,
+    pub builtin: bool,
+    pub owner: Option<skein_lib::Token>,
 }
 
 pub(super) fn find(calls: &List<Call>, name: &[u8], input: &[u8], depth: u32, tokens: u32) -> Option<u32> {
     let mut fallback = None;
     for (index, call) in calls.iter().enumerate() {
-        if call.eligible && call.name.as_ref() == name && call.rpc.is_none() && !call.answered {
+        if !call.builtin && call.eligible && call.name.as_ref() == name && call.rpc.is_none() && !call.answered {
             let index = u32::try_from(index).ok()?;
             if fallback.is_none() {
                 fallback = Some(index);
@@ -230,6 +232,8 @@ mod tests {
                         answered: false,
                         eligible: true,
                         message: 1,
+                        builtin: false,
+                        owner: None,
                     })
                     .is_ok()
             );

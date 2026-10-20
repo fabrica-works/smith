@@ -12,14 +12,18 @@ use smith_protocol_llm::{self as protocol, FromDomain, ToDomain};
 
 use crate::{Command, Programs, mcp};
 
+mod builtins;
 mod calls;
 mod conversation;
 mod diagnostics;
 mod files;
+mod policy;
 mod start;
 mod stream;
 mod turns;
 
+#[cfg(test)]
+mod builtin_tests;
 #[cfg(test)]
 mod conversation_tests;
 #[cfg(test)]
@@ -31,6 +35,13 @@ mod tests;
 #[cfg(test)]
 mod turns_tests;
 
+/// One normalized start directory, supplied by the service before Complete (programs.md 5.4).
+#[derive(Clone, Debug)]
+pub struct Mount {
+    pub host: Box<[u8]>,
+    pub writable: bool,
+}
+
 /// An adopted programs root or a workspace supplied by the owning service.
 #[derive(Clone, Copy, Debug)]
 pub struct Root {
@@ -40,6 +51,8 @@ pub struct Root {
 
 /// Fixed run startup and receiving bounds supplied by the owning service (5.1).
 pub struct Settings {
+    /// Maximum original host path length, in bytes (domain/tools.md 4).
+    pub path_bytes: u32,
     pub program: Programs,
     pub directory: Option<Root>,
     pub workspace: Option<Root>,
@@ -97,6 +110,7 @@ enum Phase {
 
 /// The run's program adapter, driven by the service (programs.md, sections 3, 5).
 pub struct Backend {
+    mounts: Box<[Mount]>,
     first: Token,
     settings: Settings,
     names: start::Names,
@@ -222,7 +236,12 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         // The sanitizer's List becomes that terminal Box without a fourth copy;
         // the status command's capture/scratch is in command_worst_case.
         .checked_add(u64::from(settings.receiving.max_failure_bytes).checked_mul(3)?)?
+        // Permission policy uses MCP's collector after Server::from_io returns;
+        // its byte-derived depth and scratch are already in mcp_worst_case.
+        // Verdict validation runs only after judge has dropped its document.
         .checked_add(workspace)?
+        // Relative resolution retains cwd, its joining slash and the original path.
+        .checked_add(u64::from(settings.path_bytes.checked_mul(2)?.checked_add(1)?))?
         // The old stdout accumulator and its replacement coexist at a line
         // boundary. Collection/intake/encoding are in stream::worst_case.
         // Input has its independent ceiling: the encoder body and newline
@@ -259,6 +278,7 @@ impl Backend {
         let turns = turns::Turns::new(&settings.receiving, settings.adapter.client.answer);
         let ledger = List::with_capacity(settings.receiving.max_completion_blocks.checked_mul(5).expect("call ledger"));
         Self {
+            mounts: Box::default(),
             first,
             settings,
             names: start::Names::new(entropy),
@@ -301,6 +321,12 @@ impl Backend {
     pub fn workspace(&mut self, root: Root) {
         assert_eq!(self.phase, Phase::Idle, "workspace is supplied before startup");
         self.settings.workspace = Some(root);
+    }
+
+    /// Supply all admitted host directories, with the working directory first (5.4).
+    pub fn mounts(&mut self, mounts: Box<[Mount]>) {
+        assert_eq!(self.phase, Phase::Idle, "mounts precede startup");
+        self.mounts = mounts;
     }
 
     /// Install the source or renew the same account's generation and lapse (section 3).
@@ -513,7 +539,8 @@ impl Backend {
                     Block::ToolResult { id, result } => {
                         for index in 0..self.ledger.len() {
                             let call = self.ledger.get_mut(index).expect("ledger cell");
-                            if call.id == *id
+                            if !call.builtin
+                                && call.id == *id
                                 && call.name.as_ref() == b"finish"
                                 && !call.answered
                                 && call.answer.is_none()

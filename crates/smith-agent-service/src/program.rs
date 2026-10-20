@@ -50,9 +50,8 @@ fn settings(
     environment: &smith_protocol_machine::Environment,
 ) -> Option<backend::Settings> {
     let mut adapter = limits.llm.adapter;
-    // Workspace families are refused at program admission in this step.
-    // Host text and the root's already bounded canonical feedback are the
-    // only results; no read/list/search/shell rendering coexists here.
+    // Built-in results are skipped before rendering; only host text and
+    // bounded root feedback use this MCP reply ceiling (programs.md 5.5).
     let result = limits
         .domain
         .session
@@ -91,6 +90,7 @@ fn settings(
         relay: config.relay.clone(),
         directory: None,
         workspace: None,
+        path_bytes: limits.domain.session.tools.host_path_bytes,
         environment: environment.command_entries(),
         mcp: smith_protocol_program::mcp::Limits {
             message_bytes: call_bytes,
@@ -139,6 +139,10 @@ pub fn program_worst_case(config: &Config) -> Option<u64> {
     let io_growth = super::worst_case(&reserved, &config.llm_endpoints)?
         .checked_sub(super::worst_case(&config.limits, &config.llm_endpoints)?)?;
     backend::backend_worst_case(&settings)?
+        // Start directories are copied once; the policy borrows their host names.
+        .checked_add(u64::from(config.limits.machine.roots).checked_mul(
+            u64::try_from(size_of::<backend::Mount>()).ok()?.checked_add(u64::from(settings.path_bytes))?,
+        )?)?
         .checked_add(io_growth)?
         // The MCP connection and program input are two additional writers.
         .checked_add(u64::from(reserved.io.output).checked_mul(2)?)?
@@ -253,15 +257,13 @@ pub(super) fn install(
     name: domain::GrantName,
     value: &channel::GrantValue,
     lapses: skein_lib::Time,
+    workspace: Option<&domain::run::Workspace>,
 ) -> Result<(), ()> {
     match value {
         channel::GrantValue::Program(source) => {
             let program = service.program.as_mut().ok_or(())?;
             if start.charter.llm.account != Some(name.account)
                 || !program.endpoints.contains(&start.charter.llm.endpoint.0)
-                || start.charter.grants.tools.inspect
-                || start.charter.grants.tools.modify
-                || start.charter.grants.tools.shell
                 || start.charter.grants.wait
                 || start.transcript.is_some()
             {
@@ -276,6 +278,20 @@ pub(super) fn install(
                 let descriptor = service.files.descriptor(*file).ok_or(())?;
                 program.backend.workspace(backend::Root { file: *file, descriptor });
             }
+            let mut mounts = skein_lib::List::with_capacity(service.limits.machine.roots);
+            if let Some(workspace) = workspace {
+                for directory in &workspace.directories {
+                    if directory.host.len()
+                        > usize::try_from(service.limits.domain.session.tools.host_path_bytes).or(Err(()))?
+                    {
+                        return Err(());
+                    }
+                    mounts
+                        .push(backend::Mount { host: directory.host.clone(), writable: directory.writable })
+                        .or(Err(()))?;
+                }
+            }
+            program.backend.mounts(mounts.into_boxed());
             program.backend.turn_limit(start.charter.budget.turns);
             program.backend.grant(backend::Grant { name, source: source.clone(), lapses }).or(Err(()))
         }

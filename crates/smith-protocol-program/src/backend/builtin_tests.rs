@@ -1,0 +1,195 @@
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_macros,
+    reason = "ordinary backend harness, programming-model.md 10.2"
+)]
+use super::lifecycle_tests::{backend, env, request};
+use super::*;
+use smith_domain::tools::{Effect, Grants};
+
+const READ: &[u8] = br#"{"type":"assistant","message":{"id":"one","content":[{"type":"tool_use","id":"r","name":"Read","input":{"file_path":"a"}}]}}"#;
+
+const RESULT: &[u8] = br#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r","content":[{"type":"text","text":"one"},{"type":"image"},{"type":"text","text":"two"}],"is_error":true}]}}"#;
+fn active() -> Backend {
+    let mut backend = backend();
+    backend.phase = Phase::Running;
+    backend.child = Some(Token::new(30));
+    backend.pipes[0] = Some(Token::new(31));
+    backend.request = Some(request(&backend));
+    backend.owner = Some(Token::new(80));
+    backend
+}
+
+#[test]
+fn a_built_in_tool_use_is_a_builtin_call() {
+    for (name, effect) in [
+        ("Read", Effect::Read),
+        ("Glob", Effect::Read),
+        ("Grep", Effect::Read),
+        ("Write", Effect::Write),
+        ("Edit", Effect::Write),
+        ("Bash", Effect::Write),
+        ("future", Effect::Write),
+        ("finish", Effect::Write),
+    ] {
+        let mut backend = active();
+        let mut up = Queue::with_capacity(32);
+        let mut below = Queue::with_capacity(64);
+        let bytes = core::str::from_utf8(READ).expect("JSON").replace("Read", name);
+        backend.line(&env(0), bytes.as_bytes(), &mut up, &mut below);
+        let Some(ToDomain::Completed { completion, .. }) = up.pop() else { panic!("completion") };
+        let llm::Said::ToolCall { name: got, call, .. } = &completion.content[0] else { panic!("tool call") };
+        assert_eq!(got.as_ref(), name.as_bytes());
+        assert_eq!(*call, llm::Decoded::Builtin { effect });
+    }
+}
+
+#[test]
+fn a_built_in_result_follows_its_completion() {
+    let mut backend = active();
+    backend.owner = None;
+    let mut up = Queue::with_capacity(32);
+    let mut below = Queue::with_capacity(64);
+    backend.line(&env(0), READ, &mut up, &mut below);
+    backend.line(&env(0), RESULT, &mut up, &mut below);
+    assert!(up.is_empty(), "result waits behind queued completion");
+    backend.resume(&env(0), request(&backend), &mut up, &mut below);
+    completed(up.pop(), Token::new(80));
+    let Some(ToDomain::BuiltinResult { owner, id, text, error }) = up.pop() else { panic!("builtin result") };
+    assert_eq!(owner, Token::new(80));
+    assert_eq!(id.as_ref(), b"r");
+    assert_eq!(text.as_ref(), b"one\ntwo");
+    assert!(error);
+    backend.line(&env(0), RESULT, &mut up, &mut below);
+    assert!(up.is_empty(), "repeated result is inert");
+}
+
+#[test]
+fn a_complete_s_result_for_a_built_in_is_skipped() {
+    let mut backend = active();
+    let mut up = Queue::with_capacity(32);
+    let mut below = Queue::with_capacity(64);
+    backend.line(&env(0), READ, &mut up, &mut below);
+    up.pop();
+    let mut next = request(&backend);
+    let FromDomain::Complete { prompt, .. } = &mut next else { panic!("Complete") };
+    prompt.messages = Box::new([llm::Message {
+        role: llm::Role::User,
+        content: Box::new([llm::Block::ToolResult {
+            id: b"r".as_slice().into(),
+            result: llm::Returned::Text { text: Box::from([b'x'; 8192]), error: false, replay: None },
+        }]),
+    }]);
+    backend.resume(&env(0), next, &mut up, &mut below);
+    assert!(up.is_empty());
+    assert!(backend.outgoing.is_none());
+    assert!(backend.ledger.get(0).expect("call").answer.is_none());
+    backend.line(&env(0), RESULT, &mut up, &mut below);
+    result_id(up.pop(), Token::new(80), b"r");
+    let later = core::str::from_utf8(READ).expect("JSON").replace("one", "later").replace("\"r\"", "\"r2\"");
+    backend.line(&env(0), later.as_bytes(), &mut up, &mut below);
+    completed(up.pop(), Token::new(80));
+    let mut next = request(&backend);
+    let FromDomain::Complete { prompt, .. } = &mut next else { panic!("Complete") };
+    prompt.messages = Box::new([llm::Message {
+        role: llm::Role::User,
+        content: Box::new([llm::Block::ToolResult {
+            id: b"r".as_slice().into(),
+            result: llm::Returned::Text { text: Box::from([b'x'; 8192]), error: false, replay: None },
+        }]),
+    }]);
+    backend.resume(&env(0), next, &mut up, &mut below);
+    assert!(up.is_empty(), "historical built-in results also bypass MCP rendering");
+}
+
+#[test]
+fn tools_flag_names_the_granted_families() {
+    for (grants, flag) in [
+        (Grants { inspect: false, modify: false, shell: false }, b"".as_slice()),
+        (Grants { inspect: true, modify: false, shell: false }, b"Read,Glob,Grep"),
+        (Grants { inspect: false, modify: true, shell: true }, b"Write,Edit,Bash"),
+        (Grants { inspect: true, modify: true, shell: true }, b"Read,Glob,Grep,Write,Edit,Bash"),
+    ] {
+        assert_eq!(policy::tools_flag(grants).as_ref(), flag);
+    }
+}
+
+fn init(tools: &[&str], granted: bool) -> (Backend, Queue<ToDomain>) {
+    let mut backend = active();
+    let mut up = Queue::with_capacity(32);
+    let mut below = Queue::with_capacity(64);
+    if let Some(FromDomain::Complete { prompt, .. }) = &mut backend.request {
+        prompt.tools.inspect = granted;
+    }
+    let bytes = serde_json::to_vec(&serde_json::json!({"type":"system","subtype":"init","mcp_servers":[{"name":"smith","status":"connected"}],"tools":tools})).expect("init");
+    backend.admit_init(&env(0), &bytes, &mut up, &mut below);
+    (backend, up)
+}
+
+#[test]
+fn an_init_with_an_ungranted_built_in_fails() {
+    let (_, mut up) = init(&["mcp__smith__permission_prompt", "Read"], false);
+    failed(up.pop(), b"smith: the program offers a built-in tool the run did not grant: Read");
+}
+
+#[test]
+fn an_init_without_a_granted_built_in_fails() {
+    let (_, mut up) = init(&["mcp__smith__permission_prompt", "Read", "Glob"], true);
+    failed(up.pop(), b"smith: the program lacks a granted built-in tool: Grep");
+    let (backend, up) = init(&["mcp__smith__permission_prompt", "Read", "Glob", "Grep"], true);
+    assert!(up.is_empty());
+    assert_eq!(backend.phase, Phase::Running);
+}
+
+#[test]
+fn the_server_lists_no_workspace_tool() {
+    let mut backend = active();
+    let Some(FromDomain::Complete { prompt, .. }) = &mut backend.request else { panic!("request") };
+    prompt.tools = Grants { inspect: true, modify: true, shell: true };
+    prompt.served = Box::new([llm::Served::Finish, llm::Served::Wait]);
+    let tools = backend.tools();
+    assert_eq!(tools.len(), 2);
+    assert!(tools.iter().all(|tool| [b"finish".as_slice(), b"wait"].contains(&tool.name.as_ref())));
+}
+
+#[test]
+fn queued_built_in_results_keep_their_message_owners() {
+    let mut backend = active();
+    backend.owner = None;
+    let mut up = Queue::with_capacity(32);
+    let mut below = Queue::with_capacity(64);
+    backend.line(&env(0), READ, &mut up, &mut below);
+    backend.line(&env(0), RESULT, &mut up, &mut below);
+    let next_call = core::str::from_utf8(READ).expect("JSON").replace("one", "second").replace("\"r\"", "\"r2\"");
+    let next_result = core::str::from_utf8(RESULT).expect("JSON").replace("\"r\"", "\"r2\"");
+    backend.line(&env(0), next_call.as_bytes(), &mut up, &mut below);
+    backend.line(&env(0), next_result.as_bytes(), &mut up, &mut below);
+    backend.resume(&env(0), request(&backend), &mut up, &mut below);
+    completed(up.pop(), Token::new(80));
+    result_id(up.pop(), Token::new(80), b"r");
+    assert!(up.is_empty());
+    let mut next = request(&backend);
+    let FromDomain::Complete { owner, .. } = &mut next else { panic!("Complete") };
+    *owner = Token::new(81);
+    backend.resume(&env(0), next, &mut up, &mut below);
+    completed(up.pop(), Token::new(81));
+    result_id(up.pop(), Token::new(81), b"r2");
+    assert!(up.is_empty());
+}
+
+fn completed(event: Option<ToDomain>, expected: Token) {
+    let Some(ToDomain::Completed { owner, .. }) = event else { panic!("completion") };
+    assert_eq!(owner, expected);
+}
+
+fn result_id(event: Option<ToDomain>, expected: Token, expected_id: &[u8]) {
+    let Some(ToDomain::BuiltinResult { owner, id, .. }) = event else { panic!("builtin result") };
+    assert_eq!(owner, expected);
+    assert_eq!(id.as_ref(), expected_id);
+}
+
+fn failed(event: Option<ToDomain>, words: &[u8]) {
+    let Some(ToDomain::Failed { failure, detail, .. }) = event else { panic!("failure") };
+    assert_eq!(failure, llm::Failure::Program { exit: None });
+    assert_eq!(detail.as_ref(), words);
+}

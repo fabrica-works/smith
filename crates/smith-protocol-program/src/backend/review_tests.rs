@@ -103,6 +103,8 @@ fn cancelling_an_unjudged_finish_never_accepts_it() {
             answered: false,
             eligible: true,
             message: 1,
+            builtin: false,
+            owner: None,
         })
         .ok()
         .expect("ledger room");
@@ -289,6 +291,8 @@ fn an_accepted_finish_receives_its_acceptance_reply() {
             answered: false,
             eligible: true,
             message: 1,
+            builtin: false,
+            owner: None,
         })
         .ok()
         .expect("ledger room");
@@ -356,6 +360,8 @@ fn failure_never_accepts_an_unjudged_finish() {
             answered: false,
             eligible: true,
             message: 1,
+            builtin: false,
+            owner: None,
         })
         .ok()
         .expect("ledger room");

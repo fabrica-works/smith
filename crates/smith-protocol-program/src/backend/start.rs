@@ -204,11 +204,11 @@ impl Backend {
                     }
                 }
                 Some(mcp::Up::Connected) => {}
-                Some(mcp::Up::Prompt { call, .. }) => self.server.as_mut().expect("server event").verdict(
-                    call,
-                    mcp::Verdict::Deny { message: b"smith: no built-in tool is granted".as_slice().into() },
-                    &mut self.io,
-                ),
+                Some(mcp::Up::Prompt { call, tool_name, input, .. }) => {
+                    let verdict =
+                        super::policy::judge(&tool_name, &input, self.grants(), &self.mounts, self.settings.path_bytes);
+                    self.server.as_mut().expect("server event").verdict(call, verdict, &mut self.io);
+                }
                 Some(call @ mcp::Up::Call { .. }) => {
                     self.calls.push(call).expect("server bounds admitted calls");
                     self.match_calls();
@@ -274,6 +274,7 @@ impl Backend {
             &schema,
             self.settings.max_turns,
             &self.names.session,
+            &super::policy::tools_flag(prompt.tools),
         )?;
         self.outgoing = super::stream::user_message(prompt, self.settings.input_bytes);
         self.outgoing.as_ref()?;
@@ -409,23 +410,7 @@ impl Backend {
                                         List::with_capacity(self.settings.line_bytes),
                                     );
                                     if self.phase == Phase::Starting {
-                                        if super::stream::init(
-                                            line.as_slice(),
-                                            &self.tools(),
-                                            self.settings.adapter.client.depth,
-                                            self.settings.adapter.client.tokens,
-                                        ) {
-                                            self.phase = Phase::Running;
-                                            self.completion_deadline(env, true);
-                                        } else {
-                                            self.fail(
-                                                env,
-                                                llm::Failure::Program { exit: None },
-                                                b"smith: the program started without smith's tools",
-                                                up,
-                                                below,
-                                            );
-                                        }
+                                        self.admit_init(env, line.as_slice(), up, below);
                                     } else {
                                         self.line(env, line.as_slice(), up, below);
                                     }
@@ -570,6 +555,7 @@ impl Backend {
 }
 
 /// The program's exact argv, keeping inline schema and empty built-ins as whole arguments.
+#[expect(clippy::too_many_arguments, reason = "each independent argv value remains a whole argument")]
 pub(super) fn arguments(
     model: &[u8],
     effort: Option<&[u8]>,
@@ -578,6 +564,7 @@ pub(super) fn arguments(
     schema: &[u8],
     max_turns: u32,
     session: &[u8],
+    tools: &[u8],
 ) -> Option<Box<[Box<[u8]>]>> {
     let turns = Decimal::of(u64::from(max_turns));
     let mut arguments = List::with_capacity(36);
@@ -609,7 +596,7 @@ pub(super) fn arguments(
         b"--permission-prompt-tool",
         b"mcp__smith__permission_prompt",
         b"--tools",
-        b"",
+        tools,
         b"--json-schema",
         schema,
         b"--max-turns",

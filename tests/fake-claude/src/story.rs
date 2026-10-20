@@ -127,6 +127,8 @@ pub enum Step {
     LoseLogin,
     /// Waits until an interrupt or termination.
     Hang,
+    /// Emits one assistant message, then runs its Call or Builtin steps in order.
+    Together(Vec<Step>),
     /// Calls the named server tool, returning its answer to the model.
     Call { tool: String, input: serde_json::Value },
     /// Asks permission before returning this built-in tool's scripted result.

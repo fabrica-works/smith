@@ -77,6 +77,7 @@ pub(super) fn backend() -> Backend {
             program: Programs { claude: b"/claude".as_slice().into(), directory: b"/programs".as_slice().into() },
             directory: None,
             workspace: None,
+            path_bytes: 4096,
             relay: b"/agent".as_slice().into(),
             environment: Box::default(),
             mcp: mcp::Limits {

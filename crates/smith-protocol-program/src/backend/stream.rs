@@ -38,11 +38,19 @@ pub(super) fn text_message(text: &[u8], maximum: u32) -> Option<Box<[u8]>> {
     Some(bytes)
 }
 
+#[cfg(test)]
 pub(super) fn init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> bool {
-    checked_init(bytes, tools, depth, tokens) == Some(())
+    super::builtins::init_error(
+        bytes,
+        smith_domain::tools::Grants { inspect: false, modify: false, shell: false },
+        depth,
+        tokens,
+    )
+    .is_none()
+        && checked_init(bytes, tools, depth, tokens) == Some(())
 }
 
-fn checked_init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> Option<()> {
+pub(super) fn checked_init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> Option<()> {
     let document = json::collect_limited(bytes, limits(u32::try_from(bytes.len()).ok()?, depth, tokens))?;
     if json::text_in(&document, json::field(&document, 0, b"type"))? != b"system"
         || json::text_in(&document, json::field(&document, 0, b"subtype"))? != b"init"
@@ -71,7 +79,14 @@ fn checked_init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> O
             break;
         }
         let name = json::text(&document, index)?;
-        let suffix = name.strip_prefix(b"mcp__smith__")?;
+        let suffix = match name.strip_prefix(b"mcp__smith__") {
+            Some(suffix) => suffix,
+            None if !name.starts_with(b"mcp__") => {
+                index = index.checked_add(1)?;
+                continue;
+            }
+            None => return None,
+        };
         let mut known = suffix == mcp::PROMPT_TOOL;
         for tool in tools {
             if suffix == tool.name.as_ref() {

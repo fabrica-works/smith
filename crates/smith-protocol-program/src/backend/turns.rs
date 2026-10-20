@@ -147,16 +147,26 @@ impl Turns {
                 }
                 b"tool_use" => {
                     let name = json::text_in(document, json::field(document, index, b"name"))?;
+                    let builtin = !name.starts_with(b"mcp__");
                     let name = name.strip_prefix(b"mcp__smith__").unwrap_or(name);
                     let input = json::raw(document, json::field(document, index, b"input")?, maximum)?;
-                    if name == b"finish" {
+                    if !builtin && name == b"finish" {
                         self.finish = true;
                     }
                     llm::Said::ToolCall {
                         id: json::text_in(document, json::field(document, index, b"id"))?.into(),
                         name: name.into(),
                         input,
-                        call: llm::Decoded::Invalid { problem: llm::Problem::UnknownTool },
+                        call: if builtin {
+                            llm::Decoded::Builtin {
+                                effect: match super::policy::Builtin::named(name) {
+                                    Some(tool) => tool.effect(),
+                                    None => smith_domain::tools::Effect::Write,
+                                },
+                            }
+                        } else {
+                            llm::Decoded::Invalid { problem: llm::Problem::UnknownTool }
+                        },
                         replay: None,
                     }
                 }
