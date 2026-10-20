@@ -1404,6 +1404,11 @@ commits is this plan's.
 
      Until the director answers, hearth-repin holds 014bea9a and runs no gate, and the budget does not change. The supervisor relays the answer in a steer.
 
+150. **The downstream repin's landed findings, to later.md** (hourly check of 2026-10-20T00:38:41Z).
+     The hourly check of 2026-10-20T00:38:41Z found the closing repin of the repository downstream of jig's repin short of the README's rules (110, 125, 134) in its landed tests, and one behaviour change no decision covers: its startup check of an agent's endpoint now matches the name alone, dropping the account match, with no question, while its problem text and tests still say "under the same name and account". No step is left in this run, so ruling 146's `later.md` row gains the tests, and a row of its own records the dropped match for that repository's next plan that changes its startup checks; both go to its `STATUS.md` with the designer's next landing (development.md, section 5.7).
+
+     Checked at origin/main of the downstream repository: `startup/checks.rs:447 pub fn agent(engine: &config::Engine, agent: &settings::Agent, problems: &mut Problems)`; `startup/problems.rs:85 What::Agent => b"not in the agent's configuration under the same name and account"`, and the same text in `tests/checks.rs:80` and `:86`; `git grep -c '"dialect": 1'` → eight files, among them `docs/examples/owned.json` and `docs/examples/owned/agent.json`; `tests/worker/domain/src/protocol.rs:21 const SMALLEST: [u8; 120] = {`; `git grep -F 'b"acc"' | wc -l` → 6; `tests/real-loop/src/llm.rs:50 credential: skein_llm::Credential {`. Upstream: smith `crates/smith-charter/src/lib.rs:26 pub const FORMAT_VERSION: u64 = 3;`, skein `crates/skein-llm/src/types.rs:404 pub fn codex(value: Box<[u8]>, account_id: Box<[u8]>) -> Credential {`.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
