@@ -105,9 +105,14 @@ fn fill(limits: Limits) {
 
 #[test]
 fn a_domain_with_every_kit_full_stays_within_its_worst_case() {
+    // Each row still fills every declared kit, known-file slot and call slot,
+    // reads twice the file capacity to force eviction, and uses maximum paths.
+    // The one-call row needs several full kits, rather than 25,600 file loads,
+    // to check the same per-kit ownership against its derived bound.
+    const ONE_CALL: Limits = Limits { kits: 4, calls: 1, repos: 1, known_files: 16, path_bytes: 127, ..LIMITS };
     fill(LIMITS);
     fill(Limits { kits: 16, calls: 8, repos: 8, known_files: 64, path_bytes: 511, ..LIMITS });
-    fill(Limits { kits: 64, calls: 1, repos: 1, known_files: 200, path_bytes: 127, ..LIMITS });
+    fill(ONE_CALL);
 }
 
 fn job_step(
