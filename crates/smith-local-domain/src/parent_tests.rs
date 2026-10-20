@@ -204,11 +204,11 @@ fn a_parent_turn_moves_its_concrete_value_to_the_durable_store() {
     let turn = smith_domain::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: session::record::Kind::First {
+        kind: session::record::Kind::First(Box::new(session::record::Opener {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: session::record::Backend::Direct,
-        },
+        })),
         version: session::record::VERSION,
         endpoint: Some(session::llm::Endpoint(4)),
         dialect: 1,

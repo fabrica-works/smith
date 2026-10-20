@@ -9,7 +9,6 @@ use skein_lib::{Time, Token};
 
 /// Process and channel terminals sent by the lower adapter.
 #[derive(PartialEq, Eq, Debug)]
-#[expect(clippy::large_enum_variant, reason = "sealed payloads are priced by bounded queues and state")]
 pub enum Event {
     /// Terminal of lower Spawn; process owns its tree.
     Spawned { owner: Token, process: Token },

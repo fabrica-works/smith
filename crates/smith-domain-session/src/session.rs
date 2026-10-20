@@ -2840,13 +2840,13 @@ enum Resumed {
 fn recorded_sequence(turn: &crate::record::Turn, opening: bool, previous: u32) -> Result<u32, crate::record::Refusal> {
     use crate::record::{Kind, Refusal};
     match turn.kind {
-        Kind::First { .. } => {
+        Kind::First(_) => {
             if !opening || turn.sequence != 1 {
                 return Err(Refusal::Malformed);
             }
             Ok(previous)
         }
-        Kind::Window { .. } => {
+        Kind::Window(_) => {
             if !opening {
                 return Err(Refusal::Malformed);
             }
@@ -2864,12 +2864,12 @@ fn recorded_sequence(turn: &crate::record::Turn, opening: bool, previous: u32) -
 fn recorded_turn_shape(turn: &crate::record::Turn, assistants: u32) -> Result<(), crate::record::Refusal> {
     use crate::record::Refusal;
     match turn.kind {
-        crate::record::Kind::First { .. } | crate::record::Kind::Ordinary => {
+        crate::record::Kind::First(_) | crate::record::Kind::Ordinary => {
             if assistants != 1 {
                 return Err(Refusal::Malformed);
             }
         }
-        crate::record::Kind::Window { .. } => {
+        crate::record::Kind::Window(_) => {
             if turn.messages.len() != 1 || assistants != 0 {
                 return Err(Refusal::Malformed);
             }
@@ -3078,7 +3078,7 @@ fn restore(
     compaction::restore(conversation, &transcript, &mut bytes)?;
     bytes = bytes.checked_sub(compaction::carry_over(conversation, &mut transcript)?).ok_or(Refusal::TooLarge)?;
     conversation.affinity = match &transcript.turns.first().expect("validated nonempty history").kind {
-        crate::record::Kind::First { affinity, .. } | crate::record::Kind::Window { affinity, .. } => *affinity,
+        crate::record::Kind::First(opener) | crate::record::Kind::Window(opener) => opener.affinity,
         crate::record::Kind::Ordinary => unreachable!("validated opening kind"),
     };
     let prompt = conversation.transcript.get(0).expect("admission held the initial prompt");
@@ -3265,17 +3265,17 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
         version: crate::record::VERSION,
         kind: if conversation.window_turn {
             conversation.window_turn = false;
-            crate::record::Kind::Window {
+            crate::record::Kind::Window(Box::new(crate::record::Opener {
                 affinity: conversation.affinity,
                 account: conversation.account,
                 backend: crate::record::Backend::Direct,
-            }
+            }))
         } else if next == 1 {
-            crate::record::Kind::First {
+            crate::record::Kind::First(Box::new(crate::record::Opener {
                 affinity: conversation.affinity,
                 account: conversation.account,
                 backend: crate::record::Backend::Direct,
-            }
+            }))
         } else {
             crate::record::Kind::Ordinary
         },

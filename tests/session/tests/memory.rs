@@ -768,11 +768,11 @@ fn restored_tail_turn(messages: Box<[smith_domain_session::llm::Message]>) -> sm
     smith_domain_session::record::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: smith_domain_session::record::Kind::First {
+        kind: smith_domain_session::record::Kind::First(Box::new(smith_domain_session::record::Opener {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: smith_domain_session::record::Backend::Direct,
-        },
+        })),
         version: smith_domain_session::record::VERSION,
         endpoint: Some(Endpoint(7)),
         dialect: 2,

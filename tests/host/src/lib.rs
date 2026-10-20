@@ -469,8 +469,19 @@ pub fn charter_value(bytes: u64) -> host::Charter {
 #[must_use]
 pub fn turn_value(bytes: u64) -> host::TurnValue {
     use smith_domain::session::{llm, record};
+    let opener = u64::try_from(core::mem::size_of::<record::Opener>()).expect("opener footprint");
+    let kind = if bytes >= opener {
+        record::Kind::First(Box::new(record::Opener {
+            affinity: llm::Affinity { key: [0; 16], thread: 0 },
+            account: None,
+            backend: record::Backend::Direct,
+        }))
+    } else {
+        record::Kind::Ordinary
+    };
     let overhead = u64::try_from(core::mem::size_of::<llm::Message>() + core::mem::size_of::<llm::Block>())
-        .expect("fixture footprint");
+        .expect("fixture footprint")
+        + opener;
     let messages = if bytes >= overhead {
         Box::from([llm::Message {
             role: llm::Role::Assistant,
@@ -486,11 +497,7 @@ pub fn turn_value(bytes: u64) -> host::TurnValue {
         record::Turn {
             model: Box::new([]),
             effort: None,
-            kind: smith_domain::session::record::Kind::First {
-                affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
-                account: None,
-                backend: smith_domain::session::record::Backend::Direct,
-            },
+            kind,
             version: record::VERSION,
             endpoint: Some(llm::Endpoint(0)),
             dialect: 0,

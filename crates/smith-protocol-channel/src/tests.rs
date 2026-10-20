@@ -351,11 +351,11 @@ fn a_transcript_records_affinity_only_in_its_opening_turn() {
         .expect("transcript");
     assert_eq!(
         decoded.turns[0].kind,
-        record::Kind::First {
+        record::Kind::First(Box::new(record::Opener {
             affinity: smith_domain_session::llm::Affinity { key: [0x42; 16], thread: 7 },
             account: None,
             backend: record::Backend::Direct
-        }
+        }))
     );
     assert_eq!(decoded.turns[1].kind, record::Kind::Ordinary);
     assert_eq!(
@@ -390,11 +390,11 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
         model: b"model".as_slice().into(),
         effort: None,
         version: record::VERSION,
-        kind: record::Kind::Window {
+        kind: record::Kind::Window(Box::new(record::Opener {
             affinity: llm::Affinity { key: [0x25; 16], thread: 0 },
             account: None,
             backend: record::Backend::Direct,
-        },
+        })),
         endpoint: Some(llm::Endpoint(3)),
         dialect: 0,
         sequence: 8,

@@ -408,12 +408,12 @@ pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Fa
             Compaction::Asking { .. } | Compaction::Idle | Compaction::CarryOver => {}
         },
         Request::Turn { turn, .. } => match turn.kind {
-            crate::record::Kind::Window { .. } => facts.push(crate::FactKind::CompactionEnded {
+            crate::record::Kind::Window(_) => facts.push(crate::FactKind::CompactionEnded {
                 opener,
                 window: conversation.window.number,
                 end: crate::Compacted::Opened,
             }),
-            crate::record::Kind::First { .. } | crate::record::Kind::Ordinary => {}
+            crate::record::Kind::First(_) | crate::record::Kind::Ordinary => {}
         },
         Request::Ended { .. } if conversation.compaction.asking() => {
             facts.push(crate::FactKind::CompactionEnded {
@@ -474,7 +474,7 @@ pub(super) fn restore(
         }
     }
     match first.kind {
-        crate::record::Kind::Window { .. } if transcript.turns.len() == 1 => {
+        crate::record::Kind::Window(_) if transcript.turns.len() == 1 => {
             conversation.window = Window::fresh(1, first.usage.output_tokens.unwrap_or(u64::from(conversation.output)));
             match first.messages.first().expect("one window message").content.get(2) {
                 Some(Block::Text { text, .. }) => {
@@ -486,7 +486,7 @@ pub(super) fn restore(
                 | None => {}
             }
         }
-        crate::record::Kind::First { .. } | crate::record::Kind::Window { .. } | crate::record::Kind::Ordinary => {
+        crate::record::Kind::First(_) | crate::record::Kind::Window(_) | crate::record::Kind::Ordinary => {
             conversation.window.completed(
                 transcript.turns.last().expect("nonempty").usage,
                 conversation.output,
@@ -506,8 +506,8 @@ pub(super) fn carry_over(
     use crate::record::{Backend, Kind, Refusal};
     let first = transcript.turns.first().expect("validated nonempty history");
     let same_opening = match &first.kind {
-        Kind::First { account, backend, .. } | Kind::Window { account, backend, .. } => {
-            *account == conversation.account && *backend == Backend::Direct
+        Kind::First(opener) | Kind::Window(opener) => {
+            opener.account == conversation.account && opener.backend == Backend::Direct
         }
         Kind::Ordinary => unreachable!("validated opening kind"),
     };

@@ -11,7 +11,7 @@ use smith_domain_tools as tools;
 use crate::boundary::Budget;
 use crate::facts::Fact;
 use crate::llm::{Block, Message};
-use crate::record::{Opening, Turn};
+use crate::record::{Opener, Opening, Turn};
 use crate::session::{Alarm, Ready, Run, Session, Slot};
 
 /// The most tool calls a session runs at once: what `Limits::parallel_tools`
@@ -171,7 +171,11 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Restore and completion are separate entrances; only one needs its scratch at a time.
     let scratch =
         limits.completion_bytes.max(limits.history_bytes.min(List::<Block>::worst_case(limits.history_blocks)?));
+    // A restored transcript holds one window, with one boxed opener; ordinary
+    // turns keep no opener payload (protocol/transcript.md, section 3).
+    let opener = u64::try_from(size_of::<Opener>()).ok()?;
     let staging = List::<Turn>::worst_case(limits.history_messages)?
+        .checked_add(opener)?
         .checked_add(List::<Message>::worst_case(limits.history_messages)?)?
         .checked_add(opening)?
         .checked_add(scratch)?;

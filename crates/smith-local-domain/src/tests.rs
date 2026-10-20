@@ -340,11 +340,11 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
     let turn = smith_domain::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: smith_domain::session::record::Kind::First {
+        kind: smith_domain::session::record::Kind::First(Box::new(smith_domain::session::record::Opener {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: smith_domain::session::record::Backend::Direct,
-        },
+        })),
         version: smith_domain::session::record::VERSION,
         endpoint: Some(smith_domain::session::llm::Endpoint(4)),
         dialect: 1,
@@ -620,11 +620,11 @@ fn saved_window_turn() -> smith_domain::Turn {
     smith_domain::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: smith_domain::session::record::Kind::First {
+        kind: smith_domain::session::record::Kind::First(Box::new(smith_domain::session::record::Opener {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: smith_domain::session::record::Backend::Direct,
-        },
+        })),
         version: smith_domain::session::record::VERSION,
         endpoint: Some(smith_domain::session::llm::Endpoint(4)),
         dialect: 1,

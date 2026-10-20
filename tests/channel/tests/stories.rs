@@ -496,11 +496,11 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     let first = record::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: smith_domain_session::record::Kind::First {
+        kind: smith_domain_session::record::Kind::First(Box::new(smith_domain_session::record::Opener {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: smith_domain_session::record::Backend::Direct,
-        },
+        })),
         version: record::VERSION,
         endpoint: Some(llm::Endpoint(0)),
         dialect: 0,
@@ -660,11 +660,11 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
     let turn = record::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: smith_domain_session::record::Kind::First {
+        kind: smith_domain_session::record::Kind::First(Box::new(smith_domain_session::record::Opener {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: smith_domain_session::record::Backend::Direct,
-        },
+        })),
         version: record::VERSION,
         endpoint: Some(llm::Endpoint(0)),
         dialect: 0,
@@ -1270,8 +1270,16 @@ fn a_host_resumes_from_its_last_window_turn_alone() {
     for place in 1..=5 {
         turn.sequence = place;
         turn.kind = match place {
-            1 => record::Kind::First { affinity, account: None, backend: record::Backend::Direct },
-            3 | 5 => record::Kind::Window { affinity, account: None, backend: record::Backend::Direct },
+            1 => record::Kind::First(Box::new(record::Opener {
+                affinity,
+                account: None,
+                backend: record::Backend::Direct,
+            })),
+            3 | 5 => record::Kind::Window(Box::new(record::Opener {
+                affinity,
+                account: None,
+                backend: record::Backend::Direct,
+            })),
             _ => record::Kind::Ordinary,
         };
         world.agent_tells_turn(place, None, &turn);

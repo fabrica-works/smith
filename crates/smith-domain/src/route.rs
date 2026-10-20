@@ -328,9 +328,9 @@ fn start(
         Some(identity) => Some(identity),
         None => match transcript.as_ref() {
             Some(history) => match history.turns.first() {
-                Some(turn) => match turn.kind {
-                    session::record::Kind::First { affinity, .. } | session::record::Kind::Window { affinity, .. } => {
-                        Some(run::Identity::new(affinity.key))
+                Some(turn) => match &turn.kind {
+                    session::record::Kind::First(opener) | session::record::Kind::Window(opener) => {
+                        Some(run::Identity::new(opener.affinity.key))
                     }
                     session::record::Kind::Ordinary => None,
                 },
@@ -978,9 +978,8 @@ fn resumed_model(
                 return Ok(None);
             }
             match &first.kind {
-                session::record::Kind::First { account, backend, .. }
-                | session::record::Kind::Window { account, backend, .. } => {
-                    if *account != main.account || *backend != session::record::Backend::Direct {
+                session::record::Kind::First(opener) | session::record::Kind::Window(opener) => {
+                    if opener.account != main.account || opener.backend != session::record::Backend::Direct {
                         return Ok(None);
                     }
                 }

@@ -238,11 +238,11 @@ pub(crate) mod tests {
         let turn = smith_domain::Turn {
             model: b"model".as_slice().into(),
             effort: None,
-            kind: smith_domain::session::record::Kind::First {
+            kind: smith_domain::session::record::Kind::First(Box::new(smith_domain::session::record::Opener {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
                 account: None,
                 backend: smith_domain::session::record::Backend::Direct,
-            },
+            })),
             version: smith_domain::session::record::VERSION,
             endpoint: Some(smith_domain::session::llm::Endpoint(2)),
             dialect: 1,
@@ -273,11 +273,11 @@ pub(crate) mod tests {
         let window = smith_domain::Turn {
             model: b"model".as_slice().into(),
             effort: None,
-            kind: smith_domain::session::record::Kind::Window {
+            kind: smith_domain::session::record::Kind::Window(Box::new(smith_domain::session::record::Opener {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
                 account: None,
                 backend: smith_domain::session::record::Backend::Direct,
-            },
+            })),
             sequence: 3,
             ..first.clone()
         };

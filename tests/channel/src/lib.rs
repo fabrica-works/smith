@@ -1166,7 +1166,11 @@ pub fn window_turn_fixture() -> smith_domain_session::record::Turn {
     record::Turn {
         model: b"model".as_slice().into(),
         effort: None,
-        kind: record::Kind::First { affinity, account: None, backend: record::Backend::Direct },
+        kind: record::Kind::First(Box::new(record::Opener {
+            affinity,
+            account: None,
+            backend: record::Backend::Direct,
+        })),
         version: record::VERSION,
         endpoint: Some(llm::Endpoint(0)),
         dialect: 0,

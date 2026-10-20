@@ -20,11 +20,11 @@ fn history(input: u64) -> smith_domain::Transcript {
             model: b"fake-1".as_slice().into(),
             effort: None,
             version: record::VERSION,
-            kind: record::Kind::First {
+            kind: record::Kind::First(Box::new(record::Opener {
                 affinity: llm::Affinity { key: [0; 16], thread: 0 },
                 account: Some(0),
                 backend: record::Backend::Direct,
-            },
+            })),
             endpoint: Some(llm::Endpoint(0)),
             dialect: 1,
             sequence: 1,
@@ -124,11 +124,8 @@ fn a_message_held_back_by_a_compaction_is_read_by_the_window_turn() {
         b"go on".as_slice().into(),
     );
     world.run(ITERATIONS);
-    let window = world
-        .turns()
-        .iter()
-        .position(|turn| matches!(turn.kind, record::Kind::Window { .. }))
-        .expect("compaction turn");
+    let window =
+        world.turns().iter().position(|turn| matches!(turn.kind, record::Kind::Window(_))).expect("compaction turn");
     assert!(world.turn_metadata()[..window].iter().all(|(_, read, _)| read.is_none()), "held until the window");
     assert_eq!(world.turn_metadata()[window].1, Some(Token::new(9)));
 }
@@ -171,11 +168,11 @@ fn a_window_from_an_unnamed_endpoint_is_carried_over() {
     let window = world.turns().first().expect("carried window");
     assert_eq!(
         window.kind,
-        record::Kind::Window {
+        record::Kind::Window(Box::new(record::Opener {
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
             account: Some(0),
             backend: record::Backend::Direct,
-        }
+        }))
     );
     assert_eq!(window.endpoint, Some(llm::Endpoint(0)));
     assert!(matches!(world.answer(), run::Answer::Accepted { .. }));

@@ -114,9 +114,16 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let inbox = limits.smith.run.messages.checked_add(1)?;
     let lines = Queue::<crate::person::Line>::worst_case(inbox)?
         .checked_add(u64::from(inbox).checked_mul(u64::from(limits.line_bytes))?.checked_mul(2)?)?;
-    let record = limits.smith.session.history_bytes.checked_add(
-        u64::from(limits.smith.session.history_messages).checked_mul(u64::try_from(size_of::<agent::Turn>()).ok()?)?,
-    )?;
+    // Each retained turn can open a window, owning one opener box at most.
+    let record = limits
+        .smith
+        .session
+        .history_bytes
+        .checked_add(u64::try_from(size_of::<agent::session::record::Opener>()).ok()?)?
+        .checked_add(
+            u64::from(limits.smith.session.history_messages)
+                .checked_mul(u64::try_from(size_of::<agent::Turn>()).ok()?)?,
+        )?;
     let unsaved = u64::from(limits.unsaved).checked_mul(record)?;
     let detail = match limits.agent {
         AgentLimits::Inline(_) => u64::from(limits.smith.session.failure_bytes),

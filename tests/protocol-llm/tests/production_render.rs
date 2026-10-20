@@ -510,11 +510,11 @@ fn saved_outside_choice(choice: Option<Box<[Box<[u8]>]>>) -> llm::NotRun {
     let endpoints = smith_protocol_channel::Endpoints::new(endpoints);
     let turn = record::Turn {
         version: record::VERSION,
-        kind: record::Kind::First {
+        kind: record::Kind::First(Box::new(record::Opener {
             affinity: session::Affinity { key: [0; 16], thread: 0 },
             account: None,
             backend: record::Backend::Direct,
-        },
+        })),
         endpoint: Some(session::Endpoint(1)),
         model: b"model".as_slice().into(),
         effort: None,

@@ -864,9 +864,9 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         first.run(100_000);
         assert_eq!(first.turns().len(), 1);
         assert!(matches!(first.answer(), run::Answer::Parked { .. }));
-        let affinity = match first.turns()[0].kind {
-            smith_domain::session::record::Kind::First { affinity, .. } => affinity,
-            smith_domain::session::record::Kind::Ordinary | smith_domain::session::record::Kind::Window { .. } => {
+        let affinity = match &first.turns()[0].kind {
+            smith_domain::session::record::Kind::First(opener) => opener.affinity,
+            smith_domain::session::record::Kind::Ordinary | smith_domain::session::record::Kind::Window(_) => {
                 panic!("fresh opening requires a first turn")
             }
         };

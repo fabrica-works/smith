@@ -45,11 +45,11 @@ pub fn encode_turn(
         },
     )?;
     let (kind, opening) = match &source.kind {
-        record::Kind::First { affinity, account, backend } => {
+        record::Kind::First(opener) => {
             if source.sequence != 1 {
                 return Err(Error::Transcript(record::Refusal::Malformed));
             }
-            (wire::TurnKind::Ordinary, Some(encode_opening(*affinity, *account, backend, limits)?))
+            (wire::TurnKind::Ordinary, Some(encode_opening(opener.affinity, opener.account, &opener.backend, limits)?))
         }
         record::Kind::Ordinary => {
             if source.sequence == 1 {
@@ -57,8 +57,8 @@ pub fn encode_turn(
             }
             (wire::TurnKind::Ordinary, None)
         }
-        record::Kind::Window { affinity, account, backend } => {
-            (wire::TurnKind::Window, Some(encode_opening(*affinity, *account, backend, limits)?))
+        record::Kind::Window(opener) => {
+            (wire::TurnKind::Window, Some(encode_opening(opener.affinity, opener.account, &opener.backend, limits)?))
         }
     };
     let turn = wire::Turn::new(

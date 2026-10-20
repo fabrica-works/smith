@@ -130,7 +130,7 @@ fn drawn_small_windows_compact_within_them() {
         world.complete(text(b"answer"), llm::Stop::EndTurn, usage);
         world.step(Event::Continue { session: world.session.expect("opened"), content: b"continue".as_slice().into() });
         world.complete(text(b"summary"), llm::Stop::EndTurn, llm::Usage { output_tokens: Some(8), ..usage });
-        assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+        assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window(_)));
         let prompt = world.prompts.last().expect("new window prompt");
         smith_session_world::assert_prompt_bound(prompt.input_bytes().expect("bounded") - 7 + 8, window);
         world.close();
@@ -158,7 +158,7 @@ fn no_drawn_session_ends_because_its_history_grew() {
             llm::Stop::EndTurn,
             llm::Usage::ZERO,
         );
-        assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+        assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window(_)));
         world.close();
     }
 }

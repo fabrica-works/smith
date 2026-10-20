@@ -1200,7 +1200,7 @@ fn opening_affinity_is_fixed_and_the_recorded_window_overrides_a_fresh_spec() {
     );
     assert_eq!(
         first.turns[0].kind,
-        record::Kind::First { affinity, account: Some(0), backend: record::Backend::Direct }
+        record::Kind::First(Box::new(record::Opener { affinity, account: Some(0), backend: record::Backend::Direct }))
     );
     assert!(first.turns[0].kind.opens_window());
     first.close();
@@ -1234,7 +1234,11 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
         model: b"model".as_slice().into(),
         effort: None,
         version: record::VERSION,
-        kind: record::Kind::Window { affinity, account: Some(0), backend: record::Backend::Direct },
+        kind: record::Kind::Window(Box::new(record::Opener {
+            affinity,
+            account: Some(0),
+            backend: record::Backend::Direct,
+        })),
         endpoint: Some(llm::Endpoint(7)),
         dialect: 23,
         sequence: 19,

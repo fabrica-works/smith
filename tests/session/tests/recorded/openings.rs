@@ -7,19 +7,19 @@ fn a_domain_turn_round_trips_its_account_and_backend() {
     let affinity = llm::Affinity { key: [0x42; 16], thread: 7 };
     for (kind, sequence) in [
         (
-            record::Kind::First {
+            record::Kind::First(Box::new(record::Opener {
                 affinity,
                 account: Some(7),
                 backend: record::Backend::Program { name: b"claude_code".as_slice().into() },
-            },
+            })),
             1,
         ),
         (
-            record::Kind::Window {
+            record::Kind::Window(Box::new(record::Opener {
                 affinity,
                 account: Some(7),
                 backend: record::Backend::Program { name: b"claude_code".as_slice().into() },
-            },
+            })),
             3,
         ),
     ] {
@@ -163,7 +163,11 @@ fn expected_carry() -> CarryOutcome {
 fn same_window() -> record::Transcript {
     let mut history = transcript(&scenario(SEED, FACTS));
     let affinity = llm::Affinity { key: [0; 16], thread: 0 };
-    history.turns[0].kind = record::Kind::First { affinity, account: Some(ACCOUNT), backend: record::Backend::Direct };
+    history.turns[0].kind = record::Kind::First(Box::new(record::Opener {
+        affinity,
+        account: Some(ACCOUNT),
+        backend: record::Backend::Direct,
+    }));
     for turn in &mut history.turns {
         for message in &mut turn.messages {
             for block in &mut message.content {
@@ -196,14 +200,17 @@ fn carried_windows() -> Vec<CarryCase> {
     }
     let affinity = llm::Affinity { key: [0; 16], thread: 0 };
     let mut account = base.clone();
-    account.turns[0].kind =
-        record::Kind::First { affinity, account: Some(OTHER_ACCOUNT), backend: record::Backend::Direct };
+    account.turns[0].kind = record::Kind::First(Box::new(record::Opener {
+        affinity,
+        account: Some(OTHER_ACCOUNT),
+        backend: record::Backend::Direct,
+    }));
     let mut backend = base;
-    backend.turns[0].kind = record::Kind::First {
+    backend.turns[0].kind = record::Kind::First(Box::new(record::Opener {
         affinity,
         account: Some(ACCOUNT),
         backend: record::Backend::Program { name: b"claude_code".as_slice().into() },
-    };
+    }));
     vec![
         CarryCase { name: "endpoint", history: endpoint, expected: expected_carry() },
         CarryCase { name: "dialect", history: dialect, expected: expected_carry() },
@@ -214,11 +221,11 @@ fn carried_windows() -> Vec<CarryCase> {
 
 fn expected_window(model: &[u8]) -> Window {
     Window {
-        kind: record::Kind::Window {
+        kind: record::Kind::Window(Box::new(record::Opener {
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
             account: Some(ACCOUNT),
             backend: record::Backend::Direct,
-        },
+        })),
         endpoint: Some(ENDPOINT),
         dialect: DIALECT,
         model: model.into(),

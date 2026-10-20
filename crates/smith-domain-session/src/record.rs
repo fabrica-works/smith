@@ -123,16 +123,24 @@ pub enum Backend {
     Program { name: Box<[u8]> },
 }
 
+/// What a window's opening turn records (protocol/transcript.md, sections 2 and 3).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Opener {
+    pub affinity: Affinity,
+    pub account: Option<u32>,
+    pub backend: Backend,
+}
+
 /// The session's turn kind, including the affinity of each window opener
 /// (protocol/transcript.md, sections 2 and 3).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
     /// The conversation's first settled completion, opening its first window.
-    First { affinity: Affinity, account: Option<u32>, backend: Backend },
+    First(Box<Opener>),
     /// A settled ordinary completion after the window's opener.
     Ordinary,
     /// A settled compaction, opening another window with the same affinity.
-    Window { affinity: Affinity, account: Option<u32>, backend: Backend },
+    Window(Box<Opener>),
 }
 
 impl Kind {
@@ -140,7 +148,7 @@ impl Kind {
     #[must_use]
     pub const fn opens_window(&self) -> bool {
         match self {
-            Kind::First { .. } | Kind::Window { .. } => true,
+            Kind::First(_) | Kind::Window(_) => true,
             Kind::Ordinary => false,
         }
     }
@@ -170,14 +178,16 @@ pub struct Turn {
 }
 
 impl Turn {
-    /// Checked ownership of this turn's message envelopes and their payloads.
+    /// Checked ownership of this turn's opener, message envelopes and their payloads.
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {
         let backend = match &self.kind {
-            Kind::First { backend, .. } | Kind::Window { backend, .. } => match backend {
-                Backend::Direct => 0,
-                Backend::Program { name } => u64::try_from(name.len()).ok()?,
-            },
+            Kind::First(opener) | Kind::Window(opener) => {
+                u64::try_from(size_of::<Opener>()).ok()?.checked_add(match &opener.backend {
+                    Backend::Direct => 0,
+                    Backend::Program { name } => u64::try_from(name.len()).ok()?,
+                })?
+            }
             Kind::Ordinary => 0,
         };
         messages_bytes(&self.messages)?

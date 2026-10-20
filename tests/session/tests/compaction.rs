@@ -123,7 +123,7 @@ fn a_continue_past_the_threshold_compacts_and_holds_its_message_back() {
     let asked = world.prompts.last().expect("summary request");
     assert!(!asked.messages.iter().any(|message| message.content == said(b"go on")));
     world.complete(said(b"the summary"), llm::Stop::EndTurn, llm::Usage { output_tokens: Some(40), ..usage() });
-    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window(_)));
     let opened = world.prompts.last().expect("new window request");
     let [message] = &*opened.messages else { panic!("one opening message: {opened:?}") };
     let expected =
@@ -198,7 +198,7 @@ fn calls_in_a_compactions_answer_are_not_run() {
     ]);
     world.complete(content, llm::Stop::ToolUse, llm::Usage::ZERO);
     assert!(world.delegated.is_empty() && world.operations.is_empty());
-    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window(_)));
     world.close();
 }
 
@@ -331,7 +331,7 @@ fn a_history_at_its_message_bound_compacts_instead_of_ending() {
     continue_with(&mut world, b"go on");
     assert!(is_summary(&world));
     world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
-    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window(_)));
     assert!(world.end.is_none());
     let prompt = world.prompts.last().expect("ordinary prompt after compaction");
     assert!(
@@ -516,7 +516,7 @@ fn a_session_resumed_with_another_model_compacts_first_with_the_windows_model() 
     assert_eq!(world.prompts[1].effort.as_deref(), Some(b"high".as_slice()));
     assert_eq!(world.prompts[1].max_tokens, 256);
     let turn = world.turns.last().expect("window turn");
-    assert!(matches!(turn.kind, record::Kind::Window { .. }));
+    assert!(matches!(turn.kind, record::Kind::Window(_)));
     assert_eq!(turn.model.as_ref(), b"another-model");
     assert_eq!(turn.effort.as_deref(), Some(b"high".as_slice()));
     world.close();

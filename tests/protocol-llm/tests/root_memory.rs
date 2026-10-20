@@ -574,7 +574,18 @@ fn messages_bytes(messages: &[session::llm::Message]) -> u64 {
 }
 
 fn turn_bytes(turn: &session::record::Turn) -> u64 {
-    messages_bytes(&turn.messages) + len(&turn.model) + turn.effort.as_ref().map_or(0, |effort| len(effort))
+    use session::record::{Backend, Kind, Opener};
+    let opener = match &turn.kind {
+        Kind::First(opener) | Kind::Window(opener) => {
+            size::<Opener>()
+                + match &opener.backend {
+                    Backend::Direct => 0,
+                    Backend::Program { name } => len(name),
+                }
+        }
+        Kind::Ordinary => 0,
+    };
+    opener + messages_bytes(&turn.messages) + len(&turn.model) + turn.effort.as_ref().map_or(0, |effort| len(effort))
 }
 
 fn transcript_bytes(history: &root::Transcript) -> u64 {

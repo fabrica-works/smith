@@ -64,12 +64,12 @@ pub fn decode_transcript(
         let turn = translate_turn(source, endpoint, dialect, limits, search_hits)?;
         if turns.is_empty() {
             match turn.kind {
-                record::Kind::First { .. } | record::Kind::Window { .. } => {}
+                record::Kind::First(_) | record::Kind::Window(_) => {}
                 record::Kind::Ordinary => return Err(record::Refusal::Malformed),
             }
         } else {
             match turn.kind {
-                record::Kind::First { .. } | record::Kind::Window { .. } => return Err(record::Refusal::Malformed),
+                record::Kind::First(_) | record::Kind::Window(_) => return Err(record::Refusal::Malformed),
                 record::Kind::Ordinary => {}
             }
         }
@@ -167,13 +167,15 @@ fn translate_turn(
     let kind = match source.kind() {
         wire::TurnKind::Ordinary => match opening {
             Some((affinity, account, backend)) if source.place() == 1 => {
-                record::Kind::First { affinity, account, backend }
+                record::Kind::First(Box::new(record::Opener { affinity, account, backend }))
             }
             None if source.place() > 1 => record::Kind::Ordinary,
             Some(_) | None => return Err(record::Refusal::Malformed),
         },
         wire::TurnKind::Window => match opening {
-            Some((affinity, account, backend)) => record::Kind::Window { affinity, account, backend },
+            Some((affinity, account, backend)) => {
+                record::Kind::Window(Box::new(record::Opener { affinity, account, backend }))
+            }
             None => return Err(record::Refusal::Malformed),
         },
     };

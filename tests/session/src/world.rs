@@ -1302,7 +1302,7 @@ impl World {
         assert_eq!(turn.sequence, u32::try_from(index + 1).expect("bounded sequence"));
         assert_eq!(turn.usage, session.accepted[index], "each Turn records its actual accepted provider usage");
         assert_eq!(turn.spent, 0, "zero-price exact bill");
-        if matches!(turn.kind, agent::record::Kind::Window { .. }) {
+        if matches!(turn.kind, agent::record::Kind::Window(_)) {
             window_referee::recorded_window(session, &turn, index);
             session.records.push(turn);
             return;
