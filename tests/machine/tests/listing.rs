@@ -127,7 +127,7 @@ fn listed(output: &[u8], depth: tools::Depth, maximum: u32, bytes: u64, glob: Op
         let chunk = Box::new([*byte]);
         component.from_below(
             &env(),
-            BelowEvent::Process(skein_io::Event::Stream { owner: stdout, up: skein_lib::stream::Up::Bytes(chunk) }),
+            BelowEvent::Pipe(skein_io::Event::Stream { owner: stdout, up: skein_lib::stream::Up::Bytes(chunk) }),
             &mut terminals,
             &mut below,
         );
@@ -140,13 +140,12 @@ fn listed(output: &[u8], depth: tools::Depth, maximum: u32, bytes: u64, glob: Op
         &mut below,
     );
     while below.pop().is_some() {}
-    for entity in [owner, stdout, stderr] {
-        component.from_below(
-            &env(),
-            BelowEvent::Process(skein_io::Event::Closed { owner: entity }),
-            &mut terminals,
-            &mut below,
-        );
+    for event in [
+        BelowEvent::Process(skein_io::Event::Closed { owner }),
+        BelowEvent::Pipe(skein_io::Event::Closed { owner: stdout }),
+        BelowEvent::Pipe(skein_io::Event::Closed { owner: stderr }),
+    ] {
+        component.from_below(&env(), event, &mut terminals, &mut below);
     }
     match terminals.pop().expect("one listing terminal") {
         ToDomain::Done { done, .. } => done,

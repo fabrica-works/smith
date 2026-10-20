@@ -75,11 +75,13 @@ pub struct Spawn {
     pub pipes: Box<[skein_io::kernel::Pipe]>,
 }
 
-/// A file terminal or child progress from skein io.
+/// IO progress whose variant preserves the token's namespace (programming-model.md, section 4.2).
 #[derive(Debug)]
 pub enum BelowEvent {
     /// One file operation ended.
     File(file::Event),
-    /// Child or pipe progress.
+    /// Child progress sent by the service with its domain owner; `Closed` ends the child.
     Process(skein_io::Event),
+    /// Pipe progress sent by the service with its io token; `Closed` ends the pipe binding.
+    Pipe(skein_io::Event),
 }

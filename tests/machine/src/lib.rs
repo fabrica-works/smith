@@ -484,6 +484,7 @@ struct Application {
     to_domain: Queue<ToDomain>,
     file_events: Queue<file::Event>,
     process_events: Queue<io::Event>,
+    process_pipes: BTreeSet<Token>,
     file_subs: Queue<Submit>,
     process_subs: Queue<Submit>,
     submissions: Queue<Submit>,
@@ -542,6 +543,7 @@ impl Application {
             to_domain: Queue::with_capacity(64),
             file_events: Queue::with_capacity(64),
             process_events: Queue::with_capacity(64),
+            process_pipes: BTreeSet::new(),
             file_subs: Queue::with_capacity(64),
             process_subs: Queue::with_capacity(64),
             submissions: Queue::with_capacity(128),
@@ -635,7 +637,7 @@ impl Application {
             let up = Up::Bytes(Box::from(&bytes[at..at + count]));
             self.component.from_below(
                 &self.machine_env,
-                BelowEvent::Process(io::Event::Stream { owner: stdout, up }),
+                BelowEvent::Pipe(io::Event::Stream { owner: stdout, up }),
                 &mut self.to_domain,
                 &mut self.below,
             );
@@ -653,7 +655,7 @@ impl Application {
         for pipe in [stdout, stderr] {
             self.component.from_below(
                 &self.machine_env,
-                BelowEvent::Process(io::Event::Closed { owner: pipe }),
+                BelowEvent::Pipe(io::Event::Closed { owner: pipe }),
                 &mut self.to_domain,
                 &mut self.below,
             );
@@ -764,12 +766,27 @@ impl Application {
         }
         while let Some(event) = self.process_events.pop() {
             let spawned = if let io::Event::Spawned { owner, .. } = &event { Some(*owner) } else { None };
-            self.component.from_below(
-                &self.machine_env,
-                BelowEvent::Process(event),
-                &mut self.to_domain,
-                &mut self.below,
-            );
+            let event = match &event {
+                io::Event::Spawned { pipes, .. } => {
+                    self.process_pipes.extend(pipes.iter().copied());
+                    BelowEvent::Process(event)
+                }
+                io::Event::Stream { .. } => BelowEvent::Pipe(event),
+                io::Event::Closed { owner } if self.process_pipes.remove(owner) => BelowEvent::Pipe(event),
+                io::Event::Listening { .. }
+                | io::Event::Accepted { .. }
+                | io::Event::Connecting { .. }
+                | io::Event::Connected { .. }
+                | io::Event::Output { .. }
+                | io::Event::Exited { .. }
+                | io::Event::Usage { .. }
+                | io::Event::Resized
+                | io::Event::Window { .. }
+                | io::Event::Failed { .. }
+                | io::Event::Closed { .. }
+                | io::Event::Shutdown { .. } => BelowEvent::Process(event),
+            };
+            self.component.from_below(&self.machine_env, event, &mut self.to_domain, &mut self.below);
             if spawned.is_some() && spawned == self.abort_after_spawn {
                 let owner = self.abort_after_spawn.take().expect("issued abort owner");
                 self.component.from_domain(

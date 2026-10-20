@@ -1,6 +1,7 @@
 //! Entry-point tests for file admission and translation.
 
 mod admission;
+mod routing;
 
 use alloc::boxed::Box;
 use skein_io::{digest, file, kernel};
@@ -668,7 +669,7 @@ fn command_output_waits_for_both_pipes_and_child_close() {
     assert!(below.pop().is_some());
     component.from_below(
         &env(),
-        BelowEvent::Process(Event::Stream { owner: Token::new(43), up: Up::Bytes(Box::from(&b"abcdef"[..])) }),
+        BelowEvent::Pipe(Event::Stream { owner: Token::new(43), up: Up::Bytes(Box::from(&b"abcdef"[..])) }),
         &mut to_domain,
         &mut below,
     );
@@ -682,7 +683,7 @@ fn command_output_waits_for_both_pipes_and_child_close() {
     assert_eq!(below.pop(), Some(Below::Process(skein_io::Request::Close { entity: Token::new(42) })));
     assert!(to_domain.is_empty(), "natural exit still awaits pipe closure and reap");
     for pipe in [Token::new(43), Token::new(44)] {
-        component.from_below(&env(), BelowEvent::Process(Event::Closed { owner: pipe }), &mut to_domain, &mut below);
+        component.from_below(&env(), BelowEvent::Pipe(Event::Closed { owner: pipe }), &mut to_domain, &mut below);
     }
     assert!(to_domain.is_empty());
     component.from_below(&env(), BelowEvent::Process(Event::Closed { owner }), &mut to_domain, &mut below);
@@ -772,7 +773,7 @@ fn deadline_sends_group_term_kill_close_and_answers_after_reap() {
         &mut below,
     );
     for pipe in [Token::new(46), Token::new(47)] {
-        component.from_below(&later, BelowEvent::Process(Event::Closed { owner: pipe }), &mut to_domain, &mut below);
+        component.from_below(&later, BelowEvent::Pipe(Event::Closed { owner: pipe }), &mut to_domain, &mut below);
     }
     assert!(to_domain.is_empty());
     component.from_below(&later, BelowEvent::Process(Event::Closed { owner }), &mut to_domain, &mut below);
@@ -1017,21 +1018,11 @@ fn a_cancel_before_spawn_reaches_group_close_and_waits_for_every_terminal() {
         &mut below,
     );
     assert!(to_domain.is_empty(), "a polite successful exit still owes closure");
-    component.from_below(
-        &later,
-        BelowEvent::Process(Event::Closed { owner: Token::new(96) }),
-        &mut to_domain,
-        &mut below,
-    );
+    component.from_below(&later, BelowEvent::Pipe(Event::Closed { owner: Token::new(96) }), &mut to_domain, &mut below);
     assert!(to_domain.is_empty());
     component.from_below(&later, BelowEvent::Process(Event::Closed { owner }), &mut to_domain, &mut below);
     assert!(to_domain.is_empty(), "second pipe remains outstanding");
-    component.from_below(
-        &later,
-        BelowEvent::Process(Event::Closed { owner: Token::new(97) }),
-        &mut to_domain,
-        &mut below,
-    );
+    component.from_below(&later, BelowEvent::Pipe(Event::Closed { owner: Token::new(97) }), &mut to_domain, &mut below);
     assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner, done: tools::Done::Cancelled }));
     assert!(to_domain.is_empty());
 }
@@ -1130,7 +1121,7 @@ fn listed(output: &[u8], depth: tools::Depth, maximum: u32, bytes: u64, glob: Op
         let chunk = Box::new([*byte]);
         component.from_below(
             &env(),
-            BelowEvent::Process(skein_io::Event::Stream { owner: stdout, up: skein_lib::stream::Up::Bytes(chunk) }),
+            BelowEvent::Pipe(skein_io::Event::Stream { owner: stdout, up: skein_lib::stream::Up::Bytes(chunk) }),
             &mut terminals,
             &mut below,
         );
@@ -1143,13 +1134,12 @@ fn listed(output: &[u8], depth: tools::Depth, maximum: u32, bytes: u64, glob: Op
         &mut below,
     );
     while below.pop().is_some() {}
-    for entity in [owner, stdout, stderr] {
-        component.from_below(
-            &env(),
-            BelowEvent::Process(skein_io::Event::Closed { owner: entity }),
-            &mut terminals,
-            &mut below,
-        );
+    for event in [
+        BelowEvent::Process(skein_io::Event::Closed { owner }),
+        BelowEvent::Pipe(skein_io::Event::Closed { owner: stdout }),
+        BelowEvent::Pipe(skein_io::Event::Closed { owner: stderr }),
+    ] {
+        component.from_below(&env(), event, &mut terminals, &mut below);
     }
     match terminals.pop().expect("one listing terminal") {
         ToDomain::Done { done, .. } => done,

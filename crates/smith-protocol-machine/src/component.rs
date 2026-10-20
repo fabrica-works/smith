@@ -1,6 +1,9 @@
 //! Workspace authority, file and process ownership (protocol/agent.md,
 //! sections 2 and 3; domain/tools.md, sections 4–6).
-//! The component keeps root tokens and in-flight owners, and holds a
+//! The component keeps root tokens, in-flight domain owners and io pipe
+//! bindings until their `Closed` events (programming-model.md, sections 4.2
+//! and 5.2). `from_below` distinguishes child owners from pipe tokens by
+//! event variant, never by their numeric values. It holds a
 //! create's new content while it makes the file's directories. It never
 //! knows descriptors, file content before io reports it, or the domain's
 //! state.
@@ -358,7 +361,7 @@ impl Component {
         }
     }
 
-    /// Consume one file or process event and release its owner on completion.
+    /// Consume one file, child or pipe event and release its owner on completion.
     pub fn from_below(
         &mut self,
         env: &Env<Limits>,
@@ -395,6 +398,7 @@ impl Component {
                 }
             }
             BelowEvent::Process(event) => self.process_event(env.now, event, to_domain, below),
+            BelowEvent::Pipe(event) => self.pipe_event(env.now, event, to_domain, below),
         }
     }
 
@@ -408,54 +412,79 @@ impl Component {
         let owner = match &event {
             io::Event::Spawned { owner, .. }
             | io::Event::Exited { owner, .. }
-            | io::Event::Stream { owner, .. }
             | io::Event::Failed { owner, .. }
             | io::Event::Closed { owner } => *owner,
             io::Event::Listening { .. }
             | io::Event::Accepted { .. }
             | io::Event::Connecting { .. }
             | io::Event::Connected { .. }
+            | io::Event::Stream { .. }
             | io::Event::Output { .. }
             | io::Event::Usage { .. }
             | io::Event::Resized
             | io::Event::Window { .. }
-            | io::Event::Shutdown { .. } => unreachable!("no sockets, output grants or signal source requested"),
+            | io::Event::Shutdown { .. } => unreachable!("child progress carries a domain owner"),
         };
-        let process_owner = match self.routes.get(&owner) {
-            Some(route) => *route,
-            None => owner,
-        };
-        let process = self.processes.get_mut(&process_owner).expect("process event has admitted owner");
+        let process = self.processes.get_mut(&owner).expect("process event has admitted owner");
         match event {
             io::Event::Spawned { child, pipes, .. } => {
-                process.spawned(child, pipes, &mut self.routes, process_owner, below);
+                process.spawned(child, pipes, &mut self.routes, owner, below);
             }
             io::Event::Exited { exit, .. } => process.exited(exit, below),
-            io::Event::Stream { owner: pipe, up } => crate::process::stream(process, pipe, up, below),
-            io::Event::Failed { owner: failed, error } => {
-                process.failed(error);
-                if self.routes.contains_key(&failed) {
-                    below.push(Below::Process(io::Request::Abort { entity: failed }));
-                }
-            }
-            io::Event::Closed { owner: closed } => {
-                if self.routes.remove(&closed).is_some() {
-                    process.pipe_closed(closed);
-                } else {
-                    process.child_closed = true;
-                }
+            io::Event::Failed { error, .. } => process.failed(error),
+            io::Event::Closed { .. } => process.child_closed = true,
+            io::Event::Listening { .. }
+            | io::Event::Accepted { .. }
+            | io::Event::Connecting { .. }
+            | io::Event::Connected { .. }
+            | io::Event::Stream { .. }
+            | io::Event::Output { .. }
+            | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
+            | io::Event::Shutdown { .. } => unreachable!("child progress carries a domain owner"),
+        }
+        self.advance(owner, now, to_domain, below);
+    }
+
+    fn pipe_event(&mut self, now: Time, event: io::Event, to_domain: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
+        let pipe = match &event {
+            io::Event::Stream { owner, .. } | io::Event::Closed { owner } => *owner,
+            io::Event::Listening { .. }
+            | io::Event::Accepted { .. }
+            | io::Event::Connecting { .. }
+            | io::Event::Connected { .. }
+            | io::Event::Output { .. }
+            | io::Event::Spawned { .. }
+            | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
+            | io::Event::Failed { .. }
+            | io::Event::Shutdown { .. } => unreachable!("a read pipe emits only stream progress and Closed"),
+        };
+        let owner = *self.routes.get(&pipe).expect("pipe event has a live route");
+        let process = self.processes.get_mut(&owner).expect("pipe route has admitted process");
+        match event {
+            io::Event::Stream { up, .. } => crate::process::stream(process, pipe, up, below),
+            io::Event::Closed { .. } => {
+                process.pipe_closed(pipe);
+                self.routes.remove(&pipe).expect("closed pipe has a live route");
             }
             io::Event::Listening { .. }
             | io::Event::Accepted { .. }
             | io::Event::Connecting { .. }
             | io::Event::Connected { .. }
             | io::Event::Output { .. }
+            | io::Event::Spawned { .. }
+            | io::Event::Exited { .. }
             | io::Event::Usage { .. }
             | io::Event::Resized
             | io::Event::Window { .. }
-            | io::Event::Shutdown { .. } => unreachable!("no sockets or signal source requested"),
+            | io::Event::Failed { .. }
+            | io::Event::Shutdown { .. } => unreachable!("a read pipe emits only stream progress and Closed"),
         }
-        self.advance(process_owner, now, to_domain, below);
+        self.advance(owner, now, to_domain, below);
     }
 
     /// Advance the group deadline, termination, kill and close stages.

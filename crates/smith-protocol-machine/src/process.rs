@@ -259,7 +259,7 @@ impl Process {
         self.child = Some(child);
         for (index, pipe) in pipes.iter().enumerate() {
             *self.pipes.get_mut(index).expect("two pipe slots") = Some(*pipe);
-            assert!(routes.insert(*pipe, owner).is_ok(), "reserved two routes per child");
+            assert_eq!(routes.insert(*pipe, owner), Ok(None), "reserved route for a new io pipe");
             below.push(Below::Process(io::Request::Stream {
                 stream: *pipe,
                 down: Down::Demand { read: Read::Arrived { max: OUTPUT_READ }, room: 0 },

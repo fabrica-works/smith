@@ -95,7 +95,7 @@ fn saturated_searches_and_pipe_routes_stay_within_the_machine_bound() {
     for byte in line.iter().copied().chain([b'\n']) {
         component.from_below(
             &env,
-            BelowEvent::Process(skein_io::Event::Stream { owner: Token::new(30), up: Up::Bytes(Box::new([byte])) }),
+            BelowEvent::Pipe(skein_io::Event::Stream { owner: Token::new(30), up: Up::Bytes(Box::new([byte])) }),
             &mut to_domain,
             &mut below,
         );

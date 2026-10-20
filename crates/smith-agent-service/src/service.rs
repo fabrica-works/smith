@@ -1275,7 +1275,7 @@ fn route_owned_io(service: &mut Service, event: io::Event) {
         };
         service.machine.from_below(
             &service.machine_env,
-            machine::BelowEvent::Process(event),
+            machine::BelowEvent::Pipe(event),
             &mut service.machine_events,
             &mut service.machine_below,
         );
