@@ -88,7 +88,9 @@ fn world_with_history(refused: bool, immediate: bool, saved: smith_domain::Trans
     let turns = if immediate {
         Box::new([finish, summary]) as Box<[Turn]>
     } else {
-        Box::new([finish, read, summary]) as Box<[Turn]>
+        // The first read is cut to what fits below the line (session.md, 8.1); the second finds no room left, so
+        // its result crosses the line and the next turn is the compaction.
+        Box::new([finish, read.clone(), read, summary]) as Box<[Turn]>
     };
     World::with_workspace_scripts_charter(
         settings,

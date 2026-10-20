@@ -594,7 +594,8 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     settings.limits.session.completion_blocks = bounds.client.output_items;
     settings.limits.session.failure_bytes = bounds.client.detail_bytes;
     let batch = 16_usize;
-    let read = || call(b"read", br#"{"path":"data.txt"}"#);
+    // Each read asks a window its whole result fits, so every result stays below the line (session.md, 8.1).
+    let read = || call(b"read", br#"{"path":"data.txt","window":64}"#);
     let scripts = Box::new([Script {
         cue: b"@brief-native".as_slice().into(),
         turns: Box::new([
@@ -620,7 +621,7 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     let read_call = |number: usize| Part::ToolCall {
         id: format!("call_{number:016x}").into_bytes().into(),
         name: b"read".as_slice().into(),
-        arguments: br#"{"path":"data.txt"}"#.as_slice().into(),
+        arguments: br#"{"path":"data.txt","window":64}"#.as_slice().into(),
     };
     let read_result = |number: usize| Part::ToolOutput {
         id: format!("call_{number:016x}").into_bytes().into(),
