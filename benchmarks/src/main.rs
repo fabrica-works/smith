@@ -50,7 +50,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE] [--baseline-run SUMMARY] [--landed SUMMARY]...\n       smith-bench parity SUMMARY --commit SHA\n       smith-bench change SUMMARY\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE] [--baseline-run SUMMARY] [--landed SUMMARY]...\n       smith-bench parity SUMMARY --commit SHA\n       smith-bench change SUMMARY\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex|smith-claude-code] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
             );
             ExitCode::from(2)
         }
@@ -283,6 +283,18 @@ fn attempt_command(request: &Path) -> ExitCode {
 
 fn validate_command(names: &[String]) -> ExitCode {
     let tasks = Path::new(env!("CARGO_MANIFEST_DIR")).join("tasks");
+    if names == ["probes/credentials"] {
+        return match smith_bench::validate::credentials(&tasks) {
+            Ok(()) => {
+                println!("probes/credentials: offline pair controls passed; no provider used");
+                ExitCode::SUCCESS
+            }
+            Err(reason) => {
+                eprintln!("{reason}");
+                ExitCode::from(2)
+            }
+        };
+    }
     match smith_bench::validate::validate(&tasks, names) {
         Ok(results) => {
             for result in &results {

@@ -368,6 +368,26 @@ fn an_early_finish_before_the_threshold_is_a_model_deviation() {
 }
 
 #[test]
+fn the_program_order_keeps_its_own_arm_identity() {
+    let name = "the_program_order_keeps_its_own_arm_identity";
+    let Some(directory) = isolated(name) else {
+        return;
+    };
+    std::fs::create_dir_all(&directory).expect("private fixture root");
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("repository");
+    let arm = ArmRef::Built(common::unexecuted_arm(&directory, repository));
+    let order =
+        Order { probe: "probes/smoke-tools".into(), agent: Agent::ClaudeCode, attempts: 1, source: Source::Head };
+    let planned = smith_bench::probe::plan(repository, &order, &arm).expect("program plan");
+    let request = &planned.requests[0];
+    assert_eq!(request.identity.agent, Agent::Smith);
+    assert_eq!(request.identity.provider, smith_bench::Provider::Anthropic);
+    assert_eq!(request.identity.model.requested_model, "claude-haiku-5-5");
+    assert!(request.identity.arm.starts_with("smith-claude-code-"));
+    assert!(request.configuration.as_ref().expect("program pin").ends_with("smith/smith-claude-code.pin.toml"));
+}
+
+#[test]
 fn a_missing_smoke_login_refuses_before_calibration() {
     let directory = root("missing-smoke-login");
     std::fs::DirBuilder::new().mode(0o700).create(&directory).expect("private root");

@@ -16,6 +16,12 @@ use crate::process::{Bounds, Capture, execute};
 use crate::run::{Prepared, read_prepared};
 use crate::{AttemptResult, Design, End, Measure, ScopeKind, Suite};
 
+mod credentials;
+
+pub(crate) fn validate_credentials(task: &crate::Task) -> Result<(), String> {
+    credentials::validate(task)
+}
+
 /// A completed dispatch retains all results, including setup refusals.
 #[derive(Debug)]
 pub struct Batch {
@@ -301,22 +307,20 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
     Ok(())
 }
 
-fn dispatch(
+fn dispatch_command(
     guard: &Guard,
     machine: &Machine,
     state: &Path,
-    clock: &Clock,
     executable: &Path,
     request: &Prepared,
-    remaining: u64,
-) -> Result<AttemptResult, String> {
+) -> Result<(Command, bool), String> {
     let root = state.join("requests");
     crate::run::private_parent(guard, &root)?;
     let name = format!("{}-{}.request", request.identity.run, request.identity.attempt);
     // scratch_root validates ids before either the request or agent can write.
     let scratch = crate::run::scratch_root(state, request)?;
     let existed = scratch.exists();
-    let document = serde_json::to_vec_pretty(&request).map_err(|error| error.to_string())?;
+    let document = serde_json::to_vec_pretty(request).map_err(|error| error.to_string())?;
     crate::grade::archive(guard, &root, &name, &document)?;
     let home = std::env::var_os("HOME").ok_or("suite requires the user's directory choices")?;
     let mut environment = vec![
@@ -329,26 +333,25 @@ fn dispatch(
             environment.push((name.into(), value));
         }
     }
-    let process = execute(
-        clock,
+    Ok((
         Command {
             program: executable.to_path_buf(),
             arguments: vec!["attempt".into(), root.join(&name).into_os_string()],
             environment,
             directory: state.to_path_buf(),
         },
-        Box::new([]),
-        Capture::Raw,
-        Bounds {
-            hard: Duration::from_nanos(remaining),
-            teardown: Duration::ZERO,
-            grace: Duration::from_millis(request.grace_ms),
-            settlement: Duration::from_millis(request.settlement_ms),
-            stdout: request.max_stdout_bytes,
-            stderr: request.max_stderr_bytes,
-            force_walk: request.force_walk,
-        },
-    )?;
+        existed,
+    ))
+}
+
+fn dispatch_result(
+    guard: &Guard,
+    state: &Path,
+    request: &Prepared,
+    process: &crate::process::ProcessResult,
+    existed: bool,
+) -> Result<AttemptResult, String> {
+    let scratch = crate::run::scratch_root(state, request)?;
     let result_file =
         state.join("runs").join(&request.identity.run).join(&request.identity.attempt).join("result.json");
     let mut result = match crate::read_result(&result_file) {
@@ -357,7 +360,7 @@ fn dispatch(
             guard,
             state,
             request,
-            &process,
+            process,
             format!("attempt ended {:?} without a result: {error}", process.exit),
         )?,
         Err(error) => return Err(format!("attempt's existing result is invalid: {error}")),
@@ -372,6 +375,34 @@ fn dispatch(
         }
     }
     Ok(result)
+}
+
+fn dispatch(
+    guard: &Guard,
+    machine: &Machine,
+    state: &Path,
+    clock: &Clock,
+    executable: &Path,
+    request: &Prepared,
+    remaining: u64,
+) -> Result<AttemptResult, String> {
+    let (command, existed) = dispatch_command(guard, machine, state, executable, request)?;
+    let process = execute(
+        clock,
+        command,
+        Box::new([]),
+        Capture::Raw,
+        Bounds {
+            hard: Duration::from_nanos(remaining),
+            teardown: Duration::ZERO,
+            grace: Duration::from_millis(request.grace_ms),
+            settlement: Duration::from_millis(request.settlement_ms),
+            stdout: request.max_stdout_bytes,
+            stderr: request.max_stderr_bytes,
+            force_walk: request.force_walk,
+        },
+    )?;
+    dispatch_result(guard, state, request, &process, existed)
 }
 
 /// Dispatch adapter-prepared requests under the suite's aggregate wall budget.
@@ -435,6 +466,52 @@ pub(crate) fn probe_requests(
     order(&suite, requests, seed, true)
 }
 
+fn dispatch_order(
+    suite: &Suite,
+    requests: Vec<Prepared>,
+    seed: u64,
+    logical: bool,
+) -> Result<(VecDeque<Prepared>, usize), String> {
+    let ordered = if logical { order(suite, requests, seed, true)? } else { ordered(suite, requests, seed)? };
+    let physical = ordered.first().map_or(Ok(1), |request| {
+        if credentials::selected(request) {
+            return Ok(2);
+        }
+        crate::read_task(&request.task)
+            .map(|task| usize::try_from(task.repetitions.unwrap_or(1)).expect("u32 fits usize"))
+            .map_err(|error| error.to_string())
+    })?;
+    let mut requests: VecDeque<_> = ordered.into();
+    if requests.iter().any(|request| {
+        credentials::selected(request)
+            && requests
+                .iter()
+                .any(|candidate| candidate.identity.attempt == format!("{}-peer", request.identity.attempt))
+    }) {
+        return Err("prepared attempt ids collide with the reserved credentials peer".into());
+    }
+    if requests.iter().any(|request| {
+        requests.iter().any(|candidate| {
+            candidate.identity.run == request.identity.run
+                && candidate.identity.attempt == format!("{}-rerun", request.identity.attempt)
+        })
+    }) {
+        return Err("prepared attempt ids collide with the reserved failure rerun".into());
+    }
+    let disk = requests
+        .iter()
+        .try_fold(0_u64, |sum, request| {
+            let multiplier = if credentials::selected(request) { 2 } else { 1 };
+            sum.checked_add(request.disk_estimate_bytes.checked_mul(multiplier)?)
+        })
+        .and_then(|bytes| bytes.checked_mul(u64::from(suite.rerun_failed) + 1))
+        .ok_or("suite disk estimate overflow")?;
+    if let Some(first) = requests.front_mut() {
+        first.disk_estimate_bytes = disk;
+    }
+    Ok((requests, physical))
+}
+
 fn run_suite(
     suite_file: &Path,
     suite: &Suite,
@@ -446,29 +523,7 @@ fn run_suite(
     let requests = requests(prepared_directory)?;
     let uncalibrated = crate::probe::gating::suite_tasks(suite, logical, &requests)?;
     check_requests(suite_file, suite, &requests)?;
-    let ordered = if logical { order(suite, requests, seed, true)? } else { ordered(suite, requests, seed)? };
-    let physical = ordered.first().map_or(Ok(1), |request| {
-        crate::read_task(&request.task)
-            .map(|task| usize::try_from(task.repetitions.unwrap_or(1)).expect("u32 fits usize"))
-            .map_err(|error| error.to_string())
-    })?;
-    let mut requests: VecDeque<_> = ordered.into();
-    if requests.iter().any(|request| {
-        requests.iter().any(|candidate| {
-            candidate.identity.run == request.identity.run
-                && candidate.identity.attempt == format!("{}-rerun", request.identity.attempt)
-        })
-    }) {
-        return Err("prepared attempt ids collide with the reserved failure rerun".into());
-    }
-    let disk = requests
-        .iter()
-        .try_fold(0_u64, |sum, request| sum.checked_add(request.disk_estimate_bytes))
-        .and_then(|bytes| bytes.checked_mul(u64::from(suite.rerun_failed) + 1))
-        .ok_or("suite disk estimate overflow")?;
-    if let Some(first) = requests.front_mut() {
-        first.disk_estimate_bytes = disk;
-    }
+    let (mut requests, physical) = dispatch_order(suite, requests, seed, logical)?;
     let guard = Guard::from_environment()?;
     let machine = Machine::from_environment()?;
     let state = crate::arm::state_root(&guard)?;
@@ -486,7 +541,7 @@ fn run_suite(
     let mut used = 0_u64;
     let mut probes = BTreeMap::new();
     let mut reruns = BTreeMap::new();
-    while let Some(request) = requests.pop_front() {
+    'attempts: while let Some(request) = requests.pop_front() {
         if let Some((required, ceiling)) = calibration
             && results.len() % physical == 0
         {
@@ -506,39 +561,51 @@ fn run_suite(
             incomplete = true;
             break;
         }
-        let result = dispatch(&guard, &machine, &state, &clock, &executable, &request, remaining)?;
-        let deviation = calibration.is_some() && crate::probe::model_deviation(&result);
-        incomplete |= !deviation && crate::cache::repetition(&result) == crate::Judgment::Incomplete;
-        let key = format!("{}/{}", request.identity.task, request.identity.arm);
-        if request.identity.task.starts_with("probes/") && !crate::cache::selected(&result) {
-            if let Some(passed) = crate::summary::passed(&result) {
-                if let Some(first) = reruns.remove(&request.identity.attempt) {
-                    probes.insert(key, crate::probe_verdict(first, Some(passed)));
-                } else {
-                    let verdict = crate::probe_verdict(passed, None);
-                    probes.insert(key, verdict);
-                    if verdict == crate::ProbeVerdict::Rerun && suite.rerun_failed == 1 {
-                        let mut retry = request.clone();
-                        retry.identity.attempt.push_str("-rerun");
-                        reruns.insert(retry.identity.attempt.clone(), passed);
-                        requests.push_front(retry);
+        let paired = credentials::selected(&request);
+        let settled = if paired {
+            credentials::run(&guard, &machine, &state, &executable, &request, remaining)?
+        } else {
+            vec![dispatch(&guard, &machine, &state, &clock, &executable, &request, remaining)?]
+        };
+        let pair_passed =
+            settled.iter().try_fold(true, |passed, result| crate::summary::passed(result).map(|next| passed && next));
+        for (part, result) in settled.into_iter().enumerate() {
+            let deviation = calibration.is_some() && crate::probe::model_deviation(&result);
+            incomplete |= !deviation && crate::cache::repetition(&result) == crate::Judgment::Incomplete;
+            let key = format!("{}/{}", request.identity.task, request.identity.arm);
+            if request.identity.task.starts_with("probes/")
+                && !crate::cache::selected(&result)
+                && (!paired || part == 0)
+            {
+                if let Some(passed) = if paired { pair_passed } else { crate::summary::passed(&result) } {
+                    if let Some(first) = reruns.remove(&request.identity.attempt) {
+                        probes.insert(key, crate::probe_verdict(first, Some(passed)));
+                    } else {
+                        let verdict = crate::probe_verdict(passed, None);
+                        probes.insert(key, verdict);
+                        if verdict == crate::ProbeVerdict::Rerun && suite.rerun_failed == 1 {
+                            let mut retry = request.clone();
+                            retry.identity.attempt.push_str("-rerun");
+                            reruns.insert(retry.identity.attempt.clone(), passed);
+                            requests.push_front(retry);
+                        }
                     }
+                } else if !deviation {
+                    incomplete = true;
                 }
-            } else if !deviation {
-                incomplete = true;
             }
-        }
-        let tokens = known_tokens(&result);
-        let zero_charge = observed_no_request(&result) || rejected_before_output(&result);
-        println!("{}", crate::probe::line(&result));
-        results.push(result);
-        if let Some(count) = tokens {
-            used = used.checked_add(count).ok_or("suite token count overflow")?;
-            incomplete |= used > suite.max_tokens;
-        } else if !zero_charge {
-            println!("suite token usage unavailable: incomplete");
-            incomplete = true;
-            break;
+            let tokens = known_tokens(&result);
+            let zero_charge = observed_no_request(&result) || rejected_before_output(&result);
+            println!("{}", crate::probe::line(&result));
+            results.push(result);
+            if let Some(count) = tokens {
+                used = used.checked_add(count).ok_or("suite token count overflow")?;
+                incomplete |= used > suite.max_tokens;
+            } else if !zero_charge {
+                println!("suite token usage unavailable: incomplete");
+                incomplete = true;
+                break 'attempts;
+            }
         }
     }
     cache_verdicts(&results, &mut incomplete, &mut probes);

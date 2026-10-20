@@ -225,43 +225,14 @@ fn an_uncalibrated_harness_error_still_makes_the_suite_incomplete() {
 }
 
 #[test]
-fn credentials_decides_on_the_login_digest_and_the_answer() {
+fn credentials_requires_the_refresh_pair_with_both_answers() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let task = smith_bench::check_task(&root.join("tasks/probes/credentials/task.toml"), &root.join("../docs/design"))
         .expect("credentials task with its frozen seed");
-    assert_eq!(task.deciding, ["end", "answer", "login-unchanged"]);
-    assert_eq!(task.outcome.len(), 3);
-    assert_eq!(
-        std::fs::read_to_string(root.join("tasks/probes/credentials/seed/token.txt")).expect("seed token"),
-        "BORROWED_SEED_7C31\n"
-    );
-    let unchanged = Measure::Observed { value: true };
-    let changed = Measure::Observed { value: false };
-    let missing = Measure::unavailable("synthetic attempt has no digest comparison");
-    let cases = [
-        (End::Completed, Some("BORROWED_SEED_7C31"), unchanged.clone(), Judgment::Pass),
-        (End::Completed, Some("BORROWED_SEED_7C31"), changed, Judgment::Fail),
-        (End::Completed, Some("BORROWED_SEED_7C31"), missing, Judgment::Incomplete),
-        (End::Completed, Some("wrong token"), unchanged.clone(), Judgment::Fail),
-        (End::Completed, None, unchanged.clone(), Judgment::Incomplete),
-        (End::Timeout, Some("BORROWED_SEED_7C31"), unchanged, Judgment::Fail),
-    ];
-    let snapshot = smith_bench::grade::Snapshot::new();
-    let mut value = result();
-    value.outcome.grade = None;
-    value.outcome.deciding.clone_from(&task.deciding);
-    for (end, answer, login_unchanged, expected) in cases {
-        let ended = smith_bench::grade::Ended {
-            end: end.clone(),
-            exit: Measure::Observed { value: smith_bench::Exit::Code(0) },
-            last_line: None,
-            answer: answer.map(str::to_owned),
-            login_unchanged,
-        };
-        value.outcome.end = end;
-        value.outcome.checks = smith_bench::grade::checks(&root, &snapshot, &snapshot, &task.outcome, &ended);
-        assert_eq!(judge(&value), expected);
-    }
+    assert_eq!(task.deciding, ["end", "answer", "credential-refresh"]);
+    assert_eq!(task.smith["deployment.refresh_lead"].as_integer(), Some(34_560_000));
+    assert!(task.prompt.contains("CREDENTIALS_REFRESH_OK"));
+    assert_eq!(task.version, 2);
 }
 
 fn follow_up() -> smith_bench::Task {

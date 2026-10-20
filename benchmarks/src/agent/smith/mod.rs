@@ -20,3 +20,6 @@ pub use prepare::{Prepared, prepare, prepare_checked, teardown_from_check};
 pub use observe::Observing;
 
 pub use settings::product as product_settings;
+
+#[cfg(test)]
+pub(crate) use observe::tests::program as recorded_program;

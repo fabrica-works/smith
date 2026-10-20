@@ -184,7 +184,7 @@ pub enum Agent {
     Smith,
     /// Codex, observed through JSON lines and its named rollouts.
     Codex,
-    /// Claude Code, reserved for the next comparison pass.
+    /// Standalone Claude Code identity; probes select the smith program arm.
     ClaudeCode,
 }
 
@@ -204,7 +204,7 @@ impl Agent {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
 pub enum Provider {
-    /// The Codex subscription route.
+    /// The `OpenAI` model tier table, retained under its codex name.
     Codex,
     /// The Anthropic route.
     Anthropic,
@@ -218,6 +218,8 @@ pub struct Configuration {
     pub agent: Agent,
     pub provider: Provider,
     pub version: String,
+    /// A smith pin may require a source ancestor for its account policy.
+    pub minimum_commit: Option<String>,
     /// The private package executable's digest, required for Codex.
     pub sha256: Option<String>,
     /// Codex's whole package, relative to the harness state root.
@@ -240,7 +242,17 @@ pub fn read_configuration(file: &Path) -> Result<PinnedConfiguration, Refusal> {
     }
     crate::check::check_path(file, "configuration", &pin.configuration)?;
     match pin.agent {
-        Agent::Smith => {}
+        Agent::Smith => {
+            if let Some(commit) = &pin.minimum_commit
+                && (commit.len() != 40
+                    || !commit.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+            {
+                return Err(Refusal::new(file, "minimum_commit", "expected a full lowercase source commit"));
+            }
+            if pin.name == "smith-claude-code" && pin.provider != Provider::Anthropic {
+                return Err(Refusal::new(file, "provider", "smith-claude-code requires the anthropic tier"));
+            }
+        }
         Agent::Codex => {
             if pin.provider != Provider::Codex {
                 return Err(Refusal::new(file, "provider", "Codex requires its codex route"));

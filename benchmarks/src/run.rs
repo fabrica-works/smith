@@ -29,6 +29,8 @@ mod passive;
 
 mod startup;
 
+mod traces;
+
 /// An adapter's prepared pipe invocation and author-supplied harness policies.
 /// Arguments already name the planned scratch paths; the runner owns its cwd.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -585,13 +587,13 @@ fn collect_observation(
                 }
             }
             crate::agent::Observing::Smith(observing) => {
-                observing.observer.resolve_model(&mut result.identity.model);
-                observing.observer.timing(&mut result.timing);
+                observing.events().resolve_model(&mut result.identity.model);
+                observing.events().timing(&mut result.timing);
                 result.tokens = observing.tokens()?;
                 result.spend = observing.spend(&result.tokens)?;
                 result.spend.priced = crate::result::priced_spend(
                     result,
-                    &observing.observer.response_tokens().map_err(|error| error.what)?,
+                    &observing.events().response_tokens().map_err(|error| error.what)?,
                 );
                 result.resources.own_peak_rss_bytes = observing.observer.own_peak_rss_bytes();
                 result.counts = observing.counts();
@@ -609,12 +611,14 @@ fn observe(
     result: &mut AttemptResult,
     process: &mut ProcessResult,
     task: &Task,
+    maximum: usize,
 ) -> Result<crate::grade::Ended, String> {
     result.identity.started_utc =
         time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(process.start_wall.as_nanos()))
             .map_err(|error| error.to_string())?
             .format(&time::format_description::well_known::Rfc3339)
             .map_err(|error| error.to_string())?;
+    traces::collect(guard, directory, result, process, maximum)?;
     startup::finish(process)?;
     let classification = process.observing.as_ref().map_or_else(
         || process.observer.classify(process.exit, process.forced),
@@ -636,8 +640,12 @@ fn observe(
     archive(guard, directory, result, "stderr.log", &process.stderr)?;
     if !process.trace.is_empty() {
         archive(guard, directory, result, "trace.jsonl", &process.trace)?;
+    } else if process.observing.as_deref().is_some_and(
+        |observing| matches!(observing, crate::agent::Observing::Smith(smith) if smith.prepared.program_source()),
+    ) {
+        archive(guard, directory, result, "trace.jsonl", &process.stdout)?;
     }
-    let mut login_unchanged = Measure::unavailable("this invocation did not borrow a source login");
+    let credential_refresh = Measure::unavailable("the credentials pair has not settled");
     if let Some(observing) = &mut process.observing {
         match observing.as_mut() {
             crate::agent::Observing::Codex(observing) => {
@@ -645,7 +653,6 @@ fn observe(
                     crate::Delegation::unavailable("Codex does not report child shares or parent blocking");
                 if let Some(borrowed) = observing.prepared.borrowed.take() {
                     let proof = borrowed.finish(guard)?;
-                    login_unchanged = Measure::Observed { value: proof.source_unchanged };
                     archive(
                         guard,
                         directory,
@@ -686,10 +693,14 @@ fn observe(
     };
     result.health.passive_checks.push(passive::scope(&result.outcome.writes_outside_workspace));
     result.health.passive_checks.push(passive::tree(process));
-    Ok(settled_outcome(process, &result.outcome, login_unchanged))
+    Ok(settled_outcome(process, &result.outcome, credential_refresh))
 }
 
-fn settled_outcome(process: &ProcessResult, outcome: &Outcome, login_unchanged: Measure<bool>) -> crate::grade::Ended {
+fn settled_outcome(
+    process: &ProcessResult,
+    outcome: &Outcome,
+    credential_refresh: Measure<bool>,
+) -> crate::grade::Ended {
     let answer = if matches!(outcome.end, End::Completed) {
         process
             .observing
@@ -703,7 +714,7 @@ fn settled_outcome(process: &ProcessResult, outcome: &Outcome, login_unchanged: 
     } else {
         None
     };
-    crate::grade::Ended { end: outcome.end.clone(), exit: outcome.exit.clone(), last_line, answer, login_unchanged }
+    crate::grade::Ended { end: outcome.end.clone(), exit: outcome.exit.clone(), last_line, answer, credential_refresh }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1100,7 +1111,8 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             )?
         };
         inference = true;
-        let observed = observe(guard, &directory, &private.workspace, &mut result, &mut process, &task);
+        let observed =
+            observe(guard, &directory, &private.workspace, &mut result, &mut process, &task, prepared.max_stdout_bytes);
         let ended = neutral.observed(observed, &process, &result.outcome)?;
         afterwards(
             Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },

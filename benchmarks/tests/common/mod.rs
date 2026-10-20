@@ -17,11 +17,13 @@ pub fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::
     use sha2::{Digest, Sha256};
     use smith_bench::arm::{ArmBinary, BuiltArm};
     // Replay fixtures select the product terminal invocation.
-    let commit = "55879f9cbc8dd6099edeaaf130fbc29f86b53777".to_owned();
+    let pin = smith_bench::read_configuration(&repository.join("benchmarks/agents/smith/standard.pin.toml"))
+        .expect("standard Smith pin");
+    let commit = pin.pin.minimum_commit.expect("minimum source identity");
     let ancestor = std::process::Command::new("git")
         .args(["-C", repository.to_str().expect("path"), "merge-base", "--is-ancestor", &commit, "HEAD"])
         .status()
-        .expect("historical source identity");
+        .expect("main ancestry");
     assert!(ancestor.success());
     let executable = b"unexecuted rendering fixture\n";
     let digest = format!("{:x}", Sha256::digest(executable));
@@ -36,7 +38,7 @@ pub fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::
         binaries: vec![ArmBinary { name: "smith".into(), sha256: digest }],
     };
     std::fs::write(path.join("arm.json"), serde_json::to_vec(&arm).expect("manifest")).expect("fixture manifest");
-    smith_bench::arm::read_build(&path.join("smith")).expect("actual manifest verification")
+    smith_bench::arm::read_build(&path.join("smith")).expect("manifest verification")
 }
 
 #[must_use]

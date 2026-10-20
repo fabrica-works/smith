@@ -121,13 +121,45 @@ impl Counted {
     }
 }
 
+fn physical_size(results: &[AttemptResult]) -> usize {
+    if results.first().is_some_and(crate::cache::selected) {
+        3
+    } else if results.first().is_some_and(|result| result.identity.task == "probes/credentials") {
+        2
+    } else {
+        1
+    }
+}
+
+fn calibration_attempts(results: &[AttemptResult], run: &str) -> (u32, Vec<String>, Vec<String>) {
+    let mut passes = Vec::new();
+    let mut deviations = Vec::new();
+    let physical = physical_size(results);
+    for attempt in results.chunks(physical) {
+        if attempt.len() != physical {
+            continue;
+        }
+        let id = format!("{run}/{}", attempt[0].identity.attempt);
+        if crate::judge_suite(attempt, false) == Judgment::Pass {
+            passes.push(id);
+        } else if attempt.iter().all(model_deviation) {
+            deviations.push(id);
+        }
+    }
+    (u32::try_from(passes.len() + deviations.len()).expect("bounded calibration attempts"), passes, deviations)
+}
+
 /// Count each logical attempt, including cache triplets, without passing missing evidence.
 #[must_use]
 pub fn count(results: &[AttemptResult], required: u32, ceiling: u32) -> Counted {
     let mut counted = Counted { passed: 0, failed: 0, deviations: 0, unjudged: 0, required, ceiling };
-    let physical = if results.first().is_some_and(crate::cache::selected) { 3 } else { 1 };
+    let physical = physical_size(results);
     for attempt in results.chunks(physical) {
-        match crate::judge_suite(attempt, attempt.len() != physical) {
+        if attempt.len() != physical {
+            counted.unjudged += 1;
+            continue;
+        }
+        match crate::judge_suite(attempt, false) {
             Judgment::Pass => counted.passed += 1,
             Judgment::Fail | Judgment::Incomplete if attempt.iter().all(model_deviation) => counted.deviations += 1,
             Judgment::Fail if attempt.iter().all(|result| deviation(result, true)) => counted.unjudged += 1,
@@ -257,7 +289,11 @@ fn request(
         identity: Identity {
             run: run.0.into(),
             attempt: format!("{attempt:02}"),
-            arm: format!("{}-{}-{}", agent.agent.directory(), agent.config, &digest[..8]),
+            arm: if agent.config == "smith-claude-code" {
+                format!("smith-claude-code-{}", &digest[..8])
+            } else {
+                format!("{}-{}-{}", agent.agent.directory(), agent.config, &digest[..8])
+            },
             task: entry.name.clone(),
             task_version: task.version,
             seed_sha256: task.seed_sha256.clone(),
@@ -365,7 +401,16 @@ fn narrowed(file: &Path, order: &Order) -> Result<toml::Value, String> {
     fields.insert("arm".into(), toml::Value::Array(vec![]));
     fields.insert("repetitions".into(), toml::Value::Integer(i64::from(order.attempts)));
     fields.insert("rerun_failed".into(), toml::Value::Integer(i64::from(order.attempts == 1)));
-    if order.agent == Agent::Codex {
+    if order.probe == "probes/credentials" && order.agent != Agent::Smith {
+        return Err("the credentials probe requires smith's chatgpt account".into());
+    }
+    if order.agent == Agent::ClaudeCode {
+        let program = toml::from_str::<toml::Value>(
+            "[[agents]]\nagent='smith'\nprovider='anthropic'\nconfig='smith-claude-code'",
+        )
+        .map_err(|error| error.to_string())?;
+        fields.insert("agents".into(), program["agents"].clone());
+    } else if order.agent == Agent::Codex {
         let codex = toml::from_str::<toml::Value>("[[agents]]\nagent='codex'\nprovider='codex'\nconfig='standard'")
             .map_err(|error| error.to_string())?;
         fields.insert("agents".into(), codex["agents"].clone());
@@ -575,7 +620,8 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
     let agent = match options.get("--agent").copied().unwrap_or("smith") {
         "smith" => Agent::Smith,
         "codex" if command == "probe" => Agent::Codex,
-        _ => return Err("this command requires smith (probe also accepts codex)".into()),
+        "smith-claude-code" if command == "probe" => Agent::ClaudeCode,
+        _ => return Err("this command requires smith (probe also accepts codex or smith-claude-code)".into()),
     };
     let source = options.get("--commit").map_or(Source::Head, |commit| Source::Commit((*commit).into()));
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().ok_or("workspace missing")?;
@@ -834,7 +880,6 @@ fn finish_calibration(
     seed: u64,
 ) -> Result<Judgment, String> {
     let task = selected_task(&planned.requests[0].task, &order.probe)?;
-    let physical = usize::try_from(task.repetitions.unwrap_or(1)).map_err(|error| error.to_string())?;
     let batch = crate::batch::run_calibration(
         &planned.suite,
         &planned.directory,
@@ -871,23 +916,14 @@ fn finish_calibration(
                 .map(|result| format!("{}/{}", result.identity.run, result.identity.attempt))
                 .collect()
         });
-        let passes: Vec<_> = results
-            .chunks(physical)
-            .filter(|attempt| crate::judge_suite(attempt, false) == Judgment::Pass)
-            .map(|attempt| format!("{}/{}", planned.run, attempt[0].identity.attempt))
-            .collect();
-        let deviations = results
-            .chunks(physical)
-            .filter(|attempt| attempt.iter().all(model_deviation))
-            .map(|attempt| format!("{}/{}", planned.run, attempt[0].identity.attempt))
-            .collect();
+        let (attempts, passes, deviations) = calibration_attempts(&results, &planned.run);
         let first = &results[0].identity;
         let block = crate::Calibration {
             binary: first.agent_version.clone(),
             binary_sha256: first.binary_sha256.clone(),
             date: first.started_utc.clone(),
             summary: format!("summaries/{}.json", planned.run),
-            attempts: counted.passed + counted.deviations,
+            attempts,
             passes,
             deviations,
             control: before.as_ref().map_or_else(
@@ -971,4 +1007,46 @@ fn summary(planned: &Planned, batch: &crate::batch::Batch) -> Judgment {
     let verdict = judgment(batch);
     println!("summary {} attempts={} verdict={}", planned.run, batch.results.len(), verdict_name(verdict));
     verdict
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    #[test]
+    fn ten_credentials_pairs_form_a_valid_calibration_block() {
+        use sha2::{Digest, Sha256};
+        let fixture: crate::AttemptResult =
+            serde_json::from_str(include_str!("../tests/recorded/results/attempt.json")).expect("result fixture");
+        let results: Vec<_> = (0..20)
+            .map(|index| {
+                let mut result = fixture.clone();
+                result.identity.task = "probes/credentials".into();
+                result.identity.attempt = format!("{index:02}");
+                result
+            })
+            .collect();
+        assert!(super::count(&results, 10, 12).calibrated());
+        let (attempts, passes, deviations) = super::calibration_attempts(&results, "pairs");
+        assert_eq!(attempts, 10);
+        assert_eq!(passes.len(), 10);
+        assert_eq!(super::count(&results[..19], 10, 12).unjudged, 1);
+        let mut task: crate::Task =
+            toml::from_str(include_str!("../tasks/probes/credentials/task.toml")).expect("task");
+        task.calibration = Some(crate::Calibration {
+            binary: "a".repeat(40),
+            binary_sha256: "b".repeat(64),
+            date: "2026-10-20".into(),
+            summary: "summaries/pairs.json".into(),
+            attempts,
+            passes,
+            deviations,
+            control: "none: synthetic control".into(),
+            failed_before: Vec::new(),
+            prompt_sha256: format!("{:x}", Sha256::digest(task.prompt.as_bytes())),
+            seed_sha256: task.seed_sha256.clone(),
+            checks_sha256: task.checks_sha256().expect("checks"),
+        });
+        crate::check::calibration(std::path::Path::new("synthetic-task.toml"), "calibration", &task)
+            .expect("accepted calibration");
+        assert!(task.calibrated().expect("matching inputs"));
+    }
 }

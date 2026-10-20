@@ -62,6 +62,7 @@ fn observing(trace: &Path) -> Observing {
         rendered: serde_json::json!({"models":[{"input_price":10,"cached_price":1,"output_price":80,"price_unit":8_000_000}]}),
         program: "/bin/sh".into(),
         state: trace.with_extension("state"),
+        serial: None,
         teardown: Duration::from_millis(40),
     }).expect("event observing")
 }
@@ -103,6 +104,7 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
         rendered: serde_json::json!({}),
         program: "/bin/sh".into(),
         state: directory.join("state"),
+        serial: None,
         teardown: bounds().teardown,
     };
     let observer = Observing::new(prepared).expect("checked event receiving bounds");

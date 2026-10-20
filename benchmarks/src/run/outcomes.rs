@@ -13,7 +13,7 @@ pub(super) const fn neutral(check: &OutcomeCheck) -> bool {
         | OutcomeCheck::ExitCode { .. }
         | OutcomeCheck::LastLine { .. }
         | OutcomeCheck::Answer { .. }
-        | OutcomeCheck::LoginUnchanged => true,
+        | OutcomeCheck::CredentialRefresh => true,
         OutcomeCheck::FileContent { .. }
         | OutcomeCheck::FileSize { .. }
         | OutcomeCheck::FileDigest { .. }
@@ -44,12 +44,24 @@ impl Neutral {
         }
     }
 
+    pub(super) fn program(&mut self) {
+        self.deciding.retain(|name| name != "tool-call");
+        if !self.deciding.iter().any(|name| name == "stream-whole") {
+            self.deciding.push("stream-whole".into());
+        }
+    }
+
     pub(super) fn observed(
         &mut self,
         observed: Result<Ended, String>,
         process: &ProcessResult,
         outcome: &Outcome,
     ) -> Result<&Ended, String> {
+        if let Some(crate::agent::Observing::Smith(observing)) = process.observing.as_deref()
+            && observing.prepared.program_source()
+        {
+            self.program();
+        }
         match observed {
             Ok(ended) => {
                 self.ended = Some(ended);
@@ -59,7 +71,7 @@ impl Neutral {
                 self.ended = Some(super::settled_outcome(
                     process,
                     outcome,
-                    Measure::unavailable("credential comparison did not return a complete proof"),
+                    Measure::unavailable("the credentials pair has no complete proof"),
                 ));
                 Err(error)
             }
@@ -76,7 +88,7 @@ impl Neutral {
             exit: result.outcome.exit.clone(),
             last_line: None,
             answer: None,
-            login_unchanged: Measure::unavailable("this attempt did not complete a source login comparison"),
+            credential_refresh: Measure::unavailable("the credentials pair has not settled"),
         });
         ended.end.clone_from(&result.outcome.end);
         ended.exit.clone_from(&result.outcome.exit);
@@ -107,6 +119,59 @@ impl Neutral {
 #[cfg(test)]
 mod cache_pair_tests {
     use super::*;
+
+    #[test]
+    fn program_bash_call_passes_smoke_tools_deciding_checks() {
+        let task: Task = toml::from_str(include_str!("../../tasks/probes/smoke-tools/task.toml")).expect("smoke task");
+        let mut observing = crate::agent::smith::recorded_program();
+        assert_eq!(observing.counts().tool_calls.get("Bash"), Some(&Measure::Observed { value: 1 }));
+        let mut result: AttemptResult =
+            serde_json::from_str(include_str!("../../tests/recorded/results/attempt.json")).expect("result fixture");
+        result.outcome.end = crate::End::Completed;
+        result.outcome.exit = Measure::Observed { value: crate::Exit::Code(0) };
+        result.outcome.checks = observing.checks(&task.event, &task.prompt);
+        result.health = observing.health(crate::Exit::Code(0), crate::Forced::No).expect("health");
+        let mut neutral = Neutral::default();
+        neutral.task(&task, crate::Agent::Smith);
+        neutral.program();
+        // These workspace and tree observations were settled by the fixture's caller.
+        for check in ["pattern:smoke-env.txt", "tree-ended", "protected-unchanged"] {
+            result.outcome.checks.push(crate::CheckVerdict {
+                check: check.into(),
+                passed: Measure::Observed { value: true },
+                evidence: Vec::new(),
+            });
+        }
+        neutral.ended = Some(Ended {
+            end: crate::End::Completed,
+            exit: result.outcome.exit.clone(),
+            last_line: None,
+            answer: Some("ALPHA".into()),
+            credential_refresh: Measure::unavailable("not a pair"),
+        });
+        neutral.finish(&mut result);
+        assert_eq!(
+            result.outcome.deciding,
+            task.deciding.iter().filter(|name| *name != "tool-call").cloned().collect::<Vec<_>>()
+        );
+        let tools: Vec<_> = result.outcome.checks.iter().filter(|check| check.check == "tool-call").collect();
+        assert_eq!(tools.len(), 2);
+        assert!(tools.iter().all(|check| check.passed == Measure::unavailable("Claude Code's built-in tools")));
+        assert_eq!(crate::judge(&result), crate::Judgment::Pass, "{:?}", result.outcome.checks);
+        for reason in ["agent trace open: missing", "agent trace read: denied"] {
+            observing.agent_trace(Err(reason.into()));
+            result.outcome.checks.retain(|check| check.check != "stream-whole");
+            let whole = observing
+                .health(crate::Exit::Code(0), crate::Forced::No)
+                .expect("health")
+                .passive_checks
+                .into_iter()
+                .find(|check| check.check == "stream-whole")
+                .expect("required trace");
+            result.outcome.checks.push(whole);
+            assert_eq!(crate::judge(&result), crate::Judgment::Incomplete);
+        }
+    }
 
     #[test]
     fn a_codex_outcome_half_keeps_only_outcome_checks_deciding() {

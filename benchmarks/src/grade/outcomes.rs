@@ -43,7 +43,7 @@ pub(super) fn check(check: &OutcomeCheck, ended: &Ended) -> CheckVerdict {
         OutcomeCheck::Answer { pattern: expected } => {
             ("answer", pattern(ended.answer.as_deref(), expected, "the selected face did not retain final result text"))
         }
-        OutcomeCheck::LoginUnchanged => ("login-unchanged", ended.login_unchanged.clone()),
+        OutcomeCheck::CredentialRefresh => ("credential-refresh", ended.credential_refresh.clone()),
         OutcomeCheck::FileContent { .. }
         | OutcomeCheck::FileSize { .. }
         | OutcomeCheck::FileDigest { .. }

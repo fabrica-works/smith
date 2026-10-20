@@ -72,6 +72,8 @@ fn rejected_responses(sessions: &[super::events::Session], expected: u64) -> boo
 pub struct Observing {
     pub prepared: Prepared,
     pub observer: super::events::Observer,
+    agent: Option<super::events::Observer>,
+    agent_error: Option<String>,
 }
 
 impl Observing {
@@ -80,7 +82,26 @@ impl Observing {
         let receiving = prepared.registry.receiving;
         let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
         let observer = super::events::Observer::with_ceiling(&limits, receiving.encoded_line)?;
-        Ok(Self { prepared, observer })
+        let agent = prepared
+            .program_source()
+            .then(|| super::events::Observer::with_ceiling(&limits, receiving.encoded_line))
+            .transpose()?;
+        Ok(Self { prepared, observer, agent, agent_error: None })
+    }
+
+    /// Channel facts belong to the spawned agent when this account is a program.
+    #[must_use]
+    pub fn events(&self) -> &super::events::Observer {
+        self.agent.as_ref().unwrap_or(&self.observer)
+    }
+
+    /// Retain a settled agent capture or its missing evidence without borrowing host facts.
+    pub fn agent_trace(&mut self, bytes: Result<&[u8], String>) {
+        if let Some(agent) = self.agent.as_mut() {
+            let parsed =
+                bytes.and_then(|bytes| agent.feed(bytes).and_then(|_| agent.finish()).map_err(|error| error.what));
+            self.agent_error = parsed.err();
+        }
     }
 
     /// Consume one complete event line and report its script cues.
@@ -91,7 +112,29 @@ impl Observing {
     /// Preserve the stream's passive evidence and name its missing fields.
     #[must_use]
     pub fn health(&self, exit: crate::Exit, forced: crate::Forced) -> Option<crate::Health> {
-        let mut health = self.observer.health(exit, forced, self.prepared.teardown.as_nanos() / 1_000_000);
+        let teardown = self.prepared.teardown.as_nanos() / 1_000_000;
+        let mut health = self.events().health(exit, forced, teardown);
+        if self.agent.is_some() {
+            let host = self.observer.health(exit, forced, teardown);
+            for check in &mut health.passive_checks {
+                if let Some(parent) = host.passive_checks.iter().find(|parent| parent.check == check.check) {
+                    match check.check.as_str() {
+                        "exit-agrees" | "teardown" => *check = parent.clone(),
+                        "stream-whole" | "nothing-lost"
+                            if parent.passed != (crate::Measure::Observed { value: true }) =>
+                        {
+                            *check = parent.clone();
+                        }
+                        _ => {}
+                    }
+                }
+                if check.check == "stream-whole"
+                    && let Some(error) = &self.agent_error
+                {
+                    check.passed = crate::Measure::unavailable(error);
+                }
+            }
+        }
         let whole = ["stream-whole", "nothing-lost", "paired"].iter().all(|name| {
             health
                 .passive_checks
@@ -99,8 +142,8 @@ impl Observing {
                 .any(|check| check.check == *name && check.passed == crate::Measure::Observed { value: true })
         });
         if whole
-            && let crate::Measure::Observed { value: attempts } = self.observer.counts().provider_attempts
-            && rejected_responses(self.observer.sessions(), attempts)
+            && let crate::Measure::Observed { value: attempts } = self.events().counts().provider_attempts
+            && rejected_responses(self.events().sessions(), attempts)
         {
             health.passive_checks.push(crate::CheckVerdict {
                 check: "provider-rejected-before-output".into(),
@@ -114,7 +157,20 @@ impl Observing {
     /// Author checks read the event stream in its micro-dollar currency.
     #[must_use]
     pub fn checks(&self, checks: &[crate::EventCheck], task: &str) -> Vec<crate::CheckVerdict> {
-        checks.iter().map(|check| self.observer.check_with_currency(check, task, 1_000_000)).collect()
+        checks
+            .iter()
+            .map(|check| {
+                if self.agent.is_some() && matches!(check, crate::EventCheck::ToolCall { .. }) {
+                    crate::CheckVerdict {
+                        check: check.name().into(),
+                        passed: crate::Measure::unavailable("Claude Code's built-in tools"),
+                        evidence: Vec::new(),
+                    }
+                } else {
+                    self.events().check_with_currency(check, task, 1_000_000)
+                }
+            })
+            .collect()
     }
 
     /// File-dependent predicates run after the process tree settles.
@@ -129,10 +185,10 @@ impl Observing {
             .iter()
             .map(|check| match check {
                 crate::EventCheck::WrittenFile { path, content_bytes_at_least } => {
-                    self.observer.written_file(path, *content_bytes_at_least, workspace)
+                    self.events().written_file(path, *content_bytes_at_least, workspace)
                 }
                 crate::EventCheck::OversizedWrite { path, content_bytes_above, protocol_input_bytes_above } => {
-                    self.observer.oversized_write(path, *content_bytes_above, *protocol_input_bytes_above, workspace)
+                    self.events().oversized_write(path, *content_bytes_above, *protocol_input_bytes_above, workspace)
                 }
                 crate::EventCheck::FilePieces { path, bytes_above, file_bytes } => {
                     let protocol_bound = checks.iter().find_map(|check| {
@@ -143,14 +199,14 @@ impl Observing {
                         }
                     });
                     match protocol_bound {
-                        Some(bound) => self.observer.file_pieces_for_protocol_probe(
+                        Some(bound) => self.events().file_pieces_for_protocol_probe(
                             path,
                             *bytes_above,
                             *file_bytes,
                             bound,
                             workspace,
                         ),
-                        None => self.observer.file_pieces(path, *bytes_above, *file_bytes, workspace),
+                        None => self.events().file_pieces(path, *bytes_above, *file_bytes, workspace),
                     }
                 }
                 crate::EventCheck::CallCount { .. }
@@ -199,23 +255,23 @@ impl Observing {
     /// Count the typed events observed in the process stream.
     #[must_use]
     pub fn counts(&self) -> Counts {
-        self.observer.counts()
+        self.events().counts()
     }
 
     /// Retain each child's observed share and terminal.
     #[must_use]
     pub fn delegation(&self) -> crate::Delegation {
-        self.observer.delegation()
+        self.events().delegation()
     }
 
     /// Count scoped response usage once.
     pub fn tokens(&self) -> Result<Vec<TokenRecord>, String> {
-        self.observer.tokens().map_err(|error| error.what)
+        self.events().tokens().map_err(|error| error.what)
     }
 
     /// Read the producer's notional spend in micro-dollars.
     pub fn spend(&self, _records: &[TokenRecord]) -> Result<Spend, String> {
-        super::events::reported_spend(&self.observer, 1_000_000)
+        super::events::reported_spend(self.events(), 1_000_000)
     }
 }
 
@@ -224,9 +280,67 @@ impl Observing {
 mod test_events;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{rejected_responses, test_events};
     use smith_events::{CompletionFailure, Event, Evidence, FailureClass, Outcome, Usage};
+
+    pub(crate) fn program() -> super::Observing {
+        let prepared = super::super::Prepared {
+            face: super::super::events::Shape::Exec,
+            settings: "/fixture/config.toml".into(),
+            trace: Some("/fixture/trace.jsonl".into()),
+            registry: super::super::FaceSince {
+                commit: "0".repeat(40),
+                shape: super::super::events::Shape::Exec,
+                receiving: super::super::Receiving { string: 128, content: 1024, items: 32, encoded_line: 65536 },
+            },
+            rendered: serde_json::json!({"accounts":{"claude":{"source":"program"}},"endpoints":{"anthropic":{"account":"claude"}}}),
+            program: "/fixture/smith".into(),
+            state: "/fixture/state".into(),
+            teardown: skein_lib::Duration::from_secs(1),
+            serial: None,
+        };
+        let mut observing = super::Observing::new(prepared).expect("program observer");
+        observing.observer.feed(include_bytes!("../../../tests/recorded/program-product.jsonl")).expect("host stream");
+        observing.observer.finish().expect("host framing");
+        observing.agent_trace(Ok(include_bytes!("../../../tests/recorded/program-agent.jsonl")));
+        observing
+    }
+
+    #[test]
+    fn program_observations_take_channel_facts_from_the_agent_trace() {
+        use crate::{Exit, Forced, Measure, ScopeKind};
+        let observing = program();
+        assert_eq!(observing.counts().tool_calls.get("Bash"), Some(&Measure::Observed { value: 1 }));
+        assert!(observing.observer.counts().tool_calls.is_empty());
+        let tokens = observing.tokens().expect("agent tokens");
+        let total = tokens.iter().find(|record| record.role == ScopeKind::Total).expect("total");
+        assert_eq!(total.usage.fresh, Measure::Observed { value: 13 });
+        assert_eq!(total.usage.output, Measure::Observed { value: 5 });
+        let host = crate::agent::Observing::Smith(observing);
+        assert_eq!(host.answer().as_deref(), Some("ALPHA"));
+        assert_eq!(host.classify(Exit::Code(0), Forced::No).end, crate::End::Completed);
+        let crate::agent::Observing::Smith(mut observing) = host else { unreachable!() };
+        assert!(
+            observing
+                .health(Exit::Code(0), Forced::No)
+                .expect("health")
+                .passive_checks
+                .iter()
+                .any(|check| check.check == "stream-whole" && check.passed == (Measure::Observed { value: true }))
+        );
+        for error in ["agent trace open: missing", "agent trace read: denied"] {
+            observing.agent_trace(Err(error.into()));
+            assert!(
+                observing
+                    .health(Exit::Code(0), Forced::No)
+                    .expect("health")
+                    .passive_checks
+                    .iter()
+                    .any(|check| check.check == "stream-whole" && matches!(check.passed, Measure::Unavailable { .. }))
+            );
+        }
+    }
 
     fn rejection() -> super::super::events::Session {
         let mut observer = super::super::events::Observer::new(&test_events::LIMITS).expect("limits");

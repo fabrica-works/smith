@@ -308,6 +308,7 @@ fn observer(
         face: registry.shape,
         registry,
         settings: environment.root.join("config/smith/config.toml"),
+        serial: None,
         trace: None,
         rendered: serde_json::Value::Null,
         program: env!("CARGO_BIN_EXE_smith").into(),

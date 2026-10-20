@@ -41,7 +41,7 @@ fn refused(task: &Task, observer: &events::Observer, exit: Exit, forced: Forced,
         | OutcomeCheck::End { .. }
         | OutcomeCheck::ExitCode { .. }
         | OutcomeCheck::Answer { .. }
-        | OutcomeCheck::LoginUnchanged => false,
+        | OutcomeCheck::CredentialRefresh => false,
     });
     diagnostic.then(|| End::Refused { setup: line.to_owned() })
 }

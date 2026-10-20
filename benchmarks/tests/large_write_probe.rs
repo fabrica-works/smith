@@ -247,7 +247,7 @@ fn version_seven_generates_visible_numbered_lines_at_low_with_unchanged_deciders
             | OutcomeCheck::ExitCode { .. }
             | OutcomeCheck::LastLine { .. }
             | OutcomeCheck::Answer { .. }
-            | OutcomeCheck::LoginUnchanged => assert_eq!(now, before),
+            | OutcomeCheck::CredentialRefresh => assert_eq!(now, before),
         }
     }
     let piece = current.with_variant("oversized").expect("v7 oversized");
@@ -270,7 +270,7 @@ fn version_seven_generates_visible_numbered_lines_at_low_with_unchanged_deciders
             | OutcomeCheck::ExitCode { .. }
             | OutcomeCheck::LastLine { .. }
             | OutcomeCheck::Answer { .. }
-            | OutcomeCheck::LoginUnchanged => assert_eq!(now, before),
+            | OutcomeCheck::CredentialRefresh => assert_eq!(now, before),
         }
     }
     for (file, last, bytes) in [("source.txt", 643, 36_008), ("oversized-source.txt", 893, 50_008)] {

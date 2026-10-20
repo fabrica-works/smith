@@ -49,6 +49,19 @@ pub fn account(context: &Context<'_>) -> Result<String, Setup> {
         .ok_or_else(|| configuration("shared endpoint needs an account"))
 }
 
+/// The selected account's source decides whether channel facts live in a child trace.
+pub fn program(context: &Context<'_>) -> Result<bool, Setup> {
+    let account = account(context)?;
+    let shared = declarations()?;
+    let source = shared
+        .get("accounts")
+        .and_then(|accounts| accounts.get(&account))
+        .and_then(|account| account.get("source"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| configuration(format!("shared account {account} needs a source")))?;
+    Ok(source == "program")
+}
+
 fn setting(arguments: &mut Vec<String>, key: &str, value: &toml::Value) {
     arguments.extend(["-c".into(), format!("{key}={value}")]);
 }

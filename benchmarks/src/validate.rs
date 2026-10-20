@@ -30,6 +30,15 @@ impl Validation {
     }
 }
 
+/// Check the credentials probe against accepted, unchanged and refused pair controls.
+/// No login or provider is used by these controls.
+pub fn credentials(tasks: &Path) -> Result<(), String> {
+    let file = tasks.join("probes/credentials/task.toml");
+    let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/design");
+    let task = crate::check_task(&file, &design).map_err(|error| error.to_string())?;
+    crate::batch::validate_credentials(&task)
+}
+
 /// Run named graded tasks, or every graded task, in private command homes.
 pub fn validate(tasks: &Path, names: &[String]) -> Result<Vec<Validation>, String> {
     let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/design");
@@ -194,7 +203,7 @@ fn reference_checks(task: &crate::Task, settled: &Path, before: &Snapshot) -> Re
         exit: crate::Measure::Observed { value: crate::Exit::Code(0) },
         last_line: None,
         answer: None,
-        login_unchanged: crate::Measure::Unavailable { reason: "reference runs without credentials".into() },
+        credential_refresh: crate::Measure::Unavailable { reason: "reference runs without credentials".into() },
     };
     for check in crate::grade::checks(settled, before, &after, &task.outcome, &ended) {
         if check.passed != (crate::Measure::Observed { value: true }) {

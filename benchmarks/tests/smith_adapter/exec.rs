@@ -219,3 +219,53 @@ impl ExecFixture {
         std::fs::remove_dir_all(self.root).expect("fixture cleanup");
     }
 }
+
+#[test]
+fn the_program_arm_selects_claude_on_the_anthropic_small_tier() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut fixture = ExecFixture::new("program-arm", 0);
+    std::fs::create_dir_all(fixture.source.join("programs/claude")).expect("synthetic Claude login");
+    let bin = fixture.root.join("bin");
+    std::fs::create_dir(&bin).expect("synthetic PATH");
+    std::fs::write(bin.join("claude"), "#!/bin/sh\nexit 0\n").expect("fake Claude");
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o700)).expect("executable");
+    fixture.environment.push(("PATH".into(), bin.into_os_string()));
+    // Replace the first PATH, since admission uses the exact attempt environment.
+    fixture.environment.retain(|(name, value)| name != "PATH" || value != "/usr/bin:/bin");
+    std::fs::write(&fixture.pin_file, "name='smith-claude-code'\nagent='smith'\nprovider='anthropic'\nversion='built-arm'\nconfiguration='settings.toml'\n").expect("program pin");
+    fixture.pin = smith_bench::read_configuration(&fixture.pin_file).expect("program pin");
+    fixture.model.model = Some("claude-haiku-5-5".into());
+    let prepared = smith_bench::agent::smith::prepare(&fixture.context()).expect("program preparation");
+    let command = prepared.command();
+    let arguments: Vec<_> = command.arguments.iter().map(|argument| argument.to_str().expect("argument")).collect();
+    assert_eq!(prepared.rendered["endpoints"]["anthropic"]["account"], "claude");
+    assert_eq!(prepared.rendered["endpoints"]["anthropic"]["program"], "claude_code");
+    assert!(arguments.windows(2).any(|pair| pair == ["-m", "anthropic/claude-haiku-5-5"]));
+    assert_eq!(prepared.rendered["credentials"], serde_json::json!(fixture.source));
+    assert!(prepared.serial.is_some());
+    assert!(prepared.program_source());
+    assert_eq!(prepared.rendered["trace"]["path"], serde_json::json!(prepared.trace.as_ref().expect("program trace")));
+    drop(prepared);
+    std::fs::remove_dir_all(fixture.root).expect("fixture cleanup");
+}
+
+#[test]
+fn the_credentials_lead_reaches_the_native_policy_boundary() {
+    let fixture = ExecFixture::new("credentials-policy", 0);
+    let task = super::authored_task("credentials");
+    let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+    let arguments = super::product_arguments(&context).expect("credentials flags");
+    assert!(arguments.contains(&"deployment.refresh_lead=34560000".into()));
+    let value: toml::Value = serde_json::from_value(super::product_layer(&context)).expect("layer");
+    let source = smith_local_shell::settings::Source {
+        layer: smith_local_shell::settings::Layer::User,
+        path: fixture.private.config.join("smith/config.toml"),
+        text: toml::to_string(&value).expect("TOML"),
+    };
+    let command = smith_local_shell::command::parse(arguments.into_iter().map(Into::into).collect()).expect("flags");
+    let smith_local_shell::command::Command::Interactive { shared, .. } = command else { panic!("shared flags") };
+    let settings = smith_local_shell::settings::from_sources(&shared, fixture.private.workspace.clone(), &[source])
+        .expect("refresh-lead policy accepted");
+    assert_eq!(settings.values["deployment.refresh_lead"].value.as_integer(), Some(34_560_000));
+    fixture.clean();
+}

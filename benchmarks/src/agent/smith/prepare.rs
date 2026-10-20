@@ -23,6 +23,8 @@ pub struct Prepared {
     pub program: PathBuf,
     pub state: PathBuf,
     pub teardown: skein_lib::Duration,
+    /// Held through settlement for attempts sharing the Claude Code login.
+    pub serial: Option<std::fs::File>,
 }
 
 fn configuration(reason: impl Into<String>) -> Setup {
@@ -87,11 +89,8 @@ pub fn prepare_checked(
     context: &Context<'_>,
     overrides: &[String],
 ) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
-    if context.pin.pin.agent != crate::Agent::Smith
-        || context.pin.pin.provider != crate::Provider::Codex
-        || context.pin.pin.version != "built-arm"
-    {
-        return Err(configuration("Smith requires the codex built-arm configuration pin"));
+    if context.pin.pin.agent != crate::Agent::Smith || context.pin.pin.version != "built-arm" {
+        return Err(configuration("Smith requires a built-arm configuration pin"));
     }
     let build = match context.arm {
         crate::arm::ArmRef::Built(build) => build,
@@ -111,6 +110,19 @@ pub fn prepare_checked(
         .ancestors()
         .find(|path| path.join(".git").exists())
         .ok_or_else(|| configuration("Smith pin needs its source repository for arm ancestry"))?;
+    if let Some(minimum) = &context.pin.pin.minimum_commit {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repository)
+            .args(["merge-base", "--is-ancestor", minimum, &build.arm.commit])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .map_err(|_| configuration("cannot check the pin's minimum source commit"))?;
+        if !status.success() {
+            return Err(configuration("Smith arm predates the pin's minimum source commit"));
+        }
+    }
     let mut registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
     if registry.shape == super::events::Shape::Chat && context.variant.is_some_and(|variant| variant.name == "headless")
     {
@@ -137,9 +149,16 @@ fn exec(
 ) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
     let account = settings::account(context)?;
     crate::credential::logins::smith(context.home, &account)?;
+    if account == "claude" {
+        let working =
+            crate::isolate::working_directory(context.guard, context.private, context.task).map_err(configuration)?;
+        crate::credential::logins::claude(context.environment, &working)?;
+    }
+    let serial =
+        if account == "claude" { Some(crate::credential::logins::serial(context.guard, context.home)?) } else { None };
     let login = context.home;
     let mut rendered = settings::product(context, base, login)?;
-    let trace = if registry.shape == super::events::Shape::Chat {
+    let trace = if registry.shape == super::events::Shape::Chat || settings::program(context)? {
         let trace = context.private.root.join("smith/trace.jsonl");
         write(context, &trace, &[])?;
         Some(trace)
@@ -195,6 +214,7 @@ fn exec(
         program,
         settings,
         state: context.private.state.clone(),
+        serial,
         trace,
         teardown,
     };
@@ -237,6 +257,18 @@ fn exec_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
 }
 
 impl Prepared {
+    /// Program accounts emit channel facts to a separate agent trace.
+    #[must_use]
+    pub fn program_source(&self) -> bool {
+        self.rendered["endpoints"].as_object().is_some_and(|endpoints| {
+            endpoints.values().any(|endpoint| {
+                endpoint["account"]
+                    .as_str()
+                    .is_some_and(|account| self.rendered["accounts"][account]["source"] == "program")
+            })
+        })
+    }
+
     /// The product check's retained setup document for the selected invocation.
     #[must_use]
     pub fn check_document(&self) -> Option<PathBuf> {
@@ -291,6 +323,7 @@ mod tests {
             rendered: json!({"trace":{"capture":"everything"},"invocation":["-C","/scratch/workspace","-m","codex/gpt-6-luna","--effort","low"]}),
             program: "/arm/smith".into(),
             state: "/scratch/state".into(),
+            serial: None,
             teardown: skein_lib::Duration::from_secs(10),
         };
         chat_trace(&mut prepared.rendered, prepared.trace.as_deref());

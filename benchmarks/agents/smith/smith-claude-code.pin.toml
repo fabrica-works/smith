@@ -1,0 +1,6 @@
+name = "smith-claude-code"
+agent = "smith"
+provider = "anthropic"
+version = "built-arm"
+minimum_commit = "446ebd12c1ab3e5c32e0ae7e7d4392f258626f64"
+configuration = "smith-claude-code.toml"

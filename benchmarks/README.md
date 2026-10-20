@@ -23,7 +23,7 @@ clones and altered archives are refused. `--commit`, `--control` and
 `--parent` reuse these archives; live commands never compile a smith arm.
 
 ```text
-probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]
+probe PROBE [--agent smith|codex|smith-claude-code] [--attempts N] [--commit COMMIT | --arm DIRECTORY]
 calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]
 fix PROBE --parent COMMIT [--commit COMMIT]
 suite NAME [--include TASK]... [--seed N] [--commit COMMIT | --arm DIRECTORY]
@@ -68,6 +68,10 @@ the task catalogue. Pins freeze each agent's provider, version and exact
 configuration bytes. Unknown fields and unresolved model tiers refuse
 setup. The small tier is pinned for both providers; the Codex working
 tier uses `gpt-6-astra` at high effort.
+
+`validate probes/credentials` checks the probe's offline pair controls: an
+unchanged generation and a refused refresh fail, and two completions with
+an advanced generation pass. It reads no login and calls no provider.
 
 `validate` runs every graded task, or the named tasks such as
 `fixtures/01-backoff`, on private copies of its seed and reference
@@ -145,6 +149,32 @@ settlement; private auth is removed and the source digest checked afterwards.
 Missing setup refuses by name with the absolute sign-in command.
 No user's settings, instructions, skills, plugins or memories enter an
 attempt. Never put credentials in task seeds or exported artifacts.
+
+The `smith-claude-code` arm selects the Anthropic small tier with
+`anthropic/<model>` with `endpoints.anthropic.account = "claude"` and
+`endpoints.anthropic.program = "claude_code"`. The product spawns `smith-agent`
+and Claude Code (`claude -p`) from the attempt's PATH, using the harness's
+`logins/smith/programs/claude` configuration directory. A harness lock
+outside `logins/` serializes these attempts across commands. This arm has
+its own name and configuration digest, so its results stay separate. The product
+stream supplies the answer, end and host notices; the separate agent trace supplies
+usage, calls and event checks. Both streams must be whole. This arm records
+`tool-call` checks as not measured with the reason "Claude Code's built-in tools"
+and removes them from deciding checks; every other check still applies.
+
+```sh
+heavy --gate cargo run -p smith-bench -- probe probes/smoke-tools --agent smith-claude-code --arm DIRECTORY
+heavy --gate cargo run -p smith-bench -- probe probes/credentials --arm DIRECTORY
+```
+
+The credentials probe runs two smith attempts concurrently on `chatgpt`,
+with `deployment.refresh_lead=34560000`. It requires both accepted answers
+and a larger saved generation, using smith's `credentials::record_generation`
+reader. Only generation numbers enter its evidence.
+A refused refresh cannot pass. An isolated `attempt` leaves this pair check
+unavailable; run it through `probe` or `suite`. The minimum-source pin names
+`446ebd12c1ab3e5c32e0ae7e7d4392f258626f64` (smith-14r), the first smith
+with the refresh-lead policy.
 
 Smith's append-only face registry selects the settings and event layout
 for a frozen binary. Codex's JSON-lines

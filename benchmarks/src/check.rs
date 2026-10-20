@@ -257,7 +257,7 @@ fn comparison_limits(file: &Path, task: &Task) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn calibration(file: &Path, key: &str, task: &Task) -> Result<(), Refusal> {
+pub(crate) fn calibration(file: &Path, key: &str, task: &Task) -> Result<(), Refusal> {
     let Some(block) = &task.calibration else { return Ok(()) };
     let ids: BTreeSet<_> = block.passes.iter().chain(&block.deviations).collect();
     if block.passes.len() < 10
@@ -378,7 +378,7 @@ fn check_outcomes(file: &Path, key: &str, outcomes: &[OutcomeCheck]) -> Result<(
                     .map_err(|error| Refusal::new(file, &format!("{key}.pattern"), error.to_string()))?;
                 continue;
             }
-            OutcomeCheck::ExitCode { .. } | OutcomeCheck::LoginUnchanged => continue,
+            OutcomeCheck::ExitCode { .. } | OutcomeCheck::CredentialRefresh => continue,
             OutcomeCheck::FileDigest { path, sha256 } => {
                 if !valid_digest(sha256) {
                     return Err(Refusal::new(
@@ -536,7 +536,7 @@ fn outcome_name(check: &OutcomeCheck) -> String {
         OutcomeCheck::ExitCode { .. } => "exit-code".into(),
         OutcomeCheck::LastLine { .. } => "last-line".into(),
         OutcomeCheck::Answer { .. } => "answer".into(),
-        OutcomeCheck::LoginUnchanged => "login-unchanged".into(),
+        OutcomeCheck::CredentialRefresh => "credential-refresh".into(),
     }
 }
 

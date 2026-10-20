@@ -115,8 +115,8 @@ pub struct Ended {
     pub last_line: Option<String>,
     /// The actual native result text or Codex's final root message.
     pub answer: Option<String>,
-    /// Source digest comparison after private credential removal.
-    pub login_unchanged: Measure<bool>,
+    /// Pair settlement is supplied by the dispatcher; an isolated attempt cannot prove it.
+    pub credential_refresh: Measure<bool>,
 }
 
 /// Judge outcome bytes and protected files after the agent's tree has ended.
@@ -143,7 +143,7 @@ pub fn checks(
                 | OutcomeCheck::ExitCode { .. }
                 | OutcomeCheck::LastLine { .. }
                 | OutcomeCheck::Answer { .. }
-                | OutcomeCheck::LoginUnchanged => return outcomes::check(check, ended),
+                | OutcomeCheck::CredentialRefresh => return outcomes::check(check, ended),
             };
             let value = match check {
                 OutcomeCheck::FileContent { path, content } => file(workspace, path)
@@ -170,7 +170,7 @@ pub fn checks(
                 | OutcomeCheck::ExitCode { .. }
                 | OutcomeCheck::LastLine { .. }
                 | OutcomeCheck::Answer { .. }
-                | OutcomeCheck::LoginUnchanged => unreachable!("neutral checks return above"),
+                | OutcomeCheck::CredentialRefresh => unreachable!("neutral checks return above"),
             };
             let (passed, detail) = match value {
                 Ok(passed) => (passed, Vec::new()),

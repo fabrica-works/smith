@@ -45,8 +45,8 @@ pub enum OutcomeCheck {
     LastLine { pattern: String },
     /// The actual final result text must match the pattern.
     Answer { pattern: String },
-    /// The borrowed source login's digest must remain unchanged.
-    LoginUnchanged,
+    /// The paired smith attempts must accept and advance their shared sign-in generation.
+    CredentialRefresh,
 }
 
 /// A typed check over smith records, supplied by a task author.
