@@ -171,7 +171,7 @@ open is section 9.
 | the result contract | `--json-schema`, the outcome read from `structured_output` when no `finish` was accepted (5.5) |
 | policy on each call | `--permission-prompt-tool`, naming the agent's prompt tool (5.4); `--tools`, for the built-in tools the charter grants (5.3) |
 | the start's messages, and messages mid-run | user messages on `--input-format stream-json` |
-| turns, activity and text as it comes | `--output-format stream-json`, with `--include-partial-messages` |
+| turns, activity and text as it comes | `--output-format stream-json`, with `--verbose` (which `-p` requires for it) and `--include-partial-messages` |
 | failures | `rate_limit_event`, `system/api_retry`, the `result` message, a lost login (5.6) |
 | the budget | `--max-turns`, and the agent's own measure and clock (5.7) |
 | a cancel | SIGINT, then SIGTERM (5.7) |
