@@ -148,7 +148,12 @@ pub fn program_worst_case(config: &Config) -> Option<u64> {
         .checked_add(u64::from(reserved.io.output).checked_mul(2)?)?
         .checked_add(Map::<Token, Token>::worst_case(5)?)?
         .checked_add(u64::try_from(size_of::<Program>().checked_sub(size_of::<backend::Backend>())?).ok()?)?
-        .checked_add(u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::try_from(program.endpoints.len()).ok()?)?)
+        .checked_add(
+            u64::try_from(size_of::<u32>())
+                .ok()?
+                .checked_mul(u64::try_from(program.endpoints.len()).ok()?)?
+                .checked_mul(2)?,
+        )
 }
 
 /// Native operation route capacity after reserving the configured program's I/O.
@@ -356,6 +361,13 @@ pub(super) fn complete(service: &mut Service, request: llm::FromDomain) {
         program.backend.from_domain(&service.llm_env, request, &mut service.llm_events, &mut program.below);
     } else {
         service.llm.from_domain(&service.llm_env, request, &mut service.llm_events, &mut service.llm_below);
+    }
+}
+
+pub(super) fn pop_measure(service: &mut Service) -> Option<llm::Measure> {
+    match &mut service.program {
+        Some(program) => program.backend.pop_measure(),
+        None => None,
     }
 }
 

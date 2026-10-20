@@ -1,7 +1,5 @@
-//! Event projection for one agent invocation, before its component hand-offs.
-//! The producer keeps admitted scalar metadata, configured endpoint names and
-//! bounded joins. It never parses a provider or learns credentials. `fact`
-//! precedes `request`; the service supplies the exact `answer` it sends.
+//! Keeps bounded scalar joins and endpoint names; never learns credentials.
+//! `fact` precedes `request`; the service supplies its exact `answer`.
 //! Contracts: protocol/events.md, sections 3–5; domain/run.md, section 11.
 
 #![expect(clippy::manual_map, reason = "bounded production entries use explicit matches without closures")]
@@ -121,6 +119,7 @@ struct Start {
 pub struct Producer {
     pub(crate) sinks: Sinks,
     names: channel::Endpoints,
+    programs: Box<[u32]>,
     calls: crate::calls::Book,
     messages: crate::messages::Book,
     capture: Capture,
@@ -175,12 +174,19 @@ impl Producer {
     #[must_use]
     pub fn configured(config: &crate::Config) -> Option<Producer> {
         match config.limits.events {
-            Some(_) => Some(Producer::new(
-                &config.limits,
-                config.channel_endpoints.clone(),
-                &config.llm_endpoints,
-                &config.domain.endpoints,
-            )),
+            Some(_) => {
+                let mut producer = Producer::new(
+                    &config.limits,
+                    config.channel_endpoints.clone(),
+                    &config.llm_endpoints,
+                    &config.domain.endpoints,
+                );
+                producer.programs = match &config.program {
+                    Some(program) => program.endpoints.clone(),
+                    None => Box::default(),
+                };
+                Some(producer)
+            }
             None => None,
         }
     }
@@ -201,6 +207,7 @@ impl Producer {
                 events.front,
             ),
             names,
+            programs: Box::default(),
             calls: crate::calls::Book::new(&limits.domain.session, events.capture),
             messages: crate::messages::Book::new(limits, events.capture),
             capture: events.capture,
@@ -267,6 +274,10 @@ impl Producer {
         for tool in &charter.grants.host_tools {
             host.push(tool.name.clone()).expect("admitted host names");
         }
+        let mut withheld = List::with_capacity(1);
+        if charter.grants.agents && self.programs.contains(&charter.llm.endpoint.0) {
+            withheld.push(smith_events::Family::SubAgents).expect("one withheld family");
+        }
         let mut contract = List::with_capacity(4);
         if charter.outcome.change.is_some() {
             contract.push(smith_events::Form::Change).expect("four forms");
@@ -294,7 +305,7 @@ impl Producer {
                 },
             },
             tools: smith_events::Tools {
-                withheld: List::with_capacity(0),
+                withheld,
                 families,
                 wait: charter.grants.wait,
                 deliver: charter.grants.deliver.is_some(),
@@ -460,7 +471,12 @@ impl Producer {
     fn model(&self, model: &run::charter::Llm) -> smith_events::Model {
         let name =
             self.names.name_of(model.endpoint.0, model.dialect).expect("admitted endpoint has its configured name");
-        crate::opening_model(model, name, model.effort.as_deref())
+        let backend = if self.programs.contains(&model.endpoint.0) {
+            smith_events::Backend::ClaudeCode
+        } else {
+            smith_events::Backend::Direct
+        };
+        crate::opening_model(model, name, model.effort.as_deref(), backend)
     }
 
     pub(crate) fn received(&mut self, owner: Token, completion: &domain::llm::Completion) {
@@ -663,6 +679,7 @@ mod tests {
             let mut producer = Producer {
                 sinks: Sinks::new(&bounds, Capture::Calls, bounds.output, crate::sinks::tests::DEADLINE),
                 names: channel::Endpoints::new(List::with_capacity(0)),
+                programs: Box::default(),
                 calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session, Capture::Calls),
                 messages: crate::messages::Book::disabled(),
                 capture: Capture::Calls,
@@ -776,3 +793,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/program.rs"]
+mod program_tests;

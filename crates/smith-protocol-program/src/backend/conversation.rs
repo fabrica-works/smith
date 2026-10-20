@@ -22,6 +22,7 @@ impl Backend {
             FromDomain::Complete { owner, .. } => *owner,
             FromDomain::Cancel { .. } => unreachable!("completion route"),
         };
+        self.begin_prompt(&request);
         self.owner = Some(owner);
         if self.exit.is_some() || self.child.is_none() || self.pipes[0].is_none() {
             self.fail(
@@ -59,6 +60,7 @@ impl Backend {
             return;
         };
         self.request = Some(request);
+        let mut sent = resumed.observed;
         self.completion_deadline(env, true);
         self.answer_calls();
         self.match_calls();
@@ -69,6 +71,7 @@ impl Backend {
             && self.turns.ready.is_empty()
             && self.turns.message.is_none()
         {
+            sent = Some(text.clone());
             self.outgoing = stream::text_message(&text, self.settings.input_bytes);
             if self.outgoing.is_none() {
                 self.fail(env, llm::Failure::Invalid, b"smith: program input exceeds its bound", up, below);
@@ -77,10 +80,12 @@ impl Backend {
             self.turns.restart();
             self.send_input();
         }
+        self.prompt_measure(env.now, sent.as_deref());
         self.deliver(env, up, below);
         self.continue_ended(env, up, below);
     }
 
+    #[expect(clippy::too_many_lines, reason = "one exhaustive stream grammar keeps terminal routing in one entrance")]
     pub(super) fn line(
         &mut self,
         env: &Env<protocol::ComponentLimits>,
@@ -107,9 +112,15 @@ impl Backend {
             }
             return;
         }
+        if kind == Some(b"stream_event") {
+            self.flush_prompt_measure(env.now);
+        }
         let result = match kind {
             Some(b"stream_event") => match json::field(&document, 0, b"event") {
-                Some(event) => self.turns.event(&document, event),
+                Some(event) => match self.partial_measure(env.now, &document, event) {
+                    Some(()) => self.turns.event(&document, event),
+                    None => None,
+                },
                 None => None,
             },
             Some(b"assistant") => match self.turns.assistant(&document, self.settings.adapter.client.answer) {
@@ -162,7 +173,22 @@ impl Backend {
                     self.fail(env, llm::Failure::Invalid, b"smith: compaction arrives in smith-09", up, below);
                     return;
                 }
-                Some(b"api_retry") => Some(()),
+                Some(b"api_retry") => {
+                    self.retry_measure(env.now, &document);
+                    self.turns.retry();
+                    let old = core::mem::replace(
+                        &mut self.ledger,
+                        List::with_capacity(
+                            self.settings.receiving.max_completion_blocks.checked_mul(5).expect("call slots"),
+                        ),
+                    );
+                    for call in old.into_boxed() {
+                        if call.message <= self.turns.closed {
+                            assert!(self.ledger.push(call).is_ok(), "retained delivered calls");
+                        }
+                    }
+                    Some(())
+                }
                 Some(_) | None => None,
             },
             Some(b"user") => self.builtin_results(&document, up),
@@ -212,6 +238,7 @@ impl Backend {
                 self.fail(env, llm::Failure::Invalid, b"smith: program input exceeds its bound", up, below);
                 return;
             }
+            self.prompt_measure(env.now, Some(b"Continue with the tool results."));
             self.turns.restart();
             self.completion_deadline(env, true);
             self.send_input();
@@ -250,6 +277,14 @@ impl Backend {
         let Some(owner) = self.owner else {
             return;
         };
+        if !self.turns.ready.is_empty() {
+            self.flush_deltas(env.now);
+            self.flush_prompt_measure(env.now);
+            if !self.measures.is_empty() {
+                self.intake_due = Some(env.now);
+                return;
+            }
+        }
         let Some(mut completion) = self.turns.ready.pop() else {
             return;
         };
@@ -326,6 +361,8 @@ impl Backend {
         if text > 0 {
             up.push(ToDomain::Text { owner, bytes: text });
         }
+        self.completion_measure(env.now, owner, &completion);
+        self.terminal_measure(env.now, owner);
         self.builtin_owners(owner, &completion);
         up.push(ToDomain::Completed { owner, completion });
         self.flush_builtins(up);

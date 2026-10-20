@@ -46,6 +46,7 @@ fn actual_codex_text_deltas_join_to_the_observed_completion() {
                 assert_eq!(completion.blocks.as_slice(), &[Block::Text { text: b"one two".to_vec().into() }]);
                 completed += 1;
             }
+            Measure::Retried { .. } => unreachable!("direct components do not retry internally"),
             Measure::Terminal { owner, measures } => {
                 assert_eq!(owner, Token::new(7));
                 assert_eq!(measures.request_bytes, Some(peer.request_bytes));

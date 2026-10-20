@@ -30,6 +30,8 @@ pub enum Measure {
     Completion { at: Time, owner: Token, completion: Completion },
     /// A text or refusal piece; the service joins its request's response identity.
     Delta { at: Time, owner: Token, block: u32, text: Box<[u8]> },
+    /// A program reports a failed attempt and begins its next attempt.
+    Retried { at: Time, owner: Token, status: Option<u16>, retry_ms: Option<u64> },
     /// The connection's observed transport measures, including absent observations.
     Terminal { owner: Token, measures: skein_llm_connection::Measures },
 }

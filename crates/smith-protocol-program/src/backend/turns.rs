@@ -264,6 +264,12 @@ impl Turns {
         if self.message.is_some() && !self.accepting_calls() { self.closed.checked_add(1) } else { Some(self.closed) }
     }
 
+    pub fn retry(&mut self) {
+        self.message = None;
+        self.seen = false;
+        self.restart();
+    }
+
     pub fn restart(&mut self) {
         self.result = false;
         self.finish = false;

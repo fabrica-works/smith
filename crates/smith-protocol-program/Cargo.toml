@@ -12,6 +12,7 @@ skein-lib.workspace = true
 skein-io.workspace = true
 skein-json.workspace = true
 smith-protocol-llm.workspace = true
+smith-events.workspace = true
 smith-domain.workspace = true
 
 [lints]

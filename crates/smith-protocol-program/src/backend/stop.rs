@@ -45,8 +45,8 @@ impl Backend {
         up: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
     ) -> Option<FromDomain> {
-        let prompt = match &mut request {
-            FromDomain::Complete { prompt, .. } => prompt,
+        let (prompt, capture) = match &mut request {
+            FromDomain::Complete { prompt, observation, .. } => (prompt, observation.is_some()),
             FromDomain::Cancel { .. } => unreachable!("completion route"),
         };
         match &prompt.choice {
@@ -54,13 +54,18 @@ impl Backend {
             llm::ToolChoice::Only(_) | llm::ToolChoice::Auto | llm::ToolChoice::None => return Some(request),
         }
         self.winding = WindDown::Finishing;
-        self.outgoing = tail::render(prompt, &self.ledger, &self.settings.adapter, self.settings.input_bytes);
-        if self.outgoing.is_none() {
+        let Some(rendered) =
+            tail::render_observed(prompt, &self.ledger, &self.settings.adapter, self.settings.input_bytes, capture)
+        else {
             self.fail(env, llm::Failure::Invalid, b"smith: wind-down input exceeds its bound", up, below);
             return None;
-        }
+        };
+        self.outgoing = Some(rendered.line);
         let active = self.active_turn();
         self.request = Some(request);
+        if let Some(text) = rendered.text {
+            self.prompt_text_measure(env.now, text);
+        }
         self.stop(env.now, active, true);
         if self.stop == Stop::None {
             self.completion_deadline(env, true);
@@ -70,6 +75,7 @@ impl Backend {
     }
 
     pub(super) fn stop(&mut self, now: Time, active: bool, keeping: bool) {
+        self.flush_deltas(now);
         let waiting = self.stop != Stop::None;
         self.stop = if keeping { Stop::WindDown } else { Stop::Closing };
         self.calls = List::with_capacity(u32::from(self.settings.mcp.calls));

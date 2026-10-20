@@ -415,14 +415,18 @@ impl Sinks {
         let record = self.responses.request(now, origin, owner, prompt);
         let observation = if self.front.is_some() { Capture::Everything } else { self.capture };
         match observation {
-            Capture::None | Capture::Calls => {
+            Capture::None | Capture::Calls if !self.responses.program(owner) => {
                 self.record(&record);
                 None
             }
-            Capture::Everything => {
+            Capture::None | Capture::Calls | Capture::Everything => {
                 let previous = self.pending.insert(owner, record).expect("one pending start per admitted conversation");
                 assert!(previous.is_none(), "one actual hand-off per owner");
-                Some(self.responses.observation(owner))
+                if observation == Capture::Everything {
+                    Some(self.responses.observation(owner))
+                } else {
+                    Some(self.responses.timing_observation(owner))
+                }
             }
         }
     }
@@ -430,14 +434,27 @@ impl Sinks {
     /// Drain an actual component observation before its domain terminal is consumed.
     pub(crate) fn measure(&mut self, origin: Time, measure: smith_protocol_llm::Measure) {
         match measure {
+            smith_protocol_llm::Measure::Retried { at, owner, status, retry_ms } => {
+                self.attempt_ready(owner);
+                let records = self.responses.retried(at, origin, owner, status, retry_ms);
+                for record in &records {
+                    self.record(record);
+                }
+            }
             smith_protocol_llm::Measure::Terminal { owner, measures } => {
                 self.responses.measured(owner, measures);
             }
-            smith_protocol_llm::Measure::Prompt { at: _, owner, prompt } => {
+            smith_protocol_llm::Measure::Prompt { at, owner, prompt } => {
                 let mut record = self.pending.remove(&owner).expect("observed prompt follows its actual hand-off");
+                record.t_ms = crate::responses::millis(at, origin);
+                self.responses.prompt_started(at, owner);
                 let messages = match &mut record.event {
                     Event::ResponseStarted(started) => {
-                        started.prompt = Some(prompt);
+                        started.prompt = if self.front.is_some() || self.capture == Capture::Everything {
+                            Some(prompt)
+                        } else {
+                            None
+                        };
                         u32::try_from(started.messages).expect("actual prompt count fits admitted history")
                     }
                     Event::SessionStarted(_)
@@ -463,7 +480,9 @@ impl Sinks {
                 self.record(&record);
             }
             smith_protocol_llm::Measure::Completion { at: _, owner, completion } => {
-                self.responses.completion(owner, completion);
+                if self.front.is_some() || self.capture == Capture::Everything {
+                    self.responses.completion(owner, completion);
+                }
             }
             smith_protocol_llm::Measure::Delta { at, owner, block, text } => {
                 if self.responses.observed(owner) {
@@ -1196,6 +1215,7 @@ pub(crate) mod tests {
 
     use super::*;
 
+    mod program;
     mod view;
 
     /// The write deadline IO keeps on each test destination.

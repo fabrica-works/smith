@@ -86,10 +86,15 @@ pub fn check_exit(exit: run::Exit) -> (smith_events::CheckExit, bool) {
 /// The caller supplies configured metadata; no endpoint or model is inferred.
 #[must_use]
 #[expect(clippy::manual_map, reason = "the strict subset requires an explicit match instead of a closure")]
-pub fn opening_model(llm: &run::charter::Llm, endpoint: &[u8], effort: Option<&[u8]>) -> smith_events::Model {
+pub fn opening_model(
+    llm: &run::charter::Llm,
+    endpoint: &[u8],
+    effort: Option<&[u8]>,
+    backend: smith_events::Backend,
+) -> smith_events::Model {
     smith_events::Model {
         account: llm.account,
-        backend: smith_events::Backend::Direct,
+        backend,
         endpoint: endpoint.into(),
         model: llm.model.clone(),
         window_tokens: u64::from(llm.window),

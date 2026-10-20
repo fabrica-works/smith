@@ -67,6 +67,7 @@ impl Backend {
             self.fail(env, llm::Failure::Invalid, b"smith: a program conversation is already started", up, below);
             return;
         }
+        self.begin_prompt(&request);
         self.owner = Some(owner);
         let valid = match &self.grant {
             Some(grant) => match name {
@@ -127,6 +128,7 @@ impl Backend {
         up: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
     ) {
+        self.consume_stdout(env, up, below);
         self.checked(env, up, below);
         self.server_events(env, up, below);
         if self.phase == Phase::Ending
@@ -233,6 +235,7 @@ impl Backend {
             );
             return;
         };
+        self.first_prompt_measure(env.now);
         self.io.push(io::Request::Spawn { owner: self.token(4), spawn: launch });
         self.spawning = true;
         self.deadline = Some(env.now.saturating_add(self.settings.startup));
@@ -406,40 +409,11 @@ impl Backend {
                 } else {
                     self.stdout_demanding = false;
                     self.completion_deadline(env, false);
+                    assert!(self.intake.is_empty(), "one outstanding stdout read");
                     for byte in bytes {
-                        match self.phase {
-                            Phase::Starting | Phase::Running | Phase::Ending => {
-                                if self.phase == Phase::Ending && self.stop == super::stop::Stop::None {
-                                    continue;
-                                }
-                                if byte == b'\n' {
-                                    let line = core::mem::replace(
-                                        &mut self.line,
-                                        List::with_capacity(self.settings.line_bytes),
-                                    );
-                                    if self.phase == Phase::Starting {
-                                        self.admit_init(env, line.as_slice(), up, below);
-                                    } else {
-                                        self.line(env, line.as_slice(), up, below);
-                                    }
-                                } else if self.line.push(byte).is_err() {
-                                    self.fail(
-                                        env,
-                                        llm::Failure::Program { exit: self.exit },
-                                        b"smith: the program stream exceeds its line bound",
-                                        up,
-                                        below,
-                                    );
-                                }
-                            }
-                            Phase::Idle | Phase::Checking | Phase::Ended => {}
-                        }
+                        self.intake.push(byte).expect("stdout demand is 4096 bytes");
                     }
-                    // The same read can finish init and start a response line.
-                    if !self.line.is_empty() {
-                        self.completion_deadline(env, false);
-                    }
-                    self.read_stdout();
+                    self.consume_stdout(env, up, below);
                 }
             }
             io::Event::Stream { owner, up: stream::Up::End | stream::Up::Failed(_) } => {
@@ -508,6 +482,7 @@ impl Backend {
 
     pub(super) fn read_stdout(&mut self) {
         if !self.stdout_demanding
+            && self.intake.is_empty()
             && let Some(pipe) = self.pipes[1]
         {
             Self::demand(pipe, 4096, &mut self.io);

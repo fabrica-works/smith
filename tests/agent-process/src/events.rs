@@ -10,8 +10,47 @@ pub fn check(records: &[Record]) {
 }
 
 /// Check program stream conformance with the unknown request measures of events.md 3.5.
-pub fn check_program(records: &[Record]) {
+pub fn check_program(records: &[Record], received: &[serde_json::Value]) {
     check_transport(records, true);
+    let mut captured = Vec::<Vec<Vec<u8>>>::new();
+    for record in records {
+        if let Event::ResponseStarted(started) = &record.event
+            && started.model.backend == smith_events::Backend::ClaudeCode
+            && let Some(prompt) = &started.prompt
+        {
+            for message in &prompt.messages {
+                let mut blocks = Vec::new();
+                assert_eq!(message.role, smith_events::Role::User);
+                for block in &message.blocks {
+                    let smith_events::Block::Text { text } = block else { panic!("sent text block") };
+                    blocks.push(text.to_vec());
+                }
+                captured.push(blocks);
+            }
+        }
+    }
+    let expected: Vec<Vec<Vec<u8>>> = received
+        .iter()
+        .map(|message| {
+            assert_eq!(message["type"], "user");
+            assert_eq!(message["message"]["role"], "user");
+            match &message["message"]["content"] {
+                serde_json::Value::String(text) => vec![text.as_bytes().to_vec()],
+                serde_json::Value::Array(blocks) => blocks
+                    .iter()
+                    .map(|block| {
+                        assert_eq!(block["type"], "text");
+                        block["text"].as_str().expect("recorded text block").as_bytes().to_vec()
+                    })
+                    .collect(),
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::Object(_) => panic!("sent user content"),
+            }
+        })
+        .collect();
+    assert_eq!(captured, expected, "captured user messages equal independently received contents in order");
 }
 
 #[expect(
@@ -82,8 +121,27 @@ fn check_transport(records: &[Record], program: bool) {
                 let identity = (response.run, response.conversation, response.response);
                 assert!(!responses.contains(&identity));
                 responses.push(identity);
+                if response.model.backend == smith_events::Backend::ClaudeCode
+                    && let Some(prompt) = &response.prompt
+                {
+                    for message in &prompt.messages {
+                        assert_eq!(message.role, smith_events::Role::User);
+                        assert!(message.blocks.iter().all(|block| matches!(block, smith_events::Block::Text { .. })));
+                    }
+                    if prompt.system.is_some() {
+                        assert!(!prompt.messages.is_empty(), "first request carries start text");
+                    }
+                }
             }
             Event::ResponseCompleted(response) => {
+                if header.capture == smith_events::Capture::Everything
+                    && response.outcome == smith_events::Outcome::Completed
+                {
+                    assert!(
+                        response.completion.is_some(),
+                        "everything capture includes the completed response's blocks"
+                    );
+                }
                 let identity = (response.run, response.conversation, response.response);
                 let index = responses
                     .iter()
@@ -110,10 +168,18 @@ fn check_transport(records: &[Record], program: bool) {
                     usage = actual;
                     reported_usage = true;
                 }
-                if program {
-                    assert_eq!(response.request_bytes, None, "events.md 3.5: the program owns its request");
-                    assert_eq!(response.first_byte_ms, None);
-                    assert_eq!(response.largest_gap_ms, None);
+                let started = records[..position]
+                    .iter()
+                    .find_map(|record| match &record.event {
+                        Event::ResponseStarted(started) if started.response == response.response => Some(started),
+                        _ => None,
+                    })
+                    .expect("response start");
+                if program || started.model.backend == smith_events::Backend::ClaudeCode {
+                    assert_eq!(
+                        (response.request_bytes, response.first_byte_ms, response.largest_gap_ms),
+                        (None, None, None)
+                    );
                 } else if response.outcome == smith_events::Outcome::Completed {
                     assert!(response.request_bytes.expect("completed request was encoded") > 0);
                     assert!(response.first_byte_ms.is_some(), "the native peer sent plaintext response bytes");
@@ -128,7 +194,7 @@ fn check_transport(records: &[Record], program: bool) {
                     smith_events::Capture::Calls | smith_events::Capture::Everything => {
                         let input = call.input.as_ref().expect("the actual call carries its provider arguments");
                         assert_eq!(u64::try_from(input.len()).expect("bounded input length"), call.input_bytes);
-                        if header.capture == smith_events::Capture::Everything && !program {
+                        if header.capture == smith_events::Capture::Everything {
                             let arguments = records
                                 .iter()
                                 .take(position)

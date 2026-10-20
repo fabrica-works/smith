@@ -40,7 +40,7 @@ mod profile_declarations;
 
 pub(crate) use profile_declarations::declarations;
 
-fn priced_charter() -> smith_domain::run::Charter {
+pub(crate) fn priced_charter() -> smith_domain::run::Charter {
     use skein_lib::Duration;
     use smith_domain::run;
     run::Charter {

@@ -115,7 +115,15 @@ fn program_json_keeps_each_process_in_its_stream() {
     assert_eq!(records::read(&trace), product);
     let trace = std::fs::read(scratch.path().join("events.jsonl.agent")).expect("agent trace");
     let agent = records::read(&trace);
-    smith_agent_process_world::assert_program_event_conformance(&agent);
+    let observations = std::fs::read(scratch.path().join("state/smith/programs/work/fake-claude.observations"))
+        .expect("received program input");
+    let received: Vec<Value> = observations
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<Value>(line).expect("observation record"))
+        .filter_map(|record| record.get("received").cloned())
+        .collect();
+    smith_agent_process_world::assert_program_event_conformance(&agent, &received);
     assert!(agent.iter().any(|record| matches!(record.event, Event::RunStarted(_))));
     assert!(agent.iter().any(|record| matches!(record.event, Event::ResponseCompleted(_))));
     assert!(agent.iter().any(|record| matches!(record.event, Event::RunCompleted(_))));

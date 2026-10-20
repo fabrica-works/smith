@@ -1,6 +1,8 @@
 //! One user message for a program's tail (protocol/programs.md 5.7–5.8).
 //! Borrows messages after the last assistant, measuring escaped bytes before
 //! allocating the exact JSON line. No unescaped tail or quoted copy is kept.
+//! An opted-in capture is the queued Prompt's separately priced owned payload;
+//! it moves into the measure without another text copy.
 
 use super::calls;
 use alloc::boxed::Box;
@@ -11,12 +13,30 @@ use smith_protocol_llm as protocol;
 const OPEN: &[u8] = b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"";
 const CLOSE: &[u8] = b"\"}}\n";
 
+pub(super) struct Rendered {
+    pub line: Box<[u8]>,
+    pub text: Option<Box<[u8]>>,
+}
+
+#[cfg(test)]
 pub(super) fn render(
     prompt: &mut llm::Prompt,
     ledger: &List<calls::Call>,
     limits: &protocol::Limits,
     maximum: u32,
 ) -> Option<Box<[u8]>> {
+    let Rendered { line, .. } = render_observed(prompt, ledger, limits, maximum, false)?;
+    Some(line)
+}
+
+#[expect(clippy::manual_map, reason = "the protocol subset matches Option without callbacks")]
+pub(super) fn render_observed(
+    prompt: &mut llm::Prompt,
+    ledger: &List<calls::Call>,
+    limits: &protocol::Limits,
+    maximum: u32,
+    capture: bool,
+) -> Option<Rendered> {
     let mut from = 0;
     for (index, message) in prompt.messages.iter().enumerate() {
         if message.role == llm::Role::Assistant {
@@ -54,15 +74,25 @@ pub(super) fn render(
             }
         }
     }
-    let mut measured = Output { length: 0, maximum, bytes: None };
+    let mut measured = Output { length: 0, maximum, bytes: None, text_length: 0, capture: None };
     if message(&mut measured, &messages, prompt, from, ledger, limits).is_none() {
         prompt.messages = messages;
         return None;
     }
-    let mut output = Output { length: 0, maximum: measured.length, bytes: Some(List::with_capacity(measured.length)) };
+    let mut output = Output {
+        length: 0,
+        maximum: measured.length,
+        bytes: Some(List::with_capacity(measured.length)),
+        text_length: 0,
+        capture: if capture { Some(List::with_capacity(measured.text_length)) } else { None },
+    };
     message(&mut output, &messages, prompt, from, ledger, limits)?;
     prompt.messages = Box::new([]);
-    Some(output.bytes?.into_boxed())
+    let text = match output.capture {
+        Some(text) => Some(text.into_boxed()),
+        None => None,
+    };
+    Some(Rendered { line: output.bytes?.into_boxed(), text })
 }
 
 fn message(
@@ -119,6 +149,8 @@ struct Output {
     length: u32,
     maximum: u32,
     bytes: Option<List<u8>>,
+    text_length: u32,
+    capture: Option<List<u8>>,
 }
 
 impl Output {
@@ -143,6 +175,12 @@ impl Output {
     )]
     fn text(&mut self, bytes: &[u8]) -> Option<()> {
         core::str::from_utf8(bytes).ok()?;
+        self.text_length = self.text_length.checked_add(u32::try_from(bytes.len()).ok()?)?;
+        if let Some(capture) = &mut self.capture {
+            for byte in bytes {
+                capture.push(*byte).ok()?;
+            }
+        }
         for byte in bytes {
             match byte {
                 b'"' => self.put(br#"\""#)?,

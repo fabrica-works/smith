@@ -95,6 +95,9 @@ pub fn observations(bytes: &[u8]) -> Vec<Observation> {
 /// Additional init claims sent by the scripted program to its parent.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Init {
+    /// Simulated delay before publishing init; never sleeps the test process.
+    #[serde(default)]
+    pub delay_ms: Option<u64>,
     #[serde(default)]
     pub extra_tools: Vec<String>,
     #[serde(default)]
@@ -123,10 +126,12 @@ impl Default for Turn {
 pub enum Step {
     /// Sends text and, when requested, its partial messages.
     Text(String),
+    /// Opens a text block and leaves its attempt unfinished for a retry.
+    Partial(String),
     /// Reports a rejected usage limit with an optional Unix-seconds reset.
     RateLimit { resets_at: Option<u64> },
     /// Reports the program's own retry to its parent.
-    Retry { attempt: u32, status: u16 },
+    Retry { attempt: u32, status: u16, delay_ms: Option<u64> },
     /// Removes the login before the next turn checks it.
     LoseLogin,
     /// Waits until an interrupt or termination.

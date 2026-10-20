@@ -27,6 +27,8 @@ pub enum Case {
     Waiting,
     /// Run workspace built-ins with a writable cwd and a read-only library.
     Tools,
+    /// Record a program conversation with full content capture.
+    Events,
     /// The main endpoint does not select the configured program.
     Unbound,
     /// The programs directory could not be opened by the shell.
@@ -102,7 +104,13 @@ impl Host for Proc {
 }
 
 fn configuration(case: Case) -> smith_agent_service::Config {
-    let mut config = crate::configuration();
+    let mut config = if case == Case::Events {
+        let mut limits = crate::limits();
+        limits.llm.adapter.client.request = 1_048_576;
+        crate::configuration_with_limits(skein_llm::Provider::OpenAiCodex, &limits)
+    } else {
+        crate::configuration()
+    };
     config.domain.programs = if case == Case::Unbound {
         Box::default()
     } else {
@@ -142,7 +150,7 @@ fn configuration(case: Case) -> smith_agent_service::Config {
     config.limits.domain.run.check_tail = config.limits.domain.run.check_tail.min(256);
     config.limits.domain.run.host_reply_bytes = config.limits.domain.run.host_reply_bytes.min(4096);
     config.limits.domain.run.message_bytes = config.limits.domain.run.message_bytes.min(4096);
-    if case == Case::Tools {
+    if matches!(case, Case::Tools | Case::Events) {
         config.limits.domain.run.outcome_bytes = 512;
         config.limits.domain.run.answer_bytes = 512;
         config.limits.domain.run.host_reply_bytes = 512;
@@ -151,11 +159,15 @@ fn configuration(case: Case) -> smith_agent_service::Config {
     }
     config.limits.domain.session.delegated_result_bytes =
         smith_domain::feedback_worst_case(&config.limits.domain.run).expect("complete bounded feedback");
-    if case == Case::Tools {
+    if matches!(case, Case::Tools | Case::Events) {
         config.limits.events = Some(
             smith_agent_service::EventLimits::derive(
                 &config.limits,
-                smith_agent_service::sinks::Capture::None,
+                if case == Case::Events {
+                    smith_agent_service::sinks::Capture::Everything
+                } else {
+                    smith_agent_service::sinks::Capture::None
+                },
                 1,
                 0,
                 &[],
@@ -181,10 +193,14 @@ fn make_agent(spawn: &Spawn, inherited: &Inherited) -> Proc {
         smith_agent_shell::config::Configuration {
             memory: configuration.limits.memory,
             service: configuration,
-            trace: if case == Case::Tools {
+            trace: if matches!(case, Case::Tools | Case::Events) {
                 Some(smith_agent_shell::trace::TraceConfig {
                     path: "/home/events.jsonl".into(),
-                    capture: smith_agent_service::sinks::Capture::None,
+                    capture: if case == Case::Events {
+                        smith_agent_service::sinks::Capture::Everything
+                    } else {
+                        smith_agent_service::sinks::Capture::None
+                    },
                     delivery: smith_agent_service::sinks::Delivery::Complete,
                 })
             } else {
@@ -203,7 +219,7 @@ fn make_agent(spawn: &Spawn, inherited: &Inherited) -> Proc {
             seed: 7,
             pid: 101,
             trace: inherited.appends.first().map(|(_, fd)| *fd),
-            roots: if case == Case::Tools {
+            roots: if matches!(case, Case::Tools | Case::Events) {
                 Some(
                     inherited
                         .roots
@@ -406,7 +422,7 @@ pub fn run(
     refresh: Option<&smith_channel::GrantValue>,
 ) -> Run {
     let mut story = story.clone();
-    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting) && story.turns.is_empty() {
+    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events) && story.turns.is_empty() {
         story.turns.push(smith_fake_claude::Turn {
             steps: vec![smith_fake_claude::Step::Hang],
             end: smith_fake_claude::End::default(),
@@ -417,10 +433,10 @@ pub fn run(
     let machine = Machine { files, base };
     let mut world =
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
-            wait_for_exit: matches!(case, Case::Turns | Case::Tools | Case::Waiting),
+            wait_for_exit: matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events),
             ended: false,
             waiting: waiting::Release::new(case == Case::Waiting),
-            cancel: if matches!(case, Case::Turns | Case::Tools | Case::Waiting) {
+            cancel: if matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::Events) {
                 None
             } else {
                 Some(Time::ZERO.saturating_add(Duration::from_millis(50)))
@@ -442,7 +458,7 @@ pub fn run(
                     name: b"programs".as_slice().into(),
                     path: b"/programs".as_slice().into(),
                 }];
-                if case == Case::Tools {
+                if matches!(case, Case::Tools | Case::Events) {
                     roots.extend([
                         skein_world::StartupRoot {
                             name: b"cwd".as_slice().into(),
@@ -459,7 +475,7 @@ pub fn run(
         },
         |spawn| {
             let case: Case = serde_json::from_slice(&spawn.args[0]).expect("scenario");
-            if case == Case::Tools {
+            if matches!(case, Case::Tools | Case::Events) {
                 vec![skein_world::StartupAppend {
                     name: b"trace".as_slice().into(),
                     root: b"/home".as_slice().into(),
@@ -494,7 +510,11 @@ pub fn run(
             8,
             false,
             initial.as_ref(),
-            smith_agent_service::sinks::Capture::None,
+            if case == Case::Events {
+                smith_agent_service::sinks::Capture::Everything
+            } else {
+                smith_agent_service::sinks::Capture::None
+            },
             skein_llm::Provider::OpenAiCodex,
             value,
             None,
@@ -502,7 +522,7 @@ pub fn run(
         );
         parent
             .program_arguments(Box::new([serde_json::to_vec(&case).expect("case arguments").into()]), refresh.cloned());
-        if case == Case::Tools {
+        if matches!(case, Case::Tools | Case::Events) {
             parent.peer = crate::host();
             parent.peer.play(tools_start(charter, value));
             parent.program_host_answers = Some(0);
@@ -540,7 +560,7 @@ pub fn run(
         received: smith_fake_claude::received(&bytes),
         exits: outcome.procs.iter().filter_map(Host::exit).collect(),
         run_directories,
-        events: if case == Case::Tools {
+        events: if matches!(case, Case::Tools | Case::Events) {
             let file = outcome.machine.files.open(base, b"home/events.jsonl", How::Read).expect("trace file");
             let size = u32::try_from(outcome.machine.files.stat(file).size).expect("trace size");
             let bytes = outcome.machine.files.read(file, 0, size).expect("event stream");

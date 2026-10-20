@@ -403,7 +403,8 @@ fn drain_measures(
             smith_protocol_llm::Measure::Prompt { owner, .. } => Some(*owner),
             smith_protocol_llm::Measure::Completion { .. }
             | smith_protocol_llm::Measure::Delta { .. }
-            | smith_protocol_llm::Measure::Terminal { .. } => None,
+            | smith_protocol_llm::Measure::Terminal { .. }
+            | smith_protocol_llm::Measure::Retried { .. } => None,
         };
         measures.push(measure);
         if let Some(owner) = prompt {

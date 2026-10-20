@@ -1438,13 +1438,19 @@ fn llm_measures(service: &mut Service) {
             Some(events) if !events.sinks.takes() => break,
             Some(_) | None => {}
         }
-        let measure = match service.llm.pop_measure() {
-            Some(measure) => measure,
-            None => break,
+        let (measure, direct) = match program::pop_measure(service) {
+            Some(measure) => (measure, false),
+            None => match service.llm.pop_measure() {
+                Some(measure) => (measure, true),
+                None => break,
+            },
         };
         let prompt_owner = match &measure {
             llm::Measure::Prompt { owner, .. } => Some(*owner),
-            llm::Measure::Completion { .. } | llm::Measure::Delta { .. } | llm::Measure::Terminal { .. } => None,
+            llm::Measure::Completion { .. }
+            | llm::Measure::Delta { .. }
+            | llm::Measure::Terminal { .. }
+            | llm::Measure::Retried { .. } => None,
         };
         if let llm::Measure::Delta { owner, text, .. } = &measure {
             live_step(service, crate::live::Action::Delta { owner: *owner, bytes: text });
@@ -1452,13 +1458,13 @@ fn llm_measures(service: &mut Service) {
         match &mut service.events {
             Some(events) => events.sinks.measure(events.origin(), measure),
             None => match measure {
-                llm::Measure::Terminal { .. } | llm::Measure::Delta { .. } => {}
+                llm::Measure::Terminal { .. } | llm::Measure::Delta { .. } | llm::Measure::Retried { .. } => {}
                 llm::Measure::Prompt { .. } | llm::Measure::Completion { .. } => {
                     unreachable!("only an event owner selects component content")
                 }
             },
         }
-        if let Some(owner) = prompt_owner {
+        if direct && let Some(owner) = prompt_owner {
             service.llm.prompt_recorded(&service.llm_env, owner, &mut service.llm_events, &mut service.llm_below);
         }
     }

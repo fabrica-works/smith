@@ -19,6 +19,8 @@
     reason = "the strict subset keeps bounded entries explicit and uses no closures"
 )]
 
+mod retry;
+
 use alloc::boxed::Box;
 
 use skein_lib::{List, Map, Time, Token};
@@ -93,6 +95,7 @@ struct Intent {
 
 #[derive(Debug)]
 struct Started {
+    opening: retry::Opening,
     number: u64,
     conversation: u64,
     at: Time,
@@ -228,6 +231,11 @@ impl Book {
             None => conversation.number,
         };
         conversation.attempt = Attempt::Started(Started {
+            opening: retry::Opening {
+                intent,
+                output_tokens: u64::from(prompt.max_tokens),
+                tool_choice: crate::request_tool_choice(&prompt.choice),
+            },
             number,
             conversation: response_conversation,
             at: now,
@@ -892,7 +900,7 @@ pub(crate) const fn unknown_usage() -> Usage {
     }
 }
 
-fn millis(at: Time, origin: Time) -> u64 {
+pub(crate) fn millis(at: Time, origin: Time) -> u64 {
     at.saturating_since(origin).as_nanos() / 1_000_000
 }
 

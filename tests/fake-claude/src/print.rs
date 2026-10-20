@@ -313,6 +313,10 @@ impl Print {
                     )));
                     self.last_text = text;
                 }
+                Step::Partial(text) => {
+                    effects.extend(stream::partials(&text, &self.flags.values["--model"], self.step)
+                        .into_iter().take(3).map(|value| self.emit(value)));
+                }
                 Step::RateLimit { resets_at } => {
                     let mut value = json!({"type":"rate_limit_event", "rate_limit_info":{"status":"rejected"}});
                     if let Some(reset) = resets_at {
@@ -320,9 +324,9 @@ impl Print {
                     }
                     effects.push(self.emit(value));
                 }
-                Step::Retry { attempt, status } => {
+                Step::Retry { attempt, status, delay_ms } => {
                     effects.push(self.emit(
-                        json!({"type":"system", "subtype":"api_retry", "attempt":attempt, "error_status":status}),
+                        json!({"type":"system", "subtype":"api_retry", "attempt":attempt, "error_status":status,"retry_delay_ms":delay_ms}),
                     ))
                 }
                 Step::LoseLogin => {
@@ -445,7 +449,12 @@ impl Print {
                 all_tools.extend(tools.into_iter().map(|tool| format!("mcp__{}__{tool}", self.server)));
                 all_tools.extend(self.story.init.extra_tools.clone());
                 init["tools"] = json!(all_tools);
-                vec![self.emit(init), Effect::ReadCode]
+                match self.story.init.delay_ms {
+                    Some(after_ms) => {
+                        vec![Effect::DelayedInit { after_ms, bytes: stream::line(init, &self.flags.session) }]
+                    }
+                    None => vec![self.emit(init), Effect::ReadCode],
+                }
             }
             crate::mcp::Notice::Reply(reply) => {
                 let Some(pending) = self.pending.take() else { return Vec::new() };

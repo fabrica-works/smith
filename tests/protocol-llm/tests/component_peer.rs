@@ -229,7 +229,8 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 smith_protocol_llm::Measure::Prompt { owner, .. } => Some(*owner),
                 smith_protocol_llm::Measure::Completion { .. }
                 | smith_protocol_llm::Measure::Delta { .. }
-                | smith_protocol_llm::Measure::Terminal { .. } => None,
+                | smith_protocol_llm::Measure::Terminal { .. }
+                | smith_protocol_llm::Measure::Retried { .. } => None,
             };
             captured.push(measure);
             if let Some(owner) = prompt {
@@ -389,7 +390,8 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 smith_protocol_llm::Measure::Prompt { owner, .. } => Some(*owner),
                 smith_protocol_llm::Measure::Completion { .. }
                 | smith_protocol_llm::Measure::Delta { .. }
-                | smith_protocol_llm::Measure::Terminal { .. } => None,
+                | smith_protocol_llm::Measure::Terminal { .. }
+                | smith_protocol_llm::Measure::Retried { .. } => None,
             };
             captured.push(measure);
             if let Some(owner) = prompt {
@@ -432,6 +434,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 assert!(measures.largest_gap.is_some(), "the peer supplied multiple SSE events");
                 terminal_count += 1;
             }
+            smith_protocol_llm::Measure::Retried { .. } => unreachable!("direct components do not retry internally"),
             other @ (smith_protocol_llm::Measure::Prompt { .. }
             | smith_protocol_llm::Measure::Completion { .. }
             | smith_protocol_llm::Measure::Delta { .. }) => content.push(other),
@@ -487,7 +490,9 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                     }
                     completion_count += 1;
                 }
-                smith_protocol_llm::Measure::Terminal { .. } => unreachable!("separated above"),
+                smith_protocol_llm::Measure::Terminal { .. } | smith_protocol_llm::Measure::Retried { .. } => {
+                    unreachable!("separated above")
+                }
             }
         }
         assert_eq!((prompt_count, completion_count), (1, 1));

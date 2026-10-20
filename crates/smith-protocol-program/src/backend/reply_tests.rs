@@ -1,6 +1,6 @@
 use super::{calls::Call, lifecycle_tests::backend, lifecycle_tests::request, replies, *};
 
-fn call(id: &[u8]) -> Call {
+pub(super) fn call(id: &[u8]) -> Call {
     Call {
         id: id.into(),
         name: b"wait".as_slice().into(),
@@ -16,7 +16,7 @@ fn call(id: &[u8]) -> Call {
     }
 }
 
-fn result(id: &[u8]) -> llm::Block {
+pub(super) fn result(id: &[u8]) -> llm::Block {
     llm::Block::ToolResult {
         id: id.into(),
         result: llm::Returned::Text { text: b"done".as_slice().into(), error: false, replay: None },

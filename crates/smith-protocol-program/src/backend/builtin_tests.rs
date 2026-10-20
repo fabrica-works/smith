@@ -71,6 +71,7 @@ fn a_complete_s_result_for_a_built_in_is_skipped() {
     let mut below = Queue::with_capacity(64);
     backend.line(&env(0), READ, &mut up, &mut below);
     up.pop();
+    while backend.pop_measure().is_some() {}
     let mut next = request(&backend);
     let FromDomain::Complete { prompt, .. } = &mut next else { panic!("Complete") };
     prompt.messages = Box::new([llm::Message {
@@ -168,6 +169,7 @@ fn queued_built_in_results_keep_their_message_owners() {
     completed(up.pop(), Token::new(80));
     result_id(up.pop(), Token::new(80), b"r");
     assert!(up.is_empty());
+    while backend.pop_measure().is_some() {}
     let mut next = request(&backend);
     let FromDomain::Complete { owner, .. } = &mut next else { panic!("Complete") };
     *owner = Token::new(81);

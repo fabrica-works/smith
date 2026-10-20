@@ -34,6 +34,7 @@ fn joined(left: &[u8], right: &[u8], bound: u32) -> Option<Box<[u8]>> {
 /// A reply pass may leave a user line for a turn with no held call.
 pub(super) struct Resumed {
     pub nudge: Option<Box<[u8]>>,
+    pub observed: Option<Box<[u8]>>,
 }
 
 pub(super) fn resume(backend: &mut Backend, messages: Box<[llm::Message]>, prompt: &llm::Prompt) -> Option<Resumed> {
@@ -78,16 +79,20 @@ pub(super) fn resume(backend: &mut Backend, messages: Box<[llm::Message]>, promp
         }
     }
     if let Some(index) = last {
+        let mut observed = None;
         if let Some(text) = nudge {
             let call = backend.ledger.get_mut(index)?;
             call.answer = Some(match call.answer.take()? {
                 mcp::Answer::Text(answer) => mcp::Answer::Text(joined(&answer, &text, bound)?),
                 mcp::Answer::Error(answer) => mcp::Answer::Error(joined(&answer, &text, bound)?),
             });
+            observed = match call.answer.as_ref()? {
+                mcp::Answer::Text(text) | mcp::Answer::Error(text) => Some(text.clone()),
+            };
         }
-        Some(Resumed { nudge: None })
+        Some(Resumed { nudge: None, observed })
     } else {
-        Some(Resumed { nudge: nudge.or(synthetic) })
+        Some(Resumed { nudge: nudge.or(synthetic), observed: None })
     }
 }
 

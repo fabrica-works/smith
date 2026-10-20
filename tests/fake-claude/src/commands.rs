@@ -16,6 +16,7 @@ pub(crate) enum Effect {
     Error(Vec<u8>),
     File(file::Request),
     ReadCode,
+    DelayedInit { after_ms: u64, bytes: Vec<u8> },
     Seen(crate::Seen),
     Received(serde_json::Value),
     McpStart(serde_json::Value),

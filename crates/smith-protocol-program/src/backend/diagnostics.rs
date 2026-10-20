@@ -83,6 +83,22 @@ impl Backend {
         bytes
     }
 
+    pub(super) fn private_suffix(&self, bytes: &[u8]) -> u32 {
+        let entropy: &[u8; 32] = self.names.mcp.expose().try_into().expect("MCP entropy");
+        let secret = crate::mcp::secret_text(entropy);
+        let instructions = self.run_path(b"instructions.md");
+        let mcp = self.run_path(b"mcp.json");
+        let mut suffix = 0;
+        for pattern in [secret.as_slice(), instructions.as_ref(), mcp.as_ref(), self.names.run.as_slice()] {
+            for length in 1..=pattern.len().saturating_sub(1).min(bytes.len()) {
+                if bytes.get(bytes.len().checked_sub(length).expect("bounded suffix")..) == pattern.get(..length) {
+                    suffix = suffix.max(u32::try_from(length).expect("bounded private path"));
+                }
+            }
+        }
+        suffix
+    }
+
     pub(super) fn redact_private(&self, bytes: &mut [u8]) {
         let entropy: &[u8; 32] = self.names.mcp.expose().try_into().expect("MCP entropy");
         let secret = crate::mcp::secret_text(entropy);

@@ -17,8 +17,11 @@ mod calls;
 mod conversation;
 mod diagnostics;
 mod files;
+mod intake;
+mod measures;
 mod permission;
 mod policy;
+mod redaction;
 mod replies;
 mod start;
 mod stop;
@@ -34,6 +37,8 @@ mod conversation_tests;
 mod exit_tests;
 #[cfg(test)]
 mod lifecycle_tests;
+#[cfg(test)]
+mod measure_tests;
 #[cfg(test)]
 mod reply_tests;
 #[cfg(test)]
@@ -119,6 +124,10 @@ enum Phase {
 }
 
 /// The run's program adapter, driven by the service (programs.md, sections 3, 5).
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "child, server, stdout and once-per-Complete observation facts are independent"
+)]
 pub struct Backend {
     mounts: Box<[Mount]>,
     first: Token,
@@ -150,6 +159,13 @@ pub struct Backend {
     run_time: Duration,
     line: List<u8>,
     stdout_demanding: bool,
+    intake: List<u8>,
+    intake_at: u32,
+    intake_due: Option<Time>,
+    measures: Queue<protocol::Measure>,
+    prompt_pending: Option<List<smith_events::Block>>,
+    prompt_due: bool,
+    delta_carry: List<redaction::Carry>,
     calls: List<mcp::Up>,
     ledger: List<calls::Call>,
     turns: turns::Turns,
@@ -284,6 +300,8 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         // Joining user text temporarily owns the tail and a replacement reply.
         .checked_add(u64::from(settings.adapter.rendered_result).checked_mul(2)?)?
         .checked_add(Queue::<llm::Completion>::worst_case(4)?)?
+        .checked_add(measures::worst_case(settings)?)?
+        .checked_add(4096)? // deferred stdout intake
         .checked_add(1024)? // retained API message ID
         .checked_add(4096)? // a failed Store's bounded temporary leaf
         .checked_add(Queue::<io::Request>::worst_case(32)?)?
@@ -299,6 +317,8 @@ impl Backend {
         let calls = List::with_capacity(u32::from(settings.mcp.calls));
         let turns = turns::Turns::new(&settings.receiving, settings.adapter.client.answer);
         let ledger = List::with_capacity(settings.receiving.max_completion_blocks.checked_mul(5).expect("call ledger"));
+        let delta_carry = redaction::carries(&settings);
+        let measure_capacity = measures::capacity(&settings).expect("measure capacity");
         Self {
             mounts: Box::default(),
             first,
@@ -330,6 +350,13 @@ impl Backend {
             run_time: Duration::ZERO,
             line,
             stdout_demanding: false,
+            intake: List::with_capacity(4096),
+            intake_at: 0,
+            intake_due: None,
+            measures: Queue::with_capacity(measure_capacity),
+            prompt_pending: None,
+            prompt_due: false,
+            delta_carry,
             calls,
             ledger,
             turns,
@@ -426,7 +453,9 @@ impl Backend {
     ) {
         match request {
             request @ FromDomain::Complete { owner, .. } => {
+                self.begin_prompt(&request);
                 if let Some((failure, detail)) = self.pending_failure.take() {
+                    self.terminal_measure(env.now, owner);
                     up.push(ToDomain::Failed {
                         owner,
                         failure,
@@ -449,6 +478,7 @@ impl Backend {
                 }
             }
         }
+        self.consume_stdout(env, up, below);
         self.flush(below);
     }
 
@@ -565,6 +595,12 @@ impl Backend {
             return None;
         }
         let mut earliest = self.deadline;
+        if let Some(at) = self.intake_due {
+            earliest = Some(match earliest {
+                Some(held) => held.min(at),
+                None => at,
+            });
+        }
         for at in [
             self.eof_deadline,
             self.drain_deadline,
@@ -644,6 +680,7 @@ impl Backend {
         let active = self.active_turn();
         self.phase = Phase::Ending;
         if let Some(owner) = self.owner.take() {
+            self.terminal_measure(env.now, owner);
             up.push(ToDomain::Cancelled { owner });
         }
         self.request = None;
@@ -693,6 +730,7 @@ impl Backend {
     ) {
         let detail = self.private_diagnostic(detail);
         if let Some(owner) = self.owner.take() {
+            self.terminal_measure(env.now, owner);
             up.push(ToDomain::Failed {
                 owner,
                 failure,

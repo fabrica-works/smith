@@ -68,6 +68,8 @@ pub struct Fake {
     memory: u64,
     environment: Vec<Box<[u8]>>,
     mcp: crate::mcp::Mcp,
+    now: Time,
+    delayed_init: Option<(Time, Vec<u8>)>,
 }
 
 pub(crate) fn limits() -> Limits {
@@ -191,6 +193,8 @@ impl Fake {
             memory,
             environment: environment.to_vec(),
             mcp: crate::mcp::Mcp::new(),
+            now: Time::ZERO,
+            delayed_init: None,
         };
         if !configured {
             fake.effects(commands::error("CLAUDE_CONFIG_DIR is not set", 2));
@@ -226,6 +230,9 @@ impl Fake {
                         self.observation.push(&bytes);
                     }
                 }
+                Effect::DelayedInit { after_ms, bytes } => {
+                    self.delayed_init = Some((self.now.saturating_add(Duration::from_millis(after_ms)), bytes));
+                }
                 Effect::ReadCode => {
                     if self.input_ended {
                         let effects =
@@ -254,6 +261,7 @@ impl Fake {
     fn end(&mut self, code: u8) {
         if self.code.is_none() {
             self.code = Some(code);
+            self.delayed_init = None;
             let effects = self.command.as_mut().map(Command::stop).unwrap_or_default();
             self.effects(effects);
             self.mcp.stop();
@@ -401,6 +409,12 @@ fn file_namespace(token: &mut Token, kind: &mut kernel::Op) {
 
 impl Host for Fake {
     fn iterate(&mut self, now: Time, wall: Wall) {
+        self.now = now;
+        if self.delayed_init.as_ref().is_some_and(|(at, _)| now >= *at) {
+            let (_, bytes) = self.delayed_init.take().expect("due init");
+            self.stdout.push(&bytes);
+            self.effects(vec![Effect::ReadCode]);
+        }
         let env = Env { now, wall, limits: self.limits };
         while self.io.is_ready() {
             skein_io::resume(&mut self.io, &env, &mut self.io_events, &mut self.submissions);
@@ -460,7 +474,12 @@ impl Host for Fake {
     }
 
     fn next_deadline(&self) -> Option<Time> {
-        self.io.next_deadline().into_iter().chain(self.files.next_deadline()).min()
+        self.io
+            .next_deadline()
+            .into_iter()
+            .chain(self.files.next_deadline())
+            .chain(self.delayed_init.as_ref().map(|(at, _)| *at))
+            .min()
     }
 
     fn next_policy_deadline(&self) -> Option<Time> {

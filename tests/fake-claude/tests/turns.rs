@@ -94,10 +94,10 @@ fn a_usage_limit_is_told_without_a_reset() {
 
 #[test]
 fn the_program_s_own_retry_is_told() {
-    let run = normal(story(vec![Step::Retry { attempt: 2, status: 503 }], End::default()), 1);
+    let run = normal(story(vec![Step::Retry { attempt: 2, status: 503, delay_ms: Some(250) }], End::default()), 1);
     assert_eq!(
         messages(&run)[1],
-        json!({"type":"system", "subtype":"api_retry", "attempt":2,"error_status":503,"session_id":SESSION})
+        json!({"type":"system", "subtype":"api_retry", "attempt":2,"error_status":503,"retry_delay_ms":250,"session_id":SESSION})
     );
 }
 
