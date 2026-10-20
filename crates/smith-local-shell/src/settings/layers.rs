@@ -1,6 +1,7 @@
 //! Bounded startup reads and strict key-by-key precedence (shell.md, 5.1–5.3).
 use super::{Layer, Origin, Problem, Refusal, Settings, Source, Sourced, schema};
 use crate::command::Shared;
+use serde::Deserialize;
 use std::{collections::BTreeMap, path::PathBuf};
 use toml::{
     Value,
@@ -136,7 +137,7 @@ fn document(settings: &mut Settings, text: &str, origin: &Origin) -> Result<(), 
     }
     let spanned = DeTable::parse(text)
         .map_err(|why| refusal(at(origin, text, why.span().map_or(0, |span| span.start)), "settings", why.message()))?;
-    let decoded: toml::Table = toml::from_str(text).expect("already parsed TOML");
+    let decoded = toml::Table::deserialize(toml::de::Deserializer::from(spanned.clone())).expect("already parsed TOML");
     leaves(settings, text, origin, spanned.get_ref(), &Value::Table(decoded), &mut Vec::new())
 }
 
