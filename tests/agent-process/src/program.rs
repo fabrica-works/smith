@@ -27,6 +27,8 @@ pub enum Case {
     Ordinary,
     /// Let a scripted conversation reach its domain terminal.
     Turns,
+    /// Finish with competing host login variables in the configured environment.
+    Credentials,
     /// Hold wait until the host brings a message.
     Waiting,
     /// Leave wait held until the idle policy parks the run.
@@ -51,7 +53,7 @@ enum Proc {
     Parent(Box<Parent>),
     Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>),
     Fake(Box<Fake>),
-    Relay(Box<smith_agent_shell::relay::Process>),
+    Relay { process: Box<smith_agent_shell::relay::Process>, environment: Vec<String> },
 }
 
 impl Proc {
@@ -60,7 +62,7 @@ impl Proc {
             Self::Parent(host) => host.as_ref(),
             Self::Agent(host) => host.as_ref(),
             Self::Fake(host) => host.as_ref(),
-            Self::Relay(host) => host.as_ref(),
+            Self::Relay { process, .. } => process.as_ref(),
         }
     }
     fn host_mut(&mut self) -> &mut dyn Host {
@@ -68,7 +70,7 @@ impl Proc {
             Self::Parent(host) => host.as_mut(),
             Self::Agent(host) => host.as_mut(),
             Self::Fake(host) => host.as_mut(),
-            Self::Relay(host) => host.as_mut(),
+            Self::Relay { process, .. } => process.as_mut(),
         }
     }
 }
@@ -136,7 +138,7 @@ fn configuration(case: Case) -> smith_agent_service::Config {
         entropy: Secret::new(Box::new([7; 32])),
         effective_user: 1000,
     });
-    let variables = [
+    let mut variables = vec![
         smith_protocol_machine::Variable {
             name: b"WAIT_PROOF".as_slice().into(),
             value: if matches!(case, Case::Waiting | Case::ParkWaiting) {
@@ -151,6 +153,23 @@ fn configuration(case: Case) -> smith_agent_service::Config {
             value: if case == Case::EarlyExit { b"1".as_slice().into() } else { b"0".as_slice().into() },
         },
     ];
+    if case == Case::Credentials {
+        variables.extend(
+            [
+                ("ANTHROPIC_API_KEY", "key-for-work"),
+                ("ANTHROPIC_AUTH_TOKEN", "token-for-work"),
+                ("CLAUDE_CODE_OAUTH_TOKEN", "token-for-work"),
+                ("CLAUDE_CODE_USE_BEDROCK", "1"),
+                ("AWS_BEARER_TOKEN_BEDROCK", "token-for-work"),
+                ("CLAUDE_CONFIG_DIR", "/elsewhere"),
+                ("TERM", "dumb"),
+            ]
+            .map(|(name, value)| smith_protocol_machine::Variable {
+                name: name.as_bytes().into(),
+                value: value.as_bytes().into(),
+            }),
+        );
+    }
     // These worlds offer only a 128-byte report, no host tools or chat.
     // Keep result receiving bounds small enough to exercise the program
     // alongside the unchanged two-gigabyte test deployment.
@@ -255,6 +274,10 @@ fn make_agent(spawn: &Spawn, inherited: &Inherited) -> Proc {
 
 fn make_fake(spawn: &Spawn, inherited: &Inherited) -> Proc {
     waiting::timeout(spawn);
+    assert!(
+        spawn.env.iter().any(|entry| entry.as_ref() == b"CLAUDE_CONFIG_DIR=/programs/source"),
+        "each invocation uses the source's configuration directory"
+    );
     let mut spawn = Spawn {
         program: spawn.program.clone(),
         args: spawn.args.clone(),
@@ -277,16 +300,26 @@ fn make_relay(spawn: &Spawn, inherited: &Inherited) -> Proc {
 
 fn relay(spawn: &Spawn, inherited: &Inherited, arguments: &[Box<[u8]>]) -> Proc {
     let pipe = |number| inherited.pipes.iter().find(|(child, _)| *child == number).map(|(_, fd)| *fd);
-    Proc::Relay(Box::new(smith_agent_shell::relay::Process::new(
-        arguments,
-        &spawn.env,
-        smith_agent_shell::relay::Faces {
-            stdin: pipe(0).expect("relay input"),
-            stdout: pipe(1).expect("relay output"),
-            stderr: pipe(2),
-            signal: inherited.signal,
-        },
-    )))
+    let environment = spawn
+        .env
+        .iter()
+        .map(|entry| {
+            String::from_utf8_lossy(entry.split(|byte| *byte == b'=').next().expect("entry name")).into_owned()
+        })
+        .collect();
+    Proc::Relay {
+        environment,
+        process: Box::new(smith_agent_shell::relay::Process::new(
+            arguments,
+            &spawn.env,
+            smith_agent_shell::relay::Faces {
+                stdin: pipe(0).expect("relay input"),
+                stdout: pipe(1).expect("relay output"),
+                stderr: pipe(2),
+                signal: inherited.signal,
+            },
+        )),
+    }
 }
 
 fn make_failed_relay(spawn: &Spawn, inherited: &Inherited) -> Proc {
@@ -385,6 +418,8 @@ pub struct Run {
     pub exits: Vec<Exit>,
     pub errors: Vec<u8>,
     pub run_directories: Vec<Vec<u8>>,
+    /// Names from each relay's spawn, with no environment values retained.
+    pub relay_environments: Vec<Vec<String>>,
     pub events: Vec<smith_events::Record>,
 }
 
@@ -452,8 +487,16 @@ fn run_inner(
     history: Option<&[Box<[u8]>]>,
 ) -> Run {
     let mut story = story.clone();
-    if !matches!(case, Case::Turns | Case::Tools | Case::Waiting | Case::ParkWaiting | Case::Events | Case::Transcript)
-        && story.turns.is_empty()
+    if !matches!(
+        case,
+        Case::Turns
+            | Case::Credentials
+            | Case::Tools
+            | Case::Waiting
+            | Case::ParkWaiting
+            | Case::Events
+            | Case::Transcript
+    ) && story.turns.is_empty()
     {
         story.turns.push(smith_fake_claude::Turn {
             steps: vec![smith_fake_claude::Step::Hang],
@@ -467,13 +510,25 @@ fn run_inner(
         skein_world::World::new_controlled(7, skein_sim::Config::calm(), skein_world::Memory::Checked, |_| Judge {
             wait_for_exit: matches!(
                 case,
-                Case::Turns | Case::Tools | Case::Waiting | Case::ParkWaiting | Case::Events | Case::Transcript
+                Case::Turns
+                    | Case::Credentials
+                    | Case::Tools
+                    | Case::Waiting
+                    | Case::ParkWaiting
+                    | Case::Events
+                    | Case::Transcript
             ),
             ended: false,
             waiting: waiting::Release::new(case == Case::Waiting),
             cancel: if matches!(
                 case,
-                Case::Turns | Case::Tools | Case::Waiting | Case::ParkWaiting | Case::Events | Case::Transcript
+                Case::Turns
+                    | Case::Credentials
+                    | Case::Tools
+                    | Case::Waiting
+                    | Case::ParkWaiting
+                    | Case::Events
+                    | Case::Transcript
             ) {
                 None
             } else {
@@ -601,6 +656,14 @@ fn run_inner(
         received: smith_fake_claude::received(&bytes),
         exits: outcome.procs.iter().filter_map(Host::exit).collect(),
         run_directories,
+        relay_environments: outcome
+            .procs
+            .iter()
+            .filter_map(|process| match process {
+                Proc::Relay { environment, .. } => Some(environment.clone()),
+                Proc::Parent(_) | Proc::Agent(_) | Proc::Fake(_) => None,
+            })
+            .collect(),
         events: if matches!(case, Case::Tools | Case::Events) {
             let file = outcome.machine.files.open(base, b"home/events.jsonl", How::Read).expect("trace file");
             let size = u32::try_from(outcome.machine.files.stat(file).size).expect("trace size");

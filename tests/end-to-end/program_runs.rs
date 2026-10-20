@@ -45,6 +45,35 @@ fn invocations(scratch: &Scratch) -> Vec<Value> {
 }
 
 #[test]
+fn a_program_run_never_sees_the_person_s_credential_variables() {
+    let scratch = signed_in(&answer());
+    let configuration = scratch.path().join("state/smith/programs/work");
+    // Only this exec's invocations remain; the setup's login is separate.
+    std::fs::remove_file(configuration.join("fake-claude.observations")).expect("clear setup observations");
+    let ran = super::program_commands::with_credentials(&scratch, &["exec", "Ask first"]);
+    assert_eq!(ran.code, 0, "program run succeeds");
+    assert_eq!(ran.stdout, ANSWER.as_bytes());
+    // The fake opens its observation file relative to CLAUDE_CONFIG_DIR,
+    // so finding every call here also proves the account directory was used.
+    let bytes = std::fs::read(configuration.join("fake-claude.observations")).expect("account observations");
+    let calls = super::program_commands::invocations(&bytes);
+    assert_eq!(calls.len(), 3, "startup status, agent status and print run");
+    assert_eq!(calls[0]["arguments"], json!(["auth", "status"]));
+    assert_eq!(calls[1]["arguments"], json!(["auth", "status"]));
+    assert_eq!(calls[2]["arguments"][0], "-p");
+    for call in calls {
+        super::program_commands::credential_free(&call);
+    }
+    assert!(
+        bytes.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()).any(|line| {
+            let record: Value = serde_json::from_slice(line).expect("observation record");
+            record["seen"]["Called"]["tool"] == "finish"
+        }),
+        "finish is settled; the stop can interrupt before its MCP verdict is read"
+    );
+}
+
+#[test]
 fn exec_spawns_one_print_run_on_its_program() {
     let scratch = signed_in(&answer());
     let ran = support::run_product(&scratch, &["exec", "Ask first"], b"", None);

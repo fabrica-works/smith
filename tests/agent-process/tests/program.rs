@@ -12,6 +12,42 @@ fn scenario() -> Run {
     program_world::run(Case::default(), &Story::default(), Some(b"claude.ai"), &charter(), &program(b"source"), None)
 }
 
+#[test]
+fn no_credential_variable_reaches_the_program() {
+    let story = Story {
+        turns: vec![smith_fake_claude::Turn {
+            steps: vec![smith_fake_claude::Step::Call {
+                tool: "finish".into(),
+                input: serde_json::json!({"form":"report","text":"done","fields":{}}),
+            }],
+            end: smith_fake_claude::End::default(),
+        }],
+        ..Story::default()
+    };
+    let run = program_world::run(Case::Credentials, &story, Some(b"claude.ai"), &charter(), &program(b"source"), None);
+    assert!(matches!(run.answer().expect("answer").result(), RunResult::Accepted(_)));
+    assert_eq!(run.invocations.len(), 2, "status and print both ran");
+    assert_eq!(run.invocations[0].arguments, ["auth", "status"]);
+    assert_eq!(run.invocations[0].environment, ["WAIT_PROOF", "HOME", "EARLY_EXIT", "TERM", "CLAUDE_CONFIG_DIR"]);
+    assert_eq!(run.invocations[1].arguments[0], "-p");
+    assert_eq!(
+        run.invocations[1].environment,
+        ["WAIT_PROOF", "HOME", "EARLY_EXIT", "TERM", "MCP_TOOL_TIMEOUT", "CLAUDE_CONFIG_DIR"]
+    );
+    assert_eq!(run.relay_environments.len(), 1, "the print run reached its relay");
+    for name in [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "AWS_BEARER_TOKEN_BEDROCK",
+    ] {
+        assert!(!run.relay_environments[0].iter().any(|kept| kept == name), "relay kept {name}");
+    }
+    assert_eq!(run.exits, vec![skein_io::kernel::Exit::Code(0); 5]);
+    assert!(run.run_directories.is_empty());
+}
+
 fn fault(run: &Run) -> Option<ModelFault> {
     match run.answer()?.result() {
         RunResult::Failed(failed) => match failed.reason() {
