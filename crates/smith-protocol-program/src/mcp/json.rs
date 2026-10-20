@@ -193,7 +193,7 @@ pub(crate) fn text_in(document: &Document, index: Option<u32>) -> Option<&[u8]> 
     text(document, index?)
 }
 
-pub(crate) fn tool_list(tools: &[Tool], bound: u32) -> Option<Box<[u8]>> {
+pub(crate) fn tool_list(tools: &[Tool], bound: u32, schema_bytes: u32) -> Option<Box<[u8]>> {
     let mut bytes = List::with_capacity(bound);
     for byte in b"{\"tools\":[" {
         bytes.push(*byte).ok()?;
@@ -201,7 +201,7 @@ pub(crate) fn tool_list(tools: &[Tool], bound: u32) -> Option<Box<[u8]>> {
     for tool in tools {
         let name = quote(&tool.name, bound)?;
         let description = quote(&tool.description, bound)?;
-        if tool.input_schema.len() > usize::try_from(bound).ok()? {
+        if tool.input_schema.len() > usize::try_from(schema_bytes.min(bound)).ok()? {
             return None;
         }
         let schema = collect(&tool.input_schema)?;

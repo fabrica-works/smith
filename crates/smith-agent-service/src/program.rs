@@ -63,6 +63,12 @@ fn settings(
         .checked_add(u64::from(llm::CUT_MARKER_BYTES))?;
     adapter.rendered_result = u32::try_from(result).ok()?;
     let contract_bytes = u32::try_from(limits.llm.contract_bytes).ok()?;
+    // Host schemas count in run::charter::cost against run_bytes (domain/run.md, 5.2).
+    // schemas_for_contract caps finish/deliver at contract_bytes; the fixed
+    // inventory bounds every other generated schema (protocol/programs.md, 5.3).
+    let schema_bytes = contract_bytes
+        .max(u32::try_from(limits.domain.run.run_bytes).ok()?)
+        .max(u32::try_from(llm::fixed_schema_bytes(&adapter.stated)?).ok()?);
     // A call's JSON input plus its RPC ID/name/envelope. This is a line
     // ceiling, not another allocation beside MCP's priced input buffers.
     let call_bytes = adapter.stated.call_input_bytes.checked_add(4096)?;
@@ -89,6 +95,7 @@ fn settings(
         mcp: smith_protocol_program::mcp::Limits {
             message_bytes: call_bytes,
             answer_bytes,
+            schema_bytes,
             calls: u16::try_from(limits.domain.run.calls).ok()?,
             unauthenticated: skein_lib::Time::from_nanos(5_000_000_000),
         },

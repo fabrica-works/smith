@@ -82,6 +82,7 @@ pub(super) fn backend() -> Backend {
             mcp: mcp::Limits {
                 message_bytes: 4096,
                 answer_bytes: 4096,
+                schema_bytes: 4096,
                 calls: 4,
                 unauthenticated: Time::from_nanos(1000),
             },

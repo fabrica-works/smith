@@ -51,6 +51,8 @@ pub struct Tool {
 pub struct Limits {
     pub message_bytes: u32,
     pub answer_bytes: u32,
+    /// Maximum encoded bytes in each delegated tool's input schema.
+    pub schema_bytes: u32,
     pub calls: u16,
     /// A span in monotonic nanoseconds, measured from acceptance.
     pub unauthenticated: Time,
@@ -104,7 +106,7 @@ pub enum Verdict {
     Deny { message: Box<[u8]> },
 }
 
-/// Startup tool records cannot fit the tool-list answer (programs.md, 5.3).
+/// Startup tool records exceed the schema or tool-list bound (programs.md, 5.3).
 #[derive(Debug)]
 pub struct TooLarge;
 
@@ -191,8 +193,8 @@ pub fn mcp_worst_case(limits: &Limits) -> Option<u64> {
         // the owner's output record overlap while one answer is encoded.
         .checked_add(u64::from(limits.answer_bytes).checked_mul(12)?)?
         .checked_add(u64::from(limits.message_bytes).checked_mul(12)?)?
-        .checked_add(json::worst_case(limits.message_bytes)?)?
-        .checked_add(json::worst_case(limits.answer_bytes)?)?
+        // tool_list drops each schema document before new returns; message drops its document on return.
+        .checked_add(json::worst_case(limits.message_bytes)?.max(json::worst_case(limits.schema_bytes)?))?
         .checked_add(Queue::<Up>::worst_case(2)?)
 }
 
@@ -207,7 +209,7 @@ impl Server {
         below: &mut Queue<io::Request>,
     ) -> Result<Self, TooLarge> {
         assert!(limits.calls > 0 && limits.message_bytes > 0, "positive MCP admission bounds");
-        let tool_list = json::tool_list(&tools, limits.answer_bytes).ok_or(TooLarge)?;
+        let tool_list = json::tool_list(&tools, limits.answer_bytes, limits.schema_bytes).ok_or(TooLarge)?;
         let second = Token::new(first.raw().checked_add(1).expect("MCP token range"));
         let third = Token::new(first.raw().checked_add(2).expect("MCP token range"));
         let calls = u32::from(limits.calls);

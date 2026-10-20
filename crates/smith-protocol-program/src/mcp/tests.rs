@@ -26,7 +26,13 @@ const OWNER: Token = Token::new(11);
 const SOCKET: Token = Token::new(101);
 
 fn limits() -> Limits {
-    Limits { message_bytes: 4096, answer_bytes: 4096, calls: 2, unauthenticated: Time::from_nanos(10) }
+    Limits {
+        message_bytes: 4096,
+        answer_bytes: 4096,
+        schema_bytes: 4096,
+        calls: 2,
+        unauthenticated: Time::from_nanos(10),
+    }
 }
 
 fn tool() -> Tool {
@@ -390,6 +396,49 @@ fn a_tool_list_past_its_bound_is_refused() {
         Server::new(FIRST, 0, &[7; 32], Box::new([tool()]), Limits { answer_bytes: 64, ..limits() }, &mut below);
     let _refusal = result.expect_err("tool-list answer exceeds its bound");
     assert!(below.is_empty());
+}
+
+#[test]
+fn a_tool_schema_is_bounded_before_listening() {
+    let schema_bytes = u32::try_from(tool().input_schema.len()).expect("schema length");
+    let mut below = Queue::with_capacity(8);
+    let _server = Server::new(FIRST, 0, &[7; 32], Box::new([tool()]), Limits { schema_bytes, ..limits() }, &mut below)
+        .expect("schema at its bound");
+    assert!(match below.pop() {
+        Some(io::Request::Listen { .. }) => true,
+        _ => false,
+    });
+    let mut oversized = tool();
+    oversized.input_schema = json::join(&[&oversized.input_schema, b" "]);
+    let _refusal =
+        Server::new(FIRST, 0, &[7; 32], Box::new([oversized]), Limits { schema_bytes, ..limits() }, &mut below)
+            .expect_err("valid schema one byte past its bound");
+    assert!(below.is_empty(), "refusal starts no listener");
+}
+
+#[test]
+fn schema_collection_prices_its_ceiling() {
+    let larger = Limits { schema_bytes: 8192, ..limits() };
+    let increase = json::worst_case(larger.schema_bytes)
+        .expect("larger schema scratch")
+        .checked_sub(json::worst_case(limits().schema_bytes).expect("schema scratch"))
+        .expect("larger scratch");
+    assert_eq!(
+        mcp_worst_case(&larger).expect("larger memory").checked_sub(mcp_worst_case(&limits()).expect("memory")),
+        Some(increase),
+    );
+}
+
+#[test]
+fn collection_scratch_is_shared_between_phases() {
+    let smaller_schema = Limits { schema_bytes: 2048, ..limits() };
+    assert_eq!(mcp_worst_case(&smaller_schema), mcp_worst_case(&limits()), "request scratch dominates");
+    let smaller_message = Limits { message_bytes: 2048, ..limits() };
+    assert_eq!(
+        mcp_worst_case(&limits()).expect("memory").checked_sub(mcp_worst_case(&smaller_message).expect("memory")),
+        Some(2048 * 12),
+        "schema scratch dominates; only the retained message allowance changes",
+    );
 }
 
 #[test]
