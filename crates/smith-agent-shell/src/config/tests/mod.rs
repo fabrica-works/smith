@@ -1,6 +1,9 @@
 mod native;
 mod programs;
+mod prompt_line;
+
 use super::*;
+use prompt_line::assert_native_prompt_line;
 
 fn document() -> Document {
     Document {
@@ -387,37 +390,6 @@ fn all_product_models(mut document: serde_json::Value) -> serde_json::Value {
         endpoint["trust_der"] = trust.to_str().expect("fixture trust path").into();
     }
     document
-}
-
-fn assert_native_prompt_line(line: &[u8], native: &shared::Prompt, text: &[u8], credential: &shared::Credential) {
-    // Native conformance already feeds real append bytes through Reader.
-    // At the largest writer bound use a separate JSON implementation;
-    // this does not charge or re-test the consumer's tokenizer machinery.
-    let decoded: serde_json::Value = serde_json::from_slice(line).expect("independent whole-line JSON");
-    let prompt = &decoded["prompt"];
-    assert_eq!(prompt["system"], "native system", "the actual native system is emitted");
-    let messages = prompt["messages"].as_array().expect("ordered message array");
-    assert_eq!(messages.len(), native.messages.len(), "every native source message survives");
-    let expected = std::str::from_utf8(text).expect("native admitted UTF8");
-    for message in messages {
-        assert_eq!(message["role"], "user", "native role survives");
-        let blocks = message["blocks"].as_array().expect("ordered block array");
-        assert_eq!(blocks.len(), 1, "one actual native block per message");
-        assert_eq!(blocks[0]["type"], "text", "actual native text kind");
-        assert_eq!(blocks[0]["text"], expected, "every escaped native payload survives");
-    }
-    assert!(
-        !std::str::from_utf8(line)
-            .expect("JSON UTF8")
-            .contains(std::str::from_utf8(&credential.value).expect("fixture access UTF8")),
-        "grant access bytes never enter content"
-    );
-    assert!(
-        !std::str::from_utf8(line)
-            .expect("JSON UTF8")
-            .contains(std::str::from_utf8(&credential.account_id).expect("fixture account UTF8")),
-        "grant account bytes never enter content"
-    );
 }
 
 #[test]
