@@ -207,7 +207,14 @@ fn leaves(
             leaves(settings, text, origin, child, value, path)?;
         } else {
             let prefix = format!("{named}.");
-            settings.values.retain(|key, _| !key.starts_with(&prefix));
+            // Descendants form one ordered range; unrelated settings need no visit.
+            while let Some((key, _)) = settings.values.range(prefix.clone()..).next() {
+                if !key.starts_with(&prefix) {
+                    break;
+                }
+                let key = key.clone();
+                drop(settings.values.remove(&key));
+            }
             settings.values.insert(named, Sourced { value: value.clone(), origin: location });
         }
         drop(path.pop());
