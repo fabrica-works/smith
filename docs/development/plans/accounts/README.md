@@ -344,7 +344,9 @@ nothing, or what its item says.
    heavy --gate -- sh -c 'export NEXTEST_DOUBLE_SPAWN=0; for i in 1 2 3; do cargo nextest run --workspace --status-level pass --final-status-level none > focused-$i.log 2>&1; cargo nextest run --workspace --profile fuzzy --status-level pass --final-status-level none > fuzzy-$i.log 2>&1; done'
    ```
 
-   then, with `P` the package list of the repository's `aims` line,
+   with each log written outside the worktree, whose tree a test of
+   smith-bench needs clean (ruling 152); then, with `P` the package list
+   of the repository's `aims` line,
    joined by `|`, `grep -L Summary *.log` and `grep -lE
    'Summary.*(failed|timed out)' *.log` print nothing, and the median of
    the three sums, for each suite:

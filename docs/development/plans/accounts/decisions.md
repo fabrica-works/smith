@@ -1418,6 +1418,15 @@ commits is this plan's.
 
      Checked: skein `rg -lw 'access_token|AccessToken' … testing/skein-fake-peers/src/llm.rs testing/skein-fake-peers/tests/llm.rs` → `crates/skein-llm/README.md`; `testing/skein-fake-peers/tests/oauth.rs:276 access_token: bytes::copy_of(ACCESS),`, `git log -1 --format='%h %(trailers:key=Step,valueonly)' 21ad555` → `21ad555 skein-11.1`; `rg -c 'self\.identity\(' crates/skein-oauth/src/machine.rs` → 1; `rg -c -w verify_id_token crates/skein-oauth/src/machine/` → `crates/skein-oauth/src/machine/fetch.rs:1`; `crates/skein-llm-connection/src/boundary.rs:73 pub enum Refusal {`. smith `crates/smith-protocol-llm/src/component.rs:553 connection::Refusal::Endpoint => Error::Invalid,`; the corrected smith 03 command prints nothing (exit 1).
 
+152. **The test-time aims: skein missed under load, smith met** (done when of 2026-10-20T00:55:14Z).
+     The Done when's test-time aims (README, Done when, item 4), measured on x1, the run done either way. skein (e880245, logs in its done-when worktree; heavy "load 7.42 7.88 6.58 on 8 cores as it starts alone"): the median sums are focused 20.83 s against its aim of 16 and fuzzy 21.06 s against 19, both missed; the three runs gave focused 21.07, 20.83, 15.53 and fuzzy 21.06, 21.09, 16.31, so the third met both, which points at the machine's load (the owners experiment's builds and an index worker ran beside the gate). The three slowest of the aim's packages in each median run:
+     - focused (focused-2): `skein-llm-world` `thirty_two_unknown_arrays_exercise_the_compact_record_bound` 1.883 s; `skein-tls-world` `failures_and_closes_in_every_state` 1.138 s; `skein-tls-world` `room_granted_late_and_a_slow_reader_hold_the_stream_below` 0.574 s;
+     - fuzzy (fuzzy-1): `skein-llm-world` `selective_known_events_ignore_seeded_extensions_and_field_order` 8.260 s; `skein-tls-world` `exchanges_swept` 5.745 s; `skein-llm-connection-world` `close_and_abort_cross_racing_call_terminals_without_spin_or_repeated_events` 2.485 s.
+
+     smith: the first run measured no focused suite: the command wrote its logs into the worktree, and `smith-bench::probe_command` `a_replay_arm_runs_through_the_probe_command_and_prints_one_line` failed on the dirty tree ("source repository is dirty") in all three. Run again once at cbc22fe0 with the logs outside the worktree (logs/done-when-aims-smith/; heavy "load 12.67 10.76 8.54"), both checks printed nothing and the medians met both aims: focused 59.81 s of 60, fuzzy 78.17 s of 79. The README's item 4 now writes its logs outside the worktree.
+
+     skein's miss goes to the user as "For the user", E, and to `later.md` for skein's next plan that changes those worlds, to be measured again on an unloaded x1 first. No budget changes, and no step is added to this run.
+
 ## For the user
 
 The choices below have long-term consequences; each is the planner's,
@@ -1440,3 +1449,9 @@ and the user, or the director, may veto it before the run:
   and Anthropic's key route are proven against the fake only, until
   `accounts-sources`' live suite and a capture with an OpenAI key.
   Decision: keep, by director, 2026-10-19.
+- **E. skein's test-time aims missed on x1** (152): the Done when
+  medians were focused 20.83 s against 16 and fuzzy 21.06 s against 19,
+  with load 7.4 on 8 cores when the gate started; the third run, 15.53 s
+  and 16.31 s, met both. smith met both (59.81 s of 60, 78.17 s of 79).
+  Default: recorded, with the slowest tests in ruling 152 and a `later.md`
+  row; no step in this run.
