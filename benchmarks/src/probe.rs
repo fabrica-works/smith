@@ -590,7 +590,9 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
             return Err("change suite requires --commit or --arm".into());
         }
     }
-    crate::arm::resolve_commit(repository, "HEAD")?;
+    if agent == Agent::Codex || !options.contains_key("--arm") {
+        crate::arm::resolve_commit(repository, "HEAD")?;
+    }
     let arm = if agent == Agent::Codex {
         codex(repository, "standard")?
     } else if let Some(directory) = options.get("--arm") {
