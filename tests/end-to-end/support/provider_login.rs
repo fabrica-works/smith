@@ -1,18 +1,23 @@
-//! One shipped credential command against the provider fixture.
+//! One shipped credential command against a listening provider fixture.
+//! The referee keeps readiness and browser progress, never credential values;
+//! entry points observe sign-in ownership (protocol/hosts.md, section 5.4)
+//! through shipped commands (testing.md, sections 2.3 and 5).
 use super::{Process, Ran};
 use skein_lib::{Duration, Time};
 use skein_shell::{Clock, Host};
 use skein_world::{
     Referee,
-    end_to_end::{Binary, Command, Mode},
+    end_to_end::{Binary, Command, Mode, Streams},
     real,
 };
 use smith_local_process_world::process::{BrowserProcess, IssuerProcess, Proc};
+use smith_local_process_world::terminal::Terminal;
 use smith_real_world::Scratch;
 
 struct Judge {
     deadline: Time,
     visited: bool,
+    started: bool,
     arriving: Option<(std::path::PathBuf, Vec<u8>)>,
 }
 impl Referee<Process> for Judge {
@@ -28,6 +33,8 @@ impl Referee<Process> for Judge {
         let listening = procs
             .iter()
             .any(|proc| matches!(proc, Process::Script(Proc::Issuer(issuer)) if issuer.peer().address().is_some()));
+        let start = listening && !self.started;
+        self.started |= listening;
         let url = if self.visited || !listening {
             None
         } else {
@@ -43,6 +50,14 @@ impl Referee<Process> for Judge {
         }
         for proc in procs {
             match proc {
+                Process::Script(Proc::Terminal(person)) => {
+                    if start {
+                        person.type_line(b"ready\n".as_slice().into());
+                    }
+                    if let Some(exit) = exit {
+                        person.finished(exit);
+                    }
+                }
                 Process::Script(Proc::Browser(browser)) => {
                     if let Some(url) = &url {
                         browser.visit(url);
@@ -98,10 +113,14 @@ pub fn run_arriving(
 ) -> (Ran, Vec<Vec<u8>>, usize) {
     let (revocation, arriving) = finish;
     let clock = Clock::new();
-    let binary = start(scratch, name, logout, Mode::Pipes);
+    let mut binary = start(scratch, name, logout, Mode::Pipes);
+    let streams = binary.take_streams().expect("credential pipes");
+    let descriptors = streams.descriptors();
+    let Streams::Pipes { input, output } = streams else { unreachable!("credential pipes") };
     let mut world = real::World::new(Judge {
         deadline: clock.now().now.saturating_add(Duration::from_secs(1)),
         visited: false,
+        started: false,
         arriving,
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
@@ -109,6 +128,9 @@ pub fn run_arriving(
         Process::Script(Proc::Issuer(Box::new(IssuerProcess::provider(34_444, subject, plan, again, revocation))))
     });
     world.spawn(|| Process::Script(Proc::Browser(Box::new(BrowserProcess::new()))));
+    world.spawn_with_fds(descriptors, || {
+        Process::Script(Proc::Terminal(Box::new(Terminal::piped(input, output, Vec::new()))))
+    });
     let outcome = world.run(&clock, Duration::from_secs(2));
     assert!(outcome.procs.iter().all(Host::is_empty), "credential command drains");
     let Process::Binary(binary) = outcome.procs.first().expect("binary") else { unreachable!() };
@@ -146,23 +168,36 @@ pub fn run_arriving(
 }
 
 fn start(scratch: &Scratch, name: &str, logout: bool, mode: Mode) -> Binary {
-    Binary::start(
-        Command {
-            program: env!("CARGO_BIN_EXE_smith").into(),
-            arguments: vec![if logout { "logout".into() } else { "login".into() }, name.into()],
-            environment: vec![
-                ("HOME".into(), scratch.path().into()),
-                ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
-                ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
-                ("PATH".into(), "/usr/bin:/bin".into()),
-                ("SSH_CONNECTION".into(), "192.0.2.2 1234 192.0.2.1 22".into()),
-            ],
-            directory: scratch.path().into(),
-        },
-        mode,
-        1_048_576,
-    )
-    .expect("credential fixture")
+    let mut command = Command {
+        program: env!("CARGO_BIN_EXE_smith").into(),
+        arguments: vec![if logout { "logout".into() } else { "login".into() }, name.into()],
+        environment: vec![
+            ("HOME".into(), scratch.path().into()),
+            ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+            ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+            ("PATH".into(), "/usr/bin:/bin".into()),
+            ("SSH_CONNECTION".into(), "192.0.2.2 1234 192.0.2.1 22".into()),
+        ],
+        directory: scratch.path().into(),
+    };
+    match mode {
+        Mode::Pipes => {
+            // Wait for the issuer's Listening observation before exec: starting
+            // logout sooner can correctly fail its connection before the fake
+            // binds. The referee deadline bounds a missing readiness cue.
+            let mut arguments = vec![
+                "-c".into(),
+                "read -r ready && exec \"$@\"".into(),
+                "provider-ready".into(),
+                command.program.into_os_string(),
+            ];
+            arguments.append(&mut command.arguments);
+            command.program = "/bin/sh".into();
+            command.arguments = arguments;
+        }
+        Mode::Terminal => {}
+    }
+    Binary::start(command, mode, 1_048_576).expect("credential fixture")
 }
 
 pub fn terminal_key(scratch: &Scratch, name: &str) -> Ran {
@@ -170,7 +205,7 @@ pub fn terminal_key(scratch: &Scratch, name: &str) -> Ran {
     let mut binary = start(scratch, name, false, Mode::Terminal);
     let streams = binary.take_streams().expect("credential fixture");
     let descriptors = streams.descriptors();
-    let skein_world::end_to_end::Streams::Terminal { stream } = streams else { unreachable!() };
+    let Streams::Terminal { stream } = streams else { unreachable!() };
     let mut world = real::World::new(super::Refusal {
         now: clock.now().now,
         foreign: None,
@@ -179,10 +214,7 @@ pub fn terminal_key(scratch: &Scratch, name: &str) -> Ran {
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
-        Process::Script(Proc::Terminal(Box::new(smith_local_process_world::terminal::Terminal::attached(
-            stream,
-            Vec::new(),
-        ))))
+        Process::Script(Proc::Terminal(Box::new(Terminal::attached(stream, Vec::new()))))
     });
     let outcome = world.run(&clock, Duration::from_secs(2));
     assert!(outcome.procs.iter().all(Host::is_empty), "credential command drained");
