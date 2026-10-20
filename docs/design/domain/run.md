@@ -278,8 +278,10 @@ that is not empty, or a message.
 | MCP servers, later | as each server lists them | the protocol layer, as opaque calls | as the charter declares |
 
 Names are unique across sources; a declared tool may not take one of
-smith's. The charter's families say which of smith's tools the LLM sees;
-a host tool is offered exactly when it is declared.
+smith's, nor `permission_prompt`, which a program backend keeps for its
+prompt tool (programs.md, 5.3). The charter's families say which of
+smith's tools the LLM sees; a host tool is offered exactly when it is
+declared.
 
 ### 5.2 Host tools
 
