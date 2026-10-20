@@ -166,7 +166,9 @@ fn refuses(name: &str, key: &str, reason: &str) {
 
 fn every_catalogue_manifest_is_checked_offline() {
     let tasks = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks");
-    check_tree(&tasks, &design()).expect("all committed manifests validate");
+    // The complete benchmark-tree check validates this same catalogue once.
+    // Keep the fixture layout checks here; exercise check_tree on the small
+    // recorded catalogue below instead of walking every frozen seed twice.
     let planner = tasks.join("fixtures/03-planner");
     for path in ["grader/tests/hidden.rs", "grader/tests/regression.rs", "reference/src/planner.rs"] {
         assert!(planner.join(path).is_file());
@@ -196,7 +198,8 @@ fn the_recorded_suite_resolves_its_frozen_task_and_pin() {
 }
 
 fn a_complete_recorded_task_is_accepted() {
-    check_task(&recorded("valid"), &design()).expect("valid frozen task");
+    let file = recorded("valid");
+    assert_eq!(check_tree(file.parent().expect("recorded catalogue"), &design()).expect("valid frozen task"), 1);
 }
 
 fn a_prompt_without_its_final_newline_is_refused() {
