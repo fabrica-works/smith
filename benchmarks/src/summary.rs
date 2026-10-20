@@ -6,6 +6,14 @@
 
 mod compare;
 
+#[cfg(test)]
+mod read_tests;
+
+#[cfg(test)]
+std::thread_local! {
+    static VALUE_DECODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The one committed summary format understood by this harness.
 pub const SUMMARY_VERSION: u32 = 4;
 
@@ -696,7 +704,28 @@ fn read_json<T: serde::de::DeserializeOwned>(file: &Path) -> Result<T, Refusal> 
 
 /// Read the one summary version and the current result version.
 pub fn read_summary(file: &Path) -> Result<RunSummary, Refusal> {
-    let document: serde_json::Value = read_json(file)?;
+    let text = std::fs::read_to_string(file).map_err(|error| Refusal::new(file, "document", error.to_string()))?;
+    decode_summary(file, &text)
+}
+
+fn decode_summary(file: &Path, text: &str) -> Result<RunSummary, Refusal> {
+    if let Ok(summary) = serde_json::from_str::<RunSummary>(text)
+        && summary.version == SUMMARY_VERSION
+        && summary.result_version == RESULT_VERSION
+    {
+        return Ok(summary);
+    }
+    // Preserve version-first refusals and the value decoder's handling of
+    // duplicate fields, without building a value tree for ordinary summaries.
+    decode_summary_value(file, text)
+}
+
+fn decode_summary_value(file: &Path, text: &str) -> Result<RunSummary, Refusal> {
+    #[cfg(test)]
+    VALUE_DECODES.with(|count| count.set(count.get() + 1));
+
+    let document: serde_json::Value =
+        serde_json::from_str(text).map_err(|error| Refusal::new(file, "document", error.to_string()))?;
     if document["version"].as_u64() != Some(u64::from(SUMMARY_VERSION))
         || document["result_version"].as_u64() != Some(u64::from(RESULT_VERSION))
     {

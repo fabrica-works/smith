@@ -10,10 +10,10 @@ global-timeout = "15s"
 slow-timeout = { period = "3s" }
 
 # Start the focused tests measured over one second before the worlds.
-# Rechecked after smith-t4: dense prompt 1.239s, catalogue 1.002s focused
-# (the catalogue is 0.986s serial); both retain their early position.
+# Rechecked after smith-t5: dense prompt 1.362s focused / 1.282s serial;
+# catalogue 0.848s / 0.839s. Only the dense prompt takes over a second.
 [[profile.default.overrides]]
-filter = "(package(=smith-agent-shell) and test(=config::tests::native_validated_dense_prompts_fit_the_actual_joint_receiving_ceiling)) or (package(=smith-bench) and test(=recorded_catalogues_and_results))"
+filter = "package(=smith-agent-shell) and test(=config::tests::native_validated_dense_prompts_fit_the_actual_joint_receiving_ceiling)"
 priority = 20
 
 # The worlds' tests first, the longest, then the many short unit tests behind
