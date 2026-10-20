@@ -44,3 +44,19 @@ fn a_stage_one_story_still_decodes() {
         Story::default()
     );
 }
+
+#[test]
+fn a_server_script_reads_back_as_written() {
+    use smith_fake_claude::{Answer, ServerScript, Tool, Verdict};
+    let script = ServerScript {
+        tools: vec![
+            Tool { name: "answer".into(), answer: Answer::Text("quote\"\n".into()) },
+            Tool { name: "error".into(), answer: Answer::Error("failed".into()) },
+            Tool { name: "never".into(), answer: Answer::Never },
+        ],
+        verdicts: vec![Verdict::Allow, Verdict::Deny("outside".into())],
+        ..ServerScript::default()
+    };
+    assert_eq!(serde_json::from_str::<ServerScript>(&script.encode()).expect("script"), script);
+    assert_eq!(serde_json::from_str::<ServerScript>("{}").expect("default script"), ServerScript::default());
+}

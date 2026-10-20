@@ -9,7 +9,7 @@ use skein_io::kernel::ServiceSignal;
 use smith_fake_claude::Story;
 
 pub const SESSION: &str = "12345678-1234-1234-1234-123456789abc";
-pub const MCP: &[u8] = br#"{"mcpServers":{"smith":{"type":"stdio","command":"server","args":[],"env":{}}}}"#;
+pub const MCP: &[u8] = br#"{"mcpServers":{"smith":{"type":"stdio","command":"server","args":["{}"],"env":{}}}}"#;
 
 pub fn arguments() -> Vec<String> {
     [
@@ -97,4 +97,9 @@ pub fn without_input() -> Invocation {
     let mut invocation = invocation(0);
     invocation.no_input = true;
     invocation
+}
+
+pub fn with_server(story: Story, invocation: Invocation, script: smith_fake_claude::ServerScript) -> Run {
+    let config = serde_json::json!({"mcpServers":{"smith":{"command":"server","args":[script.encode()],"env":{"SERVER_TEST":"overridden"}}}});
+    run(story, invocation, None, Some(&serde_json::to_vec(&config).expect("configuration")))
 }

@@ -11,6 +11,10 @@ publish.workspace = true
 name = "fake-claude"
 path = "src/bin/fake-claude.rs"
 
+[[bin]]
+name = "fake-claude-server"
+path = "src/bin/fake-claude-server.rs"
+
 [dependencies]
 skein-io.workspace = true
 skein-lib.workspace = true

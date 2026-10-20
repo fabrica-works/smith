@@ -125,6 +125,10 @@ pub enum Step {
     LoseLogin,
     /// Waits until an interrupt or termination.
     Hang,
+    /// Calls the named server tool, returning its answer to the model.
+    Call { tool: String, input: serde_json::Value },
+    /// Asks permission before returning this built-in tool's scripted result.
+    Builtin { tool: String, input: serde_json::Value, result: String },
 }
 
 /// A turn's terminal message, or its process exit without a result.
@@ -186,6 +190,10 @@ pub enum Seen {
     Settings { allow: Vec<String>, ask: Vec<String>, deny: Vec<String>, keys: Vec<String> },
     /// The settings could not be read or decoded.
     UnreadableSettings,
+    /// A server tool call and whether its result failed, without its input.
+    Called { tool: String, error: bool },
+    /// A built-in tool's permission decision, without its input.
+    Prompted { tool: String, decision: Decision },
 }
 
 /// Reads only the appended observations, skipping invocation records.
@@ -197,4 +205,15 @@ pub fn seen(bytes: &[u8]) -> Vec<Seen> {
         .filter_map(|value| value.get("seen").cloned())
         .map(|value| serde_json::from_value(value).expect("seen record"))
         .collect()
+}
+
+/// A permission decision observed by a test, without the tool's input.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Decision {
+    /// The prompt allowed the call; records whether the input stayed unchanged.
+    Allow { unchanged: bool },
+    /// The prompt denied the call with this explanation.
+    Deny(String),
+    /// The prompt did not return a readable permission decision.
+    Unreadable,
 }

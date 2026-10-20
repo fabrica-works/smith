@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use skein_io::file;
 
 use crate::{
-    End, LOGIN_FILE, Resume, SETTINGS_FILE, Seen, Step, Story, Turn,
+    Decision, End, LOGIN_FILE, Resume, SETTINGS_FILE, Seen, Step, Story, Turn,
     commands::{Config, Effect, FILE_OWNER, error},
     stream,
 };
@@ -113,6 +113,8 @@ impl Flags {
 enum Phase {
     Configuration,
     Settings,
+    Connecting,
+    Calling,
     Idle,
     Login,
     Removing,
@@ -134,6 +136,9 @@ pub(crate) struct Print {
     texts: u64,
     last_text: String,
     interrupted: bool,
+    server_config: Value,
+    pending: Option<ToolCall>,
+    next_tool: u64,
 }
 
 impl Print {
@@ -166,6 +171,9 @@ impl Print {
                 texts: 0,
                 last_text: String::new(),
                 interrupted: false,
+                server_config: Value::Null,
+                pending: None,
+                next_tool: 0,
             },
             effects,
         ))
@@ -182,10 +190,13 @@ impl Print {
                     file::Event::Loaded { bytes, .. } => bytes,
                     _ => return error("cannot read MCP configuration", 1),
                 };
-                let Some(server) = configuration(&bytes, &self.flags.values["--permission-prompt-tool"]) else {
+                let Some((server, configuration)) =
+                    configuration(&bytes, &self.flags.values["--permission-prompt-tool"])
+                else {
                     return error("invalid MCP configuration", 1);
                 };
                 self.server = server;
+                self.server_config = configuration;
                 self.phase = Phase::Settings;
                 match self.config.root {
                     Some(root) => vec![load(root, SETTINGS_FILE)],
@@ -215,22 +226,24 @@ impl Print {
                     self.steps()
                 }
             }
-            Phase::Idle | Phase::Hanging | Phase::Done => Vec::new(),
+            Phase::Idle | Phase::Hanging | Phase::Connecting | Phase::Calling | Phase::Done => Vec::new(),
         }
     }
 
     fn initialized(&mut self, seen: Seen) -> Vec<Effect> {
-        self.phase = Phase::Idle;
-        vec![
-            Effect::Seen(seen),
-            self.emit(stream::init(&self.story.init, &self.flags.tools, &self.server, &self.flags.values["--model"])),
-            Effect::ReadCode,
-        ]
+        self.phase = Phase::Connecting;
+        vec![Effect::Seen(seen), Effect::McpStart(self.server_config.take())]
     }
 
     pub fn input(&mut self, bytes: Option<&[u8]>) -> Vec<Effect> {
         match bytes {
-            None if matches!(self.phase, Phase::Login | Phase::Removing | Phase::Hanging) => Vec::new(),
+            None if matches!(
+                self.phase,
+                Phase::Login | Phase::Removing | Phase::Hanging | Phase::Calling | Phase::Connecting
+            ) =>
+            {
+                Vec::new()
+            }
             None if self.input.is_empty() => {
                 self.phase = Phase::Done;
                 vec![Effect::End(0)]
@@ -314,6 +327,14 @@ impl Print {
                         return effects;
                     }
                 }
+                Step::Call { tool, input } => {
+                    effects.extend(self.tool(tool, input, None));
+                    return effects;
+                }
+                Step::Builtin { tool, input, result } => {
+                    effects.extend(self.tool(tool, input, Some(result)));
+                    return effects;
+                }
                 Step::Hang => {
                     self.phase = Phase::Hanging;
                     return effects;
@@ -339,6 +360,87 @@ impl Print {
         effects
     }
 
+    fn tool(&mut self, tool: String, input: Value, result: Option<String>) -> Vec<Effect> {
+        self.next_tool = self.next_tool.checked_add(1).expect("tool ID fits");
+        self.texts = self.texts.checked_add(1).expect("message count fits");
+        let id = format!("toolu_{}", self.next_tool);
+        let bare = tool.strip_prefix(&format!("mcp__{}__", self.server)).unwrap_or(&tool).to_owned();
+        let name = if result.is_some() { tool.clone() } else { format!("mcp__{}__{}", self.server, bare) };
+        let message_id = self
+            .next_turn
+            .checked_mul(super::fake::FILE_BYTES as usize)
+            .and_then(|base| base.checked_add(self.step))
+            .expect("message ID fits");
+        let mut assistant = stream::assistant("", &self.flags.values["--model"], message_id, &self.story.usage);
+        assistant["message"]["content"] = json!([{"type":"tool_use", "id":id, "name":name, "input":input}]);
+        let (call, arguments) = if result.is_some() {
+            (
+                self.flags.values["--permission-prompt-tool"]
+                    .strip_prefix(&format!("mcp__{}__", self.server))
+                    .expect("checked prompt tool")
+                    .to_owned(),
+                json!({"tool_name":tool,"input":input,"tool_use_id":id}),
+            )
+        } else {
+            (bare.clone(), input.clone())
+        };
+        self.pending = Some(ToolCall { id, tool: if result.is_some() { tool } else { bare }, input, result });
+        self.phase = Phase::Calling;
+        vec![self.emit(assistant), Effect::McpCall { tool: call, input: arguments }]
+    }
+
+    pub fn mcp(&mut self, notice: crate::mcp::Notice) -> Vec<Effect> {
+        match notice {
+            crate::mcp::Notice::Settled { connected, tools } => {
+                if !matches!(self.phase, Phase::Connecting) {
+                    return Vec::new();
+                }
+                self.phase = Phase::Idle;
+                let mut init =
+                    stream::init(&self.story.init, &self.flags.tools, &self.server, &self.flags.values["--model"]);
+                init["mcp_servers"][0]["status"] = json!(if connected { "connected" } else { "failed" });
+                let mut all_tools = self.flags.tools.clone();
+                all_tools.extend(tools.into_iter().map(|tool| format!("mcp__{}__{tool}", self.server)));
+                all_tools.extend(self.story.init.extra_tools.clone());
+                init["tools"] = json!(all_tools);
+                vec![self.emit(init), Effect::ReadCode]
+            }
+            crate::mcp::Notice::Reply(reply) => {
+                let Some(pending) = self.pending.take() else { return Vec::new() };
+                let (text, mut failed) = match reply {
+                    Ok(reply) => match reply["content"].as_array().and_then(|blocks| {
+                        blocks.iter().map(|block| block["text"].as_str()).collect::<Option<Vec<_>>>()
+                    }) {
+                        Some(blocks) => (blocks.join("\n"), reply["isError"].as_bool().unwrap_or(false)),
+                        None => ("unreadable MCP answer".into(), true),
+                    },
+                    Err(error) => (error, true),
+                };
+                let (text, observation) = match pending.result {
+                    None => (text, Seen::Called { tool: pending.tool, error: failed }),
+                    Some(result) => {
+                        let decision = if failed { Decision::Unreadable } else { decision(&text, &pending.input) };
+                        let text = match &decision {
+                            Decision::Allow { .. } => result,
+                            Decision::Deny(message) => {
+                                failed = true;
+                                message.clone()
+                            }
+                            Decision::Unreadable => {
+                                failed = true;
+                                "unreadable permission answer".into()
+                            }
+                        };
+                        (text, Seen::Prompted { tool: pending.tool, decision })
+                    }
+                };
+                let mut effects = vec![Effect::Seen(observation), self.emit(json!({"type":"user", "message":{"role":"user", "content":[{"type":"tool_result", "tool_use_id":pending.id, "content":text, "is_error":failed}]}}))];
+                effects.extend(self.steps());
+                effects
+            }
+        }
+    }
+
     fn finish(&mut self, value: Value) -> Vec<Effect> {
         self.phase = Phase::Idle;
         vec![self.emit(value), Effect::ReadCode]
@@ -349,14 +451,34 @@ impl Print {
         self.finish(stream::failure(None, Some("interrupted".into()), Vec::new()))
     }
 
+    pub fn stop(&mut self) -> Vec<Effect> {
+        match self.pending.take() {
+            Some(pending) => {
+                let seen = if pending.result.is_some() {
+                    Seen::Prompted { tool: pending.tool, decision: Decision::Unreadable }
+                } else {
+                    Seen::Called { tool: pending.tool, error: true }
+                };
+                vec![Effect::Seen(seen)]
+            }
+            None => Vec::new(),
+        }
+    }
+
     pub fn interrupt(&mut self) -> Vec<Effect> {
         match self.phase {
             Phase::Hanging => self.interrupt_result(),
+            Phase::Calling => {
+                let mut effects = self.stop();
+                effects.push(Effect::McpCancel);
+                effects.extend(self.interrupt_result());
+                effects
+            }
             Phase::Login | Phase::Removing => {
                 self.interrupted = true;
                 Vec::new()
             }
-            Phase::Configuration | Phase::Settings | Phase::Idle | Phase::Done => Vec::new(),
+            Phase::Configuration | Phase::Settings | Phase::Connecting | Phase::Idle | Phase::Done => Vec::new(),
         }
     }
 }
@@ -371,7 +493,7 @@ fn load(root: skein_lib::Token, name: &str) -> Effect {
     })
 }
 
-fn configuration(bytes: &[u8], prompt: &str) -> Option<String> {
+fn configuration(bytes: &[u8], prompt: &str) -> Option<(String, Value)> {
     let value: Value = serde_json::from_slice(bytes).ok()?;
     let servers = value["mcpServers"].as_object()?;
     if servers.len() != 1 {
@@ -397,7 +519,7 @@ fn configuration(bytes: &[u8], prompt: &str) -> Option<String> {
     if prompt.strip_prefix(&format!("mcp__{name}__"))?.is_empty() {
         return None;
     }
-    Some(name.clone())
+    Some((name.clone(), server.clone()))
 }
 
 fn settings(bytes: &[u8]) -> Seen {
@@ -416,5 +538,27 @@ fn settings(bytes: &[u8]) -> Seen {
             Seen::Settings { allow, ask, deny, keys: value.keys().cloned().collect() }
         }
         _ => Seen::UnreadableSettings,
+    }
+}
+
+#[derive(Debug)]
+struct ToolCall {
+    id: String,
+    tool: String,
+    input: Value,
+    result: Option<String>,
+}
+
+fn decision(text: &str, input: &Value) -> Decision {
+    let Ok(value) = serde_json::from_str::<Value>(text) else { return Decision::Unreadable };
+    match value["behavior"].as_str() {
+        Some("allow") if value["updatedInput"].is_object() => {
+            Decision::Allow { unchanged: value["updatedInput"] == *input }
+        }
+        Some("deny") => match value["message"].as_str() {
+            Some(message) => Decision::Deny(message.into()),
+            None => Decision::Unreadable,
+        },
+        _ => Decision::Unreadable,
     }
 }

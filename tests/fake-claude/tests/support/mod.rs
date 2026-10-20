@@ -363,6 +363,7 @@ impl Host for Parent {
 pub enum Process {
     Parent(Box<Parent>),
     Fake(Box<Fake>),
+    Server(Box<smith_fake_claude::Server>),
 }
 
 macro_rules! delegate {
@@ -370,6 +371,7 @@ macro_rules! delegate {
         match $self {
             Process::Parent($host) => $body,
             Process::Fake($host) => $body,
+            Process::Server($host) => $body,
         }
     };
 }
@@ -414,6 +416,21 @@ pub struct Judge {
 
 impl Referee<Process> for Judge {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
+        let server_called = match procs.get(2) {
+            Some(Process::Server(server)) => !server.calls().is_empty(),
+            _ => false,
+        };
+        let server_present = procs.len() > 2;
+        if let Process::Parent(parent) = &mut procs[0] {
+            let after = parent
+                .invocations
+                .front()
+                .and_then(|invocation| invocation.signal.as_ref())
+                .map(|(_, after)| after.as_str());
+            if (after == Some("server") && server_present) || (after == Some("call") && server_called) {
+                parent.signal_ready = true;
+            }
+        }
         if let Process::Parent(parent) = &mut procs[0]
             && parent.signal_ready
             && !parent.signalled
@@ -425,6 +442,11 @@ impl Referee<Process> for Judge {
     }
     fn observe(&mut self, _now: Time, procs: &[Process]) {
         let Process::Parent(parent) = &procs[0] else { panic!("parent first") };
+        if let (Some(Process::Fake(fake)), Some(Process::Server(server))) = (procs.get(1), procs.get(2))
+            && fake.exit().is_some()
+        {
+            assert_eq!(server.exit(), Some(Exit::Code(0)), "server settles before fake exits");
+        }
         if parent.signal_at.is_some() {
             for child in procs.iter().skip(1) {
                 assert!(child.exit().is_none(), "silent child waits for termination");
@@ -471,6 +493,10 @@ impl Machine for MachineFiles {
     }
 }
 
+fn make_server(spawn: &Spawn, inherited: &Inherited) -> Process {
+    Process::Server(Box::new((smith_fake_claude::served(b"server").make)(spawn, inherited)))
+}
+
 fn make_fake(spawn: &Spawn, inherited: &Inherited) -> Process {
     Process::Fake(Box::new((smith_fake_claude::hosted(b"claude").make)(spawn, inherited)))
 }
@@ -480,6 +506,10 @@ pub struct Run {
     pub login: Option<Vec<u8>>,
     pub observations: Option<Vec<u8>>,
     pub signalled: bool,
+    #[allow(dead_code)]
+    pub calls: Vec<String>,
+    #[allow(dead_code)]
+    pub server_exit: Option<Exit>,
 }
 
 pub fn run(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invocation>) -> Run {
@@ -509,6 +539,13 @@ fn run_files(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invoca
             Judge { last_word, controls }
         })
         .with_machine(machine);
+    let server = smith_fake_claude::served(b"server");
+    world.host(HostedProgram {
+        program: server.program,
+        make: make_server,
+        instances: server.instances,
+        operations: server.operations,
+    });
     let factory = smith_fake_claude::hosted(b"claude");
     world.host_startup(
         HostedProgram {
@@ -525,6 +562,10 @@ fn run_files(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invoca
     let Process::Parent(parent) = &outcome.procs[0] else { panic!("parent process") };
     let records = parent.records.clone();
     let signalled = parent.signalled;
+    let (calls, server_exit) = match outcome.procs.get(2) {
+        Some(Process::Server(server)) => (server.calls().to_vec(), server.exit()),
+        _ => (Vec::new(), None),
+    };
     let mut read = |path: &[u8]| match outcome.machine.files.open(base, path, How::Read) {
         Ok(file) => {
             let bytes = outcome.machine.files.read(file, 0, 65_536).expect("fixture file");
@@ -538,5 +579,5 @@ fn run_files(story: Option<Story>, login: Option<&[u8]>, invocations: Vec<Invoca
     let observations = read(b"config/fake-claude.observations");
     outcome.machine.files.close(base);
     assert_eq!(outcome.machine.files.open_handles(), 0, "all invocation descriptors settle");
-    Run { records, login, observations, signalled }
+    Run { records, login, observations, signalled, calls, server_exit }
 }

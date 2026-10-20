@@ -15,6 +15,9 @@ pub(crate) enum Effect {
     File(file::Request),
     ReadCode,
     Seen(crate::Seen),
+    McpStart(serde_json::Value),
+    McpCall { tool: String, input: serde_json::Value },
+    McpCancel,
     End(u8),
 }
 
@@ -23,6 +26,7 @@ pub(crate) struct Config {
     pub root: Option<Token>,
     pub directory: Option<kernel::Fd>,
     pub mcp: Option<Token>,
+    pub mcp_directory: Option<kernel::Fd>,
 }
 
 #[derive(Debug)]
@@ -74,6 +78,20 @@ impl Command {
             Self::Login(state) => state.input(bytes, config),
             Self::Print(state) => state.input(bytes),
             Self::Status(_) | Self::Logout(_) | Self::Unknown => Vec::new(),
+        }
+    }
+
+    pub fn mcp(&mut self, notice: crate::mcp::Notice) -> Vec<Effect> {
+        match self {
+            Self::Print(state) => state.mcp(notice),
+            Self::Status(_) | Self::Login(_) | Self::Logout(_) | Self::Unknown => Vec::new(),
+        }
+    }
+
+    pub fn stop(&mut self) -> Vec<Effect> {
+        match self {
+            Self::Print(state) => state.stop(),
+            Self::Status(_) | Self::Login(_) | Self::Logout(_) | Self::Unknown => Vec::new(),
         }
     }
 

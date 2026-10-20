@@ -29,10 +29,10 @@ fn a_print_run_starts_with_its_init() {
     let run = normal(story, 0);
     let init = &messages(&run)[0];
     assert_eq!(init["subtype"], "init");
-    assert_eq!(init["tools"], json!(["Read", "Bash", "ungranted"]));
+    assert_eq!(init["tools"], json!(["Read", "Bash", "mcp__smith__prompt", "ungranted"]));
     assert_eq!(
         init["mcp_servers"],
-        json!([{"name":"smith", "status":"pending"}, {"name":"other", "status":"connected"}])
+        json!([{"name":"smith", "status":"connected"}, {"name":"other", "status":"connected"}])
     );
     assert_eq!(init["capabilities"], json!(["stream"]));
     assert_eq!(init["model"], "test-model");
@@ -308,7 +308,7 @@ fn optional_flags_accept_values_in_any_order() {
         None,
         Some(MCP),
     );
-    assert_eq!(messages(&run)[0]["tools"], json!([]));
+    assert_eq!(messages(&run)[0]["tools"], json!(["mcp__smith__prompt"]));
     assert_eq!(results(&run).len(), 2);
 }
 

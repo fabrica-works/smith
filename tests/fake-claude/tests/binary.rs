@@ -97,11 +97,15 @@ fn the_binary_logout_accepts_an_absent_directory() {
 #[allow(dead_code)]
 mod support;
 
-use smith_fake_claude::{End, STORY_FILE, Step, Story, Turn};
+use smith_fake_claude::{Answer, End, STORY_FILE, ServerScript, Step, Story, Tool, Turn};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Stdio};
 
 fn print_child(story: Story) -> (Scratch, Child) {
+    print_scripted_child(story, ServerScript::default())
+}
+
+fn print_scripted_child(story: Story, script: ServerScript) -> (Scratch, Child) {
     let scratch = Scratch::new("fake-claude-print");
     let config = scratch.path().join("config");
     let run = scratch.path().join("run");
@@ -109,7 +113,9 @@ fn print_child(story: Story) -> (Scratch, Child) {
     fs::create_dir(&run).expect("run directory");
     fs::write(config.join(LOGIN_FILE), b"claude.ai").expect("login");
     fs::write(config.join(STORY_FILE), story.encode()).expect("story");
-    fs::write(run.join("mcp.json"), support::print::MCP).expect("MCP configuration");
+    let configuration = serde_json::json!({"mcpServers":{"smith":{"type":"stdio", "command":env!("CARGO_BIN_EXE_fake-claude-server"),"args":[script.encode()],"env":{}}}});
+    fs::write(run.join("mcp.json"), serde_json::to_vec(&configuration).expect("configuration JSON"))
+        .expect("MCP configuration");
     let child = Command::new(env!("CARGO_BIN_EXE_fake-claude"))
         .env_clear()
         .env("HOME", scratch.path())
@@ -198,4 +204,30 @@ fn the_binary_exits_143_on_a_termination() {
     child.stdin.take();
     signal(&child, "TERM", &scratch);
     assert_eq!(child.wait().expect("exit").code(), Some(143));
+}
+
+#[test]
+fn the_binary_connects_to_its_server() {
+    let story = Story {
+        turns: vec![Turn {
+            steps: vec![Step::Call { tool: "finish".into(), input: serde_json::json!({"answer":"done"}) }],
+            end: End::default(),
+        }],
+        ..Story::default()
+    };
+    let script = ServerScript {
+        tools: vec![Tool { name: "finish".into(), answer: Answer::Text("accepted".into()) }],
+        ..ServerScript::default()
+    };
+    let (_scratch, mut child) = print_scripted_child(story, script);
+    let mut reader = BufReader::new(child.stdout.take().expect("output"));
+    let init = read_message(&mut reader);
+    assert_eq!(init["mcp_servers"][0]["status"], "connected");
+    assert!(init["tools"].as_array().expect("tools").contains(&serde_json::json!("mcp__smith__finish")));
+    send_user(&mut child);
+    assert_eq!(read_message(&mut reader)["message"]["content"][0]["name"], "mcp__smith__finish");
+    assert_eq!(read_message(&mut reader)["message"]["content"][0]["content"], "accepted");
+    assert_eq!(read_message(&mut reader)["subtype"], "success");
+    child.stdin.take();
+    assert_eq!(child.wait().expect("exit").code(), Some(0));
 }

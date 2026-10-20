@@ -66,11 +66,13 @@ pub struct Fake {
     file_submissions: Queue<Submit>,
     file_request: Option<file::Request>,
     memory: u64,
+    environment: Vec<Box<[u8]>>,
+    mcp: crate::mcp::Mcp,
 }
 
-fn limits() -> Limits {
+pub(crate) fn limits() -> Limits {
     Limits {
-        sockets: 5,
+        sockets: 8,
         names: 0,
         refusals: 1,
         intake: 1,
@@ -105,6 +107,7 @@ impl Fake {
         let config = Config {
             root: faces.config.map(|fd| files.adopt_root(fd).expect("root slot")),
             directory: faces.config,
+            mcp_directory: faces.mcp,
             mcp: faces.mcp.map(|fd| files.adopt_root(fd).expect("MCP root slot")),
         };
         let arguments: Vec<_> = arguments.iter().map(|bytes| String::from_utf8_lossy(bytes).into_owned()).collect();
@@ -125,8 +128,10 @@ impl Fake {
             .arguments
             .iter()
             .chain(&observed.environment)
-            .try_fold(0_u64, |size, value| {
-                size.checked_add(u64::try_from(value.len()).expect("text length fits"))?.checked_add(32)
+            .map(String::len)
+            .chain(environment.iter().map(|entry| entry.len()))
+            .try_fold(0_u64, |size, length| {
+                size.checked_add(u64::try_from(length).expect("text length fits"))?.checked_add(32)
             })
             .expect("invocation length fits");
         let memory = 4_194_304_u64
@@ -175,6 +180,8 @@ impl Fake {
             file_submissions: Queue::with_capacity(QUEUE),
             file_request,
             memory,
+            environment: environment.to_vec(),
+            mcp: crate::mcp::Mcp::new(),
         };
         if !configured {
             fake.effects(commands::error("CLAUDE_CONFIG_DIR is not set", 2));
@@ -210,6 +217,14 @@ impl Fake {
                         });
                     }
                 }
+                Effect::McpStart(configuration) => self.mcp.start(
+                    configuration,
+                    self.config.mcp_directory.expect("MCP root"),
+                    &self.environment,
+                    &mut self.io_requests,
+                ),
+                Effect::McpCall { tool, input } => self.mcp.call(tool, input),
+                Effect::McpCancel => self.mcp.cancel(),
                 Effect::End(code) => self.end(code),
             }
         }
@@ -218,6 +233,9 @@ impl Fake {
     fn end(&mut self, code: u8) {
         if self.code.is_none() {
             self.code = Some(code);
+            let effects = self.command.as_mut().map(Command::stop).unwrap_or_default();
+            self.effects(effects);
+            self.mcp.stop();
             self.file_request = None;
             if let Some(input) = self.input {
                 self.io_requests.push(Request::Abort { entity: input });
@@ -253,6 +271,10 @@ impl Fake {
     }
 
     fn io_event(&mut self, event: Event) {
+        if self.mcp.owns(&event) {
+            self.mcp.event(event, &mut self.io_requests);
+            return;
+        }
         match event {
             Event::Shutdown { signal: kernel::ServiceSignal::Interrupt } => {
                 let effects = match &mut self.command {
@@ -332,6 +354,7 @@ impl Fake {
                 );
             }
         }
+        self.mcp.progress(&mut self.io_requests);
         self.stdout.progress(self.code.is_some(), &mut self.io_requests);
         self.stderr.progress(self.code.is_some(), &mut self.io_requests);
         self.observation.progress(self.code.is_some(), &mut self.io_requests);
@@ -373,6 +396,12 @@ impl Host for Fake {
         while let Some(event) = self.file_events.pop() {
             self.file_event(event);
         }
+        while let Some(notice) = self.mcp.notices.pop_front() {
+            if self.code.is_none() {
+                let effects = self.command.as_mut().map(|command| command.mcp(notice)).unwrap_or_default();
+                self.effects(effects);
+            }
+        }
         self.progress(now);
         while let Some(request) = self.io_requests.pop() {
             skein_io::down(&mut self.io, &env, request, &mut self.submissions);
@@ -412,6 +441,7 @@ impl Host for Fake {
     fn is_empty(&self) -> bool {
         self.code.is_some()
             && self.io.is_empty()
+            && self.mcp.is_empty()
             && self.files.open_files() == 0
             && self.files.takes()
             && !self.root_closing
