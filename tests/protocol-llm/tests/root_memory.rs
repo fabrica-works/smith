@@ -1297,6 +1297,11 @@ fn assert_generated(history: &root::Transcript, messages: u32) {
 }
 
 fn cap(source: &Counted) -> u64 {
+    // Fixed SUMMARY and PREAMBLE texts in smith-domain-run/src/prompt.rs;
+    // domain/run.md, section 3.3. The summary includes the 1,000-word limit.
+    const SUMMARY_BYTES: u64 = 415;
+    const PREAMBLE_BYTES: u64 = 97;
+
     let first = source.initial.as_ref().expect("observed fresh root prompt");
     let [message] = first.messages.as_ref() else { panic!("fresh actual waking message") };
     let [llm::Block::Text { text, replay: None }] = message.content.as_ref() else { panic!("plain charter brief") };
@@ -1309,8 +1314,8 @@ fn cap(source: &Counted) -> u64 {
         + 2 * size::<session::llm::Descriptor>()
         + size::<session::llm::Block>()
         + 2 * len(text)
-        + 390
-        + 97; // Retained summary instruction and preamble beside the task and history.
+        + SUMMARY_BYTES
+        + PREAMBLE_BYTES; // Retained summary instruction and preamble beside the task and history.
     let prefix = source
         .prefix
         .as_ref()
