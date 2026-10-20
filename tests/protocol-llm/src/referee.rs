@@ -23,9 +23,11 @@ pub struct NativeRequest {
 }
 
 impl NativeRequest {
-    /// Read the captured HTTP body's raw values without re-encoding their bytes.
+    /// Read the captured HTTP body's raw values without re-encoding their
+    /// bytes, once inflated where the route sends it gzip (the Codex route).
     #[must_use]
     pub fn from_http(bytes: &[u8]) -> Self {
+        let bytes = &skein_llm_world::identity(bytes)[..];
         let head = bytes.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual HTTP request head");
         let fields: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
             serde_json::from_slice(&bytes[head + 4..]).expect("actual native JSON request");

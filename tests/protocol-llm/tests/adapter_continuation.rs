@@ -258,9 +258,11 @@ fn history(completion: llm::Completion) -> Box<[llm::Message]> {
     Box::new([llm::Message { role: llm::Role::Assistant, content: blocks.into() }, user(b"Continue.")])
 }
 
-fn native_body(peer: &RawWorld) -> &[u8] {
-    let at = peer.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual HTTP request") + 4;
-    &peer.sent[at..]
+/// The first request's body as it reads without its coding (gzip on the Codex route).
+fn native_body(peer: &RawWorld) -> Vec<u8> {
+    let sent = skein_llm_world::identity(&peer.sent);
+    let at = sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual HTTP request") + 4;
+    sent[at..].to_vec()
 }
 
 fn native_evidence(bytes: &[u8], expected: &[u8]) -> bool {
@@ -269,15 +271,15 @@ fn native_evidence(bytes: &[u8], expected: &[u8]) -> bool {
 
 fn native_corruptions(peer: &RawWorld, expected: &[u8], markers: &[&[u8]]) {
     let body = native_body(peer);
-    assert!(native_evidence(body, expected), "whole literal continued history: {body:?}");
+    assert!(native_evidence(&body, expected), "whole literal continued history: {body:?}");
     for marker in markers {
         let at = body.windows(marker.len()).position(|part| part == *marker).expect("positive literal field");
-        let mut changed = body.to_vec();
+        let mut changed = body.clone();
         changed[at] = b'X';
         assert!(!native_evidence(&changed, expected), "changed literal {marker:?}");
     }
     assert!(!native_evidence(b"{}", expected));
-    let mut duplicated = body.to_vec();
+    let mut duplicated = body.clone();
     duplicated.extend_from_slice(expected);
     assert!(!native_evidence(&duplicated, expected), "duplicate complete history is not the outside expectation");
 }
@@ -626,7 +628,7 @@ fn response_unknown_and_unsent_failures_preserve_full_evidence() {
         Token::new(72),
         llm::Failure::Unavailable,
         llm::Evidence::Unknown,
-        b"provider transport or HTTP framing failed",
+        b"connection failed",
     );
     let (context, mut peer) = adopt(&configuration, Token::new(73), Box::new([user(b"Start.")]), Vec::new());
     peer.settle();

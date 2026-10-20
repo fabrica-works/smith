@@ -614,8 +614,9 @@ fn only_uses_automatic_wire_choice_and_keeps_all_definitions_and_not_run_feedbac
         let narrowed = smith_protocol_llm_world::referee::NativeRequest::from_http(&only.peer.requests);
         assert_eq!(ordinary.tools, narrowed.tools, "narrowing never changes actual native definitions");
         let choice = |wire: &Wire| {
-            let body = wire.peer.requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("HTTP body");
-            let body: serde_json::Value = serde_json::from_slice(&wire.peer.requests[body + 4..]).expect("JSON");
+            let requests = skein_llm_world::identity(&wire.peer.requests);
+            let body = requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("HTTP body");
+            let body: serde_json::Value = serde_json::from_slice(&requests[body + 4..]).expect("JSON");
             body.get("tool_choice").cloned()
         };
         let automatic = choice(&auto);
@@ -638,8 +639,9 @@ fn only_uses_automatic_wire_choice_and_keeps_all_definitions_and_not_run_feedbac
 }
 
 fn native_choice(wire: &Wire) -> Option<serde_json::Value> {
-    let body = wire.peer.requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("HTTP body");
-    let body: serde_json::Value = serde_json::from_slice(&wire.peer.requests[body + 4..]).expect("JSON");
+    let requests = skein_llm_world::identity(&wire.peer.requests);
+    let body = requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("HTTP body");
+    let body: serde_json::Value = serde_json::from_slice(&requests[body + 4..]).expect("JSON");
     body.get("tool_choice").cloned()
 }
 

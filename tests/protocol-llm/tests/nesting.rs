@@ -94,8 +94,9 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
 fn check_document_bound(world: &World, bounds: &adapter::Limits, error_flag: bool) -> bool {
     use skein_fake_llm_protocol::documents::{self, Provider};
 
-    let tape =
-        &world.wire_bindings().iter().max_by_key(|binding| binding.request.len()).expect("actual requests").request;
+    let tape = skein_llm_world::identity(
+        &world.wire_bindings().iter().max_by_key(|binding| binding.request.len()).expect("actual requests").request,
+    );
     let head = tape.windows(4).position(|part| part == b"\r\n\r\n").expect("HTTP head");
     let body = &tape[head + 4..];
     let dialect = if error_flag { Provider::Anthropic } else { Provider::OpenAi };
