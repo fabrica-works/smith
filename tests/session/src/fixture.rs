@@ -71,6 +71,13 @@ pub fn seed(checkout: &mut Checkout, at: &[u8]) -> u64 {
     checkout.root(at)
 }
 
+/// Whether `text` holds `pattern` whole.
+///
+/// World contract: domain/session.md, section 8.1; testing-strategy.md, section 2.2.
+fn holds(text: &[u8], pattern: &[u8]) -> bool {
+    text.windows(pattern.len()).any(|window| window == pattern)
+}
+
 /// Where `path` is, relative to the working directory at the repository's
 /// root, or `None` if it climbs out of it.
 ///
@@ -129,10 +136,16 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
         (Call::List { .. }, Outcome::Listed { entries, .. }) => {
             is_directory && entries.iter().any(|listed| listed.name.as_ref() == entry)
         }
-        // Each search on the menu has a pattern of its own.
-        (Call::Search { pattern, .. }, Outcome::Found { hits, .. }) => {
-            hits.iter().all(|hit| hit.text.windows(pattern.len()).any(|window| window == &pattern[..]))
-        }
+        // Each search on the menu has a pattern of its own. A share below the
+        // line may cut the last hit to the start of a matching line.
+        (Call::Search { pattern, .. }, Outcome::Found { hits, .. }) => hits.iter().enumerate().all(|(index, hit)| {
+            holds(&hit.text, pattern)
+                || (index + 1 == hits.len()
+                    && FILES
+                        .iter()
+                        .flat_map(|(_, content)| content.split(|byte| *byte == b'\n'))
+                        .any(|line| line.starts_with(&hit.text) && holds(line, pattern)))
+        }),
         (Call::Write { .. }, Outcome::Written { created }) => is_file && (!*created || may_be_missing),
         // What a change to a file, or a listing of one, comes to; and an edit
         // that does not apply.
