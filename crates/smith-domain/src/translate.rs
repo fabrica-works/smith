@@ -201,6 +201,8 @@ pub(crate) fn spend(turns: u32, usage: llm::Usage) -> Spend {
 /// How the session ended, as the run hears it: a failed call is its
 /// provider's fault, but for a conversation too long for the model, which is
 /// a full context, as is a transcript past the session's limits.
+const PROGRAM_NAME: &[u8] = b"claude_code";
+
 pub(crate) fn end(
     end: session::End,
     model: u32,
@@ -223,7 +225,13 @@ pub(crate) fn end(
         session::End::Failed { failure: llm::Failure::Refused, .. } if account.is_some() => {
             run::End::Fault(run::Fault::Refused { account: account.expect("guarded account"), code: report.code })
         }
-        session::End::Failed { failure, evidence, attempts } => run::End::Fault(run::Fault::Completion {
+        session::End::Failed { failure: llm::Failure::SignedOut, .. } if account.is_some() => {
+            run::End::Fault(run::Fault::Unauthorized { account: account.expect("guarded account") })
+        }
+        session::End::Failed { failure: llm::Failure::Program { exit }, detail, .. } => {
+            run::End::Fault(run::Fault::Program { name: PROGRAM_NAME.into(), exit, detail })
+        }
+        session::End::Failed { failure, evidence, attempts, .. } => run::End::Fault(run::Fault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
             model,
@@ -298,10 +306,10 @@ fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
         llm::Failure::Unavailable => run::CompletionFailure::Unavailable,
         llm::Failure::TimedOut { phase } => run::CompletionFailure::TimedOut { phase: completion_phase(phase) },
         llm::Failure::ContextTooLong => run::CompletionFailure::ContextTooLong,
-        llm::Failure::Invalid => run::CompletionFailure::Invalid,
+        llm::Failure::Invalid | llm::Failure::Program { .. } => run::CompletionFailure::Invalid,
         llm::Failure::Refused => run::CompletionFailure::Refused,
         llm::Failure::Unsupported => run::CompletionFailure::Unsupported,
-        llm::Failure::Unauthorized => run::CompletionFailure::Unauthorized,
+        llm::Failure::SignedOut | llm::Failure::Unauthorized => run::CompletionFailure::Unauthorized,
         llm::Failure::RateLimited { retry_after } => run::CompletionFailure::RateLimited { retry_after },
         llm::Failure::Exhausted { retry_after } => run::CompletionFailure::Exhausted { retry_after },
     }

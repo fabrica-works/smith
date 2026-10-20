@@ -543,6 +543,10 @@ pub enum Failure {
     Invalid,
     /// The provider refused our credentials (HTTP 401, 403).
     Unauthorized,
+    /// The program source is signed out; a new grant cannot repair it.
+    SignedOut,
+    /// The backend program failed, with its exit code when known.
+    Program { exit: Option<u32> },
     /// The provider refused the account; this call is never retried.
     Refused,
     /// The provider will not take a request field; this call is never retried.

@@ -437,7 +437,12 @@ fn answer_kind(answer: &Answer) -> &'static str {
         Answer::Refused(Refusal::Invalid(_)) => "invalid",
         Answer::Failed { failure, .. } => match failure {
             Failure::Model(
-                Fault::Completion { .. } | Fault::Provider | Fault::Limited { .. } | Fault::Refused { .. },
+                Fault::Completion { .. }
+                | Fault::Provider
+                | Fault::Unauthorized { .. }
+                | Fault::Program { .. }
+                | Fault::Limited { .. }
+                | Fault::Refused { .. },
             ) => "fault",
             Failure::Model(Fault::Truncated | Fault::Declined | Fault::Malformed) => "stopped",
             Failure::Budget { exhausted: Exhausted::Turns, .. } => "turns",

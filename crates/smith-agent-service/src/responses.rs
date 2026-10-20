@@ -518,7 +518,7 @@ impl Book {
     )]
     pub(crate) fn fact(&mut self, origin: Time, fact: &session::Fact) -> List<Record> {
         let mut records = List::with_capacity(2);
-        match fact.kind {
+        match fact.kind.clone() {
             session::FactKind::CompactionStarted {
                 opener, model, model_bytes, model_window, output, effort, ..
             } => {
@@ -914,8 +914,8 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         llm::Failure::ContextTooLong => (smith_events::FailureClass::ContextTooLong, None),
         llm::Failure::Refused => (smith_events::FailureClass::Refused, None),
         llm::Failure::Unsupported => (smith_events::FailureClass::Unsupported, None),
-        llm::Failure::Invalid => (smith_events::FailureClass::Invalid, None),
-        llm::Failure::Unauthorized => (smith_events::FailureClass::Unauthorized, None),
+        llm::Failure::Invalid | llm::Failure::Program { .. } => (smith_events::FailureClass::Invalid, None),
+        llm::Failure::SignedOut | llm::Failure::Unauthorized => (smith_events::FailureClass::Unauthorized, None),
         llm::Failure::RateLimited { retry_after } => {
             (smith_events::FailureClass::RateLimited, Some(retry_after.as_nanos() / 1_000_000))
         }
@@ -955,6 +955,8 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::Unavailable
         | llm::Failure::ContextTooLong
         | llm::Failure::Refused
+        | llm::Failure::Program { .. }
+        | llm::Failure::SignedOut
         | llm::Failure::Unsupported
         | llm::Failure::Invalid
         | llm::Failure::Unauthorized
@@ -973,6 +975,8 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::TimedOut { .. }
         | llm::Failure::ContextTooLong
         | llm::Failure::Refused
+        | llm::Failure::Program { .. }
+        | llm::Failure::SignedOut
         | llm::Failure::Unsupported
         | llm::Failure::Invalid
         | llm::Failure::Unauthorized
@@ -1057,7 +1061,7 @@ fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]
         session::End::Closed => (ConversationEnd::Closed, None, None),
         session::End::NoSummary { .. } => (ConversationEnd::Failed, None, None),
         session::End::Busy | session::End::Invalid => (ConversationEnd::Refused, None, None),
-        session::End::Failed { failure, evidence, attempts: _ } => {
+        session::End::Failed { failure, evidence, attempts: _, detail: _ } => {
             (ConversationEnd::Failed, None, Some(completion_failure(failure, evidence)))
         }
         session::End::Budget { spent } => {
@@ -1225,6 +1229,7 @@ pub(crate) mod tests {
         };
         book.fact(Time::ZERO, &fact(4, failed, 1, None));
         let limit = session::End::Failed {
+            detail: Box::default(),
             failure: llm::Failure::Limit { which: llm::Limit::History, bound: 2 },
             evidence: llm::Evidence::Unsent,
             attempts: 0,
@@ -1783,6 +1788,7 @@ pub(crate) mod tests {
                         session::FactKind::Ended {
                             opener: owner,
                             end: session::End::Failed {
+                                detail: Box::default(),
                                 failure: llm::Failure::Invalid,
                                 evidence: llm::Evidence::Response { status: None },
                                 attempts: 1,

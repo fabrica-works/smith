@@ -465,8 +465,19 @@ pub(crate) fn len(bytes: &[u8]) -> Option<u64> {
 }
 
 /// Smith-owned tool names that a host declaration cannot take (domain/run.md, section 5.1).
-pub(crate) const RESERVED_NAMES: [&[u8]; 10] =
-    [b"finish", b"deliver", b"wait", b"sub_agent", b"read", b"list", b"search", b"write", b"edit", b"shell"];
+pub(crate) const RESERVED_NAMES: [&[u8]; 11] = [
+    b"finish",
+    b"deliver",
+    b"wait",
+    b"sub_agent",
+    b"read",
+    b"list",
+    b"search",
+    b"write",
+    b"edit",
+    b"shell",
+    b"permission_prompt",
+];
 
 fn valid_host_tools(tools: &[HostTool], limits: &Limits) -> bool {
     if !tools.is_empty()

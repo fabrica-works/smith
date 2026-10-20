@@ -683,6 +683,14 @@ fn model_fault(
             limits,
             channel::RefusedFaultParts { account, code },
         )?),
+        run::Fault::Unauthorized { account } => channel::ModelFault::Unauthorized(channel::UnauthorizedFault::new(
+            limits,
+            channel::UnauthorizedFaultParts { account },
+        )?),
+        run::Fault::Program { name, exit, detail } => channel::ModelFault::Program(channel::ProgramFault::new(
+            limits,
+            channel::ProgramFaultParts { name, exit, detail },
+        )?),
         run::Fault::Provider => channel::ModelFault::Provider,
         run::Fault::Declined => channel::ModelFault::Declined,
         run::Fault::Truncated => channel::ModelFault::Truncated,

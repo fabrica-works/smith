@@ -427,6 +427,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
         }
     }
     let config = service::Config {
+        program: programs::backend(&programs, &endpoint_programs),
         limits,
         domain: domain::Config { endpoints: endpoints.domain, models: models.into_boxed_slice() },
         channel_endpoints: endpoints.channel,
@@ -439,9 +440,13 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
 }
 
 fn check_memory(config: &service::Config, memory: u64) -> Result<(), ConfigurationRefusal> {
-    let complete = service::worst_case(&config.limits, &config.llm_endpoints).ok_or_else(|| {
-        ConfigurationRefusal::Profile(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
-    })?;
+    let complete = service::worst_case(&config.limits, &config.llm_endpoints)
+        .and_then(|bytes| bytes.checked_add(service::program_worst_case(config)?))
+        .ok_or_else(|| {
+            ConfigurationRefusal::Profile(Refusal::Derived {
+                limit: LimitName::deployment(Layer::Service, "worst_case"),
+            })
+        })?;
     service::profile::validate::memory(complete, memory).map_err(ConfigurationRefusal::Profile)
 }
 

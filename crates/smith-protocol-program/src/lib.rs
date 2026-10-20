@@ -7,6 +7,7 @@
 
 extern crate alloc;
 
+pub mod backend;
 mod command;
 pub mod mcp;
 pub mod relay;

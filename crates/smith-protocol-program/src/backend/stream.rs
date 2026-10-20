@@ -1,0 +1,127 @@
+//! Startup stream admission (programs.md, sections 5.1 and 5.5).
+//! Retains no stream state; checks complete init lines and encodes the first user input.
+
+use crate::mcp::{self, json};
+use alloc::boxed::Box;
+use skein_json::{Kind, collector, tokenizer, writer::Encoder};
+use smith_domain::llm;
+
+fn limits(bound: u32, depth: u32, tokens: u32) -> collector::Limits {
+    collector::Limits {
+        tokenizer: tokenizer::Limits {
+            depth,
+            string: bound,
+            number: 32.min(bound),
+            chunk: 4096.min(bound),
+            length: bound,
+        },
+        tokens,
+        text: bound,
+        skip: u64::from(bound),
+    }
+}
+
+pub(super) fn worst_case(bound: u32, depth: u32, tokens: u32) -> Option<u64> {
+    json::worst_case_limited(limits(bound, depth, tokens))
+}
+
+pub(super) fn init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> bool {
+    checked_init(bytes, tools, depth, tokens) == Some(())
+}
+
+fn checked_init(bytes: &[u8], tools: &[mcp::Tool], depth: u32, tokens: u32) -> Option<()> {
+    let document = json::collect_limited(bytes, limits(u32::try_from(bytes.len()).ok()?, depth, tokens))?;
+    if json::text_in(&document, json::field(&document, 0, b"type"))? != b"system"
+        || json::text_in(&document, json::field(&document, 0, b"subtype"))? != b"init"
+    {
+        return None;
+    }
+    let servers = json::field(&document, 0, b"mcp_servers")?;
+    if document.token(servers)?.kind != Kind::ArrayStart {
+        return None;
+    }
+    let server = servers.checked_add(1)?;
+    if json::text_in(&document, json::field(&document, server, b"name"))? != mcp::SERVER
+        || json::text_in(&document, json::field(&document, server, b"status"))? != b"connected"
+        || document.token(json::after(&document, server)?)?.kind != Kind::ArrayEnd
+    {
+        return None;
+    }
+    let listed = json::field(&document, 0, b"tools")?;
+    if document.token(listed)?.kind != Kind::ArrayStart {
+        return None;
+    }
+    let mut index = listed.checked_add(1)?;
+    let mut count = 0_usize;
+    for _ in 0..document.len() {
+        if document.token(index)?.kind == Kind::ArrayEnd {
+            break;
+        }
+        let name = json::text(&document, index)?;
+        let suffix = name.strip_prefix(b"mcp__smith__")?;
+        let mut known = suffix == mcp::PROMPT_TOOL;
+        for tool in tools {
+            if suffix == tool.name.as_ref() {
+                known = true;
+            }
+        }
+        if !known {
+            return None;
+        }
+        // A repeated name cannot satisfy a missing declared tool.
+        for earlier in listed.checked_add(1)?..index {
+            if json::text(&document, earlier) == Some(name) {
+                return None;
+            }
+        }
+        index = index.checked_add(1)?;
+        count = count.checked_add(1)?;
+    }
+    if count != tools.len().checked_add(1)? {
+        return None;
+    }
+    Some(())
+}
+
+pub(super) fn user_message(prompt: &llm::Prompt, maximum: u32) -> Option<Box<[u8]>> {
+    let limits = skein_json::writer::Limits { depth: 8, length: maximum.checked_sub(1)? };
+    let mut measure = Encoder::measure(&limits);
+    user(&mut measure, prompt);
+    let length = measure.measured().ok()?;
+    let mut write = Encoder::write(length, &limits);
+    user(&mut write, prompt);
+    Some(json::join(&[&write.finish(), b"\n"]))
+}
+
+fn user(json: &mut Encoder, prompt: &llm::Prompt) {
+    json.object_start();
+    json.key(b"type");
+    json.string(b"user");
+    json.key(b"message");
+    json.object_start();
+    json.key(b"role");
+    json.string(b"user");
+    json.key(b"content");
+    json.array_start();
+    for message in &prompt.messages {
+        for block in &message.content {
+            match block {
+                llm::Block::Text { text, .. } => {
+                    json.object_start();
+                    json.key(b"type");
+                    json.string(b"text");
+                    json.key(b"text");
+                    json.string(text);
+                    json.object_end();
+                }
+                llm::Block::Opaque { .. }
+                | llm::Block::Refusal { .. }
+                | llm::Block::ToolCall { .. }
+                | llm::Block::ToolResult { .. } => {}
+            }
+        }
+    }
+    json.array_end();
+    json.object_end();
+    json.object_end();
+}

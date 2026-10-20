@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 skein-shell.workspace = true
+skein-heap.workspace = true
 skein-fake-llm-domain.workspace = true
 skein-fake-llm-protocol.workspace = true
 skein-fake-peers.workspace = true
@@ -37,6 +38,10 @@ smith-domain-session.workspace = true
 smith-protocol-channel.workspace = true
 smith-protocol-llm.workspace = true
 smith-protocol-machine.workspace = true
+smith-protocol-program.workspace = true
+smith-fake-claude.workspace = true
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
 smith-transcript.workspace = true
 
 [lints.rust]

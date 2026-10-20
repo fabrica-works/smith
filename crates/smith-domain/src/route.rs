@@ -127,7 +127,7 @@ fn failed(
     peer.report = report;
     assert!(run::settle_reservation(&mut domain.run, conversation, owner, 0), "failed call held its reservation");
     match failure {
-        crate::llm::Failure::Unauthorized => {
+        crate::llm::Failure::Unauthorized | crate::llm::Failure::SignedOut => {
             if let Some(grant) = grant
                 && let Some(held) = domain.grants.get_mut(&grant.account)
                 && !was_rejected(held, grant.generation)
@@ -158,6 +158,7 @@ fn failed(
         | crate::llm::Failure::TimedOut { .. }
         | crate::llm::Failure::ContextTooLong
         | crate::llm::Failure::Invalid
+        | crate::llm::Failure::Program { .. }
         | crate::llm::Failure::Unsupported
         | crate::llm::Failure::Limit { .. }
         | crate::llm::Failure::ApplicationLimit
@@ -176,12 +177,12 @@ fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: c
     let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     let preview = session::preview_completion(&domain.session, owner, completion.usage);
-    let overflow = match preview {
-        Err(end) => Some(end),
+    let overflow = match &preview {
+        Err(end) => Some(end.clone()),
         Ok(price) => priced_overflow(run::completion_overflow(
             &domain.run,
             conversation,
-            price,
+            *price,
             translate::spend(1, completion.usage),
         )),
     };

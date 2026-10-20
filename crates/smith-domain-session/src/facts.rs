@@ -48,7 +48,7 @@ pub enum Compacted {
 }
 
 /// Something that happened in the session opened for `opener`.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum FactKind {
     /// The session was admitted.
     Opened { opener: Token },

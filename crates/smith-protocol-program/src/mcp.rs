@@ -12,7 +12,7 @@ use core::{
 use skein_io::{self as io, Addr};
 use skein_lib::{Duration, List, Queue, Secret, Time, Token, sha256, stream};
 
-mod json;
+pub(crate) mod json;
 #[cfg(test)]
 mod tests;
 

@@ -477,12 +477,28 @@ fn native_validated_dense_prompts_fit_the_actual_joint_receiving_ceiling() {
 }
 
 #[test]
-#[expect(clippy::too_many_lines, reason = "one startup-bound fixture records every concrete owning layer")]
 fn product_values_pass_every_startup_check_and_fit_complete_memory() {
+    product_memory(false);
+}
+
+// A ratchet: unpriced growth fails here, as the direct product's floor.
+const PROGRAM_MEMORY_FLOOR: u64 = 87_000_000;
+
+#[test]
+fn a_program_product_fits_complete_memory() {
+    product_memory(true);
+}
+
+#[expect(clippy::too_many_lines, reason = "one startup-bound fixture records every concrete owning layer")]
+fn product_memory(with_program: bool) {
     use skein_io::kernel::{Complete, Fd, Submit};
     use skein_lib::Queue;
 
-    let document = all_product_models(product_document());
+    let mut document = all_product_models(product_document());
+    if with_program {
+        document["programs"] = serde_json::json!({"claude_code": {"path":"/programs/claude", "directory":"/programs"}});
+        document["endpoints"][1]["program"] = "claude_code".into();
+    }
     // Record each owner and the complete checked process bound before
     // checking the concrete parser's startup relationships.
     let dto: Document = serde_json::from_value(document.clone()).expect("product DTO");
@@ -577,29 +593,47 @@ fn product_values_pass_every_startup_check_and_fit_complete_memory() {
     let service = service::worst_case(limits, &destinations).expect("service bound");
     let roots = limits.domain.run.directories;
     let queue = limits.queue.checked_add(roots).and_then(|n| n.checked_add(2)).expect("shell queues and trace root");
-    let shell = Queue::<Complete>::worst_case(queue).expect("complete queue")
-        + Queue::<Submit>::worst_case(queue).expect("submit queue")
-        + u64::try_from(size_of::<crate::Agent>()).expect("agent cell")
-        + u64::from(roots) * u64::try_from(size_of::<Fd>()).expect("root cells");
+    let shell = Queue::<Complete>::worst_case(queue)
+        .and_then(|bytes| bytes.checked_add(Queue::<Submit>::worst_case(queue)?))
+        .and_then(|bytes| bytes.checked_add(u64::try_from(size_of::<crate::Agent>()).ok()?))
+        .and_then(|bytes| bytes.checked_add(u64::from(roots).checked_mul(u64::try_from(size_of::<Fd>()).ok()?)?))
+        .expect("shell ownership");
     let header_limits = effective_header(&selected, &declarations, limits, &configured.channel, &destinations)
         .expect("complete header");
     let header_names: u64 = header_limits.iter().map(|entry| u64::try_from(entry.name.len()).unwrap()).sum();
-    let header_inventory =
-        List::<smith_events::EffectiveLimit>::worst_case(header_limits.len()).unwrap() + header_names;
+    let header_inventory = List::<smith_events::EffectiveLimit>::worst_case(header_limits.len())
+        .and_then(|bytes| bytes.checked_add(header_names))
+        .expect("header inventory");
     let header = header_inventory
-        + u64::try_from(
-            b"smith".len() + env!("CARGO_PKG_VERSION").len() + env!("SMITH_BUILD").len() + b"standard".len(),
+        .checked_add(
+            u64::try_from(
+                b"smith"
+                    .len()
+                    .checked_add(env!("CARGO_PKG_VERSION").len())
+                    .and_then(|bytes| bytes.checked_add(env!("SMITH_BUILD").len()))
+                    .and_then(|bytes| bytes.checked_add(b"standard".len()))
+                    .expect("header strings"),
+            )
+            .unwrap(),
         )
-        .unwrap();
-    let complete = service + header + shell;
+        .expect("header ownership");
+    let configuration = parse_value(&document).expect("product declarations pass every startup check");
+    let program = service::program_worst_case(&configuration.service).expect("program backend bound");
+    let complete = service
+        .checked_add(header)
+        .and_then(|bytes| bytes.checked_add(shell))
+        .and_then(|bytes| bytes.checked_add(program))
+        .expect("complete ownership");
     println!(
-        "PRODUCT_COMPLETE service={service} startup_header={header} shell={shell} complete={complete} memory={}",
+        "PRODUCT_COMPLETE service={service} startup_header={header} shell={shell} complete={complete} program={program} memory={}",
         limits.memory
     );
     parse_value(&document).expect("product declarations pass every startup check");
     assert!(complete <= limits.memory, "complete {complete} > declared {}", limits.memory);
-    assert!(limits.memory - complete >= 526_000_000, "complete memory margin");
+    let floor = if with_program { PROGRAM_MEMORY_FLOOR } else { 526_000_000 };
+    assert!(limits.memory.checked_sub(complete).expect("complete fits") >= floor, "complete memory margin");
 }
+
 #[test]
 fn drawn_declarations_are_named_or_fit_complete_process_memory() {
     use service::profile::{Check, validate};
@@ -667,7 +701,12 @@ fn drawn_declarations_are_named_or_fit_complete_process_memory() {
         let roots = limits.domain.run.directories;
         let queue = limits.queue.checked_add(roots).and_then(|value| value.checked_add(2)).unwrap();
         let header = u64::try_from(
-            b"smith".len() + env!("CARGO_PKG_VERSION").len() + env!("SMITH_BUILD").len() + b"standard".len(),
+            b"smith"
+                .len()
+                .checked_add(env!("CARGO_PKG_VERSION").len())
+                .and_then(|bytes| bytes.checked_add(env!("SMITH_BUILD").len()))
+                .and_then(|bytes| bytes.checked_add(b"standard".len()))
+                .expect("header strings"),
         )
         .unwrap();
         let complete = service_bytes

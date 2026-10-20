@@ -186,6 +186,7 @@ fn scripts(system: &[u8]) -> Box<[Script]> {
 
 fn history_failure(bound: u64) -> session::End {
     session::End::Failed {
+        detail: Box::default(),
         failure: session::llm::Failure::Limit { which: session::llm::Limit::History, bound },
         evidence: session::llm::Evidence::Unsent,
         attempts: 0,

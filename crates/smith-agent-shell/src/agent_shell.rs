@@ -10,11 +10,18 @@ use std::path::Path;
 
 use service::profile::{Layer, LimitName, Refusal};
 use skein_io::kernel::{Complete, Exit, Fd, Op, Submit};
-use skein_lib::{List, Queue, Time, Token, Wall};
+use skein_lib::{List, Queue, Secret, Time, Token, Wall};
 use skein_shell::{Clock, Config as KernelConfig, Host, Kernel, drive};
 use smith_agent_service as service;
 
 use crate::config;
+
+/// Program resources supplied by the binary or a hosted process world (programs.md, 5.1).
+pub struct ProgramResources {
+    pub relay: std::path::PathBuf,
+    pub entropy: Secret,
+    pub directory: Option<Fd>,
+}
 
 /// Channel and signal descriptors handed by the caller to one agent invocation.
 pub struct Resources {
@@ -33,6 +40,7 @@ pub struct Resources {
     /// When present, roots are adopted in Start order; unused roots close at
     /// the invocation's end instead of returning to the caller.
     pub roots: Option<Box<[Fd]>>,
+    pub programs: Option<ProgramResources>,
 }
 
 /// The binary's agent and shell effects, hosted by a kernel or world until settlement.
@@ -152,7 +160,32 @@ fn effective_header(configuration: &config::Configuration) -> Result<List<smith_
     Ok(header_limits)
 }
 
-fn prepare(configuration: config::Configuration, resources: &Resources) -> Result<Prepared, String> {
+fn prepare_program(configuration: &mut service::Config, resources: Option<&ProgramResources>) -> Result<(), String> {
+    if let Some(program) = &mut configuration.program {
+        let resources = resources.ok_or("a configured program requires its shell resources")?;
+        program.relay = resources.relay.as_os_str().as_encoded_bytes().into();
+        if program.relay.is_empty() || program.relay.len() > 4096 || program.relay.contains(&0) {
+            return Err("the program relay must have a bounded executable path".into());
+        }
+        if resources.entropy.len() != 32 {
+            return Err("program entropy must have 32 bytes".into());
+        }
+        program.entropy = Secret::new(resources.entropy.expose().into());
+    } else if resources.is_some() {
+        return Err("program resources require a configured program".into());
+    }
+    Ok(())
+}
+
+fn adopt_program_root(service: &mut service::Service, resources: &Resources) -> Result<(), String> {
+    if let Some(root) = resources.programs.as_ref().and_then(|programs| programs.directory) {
+        service.adopt_program_root(root).map_err(|error| format!("programs root cannot be adopted: {error:?}"))?;
+    }
+    Ok(())
+}
+
+fn prepare(mut configuration: config::Configuration, resources: &Resources) -> Result<Prepared, String> {
+    prepare_program(&mut configuration.service, resources.programs.as_ref())?;
     let root_count = resources.roots.as_ref().map_or(0, |roots| roots.len());
     if root_count > usize::try_from(configuration.service.limits.domain.run.directories).expect("directory bound") {
         return Err("inherited agent roots exceed the directory limit".into());
@@ -164,10 +197,8 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .ok_or_else(|| derivation_refusal("routes"))?;
     let queue =
         configuration.service.limits.queue.checked_add(extra_operations).ok_or_else(|| derivation_refusal("queue"))?;
-    let operations = configuration
-        .service
-        .limits
-        .routes
+    let operations = service::program_operations(&configuration.service)
+        .ok_or_else(|| derivation_refusal("program_routes"))?
         .checked_add(extra_operations)
         .ok_or_else(|| derivation_refusal("routes"))?;
     let header_limits = effective_header(&configuration)?;
@@ -179,6 +210,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
             .ok_or_else(|| derivation_refusal("startup_header"))?;
     }
     let worst = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
+        .and_then(|bytes| bytes.checked_add(service::program_worst_case(&configuration.service)?))
         .and_then(|bytes| {
             bytes.checked_add(if configuration.trace.is_some() {
                 // The retained startup header's four strings; its structure is in Agent.
@@ -229,6 +261,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
     });
     let mut service = service::Service::new(configuration.service, resources.seed)
         .map_err(|error| format!("agent configuration cannot start: {error:?}"))?;
+    adopt_program_root(&mut service, resources)?;
     service
         .adopt_streams(resources.input, resources.output, resources.signals)
         .map_err(|fd| format!("agent stream {} cannot be adopted", fd.raw()))?;
@@ -435,6 +468,18 @@ pub fn run(path: &Path, mut errors: Box<dyn Write>) -> Result<Exit, String> {
     let signals = skein_shell::open_termination_signals()
         .map_err(|errno| format!("termination signals cannot open (errno {errno})"))
         .inspect_err(|why| diagnostic(errors.as_mut(), why))?;
+    let programs = match configuration.programs.get(&config::ProgramName::ClaudeCode) {
+        Some(program) => Some(ProgramResources {
+            relay: std::env::current_exe().map_err(|error| format!("program relay: {error}"))?,
+            entropy: skein_shell::crypto_seed().map_err(|error| format!("program entropy: {error}"))?,
+            directory: if crate::program::private_directory(&program.directory).map_err(|error| error.to_string())? {
+                Some(skein_shell::open_root(&program.directory).map_err(|error| format!("programs root: {error:?}"))?)
+            } else {
+                None
+            },
+        }),
+        None => None,
+    };
     let mut agent = Agent::new(
         configuration,
         Resources {
@@ -446,6 +491,7 @@ pub fn run(path: &Path, mut errors: Box<dyn Write>) -> Result<Exit, String> {
             trace: None,
             error: None,
             roots: None,
+            programs,
         },
         errors,
     )?;

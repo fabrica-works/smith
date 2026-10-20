@@ -11,6 +11,8 @@ use smith_protocol_channel as channel;
 use smith_protocol_llm as llm;
 
 pub mod fake;
+#[path = "program.rs"]
+pub mod program_world;
 
 pub mod events;
 mod tracing;
@@ -108,6 +110,7 @@ pub fn configured(
             declarations: declarations(environment_bytes),
         },
         smith_agent_shell::Resources {
+            programs: None,
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
             output: inherited.pipes.iter().find(|(child, _)| *child == 1).expect("stdout").1,
             error: Some(inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1),
@@ -223,6 +226,7 @@ fn configuration_with_limits(provider: skein_llm::Provider, limits: &agent::Limi
     )
     .expect("one LLM endpoint");
     agent::Config {
+        program: None,
         limits: *limits,
         domain: smith_domain::Config {
             endpoints: Box::new([smith_domain::run::charter::Endpoint(0)]),

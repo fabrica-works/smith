@@ -254,6 +254,7 @@ pub fn lower_configuration_with(tls: bool) -> agent::Config {
         specialize(configuration.service)
     });
     agent::Config {
+        program: None,
         limits: lower.limits,
         domain: lower.domain.clone(),
         channel_endpoints: lower.channel_endpoints.clone(),

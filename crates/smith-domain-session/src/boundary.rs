@@ -415,7 +415,7 @@ pub enum NoSummary {
 }
 
 /// How a session ended.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum End {
     /// Refused at the entrance: every session slot is taken.
     Busy,
@@ -430,6 +430,8 @@ pub enum End {
         /// Exact content-free transport evidence carried by the terminal.
         evidence: crate::llm::Evidence,
         attempts: u32,
+        /// Last failed attempt’s bounded diagnostic, carried to the opener.
+        detail: Box<[u8]>,
     },
     /// The session's budget ran out in the `spent` dimension: it needed a
     /// completion the budget does not leave room for, or its time is up.

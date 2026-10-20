@@ -636,7 +636,7 @@ struct ProviderClosing {
 /// How a session ended.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Ended {
     /// The single settled session terminal, or none while work remains.
     ///
@@ -1917,7 +1917,7 @@ impl World {
     }
 
     fn tell(&mut self, fact: &agent::Fact) {
-        let fact = fact.kind;
+        let fact = fact.kind.clone();
         if let agent::FactKind::Tools { opener, fact } = fact {
             let (tools::FactKind::Opened { session }
             | tools::FactKind::Refused { session, .. }
@@ -2024,7 +2024,7 @@ impl World {
                 session.records.len(),
                 session.accepted.len()
                     - usize::from(matches!(
-                        session.ended.as_ref().map(|ended| ended.end),
+                        session.ended.as_ref().map(|ended| ended.end.clone()),
                         Some(agent::End::NoSummary { .. })
                     )),
                 "every accepted completion except a failed summary emits concrete history"

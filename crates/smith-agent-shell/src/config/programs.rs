@@ -90,3 +90,26 @@ pub(super) fn endpoints(
     }
     Ok(selections)
 }
+
+/// Prepare the service's program declaration; the shell later supplies entropy and relay resources.
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "endpoint selections retain the named adapter as more adapters become available"
+)]
+pub(super) fn backend(
+    programs: &BTreeMap<ProgramName, Program>,
+    endpoints: &BTreeMap<u32, ProgramName>,
+) -> Option<smith_agent_service::ProgramBackend> {
+    use std::os::unix::ffi::OsStrExt;
+    let program = programs.get(&ProgramName::ClaudeCode)?;
+    Some(smith_agent_service::ProgramBackend {
+        program: smith_protocol_program::Programs {
+            claude: program.path.as_os_str().as_bytes().into(),
+            directory: program.directory.as_os_str().as_bytes().into(),
+        },
+        endpoints: endpoints.keys().copied().collect(),
+        relay: Box::default(),
+        entropy: skein_lib::Secret::new(Box::new([0; 32])),
+        effective_user: skein_shell::effective_user(),
+    })
+}

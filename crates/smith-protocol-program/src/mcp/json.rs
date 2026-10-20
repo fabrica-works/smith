@@ -18,12 +18,16 @@ fn limits(bound: u32) -> collector::Limits {
     }
 }
 
-pub(super) fn collect(bytes: &[u8]) -> Option<Document> {
+pub(crate) fn collect(bytes: &[u8]) -> Option<Document> {
     let bound = u32::try_from(bytes.len()).ok()?;
     if bound == 0 || bound > u32::MAX.checked_sub(2)? {
         return None;
     }
-    let limits = limits(bound);
+    collect_limited(bytes, limits(bound))
+}
+
+pub(crate) fn collect_limited(bytes: &[u8], limits: collector::Limits) -> Option<Document> {
+    let bound = u32::try_from(bytes.len()).ok()?;
     let mut collector = collector::Collector::new(FILTER, &limits, &[]).ok()?;
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut above = Queue::with_capacity(1);
@@ -51,16 +55,24 @@ pub(super) fn collect(bytes: &[u8]) -> Option<Document> {
     None
 }
 
-pub(super) fn worst_case(bound: u32) -> Option<u64> {
+pub(crate) fn worst_case(bound: u32) -> Option<u64> {
     bound.checked_add(2)?;
-    collector::worst_case(&limits(bound), &[], &FILTER)?
+    worst_case_limited(limits(bound))
+}
+
+pub(crate) fn worst_case_limited(limits: collector::Limits) -> Option<u64> {
+    let bound = limits.tokenizer.length;
+    collector::worst_case(&limits, &[], &FILTER)?
         .checked_add(Intake::worst_case(bound)?)?
         .checked_add(Queue::<collector::Event>::worst_case(1)?)?
         .checked_add(Queue::<stream::Down>::worst_case(1)?)?
-        .checked_add(skein_json::writer::worst_case(&skein_json::writer::Limits { depth: bound, length: bound })?)
+        .checked_add(skein_json::writer::worst_case(&skein_json::writer::Limits {
+            depth: limits.tokenizer.depth,
+            length: bound,
+        })?)
 }
 
-fn after(document: &Document, start: u32) -> Option<u32> {
+pub(crate) fn after(document: &Document, start: u32) -> Option<u32> {
     let mut depth = 0_u32;
     for index in start..document.len() {
         match document.token(index)?.kind {
@@ -75,7 +87,7 @@ fn after(document: &Document, start: u32) -> Option<u32> {
     None
 }
 
-pub(super) fn field(document: &Document, object: u32, name: &[u8]) -> Option<u32> {
+pub(crate) fn field(document: &Document, object: u32, name: &[u8]) -> Option<u32> {
     if document.token(object)?.kind != Kind::ObjectStart {
         return None;
     }
@@ -101,7 +113,7 @@ pub(super) fn field(document: &Document, object: u32, name: &[u8]) -> Option<u32
     None
 }
 
-pub(super) fn text(document: &Document, index: u32) -> Option<&[u8]> {
+pub(crate) fn text(document: &Document, index: u32) -> Option<&[u8]> {
     let record = document.token(index)?;
     if record.kind == Kind::String { document.text(record) } else { None }
 }
@@ -126,7 +138,7 @@ fn spell(encoder: &mut Encoder, document: &Document, start: u32, end: u32) {
     }
 }
 
-pub(super) fn raw(document: &Document, index: u32, bound: u32) -> Option<Box<[u8]>> {
+pub(crate) fn raw(document: &Document, index: u32, bound: u32) -> Option<Box<[u8]>> {
     let end = after(document, index)?;
     let limits = skein_json::writer::Limits { depth: document.len(), length: bound };
     let mut measure = Encoder::measure(&limits);
@@ -137,7 +149,7 @@ pub(super) fn raw(document: &Document, index: u32, bound: u32) -> Option<Box<[u8
     Some(write.finish())
 }
 
-pub(super) fn quote(bytes: &[u8], bound: u32) -> Option<Box<[u8]>> {
+pub(crate) fn quote(bytes: &[u8], bound: u32) -> Option<Box<[u8]>> {
     let limits = skein_json::writer::Limits { depth: 1, length: bound };
     let mut measure = Encoder::measure(&limits);
     measure.string(bytes);
@@ -147,7 +159,7 @@ pub(super) fn quote(bytes: &[u8], bound: u32) -> Option<Box<[u8]>> {
     Some(write.finish())
 }
 
-pub(super) fn join(parts: &[&[u8]]) -> Box<[u8]> {
+pub(crate) fn join(parts: &[&[u8]]) -> Box<[u8]> {
     let mut length = 0_usize;
     for part in parts {
         length = length.checked_add(part.len()).expect("admitted JSON size");
@@ -159,29 +171,29 @@ pub(super) fn join(parts: &[&[u8]]) -> Box<[u8]> {
     writer.finish()
 }
 
-pub(super) fn reply(id: &[u8], result: &[u8]) -> Box<[u8]> {
+pub(crate) fn reply(id: &[u8], result: &[u8]) -> Box<[u8]> {
     join(&[b"{\"jsonrpc\":\"2.0\",\"id\":", id, b",\"result\":", result, b"}\n"])
 }
 
-pub(super) fn error(id: &[u8], code: &[u8], message: &[u8]) -> Box<[u8]> {
+pub(crate) fn error(id: &[u8], code: &[u8], message: &[u8]) -> Box<[u8]> {
     join(&[b"{\"jsonrpc\":\"2.0\",\"id\":", id, b",\"error\":{\"code\":", code, b",\"message\":\"", message, b"\"}}\n"])
 }
 
-pub(super) fn result(text: &[u8], error: bool, bound: u32) -> Option<Box<[u8]>> {
+pub(crate) fn result(text: &[u8], error: bool, bound: u32) -> Option<Box<[u8]>> {
     let quoted = quote(text, bound)?;
     let flag: &[u8] = if error { b"true" } else { b"false" };
     Some(join(&[b"{\"content\":[{\"type\":\"text\",\"text\":", &quoted, b"}],\"isError\":", flag, b"}"]))
 }
 
-pub(super) fn field_in(document: &Document, object: Option<u32>, name: &[u8]) -> Option<u32> {
+pub(crate) fn field_in(document: &Document, object: Option<u32>, name: &[u8]) -> Option<u32> {
     field(document, object?, name)
 }
 
-pub(super) fn text_in(document: &Document, index: Option<u32>) -> Option<&[u8]> {
+pub(crate) fn text_in(document: &Document, index: Option<u32>) -> Option<&[u8]> {
     text(document, index?)
 }
 
-pub(super) fn tool_list(tools: &[Tool], bound: u32) -> Option<Box<[u8]>> {
+pub(crate) fn tool_list(tools: &[Tool], bound: u32) -> Option<Box<[u8]>> {
     let mut bytes = List::with_capacity(bound);
     for byte in b"{\"tools\":[" {
         bytes.push(*byte).ok()?;
@@ -222,7 +234,7 @@ pub(super) fn tool_list(tools: &[Tool], bound: u32) -> Option<Box<[u8]>> {
 }
 
 impl super::Server {
-    pub(super) fn message(&mut self, line: &[u8]) {
+    pub(crate) fn message(&mut self, line: &[u8]) {
         let Some(document) = collect(line) else {
             self.output.push(error(b"null", b"-32700", b"parse error"));
             return;

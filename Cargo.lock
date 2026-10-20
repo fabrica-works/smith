@@ -753,12 +753,15 @@ dependencies = [
 name = "smith-agent-process-world"
 version = "0.0.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "skein-channel",
  "skein-fake-channel",
  "skein-fake-llm-domain",
  "skein-fake-llm-protocol",
  "skein-fake-machine",
  "skein-fake-peers",
+ "skein-heap",
  "skein-io",
  "skein-json",
  "skein-lib",
@@ -779,9 +782,11 @@ dependencies = [
  "smith-domain-run",
  "smith-domain-session",
  "smith-events",
+ "smith-fake-claude",
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-protocol-machine",
+ "smith-protocol-program",
  "smith-transcript",
 ]
 
@@ -807,6 +812,7 @@ dependencies = [
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-protocol-machine",
+ "smith-protocol-program",
  "smith-transcript",
 ]
 
@@ -1344,6 +1350,11 @@ dependencies = [
  "skein-io",
  "skein-json",
  "skein-lib",
+ "skein-llm-connection",
+ "skein-llm-world",
+ "skein-tls",
+ "smith-domain",
+ "smith-protocol-llm",
 ]
 
 [[package]]

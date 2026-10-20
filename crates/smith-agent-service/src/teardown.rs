@@ -102,7 +102,10 @@ pub(super) fn components_closed(service: &Service) -> bool {
         None => 0,
     };
     let streams = streams.checked_add(u32::from(service.signals.is_some())).expect("bounded live signals");
-    service.llm.closed() && service.live.deadline().is_none() && settled(service, streams)
+    super::program::closed(service)
+        && service.llm.closed()
+        && service.live.deadline().is_none()
+        && settled(service, streams)
 }
 
 fn stream_closed(service: &Service) -> bool {

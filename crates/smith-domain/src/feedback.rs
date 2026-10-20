@@ -452,6 +452,8 @@ fn render_fault(text: &mut Text, fault: run::Fault) {
                 run::CompletionEvidence::Response { .. } => b"response",
             });
         }
+        run::Fault::Unauthorized { .. } => text.put(b"unauthorized"),
+        run::Fault::Program { .. } => text.put(b"program"),
         run::Fault::Limited { .. } => text.put(b"limited"),
         run::Fault::Refused { .. } => text.put(b"account-refused"),
         run::Fault::Provider => text.put(b"provider"),

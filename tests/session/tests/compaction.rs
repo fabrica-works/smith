@@ -157,6 +157,7 @@ fn context_too_long_on_the_compaction_fails_naming_the_window() {
     assert!(matches!(
         world.end,
         Some(session::End::Failed {
+            detail: _,
             failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 2_000 },
             evidence: llm::Evidence::Response { status: None },
             attempts: 1
@@ -307,6 +308,7 @@ fn an_oversized_summary_is_charged_without_telling_a_turn() {
     assert_eq!(
         world.end,
         Some(session::End::Failed {
+            detail: Box::default(),
             failure: llm::Failure::Limit { which: llm::Limit::Path(llm::Cap::Answer), bound: 256 },
             evidence: llm::Evidence::Response { status: None },
             attempts: 1
@@ -352,6 +354,7 @@ fn a_fresh_window_at_its_history_bound_fails_naming_history() {
     assert_eq!(
         world.end,
         Some(session::End::Failed {
+            detail: Box::default(),
             failure: llm::Failure::Limit { which: llm::Limit::History, bound: 2 },
             evidence: llm::Evidence::Unsent,
             attempts: 0
@@ -374,6 +377,7 @@ fn a_childs_final_answer_at_its_message_bound_names_that_bound() {
     assert_eq!(
         world.end,
         Some(session::End::Failed {
+            detail: Box::default(),
             failure: llm::Failure::Limit { which: llm::Limit::History, bound: 2 },
             evidence: llm::Evidence::Unsent,
             attempts: 0,
@@ -643,6 +647,7 @@ fn the_guards_refusal_compacts_the_window_once() {
     assert_eq!(
         world.end,
         Some(session::End::Failed {
+            detail: detail.as_slice().into(),
             failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 2_000 },
             evidence: llm::Evidence::Unsent,
             attempts: 1,

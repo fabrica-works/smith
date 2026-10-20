@@ -9,6 +9,10 @@
 use alloc::boxed::Box;
 
 mod memory;
+#[path = "program.rs"]
+mod program;
+
+pub use program::{AdoptError, ProgramBackend, program_operations, program_worst_case};
 #[path = "teardown.rs"]
 pub mod teardown;
 
@@ -69,6 +73,7 @@ pub struct Config {
     pub llm_endpoints: llm::Endpoints,
     pub environment: machine::Environment,
     pub stream_mode: StreamMode,
+    pub program: Option<ProgramBackend>,
 }
 
 /// Why startup cannot build a bounded agent service.
@@ -106,6 +111,7 @@ pub enum Failure {
 enum Owner {
     Llm(Token),
     Machine(Token),
+    Program(Token),
 }
 
 /// One submission's original token and the layer that issued it.
@@ -129,6 +135,7 @@ pub struct Service {
     live: crate::live::Live,
     llm: llm::Component,
     machine: machine::Component,
+    program: Option<Box<program::Program>>,
     io: Option<io::Io>,
     files: file_layer::FileIo,
     domain_env: Env<domain::Limits>,
@@ -596,7 +603,10 @@ impl Service {
         if limits.queue < room || limits.routes < lower_routes {
             return Err(ConfigError::Queue);
         }
-        let memory = worst_case(&limits, &config.llm_endpoints).ok_or(ConfigError::Memory)?;
+        let memory = worst_case(&limits, &config.llm_endpoints)
+            .ok_or(ConfigError::Memory)?
+            .checked_add(program_worst_case(&config).ok_or(ConfigError::Memory)?)
+            .ok_or(ConfigError::Memory)?;
         if memory > limits.memory {
             return Err(ConfigError::MemoryCeiling);
         }
@@ -605,7 +615,8 @@ impl Service {
 
     fn parts(config: Config, seed: Option<u64>) -> Result<Self, ConfigError> {
         let events = crate::events::Producer::configured(&config);
-        let Config { limits, domain, channel_endpoints, llm_endpoints, environment, stream_mode } = config;
+        let Config { mut limits, domain, channel_endpoints, llm_endpoints, environment, stream_mode, program } = config;
+        let program::Parts { program, files } = program::parts(program, &mut limits, &environment)?;
         let (domain, channel, io, frames) = match seed {
             Some(seed) => (
                 Some(domain::Domain::new(&limits.domain, domain, seed)),
@@ -634,14 +645,9 @@ impl Service {
             live: crate::live::Live::new(None, limits.live_interval),
             llm,
             machine,
+            program,
             io,
-            files: file_layer::FileIo::with_whole_limit(
-                limits.file_slots,
-                limits.file_read,
-                limits.file_entries,
-                limits.file_bytes,
-                limits.file_timeout,
-            ),
+            files,
             domain_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.domain },
             llm_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.llm },
             machine_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.machine },
@@ -885,21 +891,14 @@ impl Service {
         let mut grants = List::with_capacity(u32::try_from(start.grants.len()).expect("bounded grant count"));
         for grant in &start.grants {
             let value = match self.channel.as_ref().expect("framed agent owns its channel").grant_value(grant.name) {
-                Some(value) => value,
-                None => {
-                    self.refuse_start(run::Invalid::Grants);
-                    return;
-                }
-            };
-            let credential = match credential(value) {
-                Some(credential) => credential,
+                Some(value) => value.clone(),
                 None => {
                     self.refuse_start(run::Invalid::Grants);
                     return;
                 }
             };
             let lapses = self.domain_env.now.saturating_add(grant.valid);
-            if self.llm.grant(grant.name, credential, lapses).is_err() {
+            if program::install(self, &start, grant.name, &value, lapses).is_err() {
                 self.refuse_start(run::Invalid::Grants);
                 return;
             }
@@ -1034,6 +1033,7 @@ fn lower_events(service: &mut Service) {
             || (service.channel.is_some()
                 && (service.channel_events.room() < channel::max_out(&service.limits.channel).to_domain
                     || service.channel_below.room() < channel::max_out(&service.limits.channel).below))
+            || !program::room(service)
             || service.llm_events.room() < llm::MAX_OUT.above
             || service.llm_below.room() < llm::MAX_OUT.below
             || service.machine_events.room() < machine::max_out(&service.limits.machine).to_domain
@@ -1072,7 +1072,8 @@ fn lower_events(service: &mut Service) {
         route_io_event(service, event);
     }
     for _ in 0..service.file_events.capacity() {
-        if service.machine_events.room() < machine::max_out(&service.limits.machine).to_domain
+        if !program::room(service)
+            || service.machine_events.room() < machine::max_out(&service.limits.machine).to_domain
             || service.machine_below.room() < machine::max_out(&service.limits.machine).below
         {
             break;
@@ -1085,6 +1086,10 @@ fn lower_events(service: &mut Service) {
             service.root_close_pending = false;
             continue;
         }
+        let event = match program::file_event(service, event) {
+            Some(event) => event,
+            None => continue,
+        };
         service.machine.from_below(
             &service.machine_env,
             machine::BelowEvent::File(event),
@@ -1246,6 +1251,10 @@ fn route_io_event(service: &mut Service, event: io::Event) {
 }
 
 fn route_owned_io(service: &mut Service, event: io::Event) {
+    let event = match program::pipe_event(service, event) {
+        Some(event) => event,
+        None => return,
+    };
     let owner = io_event_owner(&event).expect("only signal events lack owner");
     if service.pipe_routes.contains_key(&owner) {
         let closed = match &event {
@@ -1297,6 +1306,10 @@ fn route_owned_io(service: &mut Service, event: io::Event) {
         Owner::Llm(original) => {
             let event = remap_io_owner(event, original);
             service.llm.from_below(&service.llm_env, event, &mut service.llm_events, &mut service.llm_below);
+        }
+        Owner::Program(original) => {
+            let event = remap_io_owner(event, original);
+            program::io_event(service, event);
         }
         Owner::Machine(original) => {
             if let io::Event::Spawned { pipes, .. } = &event {
@@ -1390,7 +1403,7 @@ fn llm_io(service: &Service, event: &io::Event) -> bool {
     let id = Id::<Owner>::from_token(Token::new(owner.raw() & !COMPONENT_OWNER_BIT));
     match service.owners.get(id) {
         Some(Owner::Llm(_)) => true,
-        Some(Owner::Machine(_)) | None => false,
+        Some(Owner::Machine(_) | Owner::Program(_)) | None => false,
     }
 }
 
@@ -1452,6 +1465,7 @@ fn llm_measures(service: &mut Service) {
 }
 
 fn component_up(service: &mut Service) {
+    program::fire(service);
     llm_measures(service);
     let channel_max = channel::max_out(&service.limits.channel);
     if service.channel_events.room() >= channel_max.to_domain
@@ -1619,6 +1633,13 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
             }
         }
         channel::OpenEvent::Grant { grant } => {
+            let value =
+                service.channel.as_ref().expect("framed agent owns its channel").grant_value(grant.name).cloned();
+            if let Some(value) = &value
+                && program::renew(service, grant, value)
+            {
+                return;
+            }
             match service.channel.as_ref().expect("framed agent owns its channel").grant_value(grant.name) {
                 Some(value) => match credential(value) {
                     Some(value) => {
@@ -1784,6 +1805,7 @@ fn domain_down(service: &mut Service) {
             || (service.channel.is_some()
                 && (service.channel_events.room() < channel_max.to_domain
                     || service.channel_below.room() < channel_max.below))
+            || !program::room(service)
             || service.llm_events.room() < llm::MAX_OUT.above
             || service.llm_below.room() < llm::MAX_OUT.below
             || service.machine_events.room() < machine_max.to_domain
@@ -2060,7 +2082,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 observation,
                 deltas,
             };
-            service.llm.from_domain(&service.llm_env, request, &mut service.llm_events, &mut service.llm_below);
+            program::complete(service, request);
         }
         domain::Request::Unauthorized { grant } => {
             account_notice(
@@ -2123,12 +2145,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             }
         }
         domain::Request::Cancel { owner } => {
-            service.llm.from_domain(
-                &service.llm_env,
-                llm::FromDomain::Cancel { owner },
-                &mut service.llm_events,
-                &mut service.llm_below,
-            );
+            program::complete(service, llm::FromDomain::Cancel { owner });
         }
         domain::Request::Io { owner, op, deadline } => {
             service.machine.from_domain(
@@ -2217,6 +2234,7 @@ fn component_down(service: &mut Service) {
             }
         }
     }
+    program::down(service);
     for _ in 0..service.llm_below.capacity() {
         if service.io_requests.room() == 0 {
             break;
@@ -2392,6 +2410,7 @@ pub fn next_deadline(service: &Service) -> Option<Time> {
     };
     for deadline in [
         service.llm.next_deadline(),
+        program::deadline(service),
         service.machine.next_deadline(),
         match &service.io {
             Some(io) => io.next_deadline(),
@@ -2419,7 +2438,12 @@ pub fn next_policy_deadline(service: &Service) -> Option<Time> {
         Some(domain) => domain.next_deadline(),
         None => None,
     };
-    for deadline in [service.llm.next_deadline(), service.machine.next_deadline(), service.live.deadline()] {
+    for deadline in [
+        service.llm.next_deadline(),
+        program::policy_deadline(service),
+        service.machine.next_deadline(),
+        service.live.deadline(),
+    ] {
         earliest = match deadline {
             Some(next) => match earliest {
                 Some(old) => Some(old.min(next)),
@@ -2466,6 +2490,7 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         || (takes && !service.domain_events.is_empty())
         || (takes && !service.domain_requests.is_empty() && channel_takes(service))
         || !service.channel_below.is_empty()
+        || program::pending(service)
         || !service.llm_below.is_empty()
         || !service.machine_below.is_empty()
         || !service.io_requests.is_empty()
@@ -2502,6 +2527,7 @@ fn settled(service: &Service, streams: u32) -> bool {
         && service.channel_below.is_empty()
         && service.llm_events.is_empty()
         && service.llm.measures_drained()
+        && program::closed(service)
         && service.llm_below.is_empty()
         && service.machine_events.is_empty()
         && service.machine_below.is_empty()
@@ -2686,11 +2712,12 @@ pub(crate) mod tests {
         }
     }
 
-    fn configuration() -> Config {
+    pub(super) fn configuration() -> Config {
         let limits = limits();
         let channel_endpoints = channel::Endpoints::new(List::with_capacity(1));
         let llm_endpoints = llm::Endpoints::new(Box::new([]), 1).expect("empty endpoint table");
         Config {
+            program: None,
             limits,
             domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
             channel_endpoints,
@@ -2745,6 +2772,7 @@ pub(crate) mod tests {
         let channel_endpoints = channel::Endpoints::new(List::with_capacity(1));
         let result = Service::new(
             Config {
+                program: None,
                 limits,
                 domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
                 channel_endpoints,

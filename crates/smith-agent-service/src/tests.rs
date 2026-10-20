@@ -243,6 +243,7 @@ fn standard_profile_builds_a_complete_bounded_service() {
     )
     .expect("standard profile");
     let configuration = crate::Config {
+        program: None,
         limits,
         domain: smith_domain::Config { endpoints: Box::new([]), models: Box::new([]) },
         channel_endpoints: smith_protocol_channel::Endpoints::new(List::with_capacity(0)),
@@ -960,6 +961,7 @@ fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_
             session::FactKind::Ended {
                 opener: owner,
                 end: session::End::Failed {
+                    detail: Box::default(),
                     failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 123 },
                     evidence: llm::Evidence::Response { status: None },
                     attempts: 1,
@@ -1019,6 +1021,7 @@ fn account_completion_record(
             session::FactKind::Ended {
                 opener: owner,
                 end: session::End::Failed {
+                    detail: Box::default(),
                     failure,
                     evidence: llm::Evidence::Response { status: Some(400) },
                     attempts: 1,

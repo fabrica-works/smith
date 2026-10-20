@@ -69,7 +69,7 @@ fn random_worlds_settle_with_every_session_ended() {
             for (stop, _) in &session.yields {
                 stops.insert(format!("{stop:?}"));
             }
-            let kind = match session.ended.expect("every session ends").end {
+            let kind = match &session.ended.as_ref().expect("every session ends").end {
                 End::Busy => "busy".into(),
                 End::Invalid => "invalid".into(),
                 End::Closed => "closed".into(),

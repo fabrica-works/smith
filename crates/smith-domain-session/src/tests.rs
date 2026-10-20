@@ -1244,6 +1244,7 @@ fn transient_failures_are_retried_after_a_backoff_until_the_retries_run_out() {
         end,
         Some(ended(
             End::Failed {
+                detail: Box::default(),
                 failure: Failure::Overloaded,
                 evidence: crate::llm::Evidence::Unknown,
                 attempts: LIMITS.retries + 1
@@ -1271,7 +1272,10 @@ fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
             h.step(Event::Failed { owner, failure, evidence: crate::llm::Evidence::Unknown, detail: Box::default() });
         assert_eq!(
             terminal,
-            Some(ended(End::Failed { failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 }, 0)),
+            Some(ended(
+                End::Failed { detail: Box::default(), failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 },
+                0
+            )),
             "{failure:?}"
         );
     }
@@ -1740,6 +1744,7 @@ fn oversized_provider_completions_end_before_calls_or_turns() {
         h.step(Event::Completed { owner, completion: oversized }),
         Some(ended(
             End::Failed {
+                detail: Box::default(),
                 failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
                 evidence: crate::llm::Evidence::Response { status: None },
                 attempts: 1
@@ -1768,6 +1773,7 @@ fn oversized_provider_completions_end_before_calls_or_turns() {
         h.step(Event::Completed { owner, completion }),
         Some(ended(
             End::Failed {
+                detail: Box::default(),
                 failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
                 evidence: crate::llm::Evidence::Response { status: None },
                 attempts: 1
@@ -1789,6 +1795,7 @@ fn late_oversized_completion_replaces_the_closing_reason() {
         h.step(Event::Completed { owner, completion }),
         Some(ended(
             End::Failed {
+                detail: Box::default(),
                 failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
                 evidence: crate::llm::Evidence::Response { status: None },
                 attempts: 1
@@ -1820,6 +1827,7 @@ fn a_late_oversized_completion_keeps_its_retry_attempt_count() {
         h.step(Event::Completed { owner, completion }),
         Some(ended(
             End::Failed {
+                detail: Box::default(),
                 failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
                 evidence: crate::llm::Evidence::Response { status: None },
                 attempts: 2,
@@ -2015,6 +2023,7 @@ fn completion_name_exhaustion_ends_before_any_owned_or_delegated_effect() {
                     assert_eq!(
                         end,
                         End::Failed {
+                            detail: Box::default(),
                             failure: Failure::ApplicationLimit,
                             evidence: crate::llm::Evidence::Unsent,
                             attempts: 0
@@ -2189,6 +2198,7 @@ fn exact_provider_envelope_admits_and_one_byte_short_refuses_before_effects() {
         refused.one(),
         Some(ended(
             End::Failed {
+                detail: Box::default(),
                 failure: Failure::Limit { which: crate::llm::Limit::History, bound: exact - 1 },
                 evidence: crate::llm::Evidence::Unsent,
                 attempts: 0
@@ -2853,7 +2863,15 @@ fn a_native_request_limit_is_context_too_long_without_retry() {
                 evidence: crate::llm::Evidence::Unsent,
                 detail: Box::default(),
             }),
-            Some(ended(End::Failed { failure: expected, evidence: crate::llm::Evidence::Unsent, attempts: 1 }, 0))
+            Some(ended(
+                End::Failed {
+                    detail: Box::default(),
+                    failure: expected,
+                    evidence: crate::llm::Evidence::Unsent,
+                    attempts: 1
+                },
+                0
+            ))
         );
         assert_eq!(harness.domain.next_deadline(), None);
     }
@@ -3078,7 +3096,7 @@ mod batched_change;
 #[test]
 fn an_unauthorized_call_is_retried_only_for_an_account() {
     let failure = Failure::Unauthorized;
-    let failed = End::Failed { failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 };
+    let failed = End::Failed { detail: Box::default(), failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 };
     for (account, expected) in [(Some(0), None), (None, Some(ended(failed, 0)))] {
         let mut harness = Harness::new(&LIMITS);
         let (owner, _) = harness.open_with(1, Spec { account, ..spec() });

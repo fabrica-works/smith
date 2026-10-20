@@ -138,7 +138,7 @@ pub(super) fn instruction_bytes(conversation: &Conversation) -> usize {
 
 pub(super) fn window_limit(conversation: &Conversation, evidence: Evidence, attempts: u32) -> End {
     let failure = Failure::Limit { which: Limit::Window, bound: u64::from(conversation.model_window) };
-    End::Failed { failure, evidence, attempts }
+    End::Failed { failure, evidence, attempts, detail: Box::default() }
 }
 
 /// Move only opener text appended after the last ordinary completion out of the request.
@@ -290,6 +290,8 @@ pub(super) fn context_failure(failure: Failure) -> bool {
         | Failure::Unavailable
         | Failure::TimedOut { .. }
         | Failure::Refused
+        | Failure::SignedOut
+        | Failure::Program { .. }
         | Failure::Unsupported
         | Failure::Invalid
         | Failure::Unauthorized

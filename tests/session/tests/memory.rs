@@ -994,6 +994,7 @@ fn check_provider_admission(base: &Limits, exact: u64) {
             assert_eq!(
                 seen.end,
                 Some(smith_domain_session::End::Failed {
+                    detail: Box::default(),
                     failure: Failure::Limit { which: smith_domain_session::llm::Limit::History, bound: history_bytes },
                     evidence: smith_domain_session::llm::Evidence::Unsent,
                     attempts: 0
@@ -1357,6 +1358,7 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
             assert_eq!(
                 narrowed.end,
                 Some(smith_domain_session::End::Failed {
+                    detail: Box::default(),
                     failure: smith_domain_session::llm::Failure::Limit {
                         which: smith_domain_session::llm::Limit::History,
                         bound: cap
@@ -1408,6 +1410,7 @@ fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released()
             assert_eq!(
                 seen.end,
                 Some(smith_domain_session::End::Failed {
+                    detail: Box::default(),
                     failure: smith_domain_session::llm::Failure::Limit {
                         which: smith_domain_session::llm::Limit::History,
                         bound: cap

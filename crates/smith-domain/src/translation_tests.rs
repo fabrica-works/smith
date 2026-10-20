@@ -113,7 +113,7 @@ fn every_completion_failure_and_transport_evidence_maps_without_inference() {
         ] {
             assert_eq!(
                 translate::end(
-                    session::End::Failed { failure, evidence, attempts: 1 },
+                    session::End::Failed { detail: Box::default(), failure, evidence, attempts: 1 },
                     0,
                     Some(0),
                     None,

@@ -243,6 +243,8 @@ fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
             }
             run::Fault::Declined => failure(AnswerClass::Model, Some(b"refused")),
             run::Fault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
+            run::Fault::Unauthorized { .. } => failure(AnswerClass::Model, Some(b"unauthorized")),
+            run::Fault::Program { .. } => failure(AnswerClass::Model, Some(b"program")),
             run::Fault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
         run::Failure::Budget { exhausted, used, bound } => {

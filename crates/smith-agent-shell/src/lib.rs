@@ -10,4 +10,4 @@ pub mod program;
 pub mod relay;
 pub mod trace;
 
-pub use agent_shell::{Agent, Resources, given_up_line, identity, run};
+pub use agent_shell::{Agent, ProgramResources, Resources, given_up_line, identity, run};

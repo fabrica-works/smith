@@ -117,6 +117,7 @@ fn a_refused_configuration_writes_one_line_and_exits_1_without_a_channel() {
     let startup = Agent::read(
         std::path::Path::new(""),
         Resources {
+            programs: None,
             input: skein_io::kernel::Fd::new(100),
             output: skein_io::kernel::Fd::new(101),
             signals: skein_io::kernel::Fd::new(102),
@@ -163,6 +164,7 @@ fn a_broken_declared_relationship_is_named_before_channel_adoption() {
     let startup = Agent::read(
         &path,
         Resources {
+            programs: None,
             input: skein_io::kernel::Fd::new(100),
             output: skein_io::kernel::Fd::new(101),
             signals: skein_io::kernel::Fd::new(102),
@@ -199,6 +201,7 @@ fn the_complete_shell_memory_refusal_precedes_channel_adoption() {
     let startup = Agent::new(
         configuration,
         Resources {
+            programs: None,
             input: skein_io::kernel::Fd::new(100),
             output: skein_io::kernel::Fd::new(101),
             signals: skein_io::kernel::Fd::new(102),

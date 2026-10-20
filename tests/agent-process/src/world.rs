@@ -10,8 +10,8 @@ use skein_shell::Host;
 use skein_world::{HostedProgram, Inherited, Memory, Outcome};
 
 #[expect(clippy::struct_excessive_bools, reason = "independent kernel operations each own an in-flight bit")]
-struct Parent {
-    peer: skein_fake_channel::ScriptedPeer,
+pub(crate) struct Parent {
+    pub(crate) peer: skein_fake_channel::ScriptedPeer,
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     input: Option<Fd>,
@@ -22,23 +22,24 @@ struct Parent {
     error_reading: bool,
     writing: bool,
     pending: Option<(Box<[u8]>, u32)>,
-    status: Option<kernel::Exit>,
+    pub(crate) status: Option<kernel::Exit>,
     signal: u32,
     signalled: u32,
     hang_up: bool,
     hold_channel: bool,
-    errors: Vec<u8>,
+    pub(crate) errors: Vec<u8>,
     closing: u32,
     next: u64,
     acknowledge_turns: bool,
     acknowledged: u32,
     frames_at_release: usize,
     refreshing: Option<smith_channel::GrantValue>,
+    pub(crate) cancel_pending: bool,
 }
 
 impl Parent {
     #[expect(clippy::too_many_arguments, reason = "ordinary scenario harness supplies independent startup inputs")]
-    fn new(
+    pub(crate) fn new(
         root: Fd,
         charter: &[u8],
         hang_up: bool,
@@ -96,6 +97,7 @@ impl Parent {
             acknowledged: 0,
             frames_at_release: 0,
             refreshing: None,
+            cancel_pending: false,
         };
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
@@ -139,6 +141,18 @@ impl Parent {
             }),
         });
         parent
+    }
+
+    pub(crate) fn program_arguments(
+        &mut self,
+        arguments: Box<[Box<[u8]>]>,
+        refresh: Option<smith_channel::GrantValue>,
+    ) {
+        let mut startup = self.submissions.pop().expect("parent's initial spawn");
+        let Op::Spawn { spawn } = &mut startup.kind else { panic!("initial operation is Spawn") };
+        spawn.args = arguments;
+        self.submissions.push(startup);
+        self.refreshing = refresh;
     }
 
     fn submit(&mut self, kind: Op) {
@@ -288,6 +302,10 @@ impl Parent {
 
 impl Host for Parent {
     fn iterate(&mut self, _now: Time, _wall: Wall) {
+        if self.cancel_pending {
+            self.cancel_pending = false;
+            self.peer.play(crate::program_world::cancel());
+        }
         while let Some(complete) = self.completions.pop() {
             self.completed(complete);
         }
@@ -338,6 +356,7 @@ impl Host for Parent {
     fn work_pending(&self, _now: Time) -> bool {
         !self.completions.is_empty()
             || !self.submissions.is_empty()
+            || self.cancel_pending
             || (self.signal > self.signalled)
             || (self.output.is_some() && !self.reading)
             || (self.error.is_some() && !self.error_reading)

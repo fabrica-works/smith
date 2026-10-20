@@ -3,6 +3,10 @@ use super::{Judge, Meeting};
 use smith_domain::{session::FactKind, tools};
 
 impl Meeting {
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the referee consumes the observed fact at its dispatch boundary"
+    )]
     pub(super) fn job_fact(&mut self, fact: FactKind, judge: &mut Judge<&'static str, ()>) {
         match fact {
             FactKind::Tools { opener, fact: tools::FactKind::Answered { tool, job: Some(job), verdict, .. } } => {

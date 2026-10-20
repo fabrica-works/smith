@@ -11,11 +11,16 @@ use skein_lib::{Decimal, Env, Id, List, Queue, Writer};
 use smith_domain_tools::{self as tools, Call};
 
 pub(super) fn limit(bound: u64) -> End {
-    End::Failed { failure: Failure::Limit { which: Limit::History, bound }, evidence: Evidence::Unsent, attempts: 0 }
+    End::Failed {
+        failure: Failure::Limit { which: Limit::History, bound },
+        evidence: Evidence::Unsent,
+        attempts: 0,
+        detail: Box::default(),
+    }
 }
 
 pub(super) fn sequence_limit() -> End {
-    End::Failed { failure: Failure::ApplicationLimit, evidence: Evidence::Unsent, attempts: 0 }
+    End::Failed { failure: Failure::ApplicationLimit, evidence: Evidence::Unsent, attempts: 0, detail: Box::default() }
 }
 
 pub(super) fn completion_limit(conversation: &Conversation, content: &[Block], limits: &Limits) -> End {
@@ -25,6 +30,7 @@ pub(super) fn completion_limit(conversation: &Conversation, content: &[Block], l
         (Cap::Answer, limits.completion_bytes)
     };
     End::Failed {
+        detail: Box::default(),
         failure: Failure::Limit { which: Limit::Path(which), bound },
         evidence: Evidence::Response { status: None },
         attempts: conversation.completion_attempts,

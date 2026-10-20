@@ -1219,7 +1219,7 @@ fn conclude(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Q
 fn settle(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Queue<Request>) {
     let session = domain.sessions.get_mut(id).expect("a session lives until it is retired");
     let (end, waiting) = match &session.state {
-        State::Closing { end, waiting } => (*end, *waiting),
+        State::Closing { end, waiting } => (end.clone(), *waiting),
         State::Calling { .. }
         | State::Backoff { .. }
         | State::Tooling { .. }
@@ -1250,6 +1250,18 @@ fn settle(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Que
         let session = domain.sessions.get_mut(id).expect("session lives through its terminal");
         let Conversation { opener, turns, usage, reported, .. } = session.conversation;
         let detail = mem::replace(&mut session.conversation.detail, Box::new([]));
+        let mut end = end;
+        match &mut end {
+            End::Failed { detail: retained, .. } => retained.clone_from(&detail),
+            End::Busy
+            | End::Invalid
+            | End::Closed
+            | End::Budget { .. }
+            | End::NoSummary { .. }
+            | End::TranscriptRefused { .. }
+            | End::PriceOverflow
+            | End::UsageOverflow => {}
+        }
         out.push(Request::Ended { opener, end, turns, usage, reported, detail });
         session.state = State::Closed;
     } else {
@@ -1278,7 +1290,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &mut Session, out: &Queue<
             Request::Yielded { opener, stop, text: _ } => FactKind::Yielded { opener: *opener, stop: *stop },
             Request::Used { opener, usage } => FactKind::Used { opener: *opener, usage: *usage },
             Request::Ended { opener, end, turns, usage, .. } => {
-                FactKind::Ended { opener: *opener, end: *end, turns: *turns, usage: *usage }
+                FactKind::Ended { opener: *opener, end: end_fact(end), turns: *turns, usage: *usage }
             }
             Request::Complete {
                 owner: _,
@@ -1835,6 +1847,8 @@ fn call_failed(
         | Failure::TimedOut { .. }
         | Failure::ContextTooLong
         | Failure::Refused
+        | Failure::Program { .. }
+        | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
         | Failure::Unauthorized
@@ -1849,6 +1863,8 @@ fn call_failed(
         | Failure::RateLimited { .. }
         | Failure::ContextTooLong
         | Failure::Refused
+        | Failure::Program { .. }
+        | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
         | Failure::Exhausted { .. }
@@ -1864,6 +1880,7 @@ fn call_failed(
         Retry::Fail => finish(End::Failed {
             failure,
             evidence,
+            detail: Box::default(),
             attempts: attempt.checked_add(1).expect("an admitted completion leaves room for its first attempt"),
         }),
         Retry::TimeUp => finish(OUT_OF_TIME),
@@ -2061,7 +2078,7 @@ const OUT_OF_TIME: End = End::Budget { spent: Dimension::Time };
 
 /// Refuses an open at the entrance: the session ends without having opened.
 fn refuse(facts: &mut Facts, opener: Token, end: End, out: &mut Queue<Request>) {
-    facts.push(FactKind::Ended { opener, end, turns: 0, usage: Usage::ZERO });
+    facts.push(FactKind::Ended { opener, end: end_fact(&end), turns: 0, usage: Usage::ZERO });
     out.push(Request::Ended {
         opener,
         end,
@@ -2388,6 +2405,8 @@ fn retry_decision(failure: Failure, attempt: u32, now: Time, expiry: Time, limit
         | Failure::RateLimited { .. }
         | Failure::ContextTooLong
         | Failure::Refused
+        | Failure::Program { .. }
+        | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
         | Failure::Exhausted { .. }
@@ -2410,6 +2429,8 @@ fn backoff(failure: Failure, attempt: u32, limits: &Limits, rng: &mut Rng) -> Op
         Failure::RateLimited { retry_after } => retry_after,
         Failure::ContextTooLong
         | Failure::Refused
+        | Failure::Program { .. }
+        | Failure::SignedOut
         | Failure::Unsupported
         | Failure::Invalid
         | Failure::Exhausted { .. }
@@ -3380,7 +3401,7 @@ pub(crate) fn delegate_ended(
             let end = match added {
                 Some(_) => keep_closing(conversation, slot, block, credit, result, &env.limits).unwrap_or(end),
                 None => {
-                    let _: Option<End> = keep_closing(conversation, slot, block, credit, result, &env.limits);
+                    let _discarded: Option<End> = keep_closing(conversation, slot, block, credit, result, &env.limits);
                     clear_pending(conversation);
                     End::PriceOverflow
                 }
@@ -3682,4 +3703,21 @@ fn observed_run(
     let id = calls.runs.insert(run).expect("the run slab has room for two batches a session");
     calls.runs.get_mut(id).expect("inserted above").metadata.owner = id.token();
     id
+}
+
+/// Facts carry terminal classification only; diagnostics go to the opener's terminal.
+fn end_fact(end: &End) -> End {
+    match end {
+        End::Failed { failure, evidence, attempts, .. } => {
+            End::Failed { failure: *failure, evidence: *evidence, attempts: *attempts, detail: Box::default() }
+        }
+        End::Busy
+        | End::Invalid
+        | End::Closed
+        | End::Budget { .. }
+        | End::NoSummary { .. }
+        | End::TranscriptRefused { .. }
+        | End::PriceOverflow
+        | End::UsageOverflow => end.clone(),
+    }
 }

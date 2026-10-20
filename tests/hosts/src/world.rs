@@ -249,6 +249,7 @@ fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let agent = Agent::new(
         configuration,
         smith_agent_shell::Resources {
+            programs: None,
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
             output: inherited.pipes.iter().find(|(child, _)| *child == 1).expect("stdout").1,
             error: Some(inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1),

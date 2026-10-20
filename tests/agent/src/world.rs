@@ -1182,7 +1182,7 @@ impl World {
     fn gather(&mut self) {
         while let Some(fact) = self.agent.pop_fact() {
             match &fact {
-                Fact::Session { fact } => self.observe(Seen::Jobs { fact: fact.kind }),
+                Fact::Session { fact } => self.observe(Seen::Jobs { fact: fact.kind.clone() }),
                 Fact::Run { .. } => {}
             }
             if self.settings.drain_facts {
