@@ -286,10 +286,13 @@ policy.
   endpoints need as a grant on the channel, or from the host's protocol
   layer in one process (section 9), named by account and generation,
   refreshed before it lapses; the agent's protocol layer
-  holds it, and the domain names only the grant. A grant's value is a
-  credential, a bearer or a key, or a program source's name
-  (protocol/channel.md, section 6), and it decides the backend the run
-  runs on (protocol/programs.md, section 3).
+  holds it, and the domain names only the grant and the form its value
+  takes. A grant's value is a credential, a bearer or a key, or a
+  program source's name (protocol/channel.md, section 6), and it decides
+  the backend the run runs on (protocol/programs.md, section 3). The
+  host's domain knows each grant's form, the credential's scheme or the
+  source's name, never the credential, so that a host in one process can
+  refuse what it cannot run (section 9.1).
 - **Notices go up for the host to act on:** a credential unauthorized,
   an account limited, an account refused. The run that met one ends
   failed for its account, except an unauthorized credential, which a

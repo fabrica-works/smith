@@ -409,8 +409,10 @@ limits.md, 2.4, gives.
   the grant lapses. The LLM component reads the value from the table
   when it starts a call (llm.md).
 - **The host's half fills the values in** from its host's credentials,
-  or with the program source's name, so the host's domain also names
-  only accounts and generations (domain/host.md, section 7).
+  or with the program source's name, so the host's domain names only
+  accounts, generations and each value's form: a credential's scheme or
+  the source's name (domain/host.md, section 7). The half refuses a
+  value whose form is not its grant's.
 - **A value goes nowhere else:** not into a turn, a fact, a trace or a
   charter.
 

@@ -64,10 +64,12 @@ The contract is domain/host.md's.
   cancel.
 - **Deadlines become durations** on the way down, and durations become
   deadlines on the host's clock on the way up.
-- **Grants:** the domain names an account and a generation. The half fills
-  in the value from its host's credentials as it encodes, a credential
-  with its scheme or a program source's name (channel.md, section 6), so
-  no domain of the host's holds one (domain/host.md, section 7).
+- **Grants:** the domain names an account, a generation and the form of
+  the value, a credential's scheme or a program source's name. The half
+  fills in the value from its host's credentials as it encodes
+  (channel.md, section 6), and refuses one whose form is not its grant's,
+  so no domain of the host's holds a credential (domain/host.md, section
+  7).
 - **Checking a program source.** When its host asks, the half runs the
   program's status in the source's environment, with the host's
   deadline, and answers usable, not signed in, signed in otherwise
