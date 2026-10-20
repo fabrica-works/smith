@@ -56,6 +56,7 @@ pub struct ProcessLimits {
 enum Operation {
     Io(Token),
     File(Token),
+    ProgramRoot,
 }
 
 #[derive(Debug)]
@@ -87,6 +88,7 @@ enum WindowRead {
 #[derive(Debug)]
 pub(crate) struct ProcessAdapter {
     limits: ProcessLimits,
+    pub(crate) programs: Option<Box<crate::service::program_check::Checks>>,
     launch: Launch,
     endpoints: smith_protocol_channel::Endpoints,
     io: io::Io,
@@ -116,7 +118,7 @@ pub(crate) struct ProcessAdapter {
     delivery_roots: Box<[kernel::Fd]>,
     git_environment: Box<[Box<[u8]>]>,
     io_events: Queue<io::Event>,
-    io_requests: Queue<io::Request>,
+    pub(crate) io_requests: Queue<io::Request>,
     process_events: Queue<protocol::ProcessEvent>,
     submissions: Queue<kernel::Submit>,
     completions: Queue<kernel::Complete>,
@@ -147,6 +149,7 @@ impl ProcessAdapter {
         files.seed_randomness(seed);
         Some(Self {
             io: io::Io::new(&limits.io),
+            programs: None,
             shell_output: None,
             shell_events: Queue::with_capacity(limits.queue),
             limits: *limits,
@@ -401,6 +404,7 @@ impl ProcessAdapter {
         if self.closing.is_some() {
             return;
         }
+        self.cancel_programs();
         self.closing = Some(Closing {
             roots: u32::try_from(self.file_roots.len()).expect("admitted root count"),
             shutdown_pending: false,
@@ -452,6 +456,10 @@ impl ProcessAdapter {
 
     pub(crate) fn settled(&self, streams: u32) -> bool {
         self.closing.is_some()
+            && match &self.programs {
+                Some(checks) => checks.closed(),
+                None => true,
+            }
             && self.closing_roots() == 0
             && self.io.sockets() == streams
             && self.store.is_none()
@@ -674,8 +682,18 @@ impl ProcessAdapter {
             None => None,
         };
         let mut next: Option<Time> = None;
-        for deadline in
-            [self.io.next_deadline(), process_deadline, git_deadline, self.files.next_deadline()].into_iter().flatten()
+        for deadline in [
+            self.io.next_deadline(),
+            process_deadline,
+            git_deadline,
+            self.files.next_deadline(),
+            match &self.programs {
+                Some(checks) => checks.next_deadline(),
+                None => None,
+            },
+        ]
+        .into_iter()
+        .flatten()
         {
             next = Some(match next {
                 Some(current) => current.min(deadline),
@@ -686,6 +704,10 @@ impl ProcessAdapter {
     }
 
     pub(crate) fn work_pending(&self, now: Time) -> bool {
+        match &self.programs {
+            Some(checks) if checks.work_pending(now, self.closing.is_some()) => return true,
+            Some(_) | None => {}
+        }
         self.io.is_ready()
             || self.io.is_due(now)
             || !self.io_events.is_empty()
@@ -731,6 +753,7 @@ impl ProcessAdapter {
             }
             let route = self.operations.remove(&complete.op).expect("one route per submitted kernel operation");
             match route {
+                Operation::ProgramRoot => self.programs.as_mut().expect("program root close").root_closed(),
                 Operation::Io(op) => io::up(
                     &mut self.io,
                     env,
@@ -862,6 +885,10 @@ impl ProcessAdapter {
                 continue;
             }
 
+            if self.program_owns(io_owner(&event)) {
+                self.programs.as_mut().expect("program route").receive(event, &mut self.io_requests);
+                continue;
+            }
             let git_owned = match &self.git {
                 Some(git) => match io_owner(&event) {
                     Some(owner) => git.owns(owner),
@@ -1097,6 +1124,18 @@ impl ProcessAdapter {
                 &mut self.file_submissions,
             );
         }
+        if self.closing.is_some() && self.submissions.room() > 0 && self.operations.len() < self.operations.capacity() {
+            let root = match &mut self.programs {
+                Some(checks) => checks.closing_root(),
+                None => None,
+            };
+            if let Some(fd) = root {
+                let op = Token::new(self.next_operation);
+                self.next_operation = self.next_operation.checked_add(1).expect("root close operation");
+                self.operations.insert(op, Operation::ProgramRoot).expect("root close route");
+                self.submissions.push(kernel::Submit { op, kind: kernel::Op::Close { fd } });
+            }
+        }
         self.flush_submissions();
         self.io.reclaim();
     }
@@ -1132,7 +1171,7 @@ impl ProcessAdapter {
                     match route {
                         Operation::File(original) if file && *original == target => found = Some(*global),
                         Operation::Io(original) if !file && *original == target => found = Some(*global),
-                        Operation::File(_) | Operation::Io(_) => {}
+                        Operation::File(_) | Operation::Io(_) | Operation::ProgramRoot => {}
                     }
                 }
                 kernel::Op::Cancel { target: found.unwrap_or(Token::new(u64::MAX)) }

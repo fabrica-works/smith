@@ -14,6 +14,7 @@ mod accounts;
 mod choices;
 mod destinations;
 mod ending;
+pub(crate) mod program_check;
 use ending::Ending;
 use smith_domain as agent;
 use smith_host_domain as host;
@@ -226,6 +227,7 @@ pub struct Service {
     output: Queue<Box<[u8]>>,
     local_events: Queue<local::Event>,
     local_requests: Queue<local::Request>,
+    interrupted_credentials: u32,
     host_events: Queue<host::Input>,
     shell: Queue<local::Request>,
     lower: Queue<host::process::Request>,
@@ -316,6 +318,7 @@ impl Service {
             output: Queue::with_capacity(queue),
             local_events: Queue::with_capacity(queue),
             local_requests: Queue::with_capacity(queue),
+            interrupted_credentials: 0,
             host_events: Queue::with_capacity(queue),
             shell: Queue::with_capacity(queue),
             lower: Queue::with_capacity(queue),
@@ -933,7 +936,11 @@ impl Service {
         }
         let handed = match &notice {
             local::Notice::Failure(local::Failure::Credential { account, reason }) => match reason {
-                local::CredentialFailure::BorrowedExpiring { .. }
+                local::CredentialFailure::ProgramNotSignedIn
+                | local::CredentialFailure::ProgramSignedInOtherwise { .. }
+                | local::CredentialFailure::ProgramFailed(_)
+                | local::CredentialFailure::ProgramInterrupted
+                | local::CredentialFailure::BorrowedExpiring { .. }
                 | local::CredentialFailure::BorrowedExpired { .. } => true,
                 local::CredentialFailure::Missing | local::CredentialFailure::Refresh => match &self.accounts {
                     Some(accounts) => accounts.account_id(*account).is_some(),
@@ -1171,6 +1178,8 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.start_captured();
     service.process_terminals();
     local_pass(service, now, wall);
+    let notify = !service.closing();
+    service.below.process_mut().programs_pass(now, &mut service.local_events, &mut service.shell, notify);
     service.below.process_mut().down(
         &process_env,
         &mut service.lower,
@@ -1210,6 +1219,25 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             break;
         }
         let Some(event) = service.local_events.pop() else { break };
+        match &event {
+            local::Event::Interrupt | local::Event::Drop => service.interrupt_program_requests(),
+            local::Event::StateSaved
+            | local::Event::Line { .. }
+            | local::Event::Slash(_)
+            | local::Event::Closed
+            | local::Event::ChatSelected { .. }
+            | local::Event::SelectChat { .. }
+            | local::Event::Loaded { .. }
+            | local::Event::TurnSaved { .. }
+            | local::Event::DeliverySaved { .. }
+            | local::Event::Git { .. }
+            | local::Event::PlainStatus { .. }
+            | local::Event::StoreFailed { .. }
+            | local::Event::Credential { .. }
+            | local::Event::NoCredential { .. }
+            | local::Event::Below { .. }
+            | local::Event::Process(_) => {}
+        }
         match event {
             local::Event::StateSaved => {
                 if !service.state_saved() {
@@ -1252,7 +1280,8 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
         local::resume(&mut service.local, &local_env, &mut service.local_requests);
     }
     for _ in 0..service.local_requests.capacity() {
-        if service.told.is_some()
+        if !service.drain_program_interruptions()
+            || service.told.is_some()
             || !service.drain_run_facts()
             || service.shell.room() == 0
             || service.host_events.room() == 0

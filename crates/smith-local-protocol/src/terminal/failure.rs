@@ -99,19 +99,43 @@ pub(super) fn account(text: &mut Shown, why: &local::AccountFailure) {
 pub(super) fn credential(text: &mut Shown, account: u32, why: local::CredentialFailure) {
     append(text, b"account ");
     decimal(text, u64::from(account));
-    append(
-        text,
-        match why {
-            local::CredentialFailure::Missing => b" has no credential: run `smith login ",
-            local::CredentialFailure::BorrowedExpiring { .. } => {
-                b" has a borrowed login approaching expiry: run `smith login "
-            }
-            local::CredentialFailure::BorrowedExpired { .. } => b" has an expired borrowed login: run `smith login ",
-            local::CredentialFailure::Refresh => b" could not renew its credential: run `smith login ",
-        },
-    );
+    let suffix: &[u8] = match why {
+        local::CredentialFailure::Missing => b" has no credential: run `smith login ",
+        local::CredentialFailure::BorrowedExpiring { .. } => {
+            b" has a borrowed login approaching expiry: run `smith login "
+        }
+        local::CredentialFailure::BorrowedExpired { .. } => b" has an expired borrowed login: run `smith login ",
+        local::CredentialFailure::Refresh => b" could not renew its credential: run `smith login ",
+        local::CredentialFailure::ProgramNotSignedIn => b": claude_code is not signed in: run `smith login ",
+        local::CredentialFailure::ProgramSignedInOtherwise { method } => {
+            append(text, b": claude_code is signed in with ");
+            escaped(text, method.as_bytes());
+            append(text, b", not a subscription: run `smith login ");
+            decimal(text, u64::from(account));
+            append(text, b"`");
+            return;
+        }
+        local::CredentialFailure::ProgramFailed(failure) => {
+            append(text, b": claude_code could not be checked: ");
+            escaped(text, &failure.detail);
+            return;
+        }
+        local::CredentialFailure::ProgramInterrupted => {
+            append(text, b": claude_code could not be checked: the check was interrupted");
+            return;
+        }
+    };
+    append(text, suffix);
     decimal(text, u64::from(account));
     append(text, b"`");
+}
+
+fn escaped(text: &mut Shown, bytes: &[u8]) {
+    for byte in bytes {
+        for escaped in byte.escape_ascii() {
+            append(text, &[escaped]);
+        }
+    }
 }
 
 pub(super) fn end(text: &mut Shown, ended: host::End) {
@@ -448,6 +472,36 @@ fn limit_name(which: host::Limit) -> &'static [u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn program_credentials_use_the_numbered_fallback() {
+        use smith_host_domain::{FailureReason, ProgramFailure, ProgramMethod};
+        for (reason, expected) in [
+            (
+                local::CredentialFailure::ProgramNotSignedIn,
+                "account 7: claude_code is not signed in: run `smith login 7`",
+            ),
+            (
+                local::CredentialFailure::ProgramSignedInOtherwise { method: ProgramMethod::new(b"api").unwrap() },
+                "account 7: claude_code is signed in with api, not a subscription: run `smith login 7`",
+            ),
+            (
+                local::CredentialFailure::ProgramFailed(ProgramFailure {
+                    reason: FailureReason::Unreadable,
+                    detail: b"bad\x1b\n".as_slice().into(),
+                }),
+                r"account 7: claude_code could not be checked: bad\x1b\n",
+            ),
+            (
+                local::CredentialFailure::ProgramInterrupted,
+                "account 7: claude_code could not be checked: the check was interrupted",
+            ),
+        ] {
+            let mut text = Shown { bytes: skein_lib::List::with_capacity(1024), cut: false };
+            credential(&mut text, 7, reason);
+            assert_eq!(text.bytes.as_slice(), expected.as_bytes());
+        }
+    }
 
     #[test]
     fn program_failures_keep_their_terminal_metadata() {

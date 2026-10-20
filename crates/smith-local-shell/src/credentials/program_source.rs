@@ -30,7 +30,7 @@ pub(crate) fn run(
     let launch_bytes = launch_worst_case(program).ok_or("program launch bound")?;
     let mut kernel =
         skein_shell::Kernel::open(skein_shell::Config { operations }).map_err(|_| "program kernel unavailable")?;
-    let root = skein_shell::open_root(&directory.programs()).map_err(|_| "programs directory is unreadable")?;
+    let root = open_root(&directory.programs())?;
     let mut requests = Queue::with_capacity(QUEUE);
     let source = ProgramSource::new(
         SOURCE_OWNER,
@@ -93,7 +93,7 @@ const QUEUE: u32 = 32;
 const SUBMISSIONS: u32 = 64;
 
 // SourceAnswer retains only this many bytes at the stderr tail.
-pub(super) const DETAIL_BYTES: u32 = 1024;
+pub(crate) const DETAIL_BYTES: u32 = 1024;
 
 // Both source commands launch with two auth arguments totalling ten bytes.
 const ARGUMENT_BYTES: u64 = 10;
@@ -117,4 +117,8 @@ fn launch_worst_case(program: &std::path::Path) -> Option<u64> {
 // Escape runner output before retaining it in a report or sending it to a terminal.
 pub(super) fn detail(bytes: &[u8]) -> String {
     bytes.iter().flat_map(|byte| byte.escape_ascii()).map(char::from).collect()
+}
+
+pub(crate) fn open_root(path: &std::path::Path) -> Result<skein_io::kernel::Fd, String> {
+    skein_shell::open_root(path).map_err(|_| "programs directory is unreadable".into())
 }

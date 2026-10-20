@@ -29,6 +29,10 @@ pub enum Status {
     Unreadable,
     /// Waits without output until a termination signal ends the invocation.
     Silent,
+    /// Reports signed out without reading a login file.
+    NotSignedIn,
+    /// Answers across invocations, retaining its position beside observations.
+    Sequence(Vec<Status>),
 }
 
 /// A sign-in flow selected by the story, ending on a saved login or refusal.

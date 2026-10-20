@@ -13,13 +13,18 @@ use crate::STATUS_BYTES;
 const READ_BYTES: u32 = 4096;
 
 /// A caller's executable, arguments, whole environment and working directory.
-#[derive(Debug)]
 pub struct Launch {
     pub program: Box<[u8]>,
     pub arguments: Box<[Box<[u8]>]>,
     pub environment: Box<[Box<[u8]>]>,
     pub root: kernel::Fd,
     pub directory: Box<[u8]>,
+}
+
+impl core::fmt::Debug for Launch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.debug_struct("Launch").field("environment_entries", &self.environment.len()).finish_non_exhaustive()
+    }
 }
 
 /// A settled program command returned to its host or agent reader.
@@ -187,6 +192,13 @@ impl Command {
     /// Kill at the deadline, waiting for child and pipe closures before ending.
     pub fn fire(&mut self, now: Time, below: &mut Queue<io::Request>) {
         if self.phase != Phase::Done && !self.timed_out && now >= self.deadline {
+            self.cancel(below);
+        }
+    }
+
+    /// Cancel once, retaining the child and pipes until their close reports.
+    pub fn cancel(&mut self, below: &mut Queue<io::Request>) {
+        if self.phase != Phase::Done && !self.timed_out {
             self.timed_out = true;
             self.stop(below);
         }

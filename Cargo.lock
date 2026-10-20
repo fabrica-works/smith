@@ -1192,6 +1192,7 @@ dependencies = [
  "smith-local-process-world",
  "smith-local-protocol",
  "smith-protocol-channel",
+ "smith-protocol-program",
  "smith-transcript",
 ]
 

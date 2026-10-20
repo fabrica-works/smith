@@ -24,6 +24,7 @@ smith-local-protocol.workspace = true
 smith-host-domain.workspace = true
 smith-host-protocol.workspace = true
 smith-protocol-channel.workspace = true
+smith-protocol-program.workspace = true
 smith-transcript.workspace = true
 smith-channel.workspace = true
 

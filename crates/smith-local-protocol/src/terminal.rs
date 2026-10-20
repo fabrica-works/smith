@@ -167,7 +167,9 @@ impl Terminal {
                 }
                 local::Failure::Refused(refusal) => failure::refused(&mut text, *refusal),
                 local::Failure::Unstarted(end) => failure::end(&mut text, *end),
-                local::Failure::Credential { account, reason } => failure::credential(&mut text, *account, *reason),
+                local::Failure::Credential { account, reason } => {
+                    failure::credential(&mut text, *account, reason.clone());
+                }
                 local::Failure::Agent { failure: why, end, detail } => {
                     append(&mut text, b"run failed: the agent ");
                     append(

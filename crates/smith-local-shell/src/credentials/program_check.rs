@@ -57,16 +57,22 @@ fn inspect(resolved: &Resolved, account: &str, clock: &Clock) -> Credential {
 
 fn state(program: ProgramName, answer: Result<SourceAnswer, String>) -> Credential {
     match answer {
-        Ok(SourceAnswer::Check(ProgramCheck::Usable)) => Credential::Usable { until: None },
-        Ok(SourceAnswer::Check(ProgramCheck::NotSignedIn)) => Credential::ProgramNotSignedIn { program },
-        Ok(SourceAnswer::Check(ProgramCheck::SignedInOtherwise(method))) => {
-            Credential::ProgramSignedInOtherwise { program, method: program_source::detail(method.as_bytes()) }
-        }
-        Ok(SourceAnswer::Check(ProgramCheck::Failed(failure))) => {
-            Credential::ProgramFailed { program, detail: program_source::detail(&failure.detail) }
-        }
+        Ok(SourceAnswer::Check(answer)) => credential(program, answer),
         Err(why) => Credential::ProgramFailed { program, detail: program_source::detail(why.as_bytes()) },
         Ok(SourceAnswer::SignOut(_)) => unreachable!("check answers check"),
+    }
+}
+
+pub(crate) fn credential(program: ProgramName, answer: ProgramCheck) -> Credential {
+    match answer {
+        ProgramCheck::Usable => Credential::Usable { until: None },
+        ProgramCheck::NotSignedIn => Credential::ProgramNotSignedIn { program },
+        ProgramCheck::SignedInOtherwise(method) => {
+            Credential::ProgramSignedInOtherwise { program, method: program_source::detail(method.as_bytes()) }
+        }
+        ProgramCheck::Failed(failure) => {
+            Credential::ProgramFailed { program, detail: program_source::detail(&failure.detail) }
+        }
     }
 }
 

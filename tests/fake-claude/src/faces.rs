@@ -118,6 +118,7 @@ pub fn main() -> ExitCode {
         &environment,
         Faces { stdin: Some(Fd::new(0)), stdout: Fd::new(1), stderr: Fd::new(2), signal, config, observations, mcp },
     );
+    fake.record_process(skein_shell::process_id());
     let mut kernel = match skein_shell::Kernel::open(Config { operations: fake.operations() }) {
         Ok(kernel) => kernel,
         Err(error) => {

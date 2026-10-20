@@ -4,7 +4,9 @@
 use skein_io::{file, kernel};
 use skein_lib::Token;
 
-use crate::{LOGIN_FILE, Login, Logout, Status, Story};
+use crate::{LOGIN_FILE, Login, Logout, Story};
+mod status;
+use status::StatusCommand;
 
 pub(crate) const FILE_OWNER: Token = Token::new(1);
 
@@ -101,58 +103,6 @@ impl Command {
             Self::Status(_) | Self::Login(_) | Self::Logout(_) | Self::Unknown => vec![Effect::End(143)],
         }
     }
-}
-
-#[derive(Debug)]
-pub(crate) enum StatusCommand {
-    Reading,
-    Silent,
-    Done,
-}
-
-impl StatusCommand {
-    fn start(status: Status, config: Config) -> (Self, Vec<Effect>) {
-        match status {
-            Status::Silent => (Self::Silent, Vec::new()),
-            Status::Unreadable => (Self::Done, reply(b"not json\n".to_vec(), 0)),
-            Status::Truthful => match config.root {
-                Some(root) => (
-                    Self::Reading,
-                    vec![Effect::File(file::Request::Load {
-                        owner: FILE_OWNER,
-                        root,
-                        path: LOGIN_FILE.as_bytes().into(),
-                        max: super::fake::FILE_BYTES,
-                        no_follow: true,
-                    })],
-                ),
-                None => (Self::Done, status_reply(None)),
-            },
-        }
-    }
-
-    fn file(&mut self, event: file::Event) -> Vec<Effect> {
-        *self = Self::Done;
-        match event {
-            file::Event::Loaded { bytes, .. } => match String::from_utf8(bytes.into_vec()) {
-                Ok(method) => status_reply(Some(&method)),
-                Err(_) => error("login method is not UTF-8", 1),
-            },
-            file::Event::Failed { error: kernel::Error::NotFound, .. } => status_reply(None),
-            _ => error("cannot read login", 1),
-        }
-    }
-}
-
-fn status_reply(method: Option<&str>) -> Vec<Effect> {
-    let value = serde_json::json!({
-        "loggedIn": method.is_some(),
-        "authMethod": method.unwrap_or("none"),
-        "apiProvider": "firstParty",
-    });
-    let mut bytes = serde_json::to_vec(&value).expect("status is JSON data");
-    bytes.push(b'\n');
-    reply(bytes, if method.is_some() { 0 } else { 1 })
 }
 
 #[derive(Debug)]

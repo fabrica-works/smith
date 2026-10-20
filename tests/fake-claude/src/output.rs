@@ -22,6 +22,16 @@ impl Output {
         Self { token, bytes: VecDeque::new(), waiting: false, closing: false }
     }
 
+    pub fn record_process(&mut self, process: u32) {
+        if let Some(bytes) = self.bytes.front_mut() {
+            let mut record: serde_json::Value = serde_json::from_slice(bytes).expect("invocation record");
+            record.as_object_mut().expect("invocation object").insert("process".into(), process.into());
+            let mut encoded = serde_json::to_vec(&record).expect("process observation");
+            encoded.push(b'\n');
+            *bytes = encoded.into();
+        }
+    }
+
     pub fn token(&self) -> Option<Token> {
         self.token
     }

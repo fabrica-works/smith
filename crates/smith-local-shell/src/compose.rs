@@ -246,6 +246,7 @@ fn compose(
     }
     .launch(kernel, clock)?;
     let endpoints = resolved.agent.service.channel_endpoints.clone();
+    let rechecks = recheck_programs(&prepared, &resolved.agent.service);
     let (lower, producer) = match kind {
         AgentKind::Inline => (Some(resolved.agent.service), None),
         AgentKind::Spawned { .. } => (None, Some(resolved.agent.service)),
@@ -269,6 +270,7 @@ fn compose(
             handed: Some(prepared),
             front: Some(front),
             producer,
+            programs: rechecks,
         },
     )
     .map_err(Refused::Local)?;
@@ -277,6 +279,18 @@ fn compose(
     local.result_file(files.output.take());
     files.composed();
     Ok(Composed { local })
+}
+
+fn recheck_programs(
+    prepared: &credentials::Prepared,
+    configuration: &smith_agent_service::Config,
+) -> Option<smith_protocol_program::Programs> {
+    if prepared.locations.iter().any(|location| matches!(location.source, credentials::Source::Program { .. })) {
+        let binding = &configuration.program.as_ref().expect("program account backend").program;
+        Some(smith_protocol_program::Programs { directory: binding.directory.clone(), claude: binding.claude.clone() })
+    } else {
+        None
+    }
 }
 
 fn startup_resources(

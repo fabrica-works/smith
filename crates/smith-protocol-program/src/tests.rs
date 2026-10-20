@@ -263,3 +263,65 @@ fn a_spawn_arriving_after_the_deadline_is_killed() {
     close(&mut command, &mut below);
     assert_eq!(command.ended(), Some(Ended::Deadline { detail: b"" }));
 }
+
+#[test]
+fn cancellation_stops_once_before_settling() {
+    let (mut command, mut below) = command();
+    spawn(&mut command, &mut below);
+    while below.pop().is_some() {}
+    command.cancel(&mut below);
+    command.cancel(&mut below);
+    command.fire(Time::from_nanos(100), &mut below);
+    assert_eq!(below.len(), 3);
+    let Some(io::Request::Signal { child: CHILD, signal: kernel::Signal::Kill, .. }) = below.pop() else {
+        panic!("cancel kill")
+    };
+    for pipe in [OUT, ERR] {
+        let Some(io::Request::Abort { entity }) = below.pop() else { panic!("cancel abort") };
+        assert_eq!(entity, pipe);
+    }
+    assert!(command.ended().is_none());
+    close(&mut command, &mut below);
+    while below.pop().is_some() {}
+    command.cancel(&mut below);
+    assert!(below.is_empty());
+    assert!(command.ended().is_some());
+}
+
+#[test]
+fn cancellation_before_spawn_stops_the_late_child() {
+    let (mut command, mut below) = command();
+    command.cancel(&mut below);
+    assert!(below.is_empty());
+    spawn(&mut command, &mut below);
+    assert_eq!(below.len(), 5);
+    assert!(command.ended().is_none());
+    close(&mut command, &mut below);
+    assert!(command.ended().is_some());
+}
+
+#[test]
+fn command_launch_debug_omits_environment_values() {
+    let launch = Launch {
+        program: b"/claude".as_slice().into(),
+        arguments: Box::new([]),
+        environment: Box::new([b"PATH=/hidden-path".as_slice().into()]),
+        root: kernel::Fd::new(3),
+        directory: b".".as_slice().into(),
+    };
+    let expected = b"Launch { environment_entries: 1, .. }";
+    let mut rendered = DebugOutput(skein_lib::Writer::new(expected.len()));
+    core::fmt::write(&mut rendered, format_args!("{launch:?}")).unwrap();
+    assert_eq!(rendered.0.finish().as_ref(), expected);
+}
+
+struct DebugOutput(skein_lib::Writer);
+
+impl core::fmt::Write for DebugOutput {
+    fn write_str(&mut self, text: &str) -> core::fmt::Result {
+        match self.0.put(text.as_bytes()) {
+            Ok(()) => Ok(()),
+            Err(_) => Err(core::fmt::Error),
+        }
+    }
+}

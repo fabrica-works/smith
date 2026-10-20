@@ -748,7 +748,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
             crate::Mode::Chat { .. } => {}
         }
     }
-    if let Some((account, reason)) = domain.grant_failed {
+    if let Some((account, reason)) = domain.grant_failed.take() {
         domain.chat.phase = Phase::Idle;
         crate::person::show_dropped(&mut domain.lines, out);
         out.push(Request::Notice { notice: Notice::Failure(Failure::Credential { account, reason }) });
@@ -2119,3 +2119,7 @@ fn reconcile_terminal_with_receipts(
 #[cfg(test)]
 #[path = "parent_tests.rs"]
 mod parent_tests;
+
+#[cfg(test)]
+#[path = "program_check_tests.rs"]
+mod program_check_tests;

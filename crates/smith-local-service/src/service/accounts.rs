@@ -86,6 +86,12 @@ impl Service {
     }
 
     pub(super) fn account_request(&mut self, account: u32) {
+        if self.interrupted_program_request(account) {
+            return;
+        }
+        if self.below.process_mut().program_request(account, self.now, &mut self.shell) {
+            return;
+        }
         let handled = match &mut self.accounts {
             Some(owner) => owner.request(account),
             None => false,

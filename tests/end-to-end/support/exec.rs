@@ -191,7 +191,7 @@ pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option
 
 #[must_use]
 pub fn run_scripted(scratch: &Scratch, arguments: &[&str], commands: Vec<Action>) -> Ran {
-    run_fixture(scratch, arguments, None, false, (Mode::Pipes, commands), false, window::Story::None).0
+    run_fixture(scratch, arguments, None, false, (Mode::Pipes, commands), false, window::Story::ProgramRun).0
 }
 
 /// Start the product in a scratch repository with no commit, retaining provider requests.
@@ -240,7 +240,9 @@ fn run_fixture(
             command_arguments = setup;
             "/bin/sh"
         }
-        window::Story::None | window::Story::Modes => env!("CARGO_BIN_EXE_smith"),
+        window::Story::None | window::Story::Modes | window::Story::ProgramRun | window::Story::ProgramCheck => {
+            env!("CARGO_BIN_EXE_smith")
+        }
     };
     let mut binary = Binary::start(
         Command {
@@ -271,7 +273,7 @@ fn run_fixture(
         Refusal {
             now,
             foreign: foreign.then(|| scratch.path().join("runtime")),
-            deadline: now.saturating_add(Duration::from_secs(if sign_in { 5 } else { 1 })),
+            deadline: now.saturating_add(watching.budget(sign_in)),
             trace: arguments
                 .windows(2)
                 .find(|pair| pair.first().is_some_and(|flag| *flag == "--trace"))
@@ -279,6 +281,7 @@ fn run_fixture(
         },
         watching,
         master,
+        scratch.path(),
     ));
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
@@ -301,7 +304,13 @@ fn run_fixture(
         });
         world.spawn(|| Process::Script(Proc::Browser(Box::default())));
     }
-    let outcome = world.run(&clock, Duration::from_secs(2));
+    let outcome = world.run(
+        &clock,
+        match watching {
+            window::Story::ProgramRun | window::Story::ProgramCheck => watching.budget(sign_in),
+            window::Story::None | window::Story::Modes | window::Story::Resize => Duration::from_secs(2),
+        },
+    );
     assert!(outcome.procs.iter().all(Host::is_empty), "product and peers drain");
     let Process::Binary(binary) = outcome.procs.first().expect("binary") else { unreachable!("binary") };
     let Process::Script(Proc::Terminal(person)) = outcome.procs.get(1).expect("person") else { unreachable!("person") };
@@ -316,4 +325,9 @@ fn run_fixture(
         })
         .unwrap_or_default();
     (Ran { code, stdout: person.shown().into(), stderr: binary.stderr().into() }, queries)
+}
+
+#[must_use]
+pub fn program_interrupt(scratch: &Scratch, commands: Vec<Action>) -> Ran {
+    run_fixture(scratch, &["--plain"], None, false, (Mode::Pipes, commands), false, window::Story::ProgramCheck).0
 }

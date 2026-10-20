@@ -94,6 +94,11 @@ impl ProgramSource {
         self.command.fire(now, below);
     }
 
+    /// Cancel the host's source operation, answering only after its resources settle.
+    pub fn cancel(&mut self, below: &mut Queue<IoRequest>) {
+        self.command.cancel(below);
+    }
+
     /// The source command's next host deadline.
     #[must_use]
     pub fn next_deadline(&self) -> Option<Time> {

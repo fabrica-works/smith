@@ -27,3 +27,5 @@ pub use process::{Launch, ProcessLimits, to_host_exit};
 pub use service::{
     AgentConfig, Config, Error, InlineLimits, Limits, Service, StartValues, iterate, memory_parts, worst_case,
 };
+
+pub use service::program_check::program_checks_worst_case;

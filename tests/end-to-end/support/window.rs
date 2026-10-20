@@ -11,6 +11,8 @@ pub(super) enum Story {
     None,
     Modes,
     Resize,
+    ProgramCheck,
+    ProgramRun,
 }
 
 enum Resize {
@@ -30,12 +32,13 @@ struct Watch {
 pub(super) struct Judge {
     pub common: Refusal,
     watch: Option<Watch>,
+    program: Option<super::program_interrupt::Watch>,
 }
 
 impl Judge {
-    pub fn new(common: Refusal, story: Story, master: Option<Fd>) -> Self {
+    pub fn new(common: Refusal, story: Story, master: Option<Fd>, scratch: &std::path::Path) -> Self {
         let watch = match story {
-            Story::None => None,
+            Story::None | Story::ProgramRun | Story::ProgramCheck => None,
             Story::Modes | Story::Resize => {
                 let master = master.expect("terminal story has a master");
                 Some(Watch {
@@ -45,12 +48,15 @@ impl Judge {
                     after: None,
                     resize: match story {
                         Story::Resize => Resize::Response,
-                        Story::None | Story::Modes => Resize::None,
+                        Story::None | Story::Modes | Story::ProgramRun | Story::ProgramCheck => Resize::None,
                     },
                 })
             }
         };
-        Self { common, watch }
+        let program = matches!(story, Story::ProgramCheck).then(|| {
+            super::program_interrupt::Watch::new(scratch.join("state/smith/programs/work/fake-claude.observations"))
+        });
+        Self { common, watch, program }
     }
 }
 
@@ -103,6 +109,9 @@ impl Referee<Process> for Judge {
         if let Some(watch) = &mut self.watch {
             watch.inspect(procs);
         }
+        if let Some(program) = &mut self.program {
+            program.act(now, procs);
+        }
         self.common.act(now, procs);
     }
 
@@ -111,7 +120,11 @@ impl Referee<Process> for Judge {
     }
 
     fn next_deadline(&self) -> Option<Time> {
-        self.common.next_deadline()
+        self.common
+            .next_deadline()
+            .into_iter()
+            .chain(self.program.as_ref().and_then(super::program_interrupt::Watch::next_deadline))
+            .min()
     }
 
     fn overdue(&self, now: Time) -> Option<String> {
@@ -119,6 +132,30 @@ impl Referee<Process> for Judge {
     }
 
     fn passed(&self) -> bool {
-        self.common.passed() && self.watch.as_ref().is_none_or(Watch::passed)
+        self.common.passed()
+            && self.watch.as_ref().is_none_or(Watch::passed)
+            && self.program.as_ref().is_none_or(super::program_interrupt::Watch::passed)
+    }
+}
+
+impl Story {
+    pub(super) fn budget(self, sign_in: bool) -> skein_lib::Duration {
+        skein_lib::Duration::from_secs(match self {
+            Self::ProgramRun | Self::ProgramCheck => 30,
+            Self::None | Self::Modes | Self::Resize => {
+                if sign_in {
+                    5
+                } else {
+                    1
+                }
+            }
+        })
+    }
+}
+
+#[test]
+fn program_stories_allow_thirty_seconds_total() {
+    for story in [Story::ProgramRun, Story::ProgramCheck] {
+        assert_eq!(story.budget(false), skein_lib::Duration::from_secs(30));
     }
 }

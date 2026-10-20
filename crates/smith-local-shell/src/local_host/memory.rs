@@ -14,6 +14,7 @@ pub(crate) struct Admission {
     pub handed: Option<crate::credentials::Prepared>,
     pub front: Option<crate::front::Front>,
     pub producer: Option<agent::Config>,
+    pub programs: Option<smith_protocol_program::Programs>,
 }
 
 impl Local {
@@ -32,7 +33,14 @@ impl Local {
         headless: Option<&crate::front::headless::Headless>,
         interactive: Option<&crate::front::interactive::Interactive>,
     ) -> Result<(u64, u32), crate::startup::Failure> {
-        let io_limits = limits.process.io;
+        let mut io_limits = limits.process.io;
+        let programs = handed.is_some_and(has_programs);
+        if programs {
+            io_limits.sockets = io_limits
+                .sockets
+                .checked_add(3)
+                .ok_or_else(|| configuration_failure("program I/O count overflows".into()))?;
+        }
         let file_operations = if headless.is_some_and(|front| front.file_memory != 0) { 4 } else { 0 };
         let base_operations = Self::kernel_operations(&io_limits, lower_routes, handed.is_some())
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
@@ -40,6 +48,30 @@ impl Local {
             .checked_add(file_operations)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
         let mut worst = accounted_memory(limits, lower_routes).map_err(configuration_failure)?;
+        if programs {
+            let mut priced = limits.clone();
+            priced.process.io = io_limits;
+            let extra = service::worst_case(&priced)
+                .and_then(|bytes| bytes.checked_sub(service::worst_case(limits)?))
+                .and_then(|bytes| {
+                    bytes.checked_add(service::program_checks_worst_case(
+                        limits.local.smith.accounts,
+                        crate::credentials::program_source::DETAIL_BYTES,
+                    )?)
+                })
+                .and_then(|bytes| bytes.checked_add(Map::<Token, Route>::worst_case(base_operations)?))
+                .and_then(|bytes| {
+                    bytes.checked_sub(Map::<Token, Route>::worst_case(Self::kernel_operations(
+                        &limits.process.io,
+                        lower_routes,
+                        handed.is_some(),
+                    )?)?)
+                })
+                .ok_or_else(|| configuration_failure("program check memory overflows".into()))?;
+            worst = worst
+                .checked_add(extra)
+                .ok_or_else(|| configuration_failure("program check memory overflows".into()))?;
+        }
         if let Some(prepared) = handed {
             worst = worst
                 .checked_add(
@@ -145,4 +177,8 @@ fn shell_parts(limits: &service::Limits, lower_routes: u32) -> Result<[(&'static
         .and_then(|count| count.checked_add(u64::try_from(size_of::<Local>()).ok()?))
         .ok_or_else(|| derivation_refusal("local_worst_case"))?;
     Ok([("shell_io", io), ("front", front), ("shell_routing", routing)])
+}
+
+pub(super) fn has_programs(prepared: &crate::credentials::Prepared) -> bool {
+    prepared.locations.iter().any(|location| matches!(location.source, crate::credentials::Source::Program { .. }))
 }

@@ -125,8 +125,9 @@ pub enum StoreFailure {
     Write,
 }
 
-/// Why the configured account has no usable grant.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// Why the configured account has no usable grant (domain/host.md, section 8;
+/// shell.md, section 4.3); sent by the service to a failed start or account notice.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CredentialFailure {
     /// The account has not been signed in.
     Missing,
@@ -136,6 +137,14 @@ pub enum CredentialFailure {
     BorrowedExpiring { at: Wall },
     /// A borrowed access token has reached its expiry.
     BorrowedExpired { at: Wall },
+    /// The program's status says this account is signed out; no run starts.
+    ProgramNotSignedIn,
+    /// The program names another payment method; no run starts.
+    ProgramSignedInOtherwise { method: smith_host_domain::ProgramMethod },
+    /// The program check failed with bounded stderr detail; no run starts.
+    ProgramFailed(smith_host_domain::ProgramFailure),
+    /// The person interrupted the program check; its request ends without a run.
+    ProgramInterrupted,
 }
 
 /// How this invocation ended.

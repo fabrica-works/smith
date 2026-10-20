@@ -122,7 +122,7 @@ impl Local {
             lower,
             resources,
             errors,
-            Admission { available_bytes, handed, front, producer: None },
+            Admission { available_bytes, handed, front, producer: None, programs: None },
         )
     }
 
@@ -137,7 +137,7 @@ impl Local {
         errors: Box<dyn Write>,
         admission: Admission,
     ) -> Result<Self, crate::startup::Failure> {
-        let Admission { available_bytes, handed, front, producer } = admission;
+        let Admission { available_bytes, handed, front, producer, programs } = admission;
         let (front, interactive) = match front {
             Some(crate::front::Front::Headless(front)) => (Some(front), None),
             Some(crate::front::Front::Interactive(front)) => (None, Some(front)),
@@ -196,6 +196,15 @@ impl Local {
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
+        if handed.as_ref().is_some_and(memory::has_programs) {
+            config.limits.process.io.sockets = config
+                .limits
+                .process
+                .io
+                .sockets
+                .checked_add(3)
+                .ok_or_else(|| configuration_failure("program I/O count overflows".into()))?;
+        }
         let mut service = service::Service::new(config, resources.seed)
             .map_err(|error| configuration_failure(format!("local service: {error:?}")))?;
         if let Some(configuration) = producer {
@@ -208,6 +217,14 @@ impl Local {
         }
         let (credential_locations, lendable) = match handed {
             Some(prepared) => {
+                if let Some(programs) = programs {
+                    credentials::programs::hand(
+                        &mut service,
+                        programs,
+                        &prepared.locations,
+                        resources.delivery_environment.clone(),
+                    )?;
+                }
                 service
                     .handed_accounts(prepared.sources, prepared.limits, resources.oauth_entropy)
                     .map_err(|error| configuration_failure(format!("account driver: {error:?}")))?;

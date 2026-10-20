@@ -198,6 +198,11 @@ impl Fake {
         fake
     }
 
+    /// Add the binary's injected process number to its invocation observation.
+    pub fn record_process(&mut self, process: u32) {
+        self.observation.record_process(process);
+    }
+
     fn effects(&mut self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
