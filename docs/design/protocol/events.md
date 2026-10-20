@@ -246,7 +246,7 @@ attempt, retries included.
 | `spent` | integer | this completion's charge, in the host's unit |
 | `request_bytes` | integer or null | the request as encoded, measured before it was sent; null when the attempt ended before its request was measured |
 | `first_byte_ms` | integer or null | from the request sent to the response's first byte |
-| `largest_gap_ms` | integer or null | the largest gap between two of the response's events, the measure its `idle` deadline bounds |
+| `largest_gap_ms` | integer or null | the largest gap between two of the response's events that carry the model's output, a provider's pings not among them, the measure its `idle` deadline bounds (skein's llm-connection.md, section 6) |
 | `duration_ms` | integer | from `response.started` |
 | `failure` | completion failure, optional | for `failed` (3.10) |
 | `retry_ms` | integer, optional | for a failure the session retries: the wait before the next attempt |
