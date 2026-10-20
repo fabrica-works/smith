@@ -1047,6 +1047,7 @@ names (section 2.3):
 | `wrap_up` | 60 s, a child's final turn's allowance at most | provisional; the budget probe's `wrap-up` |
 | `cancel_grace` | 10 s | provisional |
 | `exit_grace` | derived: the agent's teardown bound, two `close`s, the event stream's `write_deadline` and its cancels' settling, plus one more `close` as a margin (skein's `shell.md`, section 13; protocol/limits.md, section 7); a setting below the bound is refused | decided as derived; the margin provisional |
+| `refresh_lead` | 60 s before the access token expires (added 2026-10-20) | provisional; the `credentials` probe |
 
 ### 6.6 Instructions
 
