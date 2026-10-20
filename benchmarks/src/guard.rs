@@ -156,23 +156,62 @@ mod tests {
         assert!(guard.write_path(&root.join("home/../escape")).is_err());
         let allowed = guard.write_path(&state.join("smith-bench/arms/new")).expect("private harness sibling");
         assert_eq!(allowed, state.join("smith-bench/arms/new"));
-        std::fs::create_dir(home.join(".codex")).expect("fake protected directory");
-        std::os::unix::fs::symlink(home.join(".codex"), root.join("alias")).expect("alias into protected directory");
-        assert!(guard.write_path(&root.join("alias/new/nested")).is_err());
+        for protected in [
+            home.join(".codex"),
+            home.join(".claude"),
+            home.join(".claude.json"),
+            config.join("smith"),
+            state.join("smith"),
+        ] {
+            std::fs::create_dir_all(protected.join("nested")).expect("synthetic protected directory");
+            let alias = root.join("alias");
+            std::os::unix::fs::symlink(&protected, &alias).expect("alias into protected directory");
+            assert!(guard.write_path(&alias).is_err());
+            assert!(guard.write_path(&alias.join("nested/new")).is_err());
+            std::fs::remove_file(&alias).expect("remove synthetic alias");
+        }
         std::os::unix::fs::symlink(root.join("missing"), root.join("dangling")).expect("dangling alias");
         assert!(guard.write_path(&root.join("dangling/nested")).is_err());
         let linked_config = root.join("linked-config");
-        std::fs::create_dir(&config).expect("fake XDG directory");
+        std::fs::create_dir_all(&config).expect("fake XDG directory");
         std::os::unix::fs::symlink(&config, &linked_config).expect("XDG alias");
         let guard = Guard::new(&home, &linked_config, &state, &tools).expect("resolved XDG guard");
         assert!(guard.write_path(&config.join("smith/new")).is_err());
         let external = root.join("external-tool-state");
         std::fs::create_dir(&external).expect("fake tool target");
-        std::fs::create_dir(&state).expect("fake state root");
+        std::fs::remove_dir_all(state.join("smith")).expect("replace synthetic protected state directory");
         std::os::unix::fs::symlink(&external, state.join("smith"))
             .expect("tool alias installed after guard construction");
         assert!(guard.write_path(&external.join("new")).is_err(), "tool links are resolved on each write check");
         std::fs::remove_dir_all(root).expect("remove only the synthetic guard root");
+    }
+
+    #[test]
+    fn live_descendant_aliases_are_refused() {
+        let root = std::env::temp_dir().join(format!("smith-bench-live-links-{}", std::process::id()));
+        let home = root.join("home");
+        let config = root.join("config");
+        let state = root.join("state");
+        let live = root.join("live");
+        std::fs::create_dir_all(&live).expect("synthetic live directory");
+        let guard = Guard::new(&home, &config, &state, &[]).expect("synthetic guard");
+        for (relative, protected) in [
+            ("config", home.join(".codex")),
+            ("config/smith", config.join("smith")),
+            ("tokens", state.join("smith")),
+            ("tokens/chatgpt", home.join(".claude.json")),
+            ("programs/claude", home.join(".claude")),
+        ] {
+            std::fs::create_dir_all(&protected).expect("synthetic protected directory");
+            let alias = live.join(relative);
+            std::fs::create_dir_all(alias.parent().expect("descendant's parent")).expect("synthetic live parent");
+            std::os::unix::fs::symlink(&protected, &alias).expect("live descendant alias");
+            assert!(guard.write_path(&live).is_ok(), "the live root alone is allowed");
+            assert!(guard.write_path(&alias).is_err(), "the descendant alias must also be checked");
+            assert!(guard.write_path(&alias.canonicalize().expect("synthetic alias target")).is_err());
+            std::fs::remove_file(&alias).expect("remove only the synthetic alias");
+        }
+        std::fs::remove_dir_all(root).expect("remove only synthetic live links");
     }
 
     #[test]

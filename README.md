@@ -43,6 +43,53 @@ Before changing code, read [`AGENTS.md`](AGENTS.md) and
 moves only through skein's `land`, which runs the gate,
 `scripts/check.sh`.
 
+## Live tests
+
+The `live` profile runs smith's account stories and the Claude Code probes
+one at a time, without retries. It stays outside the default and fuzzy
+suites. Install `claude` on `PATH` and `/usr/bin/python3` for the
+prompt-shape probe's MCP fixture, then prepare a private directory and
+its user layer once per machine:
+
+```sh
+export SMITH_LIVE=~/.local/state/smith-live
+umask 077
+mkdir -p "$SMITH_LIVE/config/smith"
+cat > "$SMITH_LIVE/config/smith/config.toml" <<EOF
+credentials = "$SMITH_LIVE"
+
+[accounts.chatgpt]
+provider = "openai"
+source = "sign_in"
+
+[accounts.claude]
+provider = "anthropic"
+source = "program"
+
+[accounts.anthropic-key]
+provider = "anthropic"
+source = "env"
+variable = "ANTHROPIC_API_KEY"
+EOF
+XDG_CONFIG_HOME=$SMITH_LIVE/config smith login chatgpt  # approve in the browser
+XDG_CONFIG_HOME=$SMITH_LIVE/config smith login claude   # Claude Code's sign-in
+cargo nextest run --profile live
+```
+
+Set `ANTHROPIC_API_KEY` for the key story. A missing setup fails by name;
+each story checks only the accounts it uses. To run an account's stories
+alone, select them with nextest's test filter. An optional
+`SMITH_TEST_LIVE_GIT_REMOTE` names a writable remote for the push story;
+without it that story reports the omission on stderr and passes. The
+push story removes its remote branch, including on a failed assertion.
+
+The directory holds `host-id`, `tokens/chatgpt`, `programs/claude/` and
+`config/smith/config.toml`. Smith refreshes its own records in place under
+their locks. Each test keeps its HOME, workspace and chats in scratch;
+the suite never rewrites the live user layer or borrows a personal login.
+A directory unused past the issuer's refresh-token lifetime needs another
+sign-in. See [testing.md, section 2.3](docs/design/testing.md#23-end-to-end).
+
 ## The family
 
 These are the repositories of [Fabrig](https://github.com/fabrica-works), an

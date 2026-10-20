@@ -5,7 +5,7 @@
 # slow period is flagged SLOW as it runs.
 
 [profile.default]
-default-filter = "not binary(/^fuzzy_/) and not (package(=smith) and binary(=live))"
+default-filter = "not binary(/^fuzzy_/) and not ((package(=smith) or package(=smith-agent-process-world)) and binary(=live))"
 global-timeout = "15s"
 slow-timeout = { period = "3s" }
 
@@ -36,7 +36,7 @@ slow-timeout = { period = "60s" }
 
 # Real backends are opt-in and never part of the merge gate.
 [profile.live]
-default-filter = "package(=smith) and binary(=live)"
+default-filter = "(package(=smith) or package(=smith-agent-process-world)) and binary(=live)"
 global-timeout = "10m"
 slow-timeout = { period = "60s" }
 test-threads = 1

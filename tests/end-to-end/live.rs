@@ -1,63 +1,16 @@
-//! Opt-in shipped-binary stories against real backends (testing.md, section 2.3).
-//! The `live` nextest profile selects this binary; the merge gate excludes it.
+//! Shipped smith on its own live accounts (testing.md, section 2.3).
+//! The live profile selects these stories serially, without retries.
 
 #[path = "support/live.rs"]
 pub mod live;
 pub mod support;
 
-#[test]
-fn bootstrap_settings() {
-    if !live::enabled() {
-        return;
-    }
-    let Some(directory) = live::setting("SMITH_TEST_LIVE_BOOTSTRAP_DIR") else {
-        return;
-    };
-    let directory =
-        smith_bench::guard::write_path(std::path::Path::new(&directory)).expect("guarded bootstrap directory");
-    assert!(directory.is_absolute(), "SMITH_TEST_LIVE_BOOTSTRAP_DIR must be absolute");
-    let environment = live::Environment::load(true);
-    std::fs::create_dir_all(&directory).expect("bootstrap settings directory");
-    for backend in environment.backends {
-        let state = smith_bench::guard::write_path(&directory.join(&backend.name)).expect("guarded bootstrap state");
-        std::fs::create_dir_all(&state).expect("bootstrap state directory");
-        let config = state.join("config/smith");
-        std::fs::create_dir_all(&config).expect("bootstrap user layer");
-        let settings: toml::Value = serde_json::from_value(backend.settings(&state, false)).expect("public settings");
-        std::fs::write(
-            smith_bench::guard::write_path(&config.join("config.toml")).expect("guarded bootstrap settings"),
-            toml::to_string(&settings).expect("bootstrap TOML"),
-        )
-        .expect("bootstrap settings");
-    }
-}
-
+use smith_events::{Block, Event};
 use smith_local_process_world::referee::CheckoutRead;
 use smith_real_world::Scratch;
 use support::live_run::Expectation;
 
 const CHANGE: &str = "In repository repo, read original.txt, replace its content with exactly edited followed by one newline, create result.txt containing exactly new followed by one newline, and use the command tool to create command.txt containing exactly ran followed by one newline. Run the configured .smith-test/check checks without modifying that script. Finish with a change result, a short title and body, so the host delivers the checked commit. Do not run git commit or push yourself.";
-
-/// The spike's configured-variable story remains opt-in and uses the shipped binary.
-#[test]
-fn a_command_reads_the_whole_configured_environment() {
-    if !live::enabled() {
-        return;
-    }
-    for backend in live::Environment::load(false).backends {
-        let scratch = Scratch::new();
-        let mut settings = backend.settings(scratch.path(), false);
-        settings["environment"]["set"]["SMITH_TEST_ENVIRONMENT"] = serde_json::json!("configured");
-        backend.write_product(&scratch, &settings);
-        run(
-            &backend,
-            &scratch,
-            "Use shell to run `printf '%s\\n' \"$SMITH_TEST_ENVIRONMENT\" > configured.txt`. Do not use a file-writing tool or substitute a literal value. Finish with a report.",
-            false,
-            Expectation { before: None, files: vec![(b"configured.txt".to_vec(), b"configured\n".to_vec())] },
-        );
-    }
-}
 
 fn changed_files() -> Vec<(Vec<u8>, Vec<u8>)> {
     [("original.txt", "edited\n"), ("result.txt", "new\n"), ("command.txt", "ran\n"), ("checks-ran.txt", "checked\n")]
@@ -66,107 +19,115 @@ fn changed_files() -> Vec<(Vec<u8>, Vec<u8>)> {
         .collect()
 }
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "10-product replaces the live command stories and their independent command checks"
-)]
-fn change(backend: &live::Backend, scratch: &Scratch, prompt: &str, extra: Option<(Vec<u8>, Vec<u8>)>) {
-    let mut files = changed_files();
-    if let Some(extra) = extra {
-        files.push(extra);
-    }
-    run(backend, scratch, prompt, true, Expectation { before: scratch.checkout().head(), files });
-    assert!(
-        std::process::Command::new("/bin/sh")
-            .arg(".smith-test/check")
-            .current_dir(scratch.path().join("repo"))
-            .status()
-            .expect("independent check execution")
-            .success(),
-        "prescribed check passes independently"
+#[test]
+fn chatgpt_delivers_a_commit_in_place() {
+    commit("chatgpt");
+}
+
+#[test]
+fn claude_delivers_a_commit_in_place() {
+    commit("claude");
+}
+
+#[test]
+fn an_anthropic_key_delivers_a_commit_in_place() {
+    commit("anthropic-key");
+}
+
+fn commit(account: &str) {
+    let environment = live::Environment::load(&[account]);
+    let scratch = Scratch::new();
+    change(&environment, account, &scratch, CHANGE, None, false);
+}
+
+#[test]
+fn a_command_reads_the_whole_configured_environment() {
+    let environment = live::Environment::load(&["chatgpt"]);
+    let scratch = Scratch::new();
+    run(
+        &environment,
+        "chatgpt",
+        &scratch,
+        "Use shell to run `printf '%s\\n' \"$SMITH_TEST_ENVIRONMENT\" > configured.txt`. Do not use a file-writing tool or substitute a literal value. Finish with a report.",
+        Expectation { before: None, files: vec![(b"configured.txt".to_vec(), b"configured\n".to_vec())] },
+        false,
+        false,
     );
-    if backend.borrowed.is_none() {
-        let tokens = read_record(backend);
-        let trace = std::fs::read(scratch.path().join("agent-trace.jsonl")).expect("outside trace");
-        for secret in [Some(tokens.access_token.as_ref()), tokens.refresh_token.as_deref()].into_iter().flatten() {
-            assert!(
-                !secret.is_empty() && !trace.windows(secret.len()).any(|bytes| bytes == secret),
-                "trace contains no credential value"
-            );
-        }
-    }
 }
 
 #[test]
-fn a_run_refreshes_its_grant_at_the_issuer() {
-    if !live::enabled() {
-        return;
-    }
-    let Some(environment) = live::Environment::issuer() else {
-        return;
-    };
-    for backend in environment.backends {
-        eprintln!("live refresh provider={}", backend.name);
-        let mut saved = read_record(&backend);
-        assert!(
-            saved.refresh_token.as_ref().is_some_and(|token| !token.is_empty()),
-            "dedicated test grant must support refresh"
-        );
-        let generation = saved.generation;
-        saved.expires_at = skein_lib::Wall::EPOCH;
-        std::fs::write(
-            smith_bench::guard::write_path(&live::record_path(&backend.tokens, &backend.name))
-                .expect("guarded test record"),
-            skein_oauth::encode_record(&saved, &smith_local_shell::local_host::token_limits())
-                .expect("dedicated expired record"),
-        )
-        .expect("force only the test-owned grant to refresh");
-        let scratch = Scratch::new();
-        backend.configure(&scratch, false, None);
+fn a_second_run_resumes_the_chat_from_its_files() {
+    let environment = live::Environment::load(&["chatgpt"]);
+    let scratch = Scratch::new();
+    let marker = format!("smith-memory-{}", std::process::id());
+    run(
+        &environment,
+        "chatgpt",
+        &scratch,
+        &format!(
+            "Remember this code for our next invocation: {marker}. Do not write files. Call finish with a report."
+        ),
+        Expectation { before: None, files: vec![] },
+        false,
+        false,
+    );
+    let before = turns(&scratch);
+    assert!(!before.is_empty(), "first invocation wrote durable turns");
+    assert!(!scratch.path().join("repo/remembered.txt").exists(), "code is kept only in the conversation");
+    change(
+        &environment,
+        "chatgpt",
+        &scratch,
+        &format!(
+            "{CHANGE} Also create remembered.txt containing exactly the code I asked you to remember in the previous invocation, with no newline. Obtain it from the saved conversation."
+        ),
+        Some((b"remembered.txt".to_vec(), marker.into_bytes())),
+        true,
+    );
+    let after = turns(&scratch);
+    assert!(after.len() > before.len(), "resume appended durable history");
+    assert!(before.iter().all(|entry| after.contains(entry)), "earlier turns remain unchanged");
+}
+
+#[test]
+fn a_chat_crosses_from_chatgpt_to_claude_then_back() {
+    let environment = live::Environment::load(&["chatgpt", "claude"]);
+    let scratch = Scratch::new();
+    for (account, filename, content, resumed) in [
+        ("chatgpt", "first.txt", "first\n", false),
+        ("claude", "second.txt", "second\n", true),
+        ("chatgpt", "third.txt", "third\n", true),
+    ] {
         run(
-            &backend,
+            &environment,
+            account,
             &scratch,
-            "Give a brief greeting and call finish with a report result.",
+            &format!(
+                "Create {filename} in repository repo containing exactly {} followed by one newline. Finish with a report.",
+                content.trim()
+            ),
+            Expectation { before: None, files: vec![(filename.as_bytes().to_vec(), content.as_bytes().to_vec())] },
             false,
-            Expectation { before: None, files: vec![] },
+            resumed,
         );
-        let refreshed = read_record(&backend);
-        assert!(refreshed.generation > generation, "real issuer exchange advanced durable token generation");
+    }
+    for (file, content) in
+        [("first.txt", b"first\n".as_slice()), ("second.txt", b"second\n"), ("third.txt", b"third\n")]
+    {
         assert!(
-            refreshed.expires_at > skein_shell::Clock::new().now().wall && !refreshed.access_token.is_empty(),
-            "the refreshed grant is usable and persists for the next run"
+            std::fs::read(scratch.path().join("repo").join(file)).is_ok_and(|bytes| bytes == content),
+            "each completed run keeps its file"
         );
     }
 }
 
-#[test]
-fn a_chat_ends_with_a_commit_in_place() {
-    if !live::enabled() {
-        return;
-    }
-    for backend in live::Environment::load(false).backends {
-        eprintln!("live commit provider={}", backend.name);
-        let scratch = Scratch::new();
-        backend.configure(&scratch, true, None);
-        change(&backend, &scratch, CHANGE, None);
-    }
-}
-
-fn turns(backend: &live::Backend, scratch: &Scratch) -> Vec<(std::path::PathBuf, Vec<u8>)> {
-    let directory = {
-        let mut workspaces = std::fs::read_dir(if backend.borrowed.is_some() {
-            scratch.path().join("state/smith/chats")
-        } else {
-            backend.tokens.join("smith/chats")
-        })
-        .expect("workspace store");
-        let directory = workspaces.next().expect("one workspace").expect("workspace path").path().join("chat");
-        assert!(workspaces.next().is_none(), "only the story's workspace");
-        directory
-    };
+fn turns(scratch: &Scratch) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    let mut workspaces = std::fs::read_dir(scratch.path().join("state/smith/chats")).expect("workspace store");
+    let directory = workspaces.next().expect("one workspace").expect("workspace entry").path().join("chat");
+    assert!(workspaces.next().is_none(), "only this story's workspace");
     let mut files: Vec<_> = std::fs::read_dir(directory)
-        .expect("durable chat files")
-        .map(|entry| entry.expect("turn directory entry").path())
+        .expect("durable chat")
+        .map(|entry| entry.expect("turn entry").path())
         .filter(|path| path.extension().is_some_and(|extension| extension == "turn"))
         .map(|path| {
             let bytes = std::fs::read(&path).expect("durable turn");
@@ -177,118 +138,106 @@ fn turns(backend: &live::Backend, scratch: &Scratch) -> Vec<(std::path::PathBuf,
     files
 }
 
-#[test]
-fn a_second_run_resumes_the_chat_from_its_files() {
-    if !live::enabled() {
-        return;
-    }
-    for backend in live::Environment::load(false).backends {
-        eprintln!("live durable resume provider={}", backend.name);
-        let scratch = Scratch::new();
-        let marker =
-            format!("smith-live-memory-{}-{}", std::process::id(), skein_shell::Clock::new().now().now.as_nanos());
-        backend.configure(&scratch, false, None);
-        run(
-            &backend,
-            &scratch,
-            &format!(
-                "Remember this code for our next invocation: {marker}. Do not write files. Call finish with a short report result."
-            ),
-            false,
-            Expectation { before: None, files: vec![] },
-        );
-        let before = turns(&backend, &scratch);
-        assert!(!before.is_empty(), "first binary wrote durable turns");
-        assert!(
-            !scratch.path().join("repo/remembered.txt").exists(),
-            "the first invocation keeps the code only in conversation history"
-        );
-        backend.configure(&scratch, true, None);
-        let prompt = format!(
-            "{CHANGE} Also create remembered.txt containing exactly the code I asked you to remember in the previous invocation, with no newline. Obtain it from the saved conversation, not from an invented value."
-        );
-        change(&backend, &scratch, &prompt, Some((b"remembered.txt".to_vec(), marker.into_bytes())));
-        let after = turns(&backend, &scratch);
-        assert!(after.len() > before.len(), "second binary appended durable history");
-        assert!(before.iter().all(|entry| after.contains(entry)), "earlier durable turns remain unchanged");
-    }
+fn change(
+    environment: &live::Environment,
+    account: &str,
+    scratch: &Scratch,
+    prompt: &str,
+    extra: Option<(Vec<u8>, Vec<u8>)>,
+    resumed: bool,
+) {
+    let mut files = changed_files();
+    files.extend(extra);
+    run(
+        environment,
+        account,
+        scratch,
+        prompt,
+        Expectation { before: scratch.checkout().head(), files },
+        false,
+        resumed,
+    );
 }
 
-#[expect(clippy::disallowed_types, reason = "10-product replaces the live command stories and their remote checks")]
+#[expect(clippy::disallowed_types, reason = "independent live checkout and remote observations")]
 fn git(path: &std::path::Path, arguments: &[&str]) -> std::process::Output {
-    std::process::Command::new("/usr/bin/git").arg("-C").arg(path).args(arguments).output().expect("live git command")
+    std::process::Command::new("/usr/bin/git")
+        .env_clear()
+        .env("HOME", path)
+        .env("PATH", std::env::var_os("PATH").expect("PATH"))
+        .arg("-C")
+        .arg(path)
+        .args(arguments)
+        .output()
+        .expect("live git command")
 }
 
 #[test]
 fn a_configured_push_lands() {
-    if !live::enabled() {
-        return;
-    }
-    let environment = live::Environment::load(false);
-    let Some(remote) = environment.remote else {
+    let environment = live::Environment::load(&["chatgpt"]);
+    let Some(remote) = std::env::var_os("SMITH_TEST_LIVE_GIT_REMOTE").filter(|value| !value.is_empty()) else {
         eprintln!("configured push not run: SMITH_TEST_LIVE_GIT_REMOTE is absent");
         return;
     };
-    for backend in environment.backends {
-        let scratch = Scratch::new();
-        let repo = scratch.path().join("repo");
-        let branch = format!(
-            "smith-live-{}-{}-{}",
-            backend.name,
-            std::process::id(),
-            skein_shell::Clock::new().now().now.as_nanos()
+    let remote = remote.to_str().expect("remote is UTF-8");
+    let scratch = Scratch::new();
+    let repo = scratch.path().join("repo");
+    let branch = format!("smith-live-{}-{}", std::process::id(), skein_shell::Clock::new().now().now.as_nanos());
+    assert!(git(&repo, &["checkout", "-q", "-b", &branch]).status.success(), "unique live branch");
+    assert!(git(&repo, &["remote", "add", "origin", remote]).status.success(), "selected remote");
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run(
+            &environment,
+            "chatgpt",
+            &scratch,
+            CHANGE,
+            Expectation { before: scratch.checkout().head(), files: changed_files() },
+            true,
+            false,
         );
-        assert!(git(&repo, &["checkout", "-q", "-b", &branch]).status.success(), "create unique live push branch");
+        let seen = git(&repo, &["ls-remote", "origin", &format!("refs/heads/{branch}")]);
+        assert!(seen.status.success(), "inspect remote branch; diagnostics withheld");
+        let head = scratch.checkout().head().expect("delivered head");
         assert!(
-            git(&repo, &["remote", "add", if backend.borrowed.is_some() { "origin" } else { "live" }, &remote])
-                .status
-                .success(),
-            "configure caller-selected test remote"
+            seen.stdout.split(u8::is_ascii_whitespace).next() == Some(head.as_slice()),
+            "push landed at the delivered commit"
         );
-        backend.configure(&scratch, true, Some(("live", &branch)));
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            change(&backend, &scratch, CHANGE, None);
-            let reference = format!("refs/heads/{branch}");
-            let seen = git(&repo, &["ls-remote", "live", &reference]);
-            assert!(seen.status.success(), "inspect configured remote branch; diagnostics withheld");
-            let head = scratch.checkout().head().expect("delivered head");
-            assert!(
-                seen.stdout.split(u8::is_ascii_whitespace).next() == Some(head.as_slice()),
-                "configured push lands at the delivered commit"
-            );
-        }));
-        let reference = format!(":refs/heads/{branch}");
-        let cleanup = git(&repo, &["push", "live", &reference]);
-        assert!(cleanup.status.success(), "remove live test branch even when its story fails; diagnostics withheld");
-        if let Err(failure) = outcome {
-            std::panic::resume_unwind(failure);
-        }
+    }));
+    let cleanup = git(&repo, &["push", "origin", &format!(":refs/heads/{branch}")]);
+    assert!(cleanup.status.success(), "remove remote branch even on story failure; diagnostics withheld");
+    if let Err(failure) = outcome {
+        std::panic::resume_unwind(failure);
     }
 }
 
-fn run(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bool, expectation: Expectation) {
-    run_exec(backend, scratch, prompt, change, expectation);
-}
-
-fn run_exec(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bool, expectation: Expectation) {
+fn run(
+    environment: &live::Environment,
+    account: &str,
+    scratch: &Scratch,
+    prompt: &str,
+    expectation: Expectation,
+    push: bool,
+    resumed: bool,
+) {
     use skein_lib::Duration;
     use skein_world::end_to_end::Command;
     use smith_bench::process::{Bounds, Capture, execute};
     let clock = skein_shell::Clock::new();
-    let environment = vec![
-        ("HOME".into(), scratch.path().into()),
-        ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
-        (
-            "XDG_STATE_HOME".into(),
-            if backend.borrowed.is_some() { scratch.path().join("state") } else { backend.tokens.clone() }.into(),
-        ),
-        ("PATH".into(), live::setting("PATH").expect("live PATH").into()),
+    let mut process_environment = vec![
+        ("HOME".into(), scratch.path().join("home").into()),
+        ("XDG_CONFIG_HOME".into(), environment.configuration().into()),
+        ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+        ("PATH".into(), std::env::var_os("PATH").expect("live PATH")),
     ];
-    let workspace = scratch.path().join("repo");
+    std::fs::create_dir_all(scratch.path().join("home")).expect("private home");
+    if account == "anthropic-key" {
+        let key = std::env::var_os("ANTHROPIC_API_KEY").filter(|value| !value.is_empty()).expect(live::KEY);
+        process_environment.push(("ANTHROPIC_API_KEY".into(), key));
+    }
     let command = |arguments| Command {
         program: env!("CARGO_BIN_EXE_smith").into(),
         arguments,
-        environment: environment.clone(),
+        environment: process_environment.clone(),
         directory: scratch.path().into(),
     };
     let bounds = |hard, teardown| Bounds {
@@ -300,12 +249,8 @@ fn run_exec(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bo
         stderr: 65_536,
         force_walk: true,
     };
-    let mut arguments =
-        vec!["exec".into(), "--json".into(), "-C".into(), workspace.clone().into(), "--chat".into(), "chat".into()];
-    if change {
-        arguments.push("--deliver".into());
-    }
-    arguments.push("-".into());
+    let change = expectation.before.is_some();
+    let arguments = live::arguments(account, scratch.path(), change, push);
     let mut check_arguments = vec!["check".into(), "--json".into()];
     check_arguments.extend(arguments.clone());
     let check = execute(
@@ -316,16 +261,25 @@ fn run_exec(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bo
         bounds(Duration::from_secs(15), Duration::ZERO),
     )
     .expect("live check settles");
-    assert_eq!(check.exit, smith_bench::Exit::Code(0), "live check must pass; credential values withheld");
-    let teardown = smith_bench::agent::smith::teardown_from_check(&check.stdout).expect("effective bound");
-    let borrowed = backend.borrowed.as_ref().map(|file| {
-        smith_bench::credential::smith_borrowed(
-            file,
-            clock.now().wall,
-            Duration::from_secs(140).checked_add(teardown).expect("live credential lifetime"),
-        )
-        .expect("caller credential outlives story")
-    });
+    assert!(check.exit == smith_bench::Exit::Code(0), "live check must pass; diagnostic bytes withheld");
+    let teardown = smith_bench::agent::smith::teardown_from_check(&check.stdout).expect("effective teardown bound");
+    let _configuration = environment.configuration();
+    let mut result = execute(
+        &clock,
+        command(arguments),
+        format!("{prompt}\n").into_bytes().into(),
+        Capture::Agent(Box::new(smith_bench::agent::Observing::Smith(observer(environment, scratch, teardown)))),
+        bounds(Duration::from_secs(130), teardown),
+    )
+    .expect("shipped live exec settles");
+    assert_exec(&mut result, scratch, prompt, expectation, account, resumed);
+}
+
+fn observer(
+    environment: &live::Environment,
+    scratch: &Scratch,
+    teardown: skein_lib::Duration,
+) -> smith_bench::agent::smith::Observing {
     let registry = smith_bench::agent::smith::FaceSince {
         commit: String::new(),
         shape: smith_bench::agent::smith::events::Shape::Exec,
@@ -339,7 +293,7 @@ fn run_exec(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bo
     let prepared = smith_bench::agent::smith::Prepared {
         face: registry.shape,
         registry,
-        settings: scratch.path().join("config/smith/config.toml"),
+        settings: environment.root.join("config/smith/config.toml"),
         credential: smith_bench::agent::smith::Credential::Record(None),
         trace: None,
         rendered: serde_json::Value::Null,
@@ -347,89 +301,97 @@ fn run_exec(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bo
         state: scratch.path().join("state"),
         teardown,
     };
-    let mut result = execute(
-        &clock,
-        command(arguments),
-        format!("{prompt}\n").into_bytes().into(),
-        Capture::Agent(Box::new(smith_bench::agent::Observing::Smith(
-            smith_bench::agent::smith::Observing::new(prepared).expect("outside observer"),
-        ))),
-        bounds(Duration::from_secs(130), teardown),
-    )
-    .expect("shipped live exec settles");
-    assert_exec(&mut result, scratch, expectation);
-    if let Some(borrowed) = borrowed {
-        assert!(
-            borrowed
-                .finish(&smith_bench::guard::Guard::from_environment().expect("credential guard"))
-                .expect("source file unchanged")
-                .source_unchanged,
-            "smith leaves its borrowed login file unchanged"
-        );
-    }
+    smith_bench::agent::smith::Observing::new(prepared).expect("outside observer")
 }
 
-fn assert_exec(result: &mut smith_bench::process::ProcessResult, scratch: &Scratch, expectation: Expectation) {
+fn assert_exec(
+    result: &mut smith_bench::process::ProcessResult,
+    scratch: &Scratch,
+    prompt: &str,
+    expectation: Expectation,
+    account: &str,
+    resumed: bool,
+) {
+    let change = expectation.before.is_some();
     assert!(
         result.error.is_none() && result.forced == smith_bench::Forced::No && result.tree.live_pids.is_empty(),
-        "live exec and its tree must settle; credential values withheld"
+        "live process tree settles; diagnostics withheld"
     );
+    assert!(result.exit == smith_bench::Exit::Code(0), "live exec succeeds; diagnostics withheld");
     let Some(smith_bench::agent::Observing::Smith(observing)) = result.observing.as_deref_mut() else {
         panic!("exec observer")
     };
-    observing.observer.finish().expect("complete event stream");
+    observing.observer.finish().expect("complete typed event stream");
     assert!(
         matches!(observing.observer.classify(result.exit, result.forced).end, smith_bench::End::Completed),
-        "typed answer and process exit agree"
+        "typed answer and exit agree"
     );
-    let checkout = scratch.checkout();
-    if let Some(before) = expectation.before {
-        let head = checkout.head().expect("delivered commit");
-        assert_ne!(head, before, "exec delivered a new commit");
-        let files = checkout.files(&head);
-        for (path, content) in expectation.files {
-            assert_eq!(files.get(&path), Some(&content), "committed file matches the story");
-        }
-    } else {
-        for (path, content) in expectation.files {
-            assert_eq!(
-                std::fs::read(scratch.path().join("repo").join(std::str::from_utf8(&path).expect("path")))
-                    .expect("requested file"),
-                content,
-                "requested file matches the story"
-            );
+    let records: Vec<_> = observing.observer.sessions().iter().flat_map(|session| &session.records).collect();
+    assert!(
+        records.iter().any(|record| matches!(&record.event, Event::RunStarted(start) if start.resumed == resumed)),
+        "run reports the expected resume state"
+    );
+    assert!(records.iter().any(|record| matches!(&record.event, Event::ResponseStarted(start) if start.prompt.as_ref().is_some_and(|captured| captured.messages.iter().any(|message| message.blocks.iter().any(|block| matches!(block, Block::Text { text } if text.windows(prompt.len()).any(|part| part == prompt.as_bytes()))))))), "the task appears in the typed prompt");
+    if account == "claude" {
+        program_contract(&records);
+    }
+    if change {
+        assert!(records.iter().any(|record| matches!(&record.event, Event::ToolCompleted(tool) if tool.tool.as_ref() == b"finish" && tool.delivery == Some(smith_events::Delivered::Delivered))), "finish delivered the change");
+        assert!(
+            records.iter().any(|record| matches!(&record.event, Event::CheckCompleted(check) if check.passed)),
+            "the configured checks passed"
+        );
+        let head = scratch.checkout().head().expect("delivered commit");
+        assert!(Some(&head) != expectation.before.as_ref(), "a new commit was delivered");
+        assert!(
+            scratch.checkout().message(&head).windows(15).any(|part| part == b"Smith-Delivery:"),
+            "commit carries its delivery identity"
+        );
+        let files = scratch.checkout().files(&head);
+        let original = scratch.checkout().files(expectation.before.as_ref().expect("initial commit"));
+        assert!(
+            files.get(b".smith-test/check".as_slice()) == original.get(b".smith-test/check".as_slice()),
+            "the prescribed check stays unchanged"
+        );
+        for (path, content) in &expectation.files {
+            assert!(files.get(path) == Some(content), "committed file matches its prescribed content");
         }
     }
-}
-
-#[test]
-fn a_borrowed_login_lends_a_grant_and_keeps_its_file() {
-    if !live::enabled() {
-        return;
-    }
-    for backend in live::Environment::load(false).backends {
-        if backend.borrowed.is_none() {
-            continue;
-        }
-        let scratch = Scratch::new();
-        backend.configure(&scratch, false, None);
-        run(
-            &backend,
-            &scratch,
-            "Give a short greeting and finish with a report.",
-            false,
-            Expectation { before: None, files: vec![] },
+    for (path, content) in expectation.files {
+        assert!(
+            std::fs::read(scratch.path().join("repo").join(std::str::from_utf8(&path).expect("test path")))
+                .is_ok_and(|bytes| bytes == content),
+            "checkout file matches its prescribed content"
         );
     }
 }
 
-fn read_record(backend: &live::Backend) -> skein_oauth::SavedToken {
-    let bytes = skein_shell::read_private_file(
-        &live::record_path(&backend.tokens, &backend.name),
-        smith_local_shell::local_host::token_limits().record_bytes,
-        skein_shell::effective_user(),
-    )
-    .expect("dedicated private record");
-    skein_oauth::decode_record(bytes.expose(), &smith_local_shell::local_host::token_limits())
-        .expect("native private record")
+fn program_contract(records: &[&smith_events::Record]) {
+    let started = records
+        .iter()
+        .find_map(|record| if let Event::RunStarted(start) = &record.event { Some(start) } else { None })
+        .expect("program admission event");
+    assert!(started.main.backend == smith_events::Backend::ClaudeCode, "the product spawned the program backend");
+    assert!(
+        started.tools.families.as_slice()
+            == [smith_events::Family::Inspect, smith_events::Family::Modify, smith_events::Family::Shell],
+        "the program has exactly the granted capabilities"
+    );
+    let tools = records
+        .iter()
+        .find_map(|record| {
+            if let Event::ResponseStarted(start) = &record.event {
+                start.prompt.as_ref().and_then(|prompt| prompt.tools.as_ref()).filter(|tools| !tools.is_empty())
+            } else {
+                None
+            }
+        })
+        .expect("the accepted init's typed tool inventory");
+    for name in ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "permission_prompt", "finish"] {
+        assert!(
+            tools.iter().any(|tool| tool.as_ref() == name.as_bytes()),
+            "init provides a required built in or smith tool"
+        );
+    }
+    assert!(tools.iter().all(|tool| tool.as_ref() != b"sub_agent"), "init offers no sub agent capability");
 }

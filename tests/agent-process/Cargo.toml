@@ -44,6 +44,9 @@ serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 smith-transcript.workspace = true
 
+[dev-dependencies]
+smith-bench = { path = "../../benchmarks" }
+
 [lints.rust]
 unsafe_code = "forbid"
 elided_lifetimes_in_paths = "deny"

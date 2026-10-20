@@ -776,6 +776,7 @@ dependencies = [
  "smith-agent-service",
  "smith-agent-shell",
  "smith-agent-world",
+ "smith-bench",
  "smith-channel",
  "smith-charter",
  "smith-domain",

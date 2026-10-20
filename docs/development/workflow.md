@@ -81,59 +81,33 @@ test replays until it is fixed.
 
 ## 4. The live suite
 
-The `live` profile runs the shipped binary against real providers, their
-OAuth issuers and, optionally, a git remote: one test at a time, without
-retries, with a ten-minute timeout. The default and fuzzy profiles exclude
-it, and the merge gate never runs it (skein's `testing-strategy.md`, section 8).
-
-It is configured by the environment. A missing variable, marker or
-signed-in record fails the test, naming it:
-
-- `SMITH_TEST_LIVE_TOKEN_DIR`: an absolute, private directory reserved for
-  this suite, holding each provider's private state under its named
-  subdirectory (`smith/tokens` within it) and the marker the bootstrap writes. Never point it at
-  another tool's login or copy a refresh token from one: issuers rotate
-  refresh tokens, and a copy logs that tool out.
-- `SMITH_TEST_LIVE_PROVIDERS`: `codex`, `anthropic` or `codex,anthropic`.
-- `SMITH_TEST_LIVE_CODEX_ACCOUNT_FILE`, `SMITH_TEST_LIVE_ANTHROPIC_ACCOUNT_FILE`:
-  for each selected provider, a JSON file of public registration data
-  only, `account_id` and `oauth` as in
-  [local-host.md](local-host.md#accounts-and-sign-in). No tokens or client
-  secrets; unknown fields are refused.
-- `SMITH_TEST_LIVE_CODEX_MODEL`, `SMITH_TEST_LIVE_ANTHROPIC_MODEL`: default
-  `gpt-5.5` and `claude-haiku-4-5`, as skein's live reference.
-- `SMITH_TEST_LIVE_GIT_REMOTE`, optional: a disposable test remote with
-  authentication already configured. The push story pushes a unique
-  `smith-live-<provider>-<pid>-<clock>` branch there and removes it after;
-  without the variable, that story reports not run.
-
-Sign in once per provider, by hand, to create the suite's token record:
+The live suite runs smith on its own accounts as
+[testing.md, section 2.3](../design/testing.md#23-end-to-end) specifies.
+Follow the [README's live steps](../../README.md#live-tests) once per
+machine to prepare and sign in `$SMITH_LIVE`, then run:
 
 ```sh
-export SMITH_TEST_LIVE_TOKEN_DIR="$HOME/.local/state/smith-live-tokens"
-export SMITH_TEST_LIVE_PROVIDERS=codex
-export SMITH_TEST_LIVE_CODEX_ACCOUNT_FILE="$HOME/smith-live-codex-account.json"
-export SMITH_TEST_LIVE_BOOTSTRAP_DIR="$HOME/.local/state/smith-live-bootstrap"
-cargo nextest run -p smith --test live --profile live -E 'test(=bootstrap_settings)'
-XDG_CONFIG_HOME="$SMITH_TEST_LIVE_BOOTSTRAP_DIR/codex/config" XDG_STATE_HOME="$SMITH_TEST_LIVE_TOKEN_DIR/codex" cargo run -p smith -- login codex
+cargo nextest run --profile live
 ```
 
-Open the sign-in URL and complete the redirect; login then exits. For
-Anthropic, use its account file, `anthropic` selected, the `anthropic`
-paths and `smith login anthropic`. Then run the suite without the bootstrap directory:
+The profile runs the account stories and real Claude Code probes one at
+a time, without retries; the default and fuzzy suites exclude them.
+`SMITH_TEST_LIVE_GIT_REMOTE` optionally names a writable remote for the
+push story, which removes its branch afterwards. With no remote named,
+that story reports the omission on stderr and passes.
 
-```sh
-unset SMITH_TEST_LIVE_BOOTSTRAP_DIR
-cargo nextest run --workspace --profile live
-```
-
-Each selected provider runs `a_run_refreshes_its_grant_at_the_issuer`,
-`a_chat_ends_with_a_commit_in_place`,
-`a_second_run_resumes_the_chat_from_its_files` and
-`a_configured_push_lands`. Run one alone with
-`cargo nextest run -p smith --test live --profile live -E 'test(=<name>)'`.
-The stories check outcomes (committed files, token generations, traces),
-never the model's wording.
+The account stories are `chatgpt_delivers_a_commit_in_place`,
+`claude_delivers_a_commit_in_place`,
+`an_anthropic_key_delivers_a_commit_in_place`,
+`a_command_reads_the_whole_configured_environment`,
+`a_second_run_resumes_the_chat_from_its_files`,
+`a_chat_crosses_from_chatgpt_to_claude_then_back` and
+`a_configured_push_lands`. The program probes are
+`program::a_live_interrupt_ends_the_turn`,
+`program::a_live_resume_continues` and
+`program::the_real_program_uses_the_prompt_tool_shape`. They check outcomes
+and wire shapes; the offline channel and configuration controls remain in
+the default suite. Use nextest's test filter to select a single story.
 
 ## 5. Benchmarks
 
