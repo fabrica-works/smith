@@ -288,9 +288,10 @@ open is section 9.
 
 ### 5.6 Failures and notices
 
-- **A usage limit** shows as a `rate_limit_event` whose `status` is
-  `rejected`, with its `resets_at` when given, or as the final
-  `result`'s `api_error_status`. The account is *limited*: the agent
+- **A usage limit** shows as a `rate_limit_event` whose
+  `rate_limit_info.status` is `rejected`, with its
+  `rate_limit_info.resetsAt`, in Unix seconds, when given, or as the
+  final `result`'s `api_error_status`. The account is *limited*: the agent
   sends the limited notice, with the reset only when given (channel.md,
   section 4), and the run ends failed for its account (domain/run.md,
   section 10). It is never retried, and never moved to another source.
