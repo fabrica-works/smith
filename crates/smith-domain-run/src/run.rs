@@ -197,7 +197,7 @@ pub(crate) struct Conversation {
     spent: Spend,
     subtree_spent: u64,
     /// The one provider completion this conversation has reserved with the run.
-    reservation: Option<(Token, u64)>,
+    reservation: Option<(Token, Most)>,
     /// A budget close keeps its cause through the actual session terminal.
     budget_close: Option<Exhausted>,
     /// Its calls to the run in flight.
@@ -850,8 +850,26 @@ fn hard_ending(ending: Ending, failure: Failure) -> Ending {
     }
 }
 
+/// The completion's spend bound, supplied by the root (protocol/programs.md 5.7).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Most {
+    /// The direct backend's priced worst case, released at settlement.
+    Bounded(u64),
+    /// A program's unknown cost, charged in full at settlement.
+    Unreserved,
+}
+
+impl Most {
+    fn reserved(self) -> u64 {
+        match self {
+            Self::Bounded(amount) => amount,
+            Self::Unreserved => 0,
+        }
+    }
+}
+
 /// Admit unsent work, starting the finishing phase before any provider effect.
-pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: Time, most: u64) -> CompletionPermit {
+pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: Time, most: Most) -> CompletionPermit {
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = domain.conversations.get(id) else {
         return CompletionPermit::Closing;
@@ -875,9 +893,14 @@ pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: T
         | State::Closed => return CompletionPermit::Closing,
     }
     let ordinary = ordinary_left(run, now);
+    let spend_left = ordinary.spend.saturating_sub(run.reserved);
+    let spend_exhausted = match most {
+        Most::Bounded(amount) => amount > spend_left,
+        Most::Unreserved => spend_left == 0,
+    };
     let changed = if ordinary.turns <= run.reserved_turns {
         begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Turns)
-    } else if most > ordinary.spend.saturating_sub(run.reserved) {
+    } else if spend_exhausted {
         begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Spend)
     } else if ordinary.time == Duration::ZERO {
         begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Time)
@@ -976,13 +999,13 @@ fn completion_held(run: &Run) -> bool {
 
 /// Reserve one completion against the run's shared unspent ceiling before the
 /// parent publishes it. Every live conversation can hold at most one.
-pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, most: u64) -> Result<(), Exhausted> {
+pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, most: Most) -> Result<(), Exhausted> {
     let id = Id::<Conversation>::from_token(conversation);
     let conversation = domain.conversations.get_mut(id).expect("a provider request retains its conversation");
     assert!(conversation.reservation.is_none(), "a conversation sends one completion at a time");
     let run = domain.runs.get_mut(conversation.run).expect("conversation retains run");
     let committed = run.spent.units.checked_add(run.reserved).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
-    let total = committed.checked_add(most).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
+    let total = committed.checked_add(most.reserved()).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
     let final_turn = match &run.wind_down {
         Some(crate::wind_down::WindDown::Finishing { used, .. }) if conversation.asker.is_none() => {
             if *used >= run.charter.reserve.turns {
@@ -1010,7 +1033,11 @@ pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, mo
         let reserved = crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm).expect("admitted reserve");
         run.charter.budget.spend.checked_sub(reserved).expect("admitted reserve")
     };
-    if total > spend_ceiling {
+    let exhausted = match most {
+        Most::Bounded(_) => total > spend_ceiling,
+        Most::Unreserved => committed >= spend_ceiling,
+    };
+    if exhausted {
         return Err(Exhausted::Spend);
     }
     if final_turn {
@@ -1021,7 +1048,7 @@ pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, mo
             Some(crate::wind_down::WindDown::Settling { .. }) | None => unreachable!("final turn admitted"),
         }
     }
-    run.reserved = run.reserved.checked_add(most).expect("checked with total above");
+    run.reserved = run.reserved.checked_add(most.reserved()).expect("checked with total above");
     run.reserved_turns = run.reserved_turns.checked_add(1).expect("one bounded reservation per conversation");
     conversation.reservation = Some((owner, most));
     Ok(())
@@ -1035,9 +1062,12 @@ pub(crate) fn settle_reservation(domain: &mut Domain, conversation: Token, owner
     let (reserved_owner, most) = conversation.reservation.take().expect("every sent completion was reserved");
     assert!(reserved_owner == owner, "provider terminal settles its own reservation");
     let run = domain.runs.get_mut(conversation.run).expect("conversation retains run");
-    run.reserved = run.reserved.checked_sub(most).expect("reservation belongs to this run");
+    run.reserved = run.reserved.checked_sub(most.reserved()).expect("reservation belongs to this run");
     run.reserved_turns = run.reserved_turns.checked_sub(1).expect("reservation belongs to this run");
-    charge <= most
+    match most {
+        Most::Bounded(amount) => charge <= amount,
+        Most::Unreserved => true,
+    }
 }
 
 #[expect(

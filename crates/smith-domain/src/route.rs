@@ -730,7 +730,10 @@ fn pending_permit(
     env: &Env<Limits>,
     pending: &PendingCompletion,
 ) -> run::CompletionPermit {
-    match run::completion_permit(&mut domain.run, conversation, env.now, 0) {
+    if domain.config.program(run::charter::Endpoint(pending.prompt.endpoint.0)).is_some() {
+        return run::completion_permit(&mut domain.run, conversation, env.now, run::Most::Unreserved);
+    }
+    match run::completion_permit(&mut domain.run, conversation, env.now, run::Most::Bounded(0)) {
         run::CompletionPermit::Allowed => {}
         permit @ (run::CompletionPermit::Final { .. }
         | run::CompletionPermit::Held
@@ -746,11 +749,12 @@ fn pending_permit(
         None => None,
     };
     match most {
-        Some(most) => run::completion_permit(&mut domain.run, conversation, env.now, most),
+        Some(most) => run::completion_permit(&mut domain.run, conversation, env.now, run::Most::Bounded(most)),
         None => run::CompletionPermit::Denied(run::Exhausted::Spend),
     }
 }
 
+#[expect(clippy::manual_map, reason = "programming-model.md 10.1 keeps the reservation translation exhaustive")]
 fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, out: &mut Queue<Request>) {
     let owner = pending.owner;
     let id = *domain.sessions.get(&owner).expect("a session asks for completions once it has opened");
@@ -794,11 +798,19 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     let forgotten = peer.forget_asks(&env.limits.session);
     domain.tickets = domain.tickets.saturating_sub(forgotten);
     let account = peer.account;
-    let input_bytes = completion_input(peer, &prompt);
+    let program = domain.config.program(run::charter::Endpoint(prompt.endpoint.0)).is_some();
+    let input_bytes = if program { None } else { completion_input(peer, &prompt) };
     let prompt = peer.prompt(prompt);
-    let reservation = match input_bytes {
-        Some(bytes) => session::reserve_completion(&mut domain.session, owner, bytes, 0, prompt.max_tokens),
-        None => None,
+    let reservation = if program {
+        Some(run::Most::Unreserved)
+    } else {
+        match input_bytes {
+            Some(bytes) => match session::reserve_completion(&mut domain.session, owner, bytes, 0, prompt.max_tokens) {
+                Some(most) => Some(run::Most::Bounded(most)),
+                None => None,
+            },
+            None => None,
+        }
     };
     let Some(most) = reservation else {
         return session_step(domain, env, session::Event::BudgetDenied { owner, reason: session::BudgetDenial::Spend });
@@ -875,6 +887,7 @@ fn model_index(domain: &Domain, conversation: Token, model: &run::charter::Llm) 
 /// Host rate/share translation and concrete restore admission precede effects.
 /// Session alone prices, while token ceilings remain receiving limits.
 fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: run::Opening) {
+    let endpoint = opening.llm.endpoint;
     let model = model_index(domain, conversation, &opening.llm);
     let progress = domain.config.progress(&opening.llm);
     let allowance = domain.config.protocol_allowance(&opening.llm);
@@ -919,7 +932,9 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
             );
         }
     };
-    let Some((mut spec, offered)) = translate::spec(opening, env.limits.session.budget, progress) else {
+    let Some((mut spec, offered)) =
+        translate::spec(opening, env.limits.session.budget, progress, domain.config.program(endpoint))
+    else {
         // Refused at the conversations' entrance, in the run's terms.
         let ended =
             run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO, detail: Box::default() };

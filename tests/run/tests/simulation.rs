@@ -141,7 +141,7 @@ fn a_completion_whose_maximum_does_not_fit_is_not_made_and_the_run_ends_for_its_
     let mut out = Queue::with_capacity(run::MAX_OUT);
     let mut domain = run::Domain::new(&limits, 0);
     let (_, main) = crash_open(&mut domain, &env, &mut out, reserved_start(&mut host, 100), 1);
-    assert_eq!(run::reserve(&mut domain, main, Token::new(801), 101), Err(Exhausted::Spend));
+    assert_eq!(run::reserve(&mut domain, main, Token::new(801), run::Most::Bounded(101)), Err(Exhausted::Spend));
     let ended = crash_take(
         &mut domain,
         &env,
@@ -197,8 +197,8 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
 
     let first = Token::new(801);
     let second = Token::new(802);
-    assert_eq!(run::reserve(&mut domain, main, first, 60), Ok(()));
-    assert_eq!(run::reserve(&mut domain, child, second, 50), Err(Exhausted::Spend));
+    assert_eq!(run::reserve(&mut domain, main, first, run::Most::Bounded(60)), Ok(()));
+    assert_eq!(run::reserve(&mut domain, child, second, run::Most::Bounded(50)), Err(Exhausted::Spend));
     assert!(run::settle_reservation(&mut domain, main, first, 20));
     assert!(
         crash_take(
@@ -209,7 +209,7 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
         )
         .is_empty()
     );
-    assert_eq!(run::reserve(&mut domain, child, second, 50), Ok(()));
+    assert_eq!(run::reserve(&mut domain, child, second, run::Most::Bounded(50)), Ok(()));
     assert!(run::settle_reservation(&mut domain, child, second, 30));
     assert!(
         crash_take(
@@ -228,7 +228,7 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
         run::Event::Ended { conversation: child, end: run::End::Closed, spend: child_spend, detail: Box::default() },
     );
     assert!(matches!(returned.as_slice(), [run::Request::Return { spent: 30, .. }]));
-    assert_eq!(run::reserve(&mut domain, main, Token::new(803), 51), Err(Exhausted::Spend));
+    assert_eq!(run::reserve(&mut domain, main, Token::new(803), run::Most::Bounded(51)), Err(Exhausted::Spend));
     let ended = crash_take(
         &mut domain,
         &env,

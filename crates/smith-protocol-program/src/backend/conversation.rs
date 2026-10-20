@@ -18,9 +18,8 @@ impl Backend {
         up: &mut Queue<ToDomain>,
         below: &mut Queue<Below>,
     ) {
-        let mut request = request;
-        let (owner, prompt) = match &mut request {
-            FromDomain::Complete { owner, prompt, .. } => (*owner, prompt),
+        let owner = match &request {
+            FromDomain::Complete { owner, .. } => *owner,
             FromDomain::Cancel { .. } => unreachable!("completion route"),
         };
         self.owner = Some(owner);
@@ -34,6 +33,20 @@ impl Backend {
             );
             return;
         }
+        self.permitted = self
+            .turns
+            .closed
+            .checked_sub(u64::from(self.turns.ready.len()))
+            .expect("delivered prefix")
+            .checked_add(1)
+            .expect("permitted message");
+        let Some(mut request) = self.wind_down(env, request, up, below) else {
+            return;
+        };
+        let prompt = match &mut request {
+            FromDomain::Complete { prompt, .. } => prompt,
+            FromDomain::Cancel { .. } => unreachable!("completion route"),
+        };
         let messages = core::mem::replace(&mut prompt.messages, Box::new([]));
         let Some(resumed) = super::replies::resume(self, messages, prompt) else {
             self.fail(
@@ -48,6 +61,7 @@ impl Backend {
         self.request = Some(request);
         self.completion_deadline(env, true);
         self.answer_calls();
+        self.match_calls();
         // A later API message may already be in flight. Only a completed
         // program turn needs the domain's nudge sent back as a user line.
         if let Some(text) = resumed.nudge
@@ -87,6 +101,12 @@ impl Backend {
             return;
         };
         let kind = json::text_in(&document, json::field(&document, 0, b"type"));
+        if self.stop != super::stop::Stop::None {
+            if kind == Some(b"result") {
+                self.stopped_result(env);
+            }
+            return;
+        }
         let result = match kind {
             Some(b"stream_event") => match json::field(&document, 0, b"event") {
                 Some(event) => self.turns.event(&document, event),
@@ -98,6 +118,7 @@ impl Backend {
             },
             Some(b"result") => {
                 if let Some(failure) = result_failure(&document, env.wall) {
+                    self.turns.result = true;
                     self.fail(env, failure, b"smith: the program reported a failed result", up, below);
                     return;
                 }
@@ -315,6 +336,9 @@ impl Backend {
         for call in held.into_boxed() {
             match call {
                 mcp::Up::Call { call, tool, input } => {
+                    if self.phase == Phase::Ending || self.stop != super::stop::Stop::None {
+                        continue;
+                    }
                     match calls::find(
                         &self.ledger,
                         &tool,
@@ -333,7 +357,8 @@ impl Backend {
                         ),
                     }
                 }
-                mcp::Up::Listening { .. } | mcp::Up::Connected | mcp::Up::Prompt { .. } | mcp::Up::Ended(_) => {
+                prompt @ mcp::Up::Prompt { .. } => self.permission(prompt),
+                mcp::Up::Listening { .. } | mcp::Up::Connected | mcp::Up::Ended(_) => {
                     unreachable!("call queue")
                 }
             }
@@ -342,7 +367,7 @@ impl Backend {
     }
 
     pub(super) fn completion_deadline(&mut self, env: &Env<protocol::ComponentLimits>, head: bool) {
-        if self.owner.is_none() || self.phase != Phase::Running {
+        if self.owner.is_none() || self.phase != Phase::Running || self.stop != super::stop::Stop::None {
             return;
         }
         match &self.request {
@@ -357,11 +382,11 @@ impl Backend {
     }
 
     pub(super) fn answer_calls(&mut self) {
+        if self.phase == Phase::Ending || self.stop != super::stop::Stop::None {
+            return;
+        }
         for index in 0..self.ledger.len() {
             let call = self.ledger.get_mut(index).expect("ledger cell");
-            if !call.builtin && self.phase == Phase::Ending && !call.answered && call.answer.is_none() {
-                call.answer = Some(mcp::Answer::Error(b"smith: the program turn was cancelled".as_slice().into()));
-            }
             if !call.builtin
                 && let Some(rpc) = call.rpc
                 && let Some(answer) = call.answer.take()
@@ -392,6 +417,7 @@ fn register_blocks(ledger: &mut List<calls::Call>, blocks: &[llm::Said], message
                             rpc: None,
                             answer: None,
                             answered: false,
+                            prompted: false,
                             eligible: true,
                             message,
                             builtin: match call {

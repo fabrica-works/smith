@@ -30,6 +30,7 @@ impl Memory {
         let domain = Domain::new(
             &limits,
             Config {
+                programs: Box::new([]),
                 endpoints: Box::new([super::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
                     efforts: Box::new([]),

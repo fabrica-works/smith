@@ -797,6 +797,7 @@ impl Counted {
         let domain = Domain::new(
             limits,
             root::Config {
+                programs: Box::new([]),
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
                     efforts: Box::new([]),
@@ -1217,6 +1218,7 @@ impl Counted {
         self.domain = Some(Domain::new(
             limits,
             root::Config {
+                programs: Box::new([]),
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
                     efforts: Box::new([]),

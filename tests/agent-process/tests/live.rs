@@ -172,3 +172,6 @@ fn a_channel_with_no_room_holds_the_bound_and_drops_the_newest() {
         assert_eq!(world.observed().iter().filter(|frame| frame.kind == TURN_KIND).count(), TURN_RECORDS);
     }
 }
+
+#[path = "live/program.rs"]
+mod program;

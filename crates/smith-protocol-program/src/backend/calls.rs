@@ -7,6 +7,10 @@ use skein_json::{Document, Kind};
 use skein_lib::List;
 use smith_domain::llm;
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "answered, permission prompted, eligible and built-in are independent ledger facts"
+)]
 pub(super) struct Call {
     pub id: Box<[u8]>,
     pub name: Box<[u8]>,
@@ -14,6 +18,7 @@ pub(super) struct Call {
     pub rpc: Option<mcp::CallId>,
     pub answer: Option<mcp::Answer>,
     pub answered: bool,
+    pub prompted: bool,
     pub eligible: bool,
     pub message: u64,
     pub builtin: bool,
@@ -36,7 +41,7 @@ pub(super) fn find(calls: &List<Call>, name: &[u8], input: &[u8], depth: u32, to
     fallback
 }
 
-fn equal(left: &[u8], right: &[u8], depth: u32, tokens: u32) -> bool {
+pub(super) fn equal(left: &[u8], right: &[u8], depth: u32, tokens: u32) -> bool {
     equal_value(left, right, depth, tokens) == Some(())
 }
 
@@ -194,21 +199,66 @@ pub(super) fn render(
 ) -> Option<mcp::Answer> {
     let (text, error) = match result {
         llm::Returned::Text { text, error, .. } => (text, error),
-        llm::Returned::Owned { outcome } => {
-            smith_protocol_llm::render_outcome(&outcome, &prompt.namespace, limits.rendered_result).ok()?
-        }
         llm::Returned::Served { returned, .. } => {
             let result = smith_domain::feedback(returned, u64::from(limits.rendered_result)).ok()?;
             (result.text, result.error)
         }
-        llm::Returned::Withdrawn => (b"withdrawn".as_slice().into(), true),
-        llm::Returned::Invalid { .. } => (b"invalid tool input".as_slice().into(), true),
-        llm::Returned::NotRun { .. } => (b"not run".as_slice().into(), true),
+        result @ (llm::Returned::Owned { .. }
+        | llm::Returned::Withdrawn
+        | llm::Returned::Invalid { .. }
+        | llm::Returned::NotRun { .. }) => return render_unserved(&result, prompt, limits),
     };
     if text.len() > usize::try_from(limits.rendered_result).ok()? {
         return None;
     }
     Some(if error { mcp::Answer::Error(text) } else { mcp::Answer::Text(text) })
+}
+
+pub(super) fn render_unserved(
+    result: &llm::Returned,
+    prompt: &llm::Prompt,
+    limits: &smith_protocol_llm::Limits,
+) -> Option<mcp::Answer> {
+    let (text, error) = match result {
+        llm::Returned::Text { text, error, .. } => (text.clone(), *error),
+        llm::Returned::Owned { outcome } => {
+            smith_protocol_llm::render_outcome(outcome, &prompt.namespace, limits.rendered_result).ok()?
+        }
+        llm::Returned::Served { .. } => unreachable!("served results are consumed before the tail passes"),
+        llm::Returned::Withdrawn => (b"withdrawn".as_slice().into(), true),
+        llm::Returned::Invalid { .. } => (b"invalid tool input".as_slice().into(), true),
+        llm::Returned::NotRun { why } => match why {
+            llm::NotRun::OutsideChoice { choice } => (outside_choice(choice.as_deref(), limits.rendered_result)?, true),
+            llm::NotRun::Stopped | llm::NotRun::AfterFailedWrite { .. } => (b"not run".as_slice().into(), true),
+        },
+    };
+    if text.len() > usize::try_from(limits.rendered_result).ok()? {
+        return None;
+    }
+    Some(if error { mcp::Answer::Error(text) } else { mcp::Answer::Text(text) })
+}
+
+fn outside_choice(names: Option<&[Box<[u8]>]>, maximum: u32) -> Option<Box<[u8]>> {
+    let mut text = List::with_capacity(maximum);
+    for byte in b"not run: allowed calls now: " {
+        text.push(*byte).ok()?;
+    }
+    match names {
+        Some(names) => {
+            for name in names {
+                for byte in name {
+                    text.push(*byte).ok()?;
+                }
+                text.push(b' ').ok()?;
+            }
+        }
+        None => {
+            for byte in b"none" {
+                text.push(*byte).ok()?;
+            }
+        }
+    }
+    Some(text.into_boxed())
 }
 
 #[cfg(test)]
@@ -230,6 +280,7 @@ mod tests {
                         rpc: None,
                         answer: None,
                         answered: false,
+                        prompted: false,
                         eligible: true,
                         message: 1,
                         builtin: false,

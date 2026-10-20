@@ -268,11 +268,6 @@ pub(super) fn install(
             {
                 return Err(());
             }
-            for model in &start.charter.models {
-                if model.account == Some(name.account) {
-                    return Err(());
-                }
-            }
             if let Some(file) = service.roots.get(0) {
                 let descriptor = service.files.descriptor(*file).ok_or(())?;
                 program.backend.workspace(backend::Root { file: *file, descriptor });

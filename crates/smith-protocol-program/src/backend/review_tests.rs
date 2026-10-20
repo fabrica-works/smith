@@ -101,6 +101,7 @@ fn cancelling_an_unjudged_finish_never_accepts_it() {
             rpc: None,
             answer: None,
             answered: false,
+            prompted: false,
             eligible: true,
             message: 1,
             builtin: false,
@@ -111,8 +112,7 @@ fn cancelling_an_unjudged_finish_never_accepts_it() {
     let mut up = Queue::with_capacity(32);
     let mut below = Queue::with_capacity(64);
     backend.from_domain(&env(0), FromDomain::Cancel { owner: Token::new(80) }, &mut up, &mut below);
-    let answer = backend.ledger.get(0).expect("finish").answer.as_ref().expect("cancel reply");
-    let mcp::Answer::Error(_) = answer else { panic!("cancelled finish") };
+    assert!(backend.ledger.get(0).expect("finish").answer.is_none(), "the program cancels its held call");
 }
 #[test]
 fn a_delivered_assistant_is_not_charged_again_at_result() {
@@ -165,7 +165,7 @@ fn a_text_message_without_result_obeys_its_idle_deadline() {
     assert_eq!(failure, llm::Failure::TimedOut { phase: llm::Phase::Idle });
 }
 
-fn connect_server(backend: &mut Backend) {
+pub(super) fn connect_server(backend: &mut Backend) {
     let first = Token::new(100);
     let owner = Token::new(101);
     let mut io = Queue::with_capacity(64);
@@ -289,6 +289,7 @@ fn an_accepted_finish_receives_its_acceptance_reply() {
             rpc: None,
             answer: None,
             answered: false,
+            prompted: false,
             eligible: true,
             message: 1,
             builtin: false,
@@ -358,6 +359,7 @@ fn failure_never_accepts_an_unjudged_finish() {
             rpc: None,
             answer: None,
             answered: false,
+            prompted: false,
             eligible: true,
             message: 1,
             builtin: false,
@@ -371,9 +373,7 @@ fn failure_never_accepts_an_unjudged_finish() {
         &mut Queue::with_capacity(32),
         &mut Queue::with_capacity(64),
     );
-    let Some(mcp::Answer::Error(_)) = backend.ledger.get(0).expect("finish").answer.as_ref() else {
-        panic!("failed finish")
-    };
+    assert!(backend.ledger.get(0).expect("finish").answer.is_none(), "the failed turn's held call is dropped");
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn an_input_grant_after_stdin_closes_fails_without_writing() {
     }));
 }
 
-fn server_reply(backend: &mut Backend) -> serde_json::Value {
+pub(super) fn server_reply(backend: &mut Backend) -> serde_json::Value {
     for _ in 0_u8..16 {
         for _ in 0..backend.io.capacity() {
             let Some(request) = backend.io.pop() else { break };
@@ -470,10 +470,7 @@ fn accepting_one_finish_does_not_accept_an_unjudged_finish() {
         panic!("accepted verdict")
     };
     assert_eq!(text.as_ref(), b"accepted");
-    let Some(mcp::Answer::Error(text)) = backend.ledger.get(1).expect("second finish").answer.as_ref() else {
-        panic!("unjudged finish must fail")
-    };
-    assert_eq!(text.as_ref(), b"smith: the program turn was cancelled");
+    assert!(backend.ledger.get(1).expect("second finish").answer.is_none(), "unjudged call is dropped");
 }
 
 #[test]

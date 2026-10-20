@@ -407,3 +407,25 @@ fn together_calls_share_one_assistant_message() {
     assert_eq!(users[0]["message"]["content"][0]["tool_use_id"], assistants[0]["message"]["content"][0]["id"]);
     assert_eq!(users[1]["message"]["content"][0]["tool_use_id"], assistants[0]["message"]["content"][1]["id"]);
 }
+
+#[test]
+fn a_deaf_program_waits_through_its_interrupt() {
+    let invocation = print::signal(print::invocation(1).terminate(), ServiceSignal::Interrupt, "assistant");
+    let run =
+        print::run(story(vec![Step::Text("waiting".into()), Step::Deaf], End::default()), invocation, None, Some(MCP));
+    assert!(results(&run).is_empty());
+    assert_eq!(run.records[0].exit, Some(Exit::Code(143)));
+    let observations = seen(run.observations.as_ref().expect("observations"));
+    assert!(observations.contains(&Seen::Interrupted));
+    assert!(observations.contains(&Seen::Terminated));
+}
+
+#[test]
+fn accepted_user_messages_are_observed() {
+    let run = normal(Story::default(), 1);
+    let received = smith_fake_claude::received(&run.observations.expect("observations"));
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0]["type"], "user");
+    assert_eq!(received[0]["message"]["role"], "user");
+    assert_eq!(received[0]["message"]["content"], "hello");
+}

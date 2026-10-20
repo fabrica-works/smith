@@ -1033,7 +1033,8 @@ fn a_run_at_scalar_maxima_emits_its_largest_final_note_within_its_ownership_boun
     env.now = Time::from_nanos(1);
     while domain.pop_fact().is_some() {}
     meter.start();
-    let permit = smith_domain_run::completion_permit(&mut domain, conversation, env.now, 0);
+    let permit =
+        smith_domain_run::completion_permit(&mut domain, conversation, env.now, smith_domain_run::Most::Bounded(0));
     let measured = meter.end();
     let smith_domain_run::CompletionPermit::Final { note: Some(note) } = permit else { panic!("maximum note") };
     assert!(note.windows(b"4294967294".len()).any(|bytes| bytes == b"4294967294"));

@@ -9,6 +9,8 @@ mod builtin;
 #[path = "tests/jobs.rs"]
 mod jobs;
 
+mod program;
+
 use alloc::boxed::Box;
 
 use skein_lib::{Duration, Env, List, Queue, ReplyTo, Time, Token, Wall};
@@ -272,6 +274,7 @@ impl Harness {
             domain: Domain::new(
                 limits,
                 crate::Config {
+                    programs: Box::new([]),
                     endpoints: Box::new([Endpoint(1), Endpoint(2)]),
                     models: Box::new([
                         crate::ConfiguredModel {

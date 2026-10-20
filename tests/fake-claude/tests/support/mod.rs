@@ -317,7 +317,10 @@ impl Host for Parent {
             self.complete(complete, now);
         }
         if self.signal_at.is_some_and(|at| now >= at) {
-            assert!(self.record.stdout.is_empty(), "silent status emits nothing before its signal");
+            assert!(
+                self.record.stdout.is_empty() || self.signalled,
+                "a timed termination follows silence or the scripted interrupt"
+            );
             assert!(self.record.exit.is_none(), "silent status has not exited before its signal");
             self.signal_at = None;
             self.signalled = true;

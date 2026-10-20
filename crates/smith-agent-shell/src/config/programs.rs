@@ -113,3 +113,27 @@ pub(super) fn backend(
         effective_user: skein_shell::effective_user(),
     })
 }
+
+/// Charge program declarations to the same startup pool as model declarations.
+#[expect(clippy::zero_sized_map_values, reason = "endpoint selections retain the adapter name")]
+pub(super) fn domain(
+    endpoints: &BTreeMap<u32, ProgramName>,
+    limits: &mut smith_domain::Limits,
+) -> Result<Box<[smith_domain::Program]>, ConfigurationRefusal> {
+    let mut programs = Vec::with_capacity(endpoints.len());
+    for endpoint in endpoints.keys() {
+        let name: Box<[u8]> = b"claude_code".as_slice().into();
+        let owned = u64::try_from(size_of::<smith_domain::Program>())
+            .ok()
+            .and_then(|cell| cell.checked_add(u64::try_from(name.len()).ok()?))
+            .and_then(|owned| limits.configured_model_bytes.checked_add(owned))
+            .ok_or_else(|| {
+                ConfigurationRefusal::Profile(Refusal::Derived {
+                    limit: LimitName::deployment(Layer::Service, "configured_model_bytes"),
+                })
+            })?;
+        limits.configured_model_bytes = owned;
+        programs.push(smith_domain::Program { endpoint: smith_domain::run::charter::Endpoint(*endpoint), name });
+    }
+    Ok(programs.into_boxed_slice())
+}

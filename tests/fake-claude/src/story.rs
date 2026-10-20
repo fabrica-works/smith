@@ -87,7 +87,7 @@ pub fn observations(bytes: &[u8]) -> Vec<Observation> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice::<serde_json::Value>(line).expect("fake observation record"))
-        .filter(|value| value.get("seen").is_none())
+        .filter(|value| value.get("arguments").is_some())
         .map(|value| serde_json::from_value(value).expect("invocation observation"))
         .collect()
 }
@@ -131,6 +131,8 @@ pub enum Step {
     LoseLogin,
     /// Waits until an interrupt or termination.
     Hang,
+    /// Waits through interrupts until termination.
+    Deaf,
     /// Emits one assistant message, then runs its Call or Builtin steps in order.
     Together(Vec<Step>),
     /// Calls the named server tool, returning its answer to the model.
@@ -203,6 +205,10 @@ pub enum Resume {
 /// Settings names and permission rules recorded without other settings values.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Seen {
+    /// The parent interrupted the program.
+    Interrupted,
+    /// The parent terminated the program.
+    Terminated,
     /// The settings read at startup, sent only to the observation file.
     Settings { allow: Vec<String>, ask: Vec<String>, deny: Vec<String>, keys: Vec<String> },
     /// The settings could not be read or decoded.
@@ -233,4 +239,14 @@ pub enum Decision {
     Deny(String),
     /// The prompt did not return a readable permission decision.
     Unreadable,
+}
+
+/// User messages independently decoded when the fake accepts each input line.
+pub fn received(bytes: &[u8]) -> Vec<serde_json::Value> {
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).expect("observation JSON"))
+        .filter_map(|mut value| value.get_mut("received").map(serde_json::Value::take))
+        .collect()
 }

@@ -229,6 +229,7 @@ fn configuration_with_limits(provider: skein_llm::Provider, limits: &agent::Limi
         program: None,
         limits: *limits,
         domain: smith_domain::Config {
+            programs: Box::new([]),
             endpoints: Box::new([smith_domain::run::charter::Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
                 efforts: Box::new([]),

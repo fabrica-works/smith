@@ -29,6 +29,10 @@ fn an_endpoint_naming_a_program_reads_it() {
     document["endpoints"][0]["program"] = "claude_code".into();
     let configuration = parse_value(&document).expect("endpoint program");
     assert_eq!(configuration.endpoint_programs.get(&0), Some(&ProgramName::ClaudeCode));
+    assert!(
+        configuration.service.domain.valid(&configuration.service.limits.domain),
+        "program declarations fit the startup pool"
+    );
 }
 
 #[test]
@@ -88,4 +92,30 @@ fn program_fields_are_required_strictly() {
     document["programs"]["claude_code"]["extra"] = true.into();
     let error = parse_value(&document).err().expect("unknown program field");
     assert!(error.contains("extra"), "unknown field: {error}");
+}
+
+#[test]
+fn the_program_startup_pool_prices_declarations_independently() {
+    let direct = parse_value(&shaped_document()).unwrap();
+    let declared = parse_value(&document()).unwrap();
+    let model_only = smith_agent_service::profile::derive(&direct.profile, &direct.declarations)
+        .unwrap()
+        .domain
+        .configured_model_bytes;
+    assert_eq!(direct.service.limits.domain.configured_model_bytes, model_only);
+    assert_eq!(declared.service.limits.domain.configured_model_bytes, model_only);
+    assert!(direct.service.program.is_none());
+    assert!(declared.service.program.as_ref().unwrap().endpoints.is_empty());
+    assert!(direct.service.domain.programs.is_empty());
+    assert!(declared.service.domain.programs.is_empty());
+    assert_eq!(direct.endpoint_programs, declared.endpoint_programs);
+    let mut selected = document();
+    selected["endpoints"][0]["program"] = "claude_code".into();
+    let program = parse_value(&selected).unwrap();
+    let declaration_cells = program.service.domain.programs.len() * size_of::<smith_domain::Program>();
+    let name_bytes = program.service.domain.programs.len() * b"claude_code".len();
+    let expected = model_only + u64::try_from(declaration_cells + name_bytes).unwrap();
+    assert_eq!(program.service.limits.domain.configured_model_bytes, expected);
+    assert_eq!(program.service.domain.programs.len(), 1);
+    assert!(program.service.domain.valid(&program.service.limits.domain));
 }

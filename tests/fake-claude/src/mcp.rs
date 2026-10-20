@@ -161,9 +161,8 @@ impl Mcp {
                 if let Some(child) = self.child {
                     requests.push(Request::Close { entity: child });
                 }
-                if let Some(input) = self.input {
-                    requests.push(Request::Abort { entity: input });
-                }
+                // The relay's final response may still be in the pipe. Keep
+                // the outstanding read, draining through EOF before closure.
             }
             Event::Failed { .. } => {
                 self.spawning = false;

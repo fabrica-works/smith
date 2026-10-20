@@ -8,6 +8,7 @@ fn call(id: &[u8]) -> Call {
         rpc: None,
         answer: None,
         answered: false,
+        prompted: false,
         eligible: true,
         message: 1,
         builtin: false,

@@ -77,12 +77,15 @@ fn a_program_grant_starts_claude_with_its_command() {
     assert!(schema.get("oneOf").is_some());
     assert_eq!(
         run.seen,
-        vec![smith_fake_claude::Seen::Settings {
-            allow: vec!["mcp__smith".into()],
-            ask: ["Read", "Glob", "Grep", "Write", "Edit", "Bash"].map(str::to_owned).into(),
-            deny: Vec::new(),
-            keys: vec!["permissions".into()],
-        }]
+        vec![
+            smith_fake_claude::Seen::Settings {
+                allow: vec!["mcp__smith".into()],
+                ask: ["Read", "Glob", "Grep", "Write", "Edit", "Bash"].map(str::to_owned).into(),
+                deny: Vec::new(),
+                keys: vec!["permissions".into()],
+            },
+            smith_fake_claude::Seen::Interrupted
+        ]
     );
 }
 
@@ -92,7 +95,10 @@ fn a_program_start_reaches_its_init() {
     assert!(
         matches!(run.answer().expect("answer").result(), RunResult::Failed(failed) if matches!(failed.reason(), RunFailure::Cancelled))
     );
-    assert_eq!(run.seen.len(), 1, "the fake read the settings before its init");
+    assert!(
+        matches!(run.seen.first(), Some(smith_fake_claude::Seen::Settings { .. })),
+        "the fake read the settings before its init"
+    );
     assert_eq!(run.exits.len(), 5, "the program reached its relay");
 }
 
@@ -231,4 +237,18 @@ fn a_program_that_exits_before_its_init_fails_the_run() {
 #[test]
 fn a_program_start_with_a_transcript_is_refused() {
     refused(Case::Transcript, &charter(), &program(b"source"));
+}
+
+#[test]
+fn a_program_main_may_share_its_account_with_a_declared_child() {
+    let charter = changed_charter(|parts| {
+        parts.models = skein_lib::List::with_capacity(1);
+        parts.models.push(parts.main.clone()).expect("declared child model");
+    });
+    let run =
+        program_world::run(Case::Ordinary, &Story::default(), Some(b"claude.ai"), &charter, &program(b"source"), None);
+    assert!(
+        matches!(run.answer().expect("answer").result(), RunResult::Failed(failed) if matches!(failed.reason(), RunFailure::Cancelled))
+    );
+    assert_eq!(run.invocations.len(), 2, "the account shared with main admits the program start");
 }

@@ -422,6 +422,7 @@ pub fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
     let mut domain = Domain::new(
         &limits,
         smith_domain::Config {
+            programs: Box::new([]),
             endpoints: Box::new([Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
                 efforts: Box::new([]),

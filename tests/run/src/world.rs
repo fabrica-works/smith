@@ -1157,8 +1157,12 @@ impl World {
                 continue;
             }
             assert_eq!(self.conversation_of_peer.get(&peer), Some(&conversation), "Started really stepped first");
-            let mut permit =
-                run::completion_permit(&mut self.run, conversation, self.now, self.partner.turn_max().units);
+            let mut permit = run::completion_permit(
+                &mut self.run,
+                conversation,
+                self.now,
+                run::Most::Bounded(self.partner.turn_max().units),
+            );
             if matches!(permit, run::CompletionPermit::Allowed | run::CompletionPermit::Final { .. }) {
                 let owner = self.run_of_conversation[&conversation];
                 let view = &self.views[&owner];
@@ -1169,7 +1173,12 @@ impl World {
                     .count();
                 let child = view.main != Some(conversation);
                 let ordinary_turns = view.budget.turns.saturating_sub(view.reserve.turns);
-                match run::reserve(&mut self.run, conversation, conversation, self.partner.turn_max().units) {
+                match run::reserve(
+                    &mut self.run,
+                    conversation,
+                    conversation,
+                    run::Most::Bounded(self.partner.turn_max().units),
+                ) {
                     Ok(()) => {
                         if matches!(permit, run::CompletionPermit::Final { .. }) {
                             self.wind_down_seen.push((

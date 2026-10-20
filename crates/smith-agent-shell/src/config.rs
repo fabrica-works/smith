@@ -382,6 +382,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
         endpoints: declarations.into_boxed_slice(),
     };
     let mut limits = service::profile::derive(&profile, &declarations).map_err(ConfigurationRefusal::Profile)?;
+    let domain_programs = programs::domain(&endpoint_programs, &mut limits.domain)?;
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
     let prices: Vec<_> = document
         .endpoints
@@ -426,7 +427,11 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
     let config = service::Config {
         program: programs::backend(&programs, &endpoint_programs),
         limits,
-        domain: domain::Config { endpoints: endpoints.domain, models: models.into_boxed_slice() },
+        domain: domain::Config {
+            programs: domain_programs,
+            endpoints: endpoints.domain,
+            models: models.into_boxed_slice(),
+        },
         channel_endpoints: endpoints.channel,
         llm_endpoints,
         environment,

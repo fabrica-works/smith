@@ -230,7 +230,7 @@ fn standard_profile_builds_a_complete_bounded_service() {
     let configuration = crate::Config {
         program: None,
         limits,
-        domain: smith_domain::Config { endpoints: Box::new([]), models: Box::new([]) },
+        domain: smith_domain::Config { programs: Box::new([]), endpoints: Box::new([]), models: Box::new([]) },
         channel_endpoints: smith_protocol_channel::Endpoints::new(List::with_capacity(0)),
         llm_endpoints: smith_protocol_llm::Endpoints::new(Box::new([]), crate::profile::ENDPOINTS)
             .expect("empty endpoints"),

@@ -2021,6 +2021,7 @@ fn observed_price(prices: run::Prices, usage: llm::Usage) -> Option<u64> {
 
 fn configuration() -> agent::Config {
     agent::Config {
+        programs: Box::new([]),
         endpoints: Box::new([run::charter::Endpoint(0)]),
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
             .iter()

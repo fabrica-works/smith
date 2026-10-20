@@ -17,6 +17,7 @@ pub(crate) enum Effect {
     File(file::Request),
     ReadCode,
     Seen(crate::Seen),
+    Received(serde_json::Value),
     McpStart(serde_json::Value),
     McpCall { tool: String, input: serde_json::Value },
     McpCancel,

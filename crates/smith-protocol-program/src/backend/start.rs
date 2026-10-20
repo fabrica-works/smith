@@ -204,11 +204,7 @@ impl Backend {
                     }
                 }
                 Some(mcp::Up::Connected) => {}
-                Some(mcp::Up::Prompt { call, tool_name, input, .. }) => {
-                    let verdict =
-                        super::policy::judge(&tool_name, &input, self.grants(), &self.mounts, self.settings.path_bytes);
-                    self.server.as_mut().expect("server event").verdict(call, verdict, &mut self.io);
-                }
+                Some(prompt @ mcp::Up::Prompt { .. }) => self.permission(prompt),
                 Some(call @ mcp::Up::Call { .. }) => {
                     self.calls.push(call).expect("server bounds admitted calls");
                     self.match_calls();
@@ -365,6 +361,7 @@ impl Backend {
                 }
             }
             io::Event::Exited { exit, .. } => {
+                self.drain_deadline = Some(env.now.saturating_add(self.settings.grace));
                 self.exit = Some(match exit {
                     kernel::Exit::Code(code) => u32::from(code),
                     kernel::Exit::Signal(signal) => 128_u32.checked_add(signal).expect("signal code"),
@@ -411,7 +408,10 @@ impl Backend {
                     self.completion_deadline(env, false);
                     for byte in bytes {
                         match self.phase {
-                            Phase::Starting | Phase::Running => {
+                            Phase::Starting | Phase::Running | Phase::Ending => {
+                                if self.phase == Phase::Ending && self.stop == super::stop::Stop::None {
+                                    continue;
+                                }
                                 if byte == b'\n' {
                                     let line = core::mem::replace(
                                         &mut self.line,
@@ -432,7 +432,7 @@ impl Backend {
                                     );
                                 }
                             }
-                            Phase::Idle | Phase::Checking | Phase::Ending | Phase::Ended => {}
+                            Phase::Idle | Phase::Checking | Phase::Ended => {}
                         }
                     }
                     // The same read can finish init and start a response line.

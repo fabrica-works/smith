@@ -212,6 +212,13 @@ impl Fake {
                     assert!(self.file_request.is_none(), "one file request at a time");
                     self.file_request = Some(request);
                 }
+                Effect::Received(message) => {
+                    let mut bytes = serde_json::to_vec(&serde_json::json!({"received":message})).expect("input JSON");
+                    bytes.push(b'\n');
+                    if self.observation.token().is_some() {
+                        self.observation.push(&bytes);
+                    }
+                }
                 Effect::Seen(seen) => {
                     let mut bytes = serde_json::to_vec(&serde_json::json!({"seen":seen})).expect("seen JSON");
                     bytes.push(b'\n');
@@ -291,6 +298,9 @@ impl Fake {
         }
         match event {
             Event::Shutdown { signal: kernel::ServiceSignal::Interrupt } => {
+                if self.arguments.iter().any(|argument| argument == "-p") {
+                    self.effects(vec![Effect::Seen(crate::Seen::Interrupted)]);
+                }
                 let effects = match &mut self.command {
                     Some(command) => command.interrupt(),
                     None if self.arguments.iter().any(|argument| argument == "-p") => Vec::new(),
@@ -298,7 +308,12 @@ impl Fake {
                 };
                 self.effects(effects);
             }
-            Event::Shutdown { signal: kernel::ServiceSignal::Terminate } => self.end(143),
+            Event::Shutdown { signal: kernel::ServiceSignal::Terminate } => {
+                if self.arguments.iter().any(|argument| argument == "-p") {
+                    self.effects(vec![Effect::Seen(crate::Seen::Terminated)]);
+                }
+                self.end(143);
+            }
             Event::Stream { owner, up } if Some(owner) == self.stdout.token() => {
                 let failed = matches!(up, Up::Failed(_));
                 self.stdout.event(up, &mut self.io_requests);

@@ -301,6 +301,7 @@ fn carried_start_messages_cross_the_wire_in_order_and_an_overfull_start_is_refus
 
 fn configuration() -> agent::Config {
     agent::Config {
+        programs: Box::new([]),
         endpoints: Box::new([agent::run::charter::Endpoint(0)]),
         models: Box::new([smith_domain::ConfiguredModel {
             efforts: Box::new([]),

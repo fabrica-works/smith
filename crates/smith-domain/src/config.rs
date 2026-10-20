@@ -80,8 +80,18 @@ impl ConfiguredModel {
 pub struct Config {
     /// Unique endpoint names, at most `Limits::endpoints`.
     pub endpoints: Box<[Endpoint]>,
-    /// Unique models per endpoint, within `Limits::configured_model_bytes`.
+    /// Endpoints whose LLM a program runs (protocol/programs.md 3), each once.
+    pub programs: Box<[Program]>,
+    /// Unique models per endpoint; model and program declarations together fit `Limits::configured_model_bytes`.
     pub models: Box<[ConfiguredModel]>,
+}
+
+/// One endpoint's program name, supplied at startup for turns and events (programs.md 3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Program {
+    pub endpoint: Endpoint,
+    /// The backend's name in turns and events: `claude_code`.
+    pub name: Box<[u8]>,
 }
 
 impl Config {
@@ -104,6 +114,28 @@ impl Config {
             }
         }
         let mut bytes = 0_u64;
+        for (index, program) in self.programs.iter().enumerate() {
+            if !self.contains(program.endpoint) || program.name.is_empty() {
+                return false;
+            }
+            for other in self.programs.get(index.saturating_add(1)..).unwrap_or_default() {
+                if program.endpoint == other.endpoint {
+                    return false;
+                }
+            }
+            let owned = match u64::try_from(program.name.len()) {
+                Ok(length) => length.checked_add(u64::try_from(size_of::<Program>()).expect("program cell")),
+                Err(_) => return false,
+            };
+            let owned = match owned {
+                Some(owned) => owned,
+                None => return false,
+            };
+            bytes = match bytes.checked_add(owned) {
+                Some(bytes) => bytes,
+                None => return false,
+            };
+        }
         for (index, model) in self.models.iter().enumerate() {
             if model.prices.check().is_err()
                 || model.model.is_empty()
@@ -134,6 +166,18 @@ impl Config {
             }
         }
         bytes <= limits.configured_model_bytes
+    }
+
+    /// The program configured for an endpoint, if any (protocol/programs.md 3).
+    #[must_use]
+    #[expect(clippy::manual_find, reason = "programming-model.md 10.1 keeps domain lookups free of closures")]
+    pub fn program(&self, endpoint: Endpoint) -> Option<&Program> {
+        for program in &self.programs {
+            if program.endpoint == endpoint {
+                return Some(program);
+            }
+        }
+        None
     }
 
     /// Whether this endpoint name was configured.

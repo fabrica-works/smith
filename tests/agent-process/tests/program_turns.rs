@@ -57,10 +57,8 @@ fn a_program_turn_runs_to_its_finish() {
     let run = run(vec![Turn { steps: vec![finish()], end: End::default() }]);
     accepted(&run);
     assert!(
-        run.seen
-            .iter()
-            .any(|seen| matches!(seen, smith_fake_claude::Seen::Called {tool,error:false} if tool == "finish")),
-        "the accepted call receives its own successful MCP verdict"
+        run.seen.iter().any(|seen| matches!(seen, smith_fake_claude::Seen::Called {tool,..} if tool == "finish")),
+        "finish is settled; the stop can interrupt before its MCP verdict is read"
     );
 }
 #[test]

@@ -2728,7 +2728,7 @@ pub(crate) mod tests {
         Config {
             program: None,
             limits,
-            domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
+            domain: domain::Config { programs: Box::new([]), endpoints: Box::new([]), models: Box::new([]) },
             channel_endpoints,
             llm_endpoints,
             environment: machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
@@ -2783,7 +2783,7 @@ pub(crate) mod tests {
             Config {
                 program: None,
                 limits,
-                domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
+                domain: domain::Config { programs: Box::new([]), endpoints: Box::new([]), models: Box::new([]) },
                 channel_endpoints,
                 llm_endpoints,
                 environment: machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),

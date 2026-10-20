@@ -23,6 +23,7 @@ fn bounds() -> Limits {
 
 fn configuration() -> smith::Config {
     smith::Config {
+        programs: Box::new([]),
         endpoints: Box::from([run::charter::Endpoint(0)]),
         models: Box::from([smith::ConfiguredModel {
             efforts: Box::new([]),

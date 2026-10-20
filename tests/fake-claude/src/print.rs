@@ -119,6 +119,7 @@ enum Phase {
     Login,
     Removing,
     Hanging,
+    Deaf,
     Done,
 }
 
@@ -234,7 +235,7 @@ impl Print {
                     self.steps()
                 }
             }
-            Phase::Idle | Phase::Hanging | Phase::Connecting | Phase::Calling | Phase::Done => Vec::new(),
+            Phase::Idle | Phase::Hanging | Phase::Deaf | Phase::Connecting | Phase::Calling | Phase::Done => Vec::new(),
         }
     }
 
@@ -247,7 +248,7 @@ impl Print {
         match bytes {
             None if matches!(
                 self.phase,
-                Phase::Login | Phase::Removing | Phase::Hanging | Phase::Calling | Phase::Connecting
+                Phase::Login | Phase::Removing | Phase::Hanging | Phase::Deaf | Phase::Calling | Phase::Connecting
             ) =>
             {
                 Vec::new()
@@ -268,6 +269,7 @@ impl Print {
                 if !stream::user(&self.input) {
                     return error("invalid user message", 1);
                 }
+                let received = serde_json::from_slice(&self.input).expect("validated user message");
                 self.input.clear();
                 self.turn = self.story.turns.get(self.next_turn).cloned().unwrap_or_default();
                 self.next_turn = self.next_turn.checked_add(1).expect("turn count fits");
@@ -277,7 +279,7 @@ impl Print {
                 self.interrupted = false;
                 self.phase = Phase::Login;
                 match self.config.root {
-                    Some(root) => vec![load(root, LOGIN_FILE)],
+                    Some(root) => vec![Effect::Received(received), load(root, LOGIN_FILE)],
                     None => self.finish(stream::failure(Some(401), None, vec!["not signed in".into()])),
                 }
             }
@@ -350,6 +352,10 @@ impl Print {
                 }
                 Step::Together(steps) => {
                     effects.extend(self.together(steps));
+                    return effects;
+                }
+                Step::Deaf => {
+                    self.phase = Phase::Deaf;
                     return effects;
                 }
                 Step::Hang => {
@@ -563,7 +569,9 @@ impl Print {
                 self.interrupted = true;
                 Vec::new()
             }
-            Phase::Configuration | Phase::Settings | Phase::Connecting | Phase::Idle | Phase::Done => Vec::new(),
+            Phase::Configuration | Phase::Settings | Phase::Connecting | Phase::Idle | Phase::Deaf | Phase::Done => {
+                Vec::new()
+            }
         }
     }
 }

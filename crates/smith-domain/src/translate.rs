@@ -56,7 +56,12 @@ pub(crate) struct Offered {
 /// offered as descriptors: `finish` if the opening says so, a write, run
 /// alone; sub-agents if its families have them, a write when the families
 /// asked for may write, which the widest the asker may give them do.
-pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progress) -> Option<(Spec, Offered)> {
+pub(crate) fn spec(
+    opening: Opening,
+    receiving: Budget,
+    progress: session::Progress,
+    program: Option<&crate::Program>,
+) -> Option<(Spec, Offered)> {
     let Opening {
         final_turn,
         host_tools,
@@ -79,6 +84,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         activation: _,
         transcript: _,
     } = opening;
+    let families = Families { agents: families.agents && program.is_none(), ..families };
     let authority = authority(workspace, tools)?;
     let offered = Offered { host_tools: host_tools.clone(), finish, deliver, agents: families.agents, wait };
     let capacity = u32::try_from(host_tools.len()).ok()?.checked_add(4)?;

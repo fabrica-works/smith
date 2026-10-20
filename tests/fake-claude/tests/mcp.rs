@@ -146,7 +146,7 @@ fn an_interrupt_during_a_server_call_ends_the_turn() {
     assert_eq!(results[1]["subtype"], "success");
     assert_eq!(run.calls, ["finish"]);
     assert_eq!(
-        seen(run.observations.as_ref().expect("observations"))[1],
+        seen(run.observations.as_ref().expect("observations"))[2],
         Seen::Called { tool: "finish".into(), error: true }
     );
 }
@@ -162,7 +162,7 @@ fn a_termination_ends_the_server_first() {
     assert_eq!(run.server_exit, Some(Exit::Code(0)));
     assert_eq!(run.records[0].exit, Some(Exit::Code(143)));
     assert_eq!(
-        seen(run.observations.as_ref().expect("observations"))[1],
+        seen(run.observations.as_ref().expect("observations"))[2],
         Seen::Called { tool: "finish".into(), error: true }
     );
 }

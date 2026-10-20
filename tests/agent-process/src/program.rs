@@ -103,6 +103,15 @@ impl Host for Proc {
 
 fn configuration(case: Case) -> smith_agent_service::Config {
     let mut config = crate::configuration();
+    config.domain.programs = if case == Case::Unbound {
+        Box::default()
+    } else {
+        Box::new([smith_domain::Program {
+            endpoint: smith_domain::run::charter::Endpoint(0),
+            name: b"claude_code".as_slice().into(),
+        }])
+    };
+    config.limits.io.close_timeout = Duration::from_millis(10);
     config.program = Some(smith_agent_service::ProgramBackend {
         program: smith_protocol_program::Programs {
             claude: b"/programs/claude".as_slice().into(),
@@ -346,6 +355,7 @@ pub struct Run {
     pub frames: Vec<skein_fake_channel::Observed>,
     pub invocations: Vec<smith_fake_claude::Observation>,
     pub seen: Vec<smith_fake_claude::Seen>,
+    pub received: Vec<serde_json::Value>,
     pub exits: Vec<Exit>,
     pub errors: Vec<u8>,
     pub run_directories: Vec<Vec<u8>>,
@@ -527,6 +537,7 @@ pub fn run(
         errors: parent.errors.clone(),
         invocations: redacted_invocations(&bytes),
         seen: smith_fake_claude::seen(&bytes),
+        received: smith_fake_claude::received(&bytes),
         exits: outcome.procs.iter().filter_map(Host::exit).collect(),
         run_directories,
         events: if case == Case::Tools {

@@ -583,7 +583,6 @@ fn product_memory(with_program: bool) {
         )
         .expect("whole-file driver bound")
     );
-    let service = service::worst_case(limits, &destinations).expect("service bound");
     let roots = limits.domain.run.directories;
     let queue = limits.queue.checked_add(roots).and_then(|n| n.checked_add(2)).expect("shell queues and trace root");
     let shell = Queue::<Complete>::worst_case(queue)
@@ -611,6 +610,12 @@ fn product_memory(with_program: bool) {
         )
         .expect("header ownership");
     let configuration = parse_value(&document).expect("product declarations pass every startup check");
+    assert!(
+        configuration.service.domain.valid(&configuration.service.limits.domain),
+        "product declarations fit the root"
+    );
+    let service = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
+        .expect("service bound");
     let program = service::program_worst_case(&configuration.service).expect("program backend bound");
     let complete = service
         .checked_add(header)

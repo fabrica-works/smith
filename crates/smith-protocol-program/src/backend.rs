@@ -17,10 +17,13 @@ mod calls;
 mod conversation;
 mod diagnostics;
 mod files;
+mod permission;
 mod policy;
 mod replies;
 mod start;
+mod stop;
 mod stream;
+mod tail;
 mod turns;
 
 #[cfg(test)]
@@ -35,6 +38,8 @@ mod lifecycle_tests;
 mod reply_tests;
 #[cfg(test)]
 mod review_tests;
+#[cfg(test)]
+mod stop_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -136,7 +141,11 @@ pub struct Backend {
     exit: Option<u32>,
     deadline: Option<Time>,
     eof_deadline: Option<Time>,
+    drain_deadline: Option<Time>,
     stopping: u8,
+    stop: stop::Stop,
+    winding: stop::WindDown,
+    permitted: u64,
     response_phase: llm::Phase,
     run_time: Duration,
     line: List<u8>,
@@ -210,7 +219,11 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
             .max(skein_json::writer::worst_case(&skein_json::writer::Limits {
                 depth: 8,
                 length: settings.input_bytes,
-            })?);
+            })?)
+            // Tail passes borrow text. Consumed served results replace prompt
+            // payloads; at most one input ceiling plus one temporary result
+            // coexists with the encoded line during this separate workspace.
+            .max(u64::from(settings.input_bytes).checked_add(u64::from(settings.adapter.rendered_result))?);
     u64::try_from(size_of::<Backend>())
         .ok()?
         // Launch peak: settings paths; executable; instructions and MCP path
@@ -308,7 +321,11 @@ impl Backend {
             exit: None,
             deadline: None,
             eof_deadline: None,
+            drain_deadline: None,
             stopping: 0,
+            stop: stop::Stop::None,
+            winding: stop::WindDown::Ordinary,
+            permitted: 1,
             response_phase: llm::Phase::Head,
             run_time: Duration::ZERO,
             line,
@@ -428,15 +445,6 @@ impl Backend {
             }
             FromDomain::Cancel { owner } => {
                 if self.owner == Some(owner) {
-                    if let Some(child) = self.child {
-                        self.io.push(io::Request::Signal {
-                            child,
-                            to: kernel::Target::Group,
-                            signal: kernel::Signal::Interrupt,
-                        });
-                    }
-                    self.owner = None;
-                    up.push(ToDomain::Cancelled { owner });
                     self.close(env, up, below);
                 }
             }
@@ -468,6 +476,13 @@ impl Backend {
         if let Some(server) = &mut self.server {
             server.fire(env.now, &mut self.io);
         }
+        let drain_due = match self.drain_deadline {
+            Some(deadline) => env.now >= deadline,
+            None => false,
+        };
+        if drain_due {
+            self.terminate(env.now);
+        }
         let eof_due = match self.eof_deadline {
             Some(deadline) => env.now >= deadline,
             None => false,
@@ -480,7 +495,10 @@ impl Backend {
             Some(deadline) => env.now >= deadline,
             None => false,
         };
-        if due {
+        if due && self.stop != stop::Stop::None {
+            self.deadline = None;
+            self.terminate(env.now);
+        } else if due {
             self.deadline = None;
             match self.phase {
                 Phase::Starting => self.fail(
@@ -506,6 +524,21 @@ impl Backend {
     }
 
     fn terminate(&mut self, now: Time) {
+        if self.exit.is_some() {
+            self.deadline = None;
+            match self.drain_deadline {
+                Some(deadline) if now >= deadline => {}
+                Some(_) | None => return,
+            }
+            self.drain_deadline = None;
+            for pipe in self.pipes.into_iter().flatten() {
+                self.io.push(io::Request::Abort { entity: pipe });
+            }
+            if let Some(child) = self.child {
+                self.io.push(io::Request::Close { entity: child });
+            }
+            return;
+        }
         self.stopping = self.stopping.saturating_add(1).min(2);
         if let Some(child) = self.child {
             self.io.push(io::Request::Signal {
@@ -534,6 +567,7 @@ impl Backend {
         let mut earliest = self.deadline;
         for at in [
             self.eof_deadline,
+            self.drain_deadline,
             match &self.check {
                 Some(check) => check.next_deadline(),
                 None => None,
@@ -607,22 +641,15 @@ impl Backend {
             Phase::Ending | Phase::Ended => return,
             Phase::Idle | Phase::Checking | Phase::Starting | Phase::Running => {}
         }
+        let active = self.active_turn();
         self.phase = Phase::Ending;
         if let Some(owner) = self.owner.take() {
             up.push(ToDomain::Cancelled { owner });
         }
-        self.answer_calls();
         self.request = None;
         self.outgoing = None;
         self.eof_deadline = None;
-        self.deadline = if self.child.is_some() || self.spawning {
-            Some(env.now.saturating_add(self.settings.grace))
-        } else {
-            None
-        };
-        if let Some(input) = self.pipes.first().copied().flatten() {
-            self.io.push(io::Request::Close { entity: input });
-        }
+        self.stop(env.now, active, false);
         self.read_stdout();
         if let Some(check) = &mut self.check {
             check.fire(Time::from_nanos(u64::MAX), &mut self.io);

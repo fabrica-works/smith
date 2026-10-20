@@ -179,8 +179,11 @@ impl Domain {
                 })
                 .expect("one cell per configured model");
         }
-        let agent_config =
-            agent::Config { endpoints: Box::from(limits.endpoints.as_ref()), models: models.into_boxed() };
+        let agent_config = agent::Config {
+            programs: Box::new([]),
+            endpoints: Box::from(limits.endpoints.as_ref()),
+            models: models.into_boxed(),
+        };
         let child_limits = match limits.agent {
             AgentLimits::Inline(mut child) => {
                 if child.smith != limits.smith || child.slots != 1 {
