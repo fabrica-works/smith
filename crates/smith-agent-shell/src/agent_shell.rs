@@ -66,6 +66,7 @@ struct Prepared {
     service: service::Service,
     header: Option<smith_events::SessionStarted>,
     trace_root: Option<Fd>,
+    unused_program_root: Option<Fd>,
     worst: u64,
     operations: u32,
     queue: u32,
@@ -94,7 +95,7 @@ impl Agent {
                 return Err(why);
             }
         };
-        Ok(Self {
+        let mut agent = Self {
             service: prepared.service,
             header: prepared.header,
             trace_root: prepared.trace_root,
@@ -110,7 +111,11 @@ impl Agent {
             reported: false,
             worst: prepared.worst,
             operations: prepared.operations,
-        })
+        };
+        if let Some(root) = prepared.unused_program_root {
+            agent.close(root);
+        }
+        Ok(agent)
     }
 
     /// The settled invocation's success or failure, already logged to error output.
@@ -177,11 +182,31 @@ fn prepare_program(configuration: &mut service::Config, resources: Option<&Progr
     Ok(())
 }
 
-fn adopt_program_root(service: &mut service::Service, resources: &Resources) -> Result<(), String> {
+fn adopt_program_root(service: &mut service::Service, resources: &Resources) -> Result<Option<Fd>, String> {
     if let Some(root) = resources.programs.as_ref().and_then(|programs| programs.directory) {
-        service.adopt_program_root(root).map_err(|error| format!("programs root cannot be adopted: {error:?}"))?;
+        match service.adopt_program_root(root) {
+            Ok(()) => {}
+            Err(service::AdoptError::Unconfigured) => return Ok(Some(root)),
+            Err(error @ service::AdoptError::Full) => {
+                return Err(format!("programs root cannot be adopted: {error:?}"));
+            }
+        }
     }
-    Ok(())
+    Ok(None)
+}
+
+fn extra_operations(configuration: &config::Configuration, resources: &Resources, root_count: usize) -> Option<u32> {
+    u32::try_from(root_count)
+        .ok()?
+        .checked_add(u32::from(resources.error.is_some()))
+        .and_then(|count| count.checked_add(u32::from(configuration.trace.is_some() && resources.trace.is_none())))
+        .and_then(|count| {
+            // An unbound program leaves one inherited root for the shell to close.
+            count.checked_add(u32::from(
+                configuration.endpoint_programs.is_empty()
+                    && resources.programs.as_ref().and_then(|programs| programs.directory).is_some(),
+            ))
+        })
 }
 
 fn prepare(mut configuration: config::Configuration, resources: &Resources) -> Result<Prepared, String> {
@@ -190,11 +215,8 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
     if root_count > usize::try_from(configuration.service.limits.domain.run.directories).expect("directory bound") {
         return Err("inherited agent roots exceed the directory limit".into());
     }
-    let extra_operations = u32::try_from(root_count)
-        .map_err(|_| derivation_refusal("inherited_roots"))?
-        .checked_add(u32::from(resources.error.is_some()))
-        .and_then(|count| count.checked_add(u32::from(configuration.trace.is_some() && resources.trace.is_none())))
-        .ok_or_else(|| derivation_refusal("routes"))?;
+    let extra_operations =
+        extra_operations(&configuration, resources, root_count).ok_or_else(|| derivation_refusal("routes"))?;
     let queue =
         configuration.service.limits.queue.checked_add(extra_operations).ok_or_else(|| derivation_refusal("queue"))?;
     let operations = service::program_operations(&configuration.service)
@@ -261,7 +283,7 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
     });
     let mut service = service::Service::new(configuration.service, resources.seed)
         .map_err(|error| format!("agent configuration cannot start: {error:?}"))?;
-    adopt_program_root(&mut service, resources)?;
+    let unused_program_root = adopt_program_root(&mut service, resources)?;
     service
         .adopt_streams(resources.input, resources.output, resources.signals)
         .map_err(|fd| format!("agent stream {} cannot be adopted", fd.raw()))?;
@@ -284,7 +306,7 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
     } else if resources.trace.is_some() {
         return Err("an inherited trace requires a configured destination".into());
     }
-    Ok(Prepared { service, header, trace_root, worst, operations, queue })
+    Ok(Prepared { service, header, trace_root, unused_program_root, worst, operations, queue })
 }
 
 impl Host for Agent {

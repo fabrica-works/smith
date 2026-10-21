@@ -30,7 +30,7 @@ pub struct ProgramBackend {
 /// The shell's programs root cannot be adopted by this service.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdoptError {
-    /// No program backend was configured.
+    /// No endpoint names a program backend.
     Unconfigured,
     /// The checked file table has no free slot.
     Full,
@@ -126,11 +126,18 @@ fn reserved(limits: &Limits, settings: &backend::Settings) -> Option<Limits> {
     Some(reserved)
 }
 
-/// Additional complete ownership charged only to configurations with a program.
+pub(crate) fn bound(config: Option<&ProgramBackend>) -> Option<&ProgramBackend> {
+    match config {
+        Some(program) if !program.endpoints.is_empty() => Some(program),
+        Some(_) | None => None,
+    }
+}
+
+/// Additional complete ownership charged only for a program an endpoint names.
 /// Includes the protocol, queues, routes, file slots and native I/O growth (5.1).
 #[must_use]
 pub fn program_worst_case(config: &Config) -> Option<u64> {
-    let program = match &config.program {
+    let program = match bound(config.program.as_ref()) {
         Some(program) => program,
         None => return Some(0),
     };
@@ -159,7 +166,7 @@ pub fn program_worst_case(config: &Config) -> Option<u64> {
 /// Native operation route capacity after reserving the configured program's I/O.
 #[must_use]
 pub fn program_operations(config: &Config) -> Option<u32> {
-    match &config.program {
+    match bound(config.program.as_ref()) {
         Some(program) => {
             Some(reserved(&config.limits, &settings(program, &config.limits, &config.environment)?)?.routes)
         }
@@ -218,11 +225,16 @@ pub(super) struct Parts {
     pub files: file_layer::FileIo,
 }
 
+/// Build and reserve only a program an endpoint names; private roots need its UID first.
 pub(super) fn parts(
     config: Option<ProgramBackend>,
     limits: &mut Limits,
     environment: &smith_protocol_machine::Environment,
 ) -> Result<Parts, ConfigError> {
+    let config = match bound(config.as_ref()) {
+        Some(_) => config,
+        None => None,
+    };
     #[expect(clippy::manual_map, reason = "production steps use explicit matches instead of closures")]
     let effective_user = match &config {
         Some(program) => Some(program.effective_user),
@@ -648,6 +660,24 @@ pub(super) fn wait_for_close(service: &mut Service) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unbound_program_keeps_the_native_limits() {
+        let mut configuration = super::super::tests::configuration();
+        let limits = configuration.limits;
+        configuration.program = Some(ProgramBackend {
+            program: Programs { claude: b"/claude".as_slice().into(), directory: b"/programs".as_slice().into() },
+            endpoints: Box::default(),
+            relay: Box::default(),
+            entropy: Secret::new(Box::default()),
+            effective_user: 1000,
+        });
+        let service = Service::new(configuration, 1).expect("unbound declaration needs no backend settings");
+        assert!(service.program.is_none());
+        assert_eq!(service.limits.routes, limits.routes);
+        assert_eq!(service.limits.io, limits.io);
+        assert_eq!(service.limits.file_slots, limits.file_slots);
+    }
 
     #[test]
     fn program_io_drains_past_full_file_terminal_storage() {

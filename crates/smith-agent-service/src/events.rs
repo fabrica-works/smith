@@ -181,7 +181,7 @@ impl Producer {
                     &config.llm_endpoints,
                     &config.domain.endpoints,
                 );
-                producer.programs = match &config.program {
+                producer.programs = match crate::service::bound(config.program.as_ref()) {
                     Some(program) => program.endpoints.clone(),
                     None => Box::default(),
                 };

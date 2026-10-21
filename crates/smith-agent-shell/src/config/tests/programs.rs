@@ -1,5 +1,7 @@
 use super::{parse_value, shaped_document};
-use crate::config::{Program, ProgramName};
+use crate::config::{ConfigurationRefusal, Program, ProgramName, from_value};
+use smith_agent_service::profile::{Check, Refusal};
+use smith_agent_service::{program_operations, program_worst_case, worst_case};
 
 fn document() -> serde_json::Value {
     let mut document = shaped_document();
@@ -7,6 +9,86 @@ fn document() -> serde_json::Value {
         "path": "/usr/local/bin/claude", "directory": "/home/u/.local/state/smith/programs"
     }});
     document
+}
+
+#[test]
+fn an_unbound_program_has_no_backend_charge() {
+    let direct = from_value(shaped_document()).expect("direct configuration");
+    let declared = from_value(document()).expect("unbound declaration");
+    let direct_complete = worst_case(&direct.service.limits, &direct.service.llm_endpoints).unwrap()
+        + program_worst_case(&direct.service).unwrap();
+    let declared_complete = worst_case(&declared.service.limits, &declared.service.llm_endpoints).unwrap()
+        + program_worst_case(&declared.service).unwrap();
+    println!("UNBOUND direct={direct_complete} declared={declared_complete}");
+    assert_eq!(program_worst_case(&declared.service), Some(0));
+    assert_eq!(program_operations(&declared.service), Some(declared.service.limits.routes));
+    assert_eq!(declared_complete, direct_complete);
+}
+
+#[test]
+fn an_unbound_program_root_is_closed_by_the_shell() {
+    use skein_io::kernel::{Complete, Done, Fd, Op};
+    use skein_lib::{Secret, Time, Wall};
+    use skein_shell::Host;
+
+    let configuration = from_value(document()).expect("unbound declaration");
+    let mut agent = crate::Agent::new(
+        configuration,
+        crate::Resources {
+            input: Fd::new(0),
+            output: Fd::new(1),
+            signals: Fd::new(2),
+            seed: 1,
+            pid: 1,
+            trace: None,
+            error: None,
+            roots: None,
+            programs: Some(crate::ProgramResources {
+                relay: "/smith-agent".into(),
+                entropy: Secret::new(Box::new([7; 32])),
+                directory: Some(Fd::new(3)),
+            }),
+        },
+        Box::new(std::io::sink()),
+    )
+    .expect("unbound declaration starts with shell resources");
+    let close = agent.submissions().pop().expect("unused root closes immediately");
+    assert_eq!(close.kind, Op::Close { fd: Fd::new(3) });
+    assert!(agent.submissions().is_empty());
+    agent.completions().push(Complete { op: close.op, kind: close.kind, result: Ok(Done::Nothing) });
+    agent.iterate(Time::ZERO, Wall::EPOCH);
+    assert!(!agent.submissions().iter().any(|submit| matches!(submit.kind, Op::Close { fd } if fd == Fd::new(3))));
+}
+
+fn million_token_document() -> serde_json::Value {
+    let mut document = document();
+    document["profile"]["declared"].as_object_mut().unwrap().remove("memory");
+    document["endpoints"][0]["models"][0]["window"] = 1_000_000.into();
+    document["endpoints"][0]["models"][0]["output"] = 16_384.into();
+    document
+}
+
+#[test]
+fn an_unbound_million_token_model_fits_default_memory() {
+    let configuration = from_value(million_token_document()).expect("unbound million-token model fits standard memory");
+    let service = worst_case(&configuration.service.limits, &configuration.service.llm_endpoints).unwrap();
+    let program = program_worst_case(&configuration.service).unwrap();
+    println!("MILLION service={service} program={program} complete={}", service + program);
+    assert_eq!(configuration.memory, 2_281_701_376);
+    super::super::check_memory(&configuration.service, configuration.memory).expect("complete admission");
+}
+
+#[test]
+fn a_bound_million_token_model_exceeds_default_memory() {
+    let mut document = million_token_document();
+    document["endpoints"][0]["program"] = "claude_code".into();
+    let refusal = from_value(document).err().expect("bound million-token backend still exceeds standard memory");
+    let ConfigurationRefusal::Profile(Refusal::Broken { check: Check::Memory, left, right }) = refusal else {
+        panic!("expected worst-case memory refusal, got {refusal:?}");
+    };
+    assert_eq!(left.name.field, "worst_case");
+    assert_eq!(right.name.field, "memory");
+    println!("MILLION_BOUND required={:?} available={:?}", left.value, right.value);
 }
 
 #[test]

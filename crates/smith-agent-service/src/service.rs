@@ -28,6 +28,7 @@ use up::{component_up, domain_up, io_up, lower_events};
 #[path = "program.rs"]
 mod program;
 
+pub(crate) use program::bound;
 pub use program::{AdoptError, ProgramBackend, program_operations, program_worst_case};
 #[path = "teardown.rs"]
 pub mod teardown;
