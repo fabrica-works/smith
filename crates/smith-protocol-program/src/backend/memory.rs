@@ -53,6 +53,9 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         stream::worst_case(settings.mcp.message_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
             .checked_add(left)?
             .checked_add(List::<(u32, u32)>::worst_case(settings.adapter.client.tokens)?)?;
+    // Before the compaction child spawns, the idle writer alternative also
+    // covers json::quote's escaped window and depth-1 encoder; no stream,
+    // collector or document is live in that phase.
     let workspace =
         stream::worst_case(settings.line_bytes, settings.adapter.client.depth, settings.adapter.client.tokens)?
             .max(document.checked_add(decode.max(compare))?)
@@ -106,6 +109,9 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         // boundary. Collection/intake/encoding are in stream::worst_case.
         // Input has its independent ceiling: the encoder body and newline
         // copy coexist, then one prepared line remains during chunked writes.
+        // Compaction uses this input-line term after window_request clears
+        // outgoing; json::join may overshoot by 53 before its length check,
+        // covered by the idle stdout accumulator terms before spawn.
         // Native writer retention belongs to the service's two writer terms.
         .checked_add(u64::from(settings.line_bytes).checked_mul(2)?)?
         .checked_add(u64::from(settings.input_bytes))?
@@ -125,9 +131,19 @@ pub fn backend_worst_case(settings: &Settings) -> Option<u64> {
         .checked_add(u64::from(settings.adapter.rendered_result).checked_mul(2)?)?
         .checked_add(Queue::<llm::Completion>::worst_case(4)?)?
         .checked_add(measures::worst_case(settings)?)?
-        // Compaction reuses the settled child, stream and files. Its unescaped
-        // window, quote and encoded line need two additional input ceilings.
-        .checked_add(u64::from(settings.input_bytes).checked_mul(2)?)?
+        // Compaction before spawn reuses settled storage, with I = input_bytes:
+        // Held prompt: first prompt_bytes term; the old request was replaced.
+        // render's I-capacity output: measures' prompt payload; prior measures
+        // drained before Complete, begin_prompt cleared prompt_pending, and
+        // prompt_text_measure moves this text into that idle payload slot.
+        // Temporary rendered result: workspace's input + rendered_result
+        // alternative; stream collection/decoding has not started.
+        // Escaped quote and depth-1 encoder: workspace's writer(depth 8, I)
+        // alternative; no stream, collector or document is live before spawn.
+        // Joined line (at most I + 53): ordinary input-line term (overshoot
+        // in idle stdout terms); window_request cleared the old outgoing.
+        // Later offer_prompt system capture: second prompt_bytes term; the
+        // instructions Store's copy was dropped before Stored enabled launch.
         .checked_add(4096)? // deferred stdout intake
         .checked_add(1024)? // retained API message ID
         .checked_add(4096)? // a failed Store's bounded temporary leaf

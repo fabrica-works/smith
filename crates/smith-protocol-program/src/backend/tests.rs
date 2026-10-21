@@ -94,3 +94,75 @@ fn mcp_file_keeps_the_secret_in_the_relay_environment() {
     assert_eq!(server["args"], serde_json::json!(["--mcp-relay", "127.0.0.1:1234"]));
     assert_eq!(server["env"]["SMITH_MCP_SECRET"].as_str().expect("token").len(), 64);
 }
+
+#[global_allocator]
+static HEAP: skein_heap::Counting = skein_heap::Counting;
+
+#[test]
+#[expect(clippy::print_stdout, reason = "record the measured peak beside its bound")]
+fn compaction_peak_fits_the_settled_storage_terms() {
+    use super::lifecycle_tests::{backend, request};
+    use skein_lib::List;
+    use smith_domain::llm;
+    use smith_protocol_llm::{FromDomain, Observation};
+
+    const INPUT: u32 = 4096;
+    // Room for the nearly input-sized message payload and its neutral cells.
+    const PROMPT: u64 = 8192;
+    // Leave the 53-byte envelope, quotes and escaped newlines within INPUT.
+    const TEXT_SLACK: usize = 64;
+    const FRAMING: usize = b"user:\n".len() + b"\nresult of id: withdrawn\n".len();
+    const JOIN_OVERSHOOT: u64 = 53;
+
+    for observe in [false, true] {
+        let mut backend = backend();
+        backend.settings.input_bytes = INPUT;
+        backend.settings.prompt_bytes = PROMPT;
+        backend.settings.adapter.rendered_result = 128;
+        backend.settings.adapter.client.history_items = 2;
+        backend.settings.adapter.client.tools = 0;
+        let mut next = request(&backend);
+        let FromDomain::Complete { prompt, observation, .. } = &mut next else { panic!("complete") };
+        prompt.purpose = llm::Purpose::Compaction { room: 1000 };
+        *observation = observe.then_some(Observation { first: true, messages: 0 });
+        // Include the consumed message ownership in the peak: Span otherwise
+        // subtracts its frees from render/quote/join's simultaneous live bytes.
+        let span = skein_heap::Span::start();
+        prompt.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([
+                llm::Block::Text {
+                    text: alloc::vec![b'x'; usize::try_from(INPUT).unwrap() - TEXT_SLACK - FRAMING].into(),
+                    replay: None,
+                },
+                llm::Block::ToolResult { id: b"id".as_slice().into(), result: llm::Returned::Withdrawn },
+            ]),
+        }]);
+        let messages = span.end().net;
+        backend.begin_prompt(&next);
+        backend.request = Some(next);
+
+        // measures::worst_case's prompt alternative, without its queue,
+        // completion alternative, redaction or fixed observation allowance.
+        let prompt_term = u64::from(INPUT)
+            + List::<smith_events::Block>::worst_case(2).unwrap()
+            + List::<Box<[u8]>>::worst_case(7).unwrap()
+            + List::<smith_events::Message>::worst_case(1).unwrap()
+            + 64;
+        let workspace = skein_json::writer::worst_case(&skein_json::writer::Limits { depth: 8, length: INPUT })
+            .unwrap()
+            .max(u64::from(INPUT) + u64::from(backend.settings.adapter.rendered_result));
+        let bound = prompt_term + workspace + u64::from(INPUT) + JOIN_OVERSHOOT;
+        let span = skein_heap::Span::start();
+        let rendered = backend.compaction_input();
+        let measured = span.end();
+        let peak = u64::try_from(measured.peak + messages).unwrap();
+        std::println!(
+            "COMPACTION observe={observe} growth={} messages={messages} peak={peak} bound={bound}",
+            measured.peak
+        );
+        assert_eq!(rendered, Some(()));
+        assert!(peak > 2 * u64::from(INPUT), "peak={peak}");
+        assert!(peak <= bound, "peak={peak} bound={bound}");
+    }
+}

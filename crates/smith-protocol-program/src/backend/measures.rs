@@ -27,6 +27,8 @@ pub(super) fn worst_case(settings: &super::Settings) -> Option<u64> {
     // Intake pauses until these measures drain: a sent prompt, a completion,
     // or one partial text line owns payload here. An empty later prompt may
     // accompany its completion; fixed room covers that message cell and names.
+    // Compaction render borrows this payload slot before spawn: earlier
+    // measures drained, begin_prompt cleared pending, and capture moves text.
     let prompt = u64::from(settings.input_bytes)
         .checked_add(List::<Block>::worst_case(client.history_items)?)?
         .checked_add(List::<Box<[u8]>>::worst_case(client.tools.checked_add(u32::try_from(PROGRAM_TOOLS).ok()?)?)?)?

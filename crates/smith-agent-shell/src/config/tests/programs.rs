@@ -79,16 +79,23 @@ fn an_unbound_million_token_model_fits_default_memory() {
 }
 
 #[test]
-fn a_bound_million_token_model_exceeds_default_memory() {
+fn a_bound_million_token_model_fits_default_memory() {
     let mut document = million_token_document();
     document["endpoints"][0]["program"] = "claude_code".into();
-    let refusal = from_value(document).err().expect("bound million-token backend still exceeds standard memory");
+    let configuration = from_value(document).expect("bound million-token backend fits standard memory");
+    let service = worst_case(&configuration.service.limits, &configuration.service.llm_endpoints).unwrap();
+    let program = program_worst_case(&configuration.service).unwrap();
+    println!("MILLION_BOUND service={service} program={program} complete={}", service + program);
+    assert_eq!(configuration.memory, 2_281_701_376);
+    super::super::check_memory(&configuration.service, configuration.memory).expect("complete admission");
+    assert!(program > 0, "a bound program is charged");
+    let refusal = super::super::check_memory(&configuration.service, service + program - 1)
+        .expect_err("the program's charge enters admission");
     let ConfigurationRefusal::Profile(Refusal::Broken { check: Check::Memory, left, right }) = refusal else {
         panic!("expected worst-case memory refusal, got {refusal:?}");
     };
     assert_eq!(left.name.field, "worst_case");
     assert_eq!(right.name.field, "memory");
-    println!("MILLION_BOUND required={:?} available={:?}", left.value, right.value);
 }
 
 #[test]

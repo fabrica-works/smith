@@ -1366,6 +1366,7 @@ name = "smith-protocol-program"
 version = "0.0.0"
 dependencies = [
  "serde_json",
+ "skein-heap",
  "skein-io",
  "skein-json",
  "skein-lib",
