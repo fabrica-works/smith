@@ -1,8 +1,8 @@
 # Status
 
-Updated 2026-10-21. How far smith's code is from its design, and which
-plans take it there. The designer keeps this file (skein's
-development.md, section 3.3).
+Updated 2026-10-21. How far smith's code is from its design, and the
+work that takes it there. Owners keep the rows their work changes
+(skein's owners.md, 4.4).
 
 ## 1. Plans
 
