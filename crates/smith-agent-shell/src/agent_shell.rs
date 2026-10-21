@@ -275,7 +275,7 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
         versions: smith_events::Versions {
             events: smith_events::VERSION,
             channel: 4,
-            charter: 3,
+            charter: 4,
             transcript: 6,
             chat_store: None,
         },

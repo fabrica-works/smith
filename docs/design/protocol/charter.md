@@ -1,6 +1,6 @@
 # The charter and the result
 
-Provisional, 2026-10-07, revised 2026-10-19. Two records:
+Provisional, 2026-10-07, revised 2026-10-21. Two records:
 
 - **the charter:** how a run is set up (domain/run.md, 3.1);
 - **the result:** what a run declares to finish (domain/run.md, section 7).
@@ -25,7 +25,8 @@ workers carry unread, and its version must be the one its agents read
   - the LLMs, each with its account, its window, its output and its
     prices;
   - the waiting time;
-  - whether to resume.
+  - whether to resume;
+  - the mode, Finite or Open.
 
   smith interprets no word of it, beyond the names it compares
   (domain/README.md, section 5).
@@ -48,6 +49,9 @@ workers carry unread, and its version must be the one its agents read
 
 A versioned record (skein's `codec.md`, section 3):
 
+- **mode:** `finite` or `open` (domain/run.md, 3.1). Open requires `wait`
+  and no `deliver`, or admission refuses MalformedCharter; its result
+  contract stays bounded and validated;
 - **instructions:** text;
 - **the brief:** a list of sections, each a title and its text, in order;
 - **tools:**
@@ -179,7 +183,10 @@ version at a time, and any change a reader would notice is a new one.
 - **A writer writes the version of its release.** `smith check` prints the
   version an agent reads (`docs/design/shell.md`), so a writer and its
   agents that differ find out before a run.
-- **Version 3 is current.** It adds each LLM's `account` (section 2):
+- **Version 4 is current.** It adds the charter's mode. Both versioned
+  records, Charter and RunResult, carry family version 4; the result's
+  shape is unchanged. Versions 1–3 are refused, with no legacy decoder.
+  Version 3 adds each LLM's `account` (section 2):
   the charter's LLM names the account its grants are named by, and an
   endpoint of the agent's configuration never does (agent.md, section
   4). Version 2 adds each LLM's `window` and `output`, in place of the

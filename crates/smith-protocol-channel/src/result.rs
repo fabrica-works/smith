@@ -6,7 +6,7 @@ use skein_lib::{List, Reader};
 use smith_domain::run;
 
 /// Decode the accepted outcome body after the host channel has bounded it.
-pub fn decode_declared(bytes: &[u8], limits: &smith_charter::v3::Limits) -> Result<run::outcome::Declared, Error> {
+pub fn decode_declared(bytes: &[u8], limits: &smith_charter::v4::Limits) -> Result<run::outcome::Declared, Error> {
     let mut reader = Reader::new(bytes);
     let Ok(record) = smith_charter::RunResult::decode(limits, &mut reader) else {
         return Err(Error::InvalidResult);

@@ -118,3 +118,70 @@ fn a_program_spec_names_its_backend() {
     let session::record::Kind::First(opener) = &turn.kind else { panic!("opening") };
     assert_eq!(opener.backend, session::record::Backend::Program { name: bytes(b"claude_code") });
 }
+
+fn open_policy() -> Charter {
+    Charter { mode: run::Mode::Open, ..charter() }
+}
+
+#[test]
+fn an_open_program_main_keeps_real_turns_and_waits() {
+    let mut h = program();
+    let (_, owner, prompt) = h.admit(7, open_policy());
+    assert_eq!(prompt.asker, crate::llm::Asker::Main);
+    assert!(!prompt.served.contains(&Served::Finish) && !prompt.served.contains(&Served::Deliver));
+    assert!(prompt.served.contains(&Served::Wait));
+    let emitted = h.says(owner, b"Hello");
+    let [Request::Waiting { read, .. }] = emitted.as_ref() else { panic!("one waiting notice") };
+    assert_eq!(*read, None);
+    assert_eq!(h.turns.len(), 1);
+    assert!(h.next().is_empty());
+}
+
+#[test]
+fn open_program_final_choice_permits_only_text() {
+    let mut h = program();
+    let mut selected = open_policy();
+    selected.budget.turns = 2;
+    selected.reserve = run::charter::Reserve { turns: 1, time: Duration::from_secs(60) };
+    let (_, owner, _) = h.admit(7, selected);
+    let emitted = h.step(Event::Completed {
+        owner,
+        completion: Completion {
+            reasoning_dropped: Box::default(),
+            content: Box::new([Said::Text { text: bytes(b"partial"), replay: None }]),
+            stop: Stop::MaxTokens,
+            usage: USAGE,
+        },
+    });
+    let [Request::Complete { owner, prompt, .. }] = emitted.as_ref() else { panic!("last prompt: {emitted:?}") };
+    assert_eq!(prompt.choice, crate::llm::ToolChoice::None);
+    assert_eq!(prompt.asker, crate::llm::Asker::Main);
+    assert!(!prompt.served.contains(&Served::Finish));
+    let owner = *owner;
+    let emitted = h.says(owner, b"Last reply");
+    let [Request::Waiting { .. }] = emitted.as_ref() else { panic!("one waiting notice") };
+    let emitted = h.next();
+    let [Request::Answer { answer: run::Answer::Parked { turns: 2, .. }, .. }] = emitted.as_ref() else {
+        panic!("one parked terminal");
+    };
+}
+
+#[test]
+fn opaque_and_refusal_blocks_never_become_open_text_replies() {
+    let contents: [Box<[Said]>; 2] = [
+        Box::new([Said::Opaque { bytes: bytes(b"reasoning metadata") }]),
+        Box::new([Said::Refusal { text: bytes(b"explicit refusal"), replay: None }]),
+    ];
+    for content in contents {
+        let mut h = program();
+        let (_, owner, _) = h.admit(7, open_policy());
+        let emitted = h.step(Event::Completed {
+            owner,
+            completion: Completion { reasoning_dropped: Box::default(), content, stop: Stop::EndTurn, usage: USAGE },
+        });
+        let [Request::Complete { prompt, .. }] = emitted.as_ref() else { panic!("nudge: {emitted:?}") };
+        let message = prompt.messages.last().expect("nudge user message");
+        let [Block::Text { text, .. }] = message.content.as_ref() else { panic!("one nudge text") };
+        assert_eq!(text.as_ref(), b"You ended your turn with no text, so you have not replied. Carry on, and reply with text or call `wait`. This is reminder 1 of 1: if you stop again without replying after the last one, the run ends unfinished.");
+    }
+}

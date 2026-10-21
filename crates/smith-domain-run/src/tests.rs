@@ -4,6 +4,8 @@ mod guide_room;
 
 mod program;
 
+mod open;
+
 use alloc::boxed::Box;
 
 use skein_lib::{Duration, Env, List, Queue, ReplyTo, Time, Token, Wall};
@@ -306,6 +308,7 @@ pub(crate) fn workspace() -> Workspace {
 
 pub(crate) fn charter() -> Charter {
     Charter {
+        mode: crate::Mode::Finite,
         reserve: crate::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::new([]),
         brief: crate::Brief {
@@ -807,7 +810,7 @@ fn an_llm_that_stops_without_finishing_is_nudged_until_its_nudges_run_out() {
     let peer = Token::new(100);
     for nudge in 1..=LIMITS.nudges {
         assert!(h.step(Event::Used { conversation, spend: spend(5) }).is_empty(), "within the budget");
-        let text = super::prompt::nudge(Stop::EndTurn, nudge, LIMITS.nudges);
+        let text = super::prompt::nudge(crate::Mode::Finite, Stop::EndTurn, nudge, LIMITS.nudges);
         assert_eq!(&*h.step(end_turn(conversation)), &[Request::Say { peer, text }]);
     }
     assert!(h.step(Event::Used { conversation, spend: spend(5) }).is_empty(), "within the budget");
@@ -2157,7 +2160,8 @@ fn pending_children_cannot_reserve_the_same_last_ordinary_turn() {
         panic!("last child releases main: {first_return:?}");
     };
     assert_eq!((*call, end.clone(), *conversation), (Token::new(7), End::Budget(Exhausted::Turns), main));
-    let note = super::prompt::wind_down_note(crate::charter::Reserve { turns: 1, time: Duration::ZERO });
+    let note =
+        super::prompt::wind_down_note(crate::Mode::Finite, crate::charter::Reserve { turns: 1, time: Duration::ZERO });
     assert_eq!(
         crate::completion_permit(&mut harness.domain, main, harness.env.now, crate::Most::Bounded(0)),
         crate::CompletionPermit::Final { note: Some(note) }
@@ -2201,7 +2205,10 @@ fn ordinary_time_closes_a_child_then_main_receives_its_final_permit() {
         panic!("last child releases main: {returned:?}");
     };
     assert_eq!((end.clone(), *conversation), (End::Budget(Exhausted::Time), main));
-    let note = super::prompt::wind_down_note(crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) });
+    let note = super::prompt::wind_down_note(
+        crate::Mode::Finite,
+        crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) },
+    );
     assert_eq!(
         crate::completion_permit(&mut harness.domain, main, harness.env.now, crate::Most::Bounded(0)),
         crate::CompletionPermit::Final { note: Some(note) }

@@ -138,6 +138,7 @@ fn charter(held: u64) -> Charter {
     let convention_paths = size(b"AGENTS.md".len() + b".temper/pre-pr".len());
     let (instructions, brief) = context(held - parts - rule - change_rules - convention_paths);
     Charter {
+        mode: smith_domain_run::Mode::Finite,
         reserve: smith_domain_run::charter::Reserve { turns: 0, time: LIMITS.check_timeout },
         instructions,
         brief,
@@ -707,6 +708,7 @@ fn full_delivery_charter(limits: &Limits) -> Charter {
         + size(b"AGENTS.md".len() + b".temper/pre-pr".len());
     let (instructions, brief) = context(limits.run_bytes - parts);
     Charter {
+        mode: smith_domain_run::Mode::Finite,
         reserve: smith_domain_run::charter::Reserve { turns: 0, time: limits.check_timeout },
         instructions,
         brief,

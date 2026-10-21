@@ -41,6 +41,8 @@ pub(crate) struct Peer {
     /// by ticket, until the session dispatches them; and what they hold.
     asks: Map<u64, Ask>,
     held: u64,
+    /// The latest completion has assistant text, excluding refusal and opaque blocks.
+    assistant_text: bool,
     /// The next ticket to give.
     next: u64,
 }
@@ -65,18 +67,27 @@ impl Peer {
             offered,
             asks: Map::with_capacity(asks(limits)),
             held: 0,
+            assistant_text: false,
             next: FIRST,
         }
     }
 
     pub(crate) const fn is_main(&self) -> bool {
-        self.offered.finish
+        self.offered.main
     }
 
     pub(crate) fn final_choice(&self) -> sllm::ToolChoice {
-        assert!(self.offered.finish, "only main receives finishing turns");
+        assert!(self.offered.main, "only main receives finishing turns");
+        if !self.offered.finish {
+            return sllm::ToolChoice::None;
+        }
         let tickets = if self.offered.deliver { Box::from([FINISH, DELIVER]) } else { Box::from([FINISH]) };
         sllm::ToolChoice::Only(tickets)
+    }
+
+    /// Open implicit waiting counts only assistant text; the session also copies refusal text.
+    pub(crate) fn yielded_text(&self, text: Box<[u8]>) -> Box<[u8]> {
+        if self.offered.main && !self.offered.finish && !self.assistant_text { Box::default() } else { text }
     }
 
     /// The tickets it holds.
@@ -89,6 +100,7 @@ impl Peer {
     /// call to one the session was not offered is no call.
     pub(crate) fn completion(&mut self, completion: llm::Completion, limit: u64) -> sllm::Completion {
         let llm::Completion { reasoning_dropped, content, stop, usage } = completion;
+        self.assistant_text = false;
         let mut blocks = List::with_capacity(u32::try_from(content.len()).expect("a completion fits in memory"));
         // Every call keeps a classification cell even when decoding is refused.
         // Reserve the complete batch's cells first, so an oversized first call
@@ -101,7 +113,8 @@ impl Peer {
                     decoded_bytes =
                         decoded_bytes.checked_add(classification_bytes).expect("completion cells fit in memory");
                 }
-                Said::Text { .. } | Said::Refusal { .. } | Said::Opaque { .. } => {}
+                Said::Text { text, .. } => self.assistant_text |= !text.is_empty(),
+                Said::Refusal { .. } | Said::Opaque { .. } => {}
             }
         }
         for said in content {

@@ -1,9 +1,10 @@
-family smith-charter 3
+family smith-charter 4
 
 # Section bounds cover host brief text; admission also applies Limits.run_bytes.
 record Section { title: text 1024 body: text 262144 }
 record Families { inspect: bool modify: bool shell: bool agents: bool }
 enum Effect { read, write }
+enum Mode { finite, open }
 
 # Schema bytes match HostInput::CAPACITY (65536); host tool names and text
 # are included in the run's aggregate ownership cap.
@@ -62,6 +63,7 @@ versioned record Charter {
     models: list 16 Llm
     waiting: duration
     resume: bool
+    mode: Mode
 }
 
 # Result ownership is checked against Limits.outcome_bytes before judgement.

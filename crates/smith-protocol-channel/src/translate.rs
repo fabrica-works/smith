@@ -1,4 +1,4 @@
-//! Charter v3 translation into the run's policy data (protocol/charter.md,
+//! Charter v4 translation into the run's policy data (protocol/charter.md,
 //! sections 2, 5 and 7; protocol/agent.md, section 4).
 //!
 //! The caller supplies configured endpoint names and their domain identities.
@@ -282,13 +282,13 @@ impl Endpoints {
 #[expect(clippy::manual_let_else, reason = "explicit exhaustive result handling")]
 pub fn decode_charter(
     bytes: &[u8],
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     endpoints: &Endpoints,
 ) -> Result<run::Charter, run::Invalid> {
     if bytes.len() < 2 {
         return Err(run::Invalid::MalformedCharter);
     }
-    if bytes.get(..2) != Some(&[0, 3][..]) {
+    if bytes.get(..2) != Some(&[0, 4][..]) {
         return Err(run::Invalid::CharterVersion);
     }
     let charter = match wire::Charter::decode(limits, &mut Reader::new(bytes)) {
@@ -344,6 +344,10 @@ fn translate_charter(charter: &wire::Charter, endpoints: &Endpoints) -> Result<r
     }
     let budget = charter.budget();
     Ok(run::Charter {
+        mode: match charter.mode() {
+            wire::Mode::Finite => run::Mode::Finite,
+            wire::Mode::Open => run::Mode::Open,
+        },
         resume: charter.resume(),
         waiting: charter.waiting(),
         instructions: Box::from(charter.instructions()),
@@ -447,8 +451,8 @@ fn field_rules(value: &List<wire::FieldRule>) -> Result<Box<[run::outcome::Field
     Ok(fields.into_boxed())
 }
 
-/// Write an accepted domain result in the version-one charter family.
-pub fn encode_result(result: &run::outcome::Declared, limits: &wire::v3::Limits) -> Result<Box<[u8]>, Error> {
+/// Write an accepted domain result in the current charter family.
+pub fn encode_result(result: &run::outcome::Declared, limits: &wire::v4::Limits) -> Result<Box<[u8]>, Error> {
     let mut fields = List::with_capacity(limits.run_result_fields);
     let mut items = List::with_capacity(limits.run_result_items);
     let (form, label, text, values) = match result {
@@ -483,7 +487,7 @@ pub fn encode_result(result: &run::outcome::Declared, limits: &wire::v3::Limits)
 fn copy_fields(
     values: &[run::outcome::Field],
     target: &mut List<wire::Field>,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
 ) -> Result<(), Error> {
     for field in values {
         let value = wire::Field::new(limits, wire::FieldParts { name: field.name.clone(), text: field.value.clone() })?;
@@ -501,7 +505,7 @@ pub fn answer_record(
     answer: run::Answer,
     read: Option<Token>,
     bodies: &channel::Limits,
-    charter: &wire::v3::Limits,
+    charter: &wire::v4::Limits,
 ) -> Result<channel::Answer, Error> {
     let (turns, spent, result) = match answer {
         run::Answer::Refused(refusal) => {

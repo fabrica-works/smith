@@ -195,3 +195,19 @@ fn failed(event: Option<ToDomain>, words: &[u8]) {
     assert_eq!(failure, llm::Failure::Program { exit: None });
     assert_eq!(detail.as_ref(), words);
 }
+
+#[test]
+fn an_open_catalog_has_wait_and_refuses_unoffered_finish() {
+    let mut backend = active();
+    let Some(FromDomain::Complete { prompt, .. }) = &mut backend.request else { panic!("request") };
+    prompt.served = Box::new([llm::Served::Wait]);
+    let tools = backend.tools();
+    let [waiting] = tools.as_ref() else { panic!("one offered tool") };
+    assert_eq!(waiting.name.as_ref(), b"wait");
+    let mut up = Queue::with_capacity(32);
+    let mut below = Queue::with_capacity(64);
+    backend.line(&env(0), br#"{"type":"assistant","message":{"id":"one","content":[{"type":"tool_use","id":"f","name":"mcp__smith__finish","input":{}}]}}"#, &mut up, &mut below);
+    let Some(ToDomain::Completed { completion, .. }) = up.pop() else { panic!("actual completion") };
+    let [llm::Said::ToolCall { call, .. }] = completion.content.as_ref() else { panic!("one unoffered call") };
+    assert_eq!(*call, llm::Decoded::Invalid { problem: llm::Problem::UnknownTool });
+}

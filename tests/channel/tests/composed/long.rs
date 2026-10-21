@@ -25,7 +25,7 @@ impl LongWorld {
         let mut wire = World::new(CEILINGS, CEILINGS, StreamMode::Two);
         wire.settle();
         wire.send_start(Box::from(
-            &include_bytes!("../../../../crates/smith-charter/golden/v3/record_charter_smallest.bin")[..],
+            &include_bytes!("../../../../crates/smith-charter/golden/v4/record_charter_smallest.bin")[..],
         ));
         wire.settle();
         Self {

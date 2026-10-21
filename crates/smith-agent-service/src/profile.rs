@@ -357,7 +357,7 @@ fn channel_limits(
     domain: &domain::Limits,
     policy: &Policy,
     bodies: smith_channel::Limits,
-    charter: smith_charter::v3::Limits,
+    charter: smith_charter::v4::Limits,
     transcript: smith_transcript::v6::Limits,
     io: &io::Limits,
 ) -> Result<channel::Limits, Refusal> {

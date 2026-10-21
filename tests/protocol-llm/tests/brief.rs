@@ -80,6 +80,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         output: 4096,
     };
     run::Charter {
+        mode: run::Mode::Finite,
         reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         instructions: instructions.as_bytes().into(),
         brief: Brief {
@@ -924,3 +925,6 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         }
     }
 }
+
+#[path = "brief/open.rs"]
+mod open;

@@ -73,7 +73,7 @@ pub use budget::{
     Budget, BudgetRefusal, Ceiling, CompletionPermit, Exhausted, Granted, Overflow, Part, Prices, Rate, ReceivingLimit,
     Set, Share, Spend, Stage, admit, most_costly, reserve_spend,
 };
-pub use charter::{Brief, Charter, Conventions, Section};
+pub use charter::{Brief, Charter, Conventions, Mode, Section};
 pub use domain::{
     Domain, MAX_OUT, completion_overflow, completion_permit, conversation_charter, fire, host_name, max_facts, owner,
     reserve, resume, settle_reservation, step,

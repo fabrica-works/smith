@@ -183,6 +183,7 @@ fn workspace() -> run::Workspace {
 
 fn charter(restoring: bool) -> run::Charter {
     run::Charter {
+        mode: run::Mode::Finite,
         reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         instructions: Box::new([]),
         brief: run::Brief {

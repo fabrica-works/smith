@@ -69,6 +69,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         output: 4096,
     };
     run::Charter {
+        mode: run::Mode::Finite,
         reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         instructions: instructions.as_bytes().into(),
         brief: Brief {

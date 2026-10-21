@@ -1894,6 +1894,7 @@ fn charter(settings: &Settings) -> run::Charter {
     };
     let llm = main_model();
     run::Charter {
+        mode: run::Mode::Finite,
         reserve: finishing_reserve(settings, change),
         instructions: Box::new([]),
         brief: run::Brief {

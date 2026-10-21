@@ -540,6 +540,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         session::Request::Yielded { opener, stop, text } => {
             let id = peer(domain, opener);
             let peer = domain.peers.get_mut(id).expect("found above");
+            let text = peer.yielded_text(text);
             let forgotten = peer.forget_asks(&env.limits.session);
             domain.tickets = domain.tickets.saturating_sub(forgotten);
             run::Event::Yielded { conversation: opener, stop: translate::stop(stop), text }

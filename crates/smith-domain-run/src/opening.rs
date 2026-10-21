@@ -9,7 +9,7 @@ use skein_lib::bytes::copy_of;
 
 use crate::boundary::Opening;
 use crate::budget::Spend;
-use crate::charter::{Charter, Families};
+use crate::charter::{Charter, Families, Mode};
 use crate::prepare::Found;
 use crate::prompt;
 use crate::workspace::{self, Workspace};
@@ -33,11 +33,14 @@ pub(crate) fn main(
     limits: &crate::Limits,
 ) -> Opening {
     let costs = &limits.schema_costs;
-    let mut generated_schema_bytes = costs
-        .finish(&charter.outcome)
-        .expect("admitted contract schema arithmetic")
-        .checked_add(costs.finish_text)
-        .expect("admitted contract schema text arithmetic");
+    let mut generated_schema_bytes = match charter.mode {
+        Mode::Finite => costs
+            .finish(&charter.outcome)
+            .expect("admitted contract schema arithmetic")
+            .checked_add(costs.finish_text)
+            .expect("admitted contract schema text arithmetic"),
+        Mode::Open => 0,
+    };
     if let Some(change) = &charter.grants.deliver {
         generated_schema_bytes = generated_schema_bytes
             .checked_add(costs.deliver(change).expect("admitted delivery schema arithmetic"))
@@ -64,7 +67,10 @@ pub(crate) fn main(
         tools: workspace::families(workspace, Families::of(&charter.grants)).tools,
         workspace: workspace.cloned(),
         budget: charter.budget.remainder(spent, left),
-        finish: true,
+        finish: match charter.mode {
+            Mode::Finite => true,
+            Mode::Open => false,
+        },
         families: workspace::families(workspace, Families::of(&charter.grants)),
     }
 }

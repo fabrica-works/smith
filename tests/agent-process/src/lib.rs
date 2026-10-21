@@ -425,7 +425,7 @@ fn scenario_credential(anthropic: bool, private_grant: bool) -> skein_llm::Crede
 /// A concrete charter within the process limits, with one report contract.
 #[must_use]
 pub fn charter() -> Box<[u8]> {
-    let smallest = include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin");
+    let smallest = include_bytes!("../../../crates/smith-charter/golden/v4/record_charter_smallest.bin");
     let source = smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut skein_lib::Reader::new(smallest))
         .expect("golden charter");
     let mut parts = source.into_parts();

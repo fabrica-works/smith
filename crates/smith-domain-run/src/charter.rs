@@ -28,9 +28,20 @@ pub struct Reserve {
     pub time: Duration,
 }
 
+/// Host-selected lifecycle of main; the run answers once in either mode (domain/run.md, section 3.1).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Mode {
+    /// The host permits main to finish with a result accepted by the run.
+    Finite,
+    /// The host keeps the conversation open; replies wait and this activation parks.
+    Open,
+}
+
 /// What a run is given when it starts.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Charter {
+    pub mode: Mode,
+
     /// Select supplied concrete history at the root entrance; false starts fresh.
     pub resume: bool,
 
@@ -207,6 +218,7 @@ pub struct Endpoint(
 /// Counts are checked before anything that compares names in pairs.
 pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, limits: &Limits) -> Result<u32, Invalid> {
     let Charter {
+        mode,
         instructions: _,
         brief,
         grants,
@@ -219,6 +231,14 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
         waiting,
         conventions,
     } = charter;
+    match mode {
+        Mode::Finite => {}
+        Mode::Open => {
+            if !grants.wait || grants.deliver.is_some() {
+                return Err(Invalid::MalformedCharter);
+            }
+        }
+    }
     // Exact conversion: an overflowing count must refuse even at a u32::MAX cap.
     match u32::try_from(brief.sections.len()) {
         Ok(sections) if sections <= limits.brief_sections => {}
@@ -309,16 +329,21 @@ fn check_window_parts(
     let llm = &charter.llm;
     let models = &charter.models;
     let mut host = crate::prompt::host_bytes(charter, workspace, 0);
-    host = match host {
-        Some(bytes) => match limits.schema_costs.finish(outcome) {
-            Some(schema) => match bytes.checked_add(schema) {
-                Some(total) => total.checked_add(limits.schema_costs.finish_text),
+    match charter.mode {
+        Mode::Finite => {
+            host = match host {
+                Some(bytes) => match limits.schema_costs.finish(outcome) {
+                    Some(schema) => match bytes.checked_add(schema) {
+                        Some(total) => total.checked_add(limits.schema_costs.finish_text),
+                        None => None,
+                    },
+                    None => None,
+                },
                 None => None,
-            },
-            None => None,
-        },
-        None => None,
-    };
+            };
+        }
+        Mode::Open => {}
+    }
     if let Some(change) = &grants.deliver {
         host = match host {
             Some(bytes) => match limits.schema_costs.deliver(change) {

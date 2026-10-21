@@ -9,7 +9,7 @@ use crate::{Component, OpenEvent};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     pub bodies: smith_channel::Limits,
-    pub charter: smith_charter::v3::Limits,
+    pub charter: smith_charter::v4::Limits,
     pub transcript: smith_transcript::v6::Limits,
     /// Maximum configured endpoint names retained by this component.
     pub endpoints: u32,

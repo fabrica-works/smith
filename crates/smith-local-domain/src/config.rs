@@ -367,6 +367,7 @@ pub fn charter(config: &Config) -> charter::Charter {
             .expect("validated brief capacity");
     }
     charter::Charter {
+        mode: charter::Mode::Finite,
         resume: config.resume,
         waiting: config.mode.waiting(),
         instructions: config.instructions.clone(),

@@ -645,7 +645,7 @@ pub enum Read {
 /// What a conversation is opened with.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Opening {
-    /// Session-owned final answer for a child; main finishes through the run gate.
+    /// Session-owned final answer for a child; main follows its charter lifecycle in the run.
     pub final_turn: Option<FinalTurn>,
     /// The run identity shared by all its conversations.
     pub identity: crate::Identity,
@@ -956,7 +956,7 @@ pub enum Fault {
 /// The answer to a `Start`.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum Answer {
-    /// Settled main wait reached its idle threshold; all terminal rights have closed.
+    /// Main waited or replied in Open and this activation parked; all terminal rights have closed.
     Parked {
         /// Actual cumulative run token usage.
         spent: Spend,

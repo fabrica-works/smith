@@ -103,7 +103,7 @@ pub struct Component {
     now: Time,
     cancelled: bool,
     endpoints: smith_protocol_channel::Endpoints,
-    charter: smith_charter::v3::Limits,
+    charter: smith_charter::v4::Limits,
     transcript: smith_transcript::v6::Limits,
     sequence: u32,
     long_open: u32,

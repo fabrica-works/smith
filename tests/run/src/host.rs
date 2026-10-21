@@ -593,6 +593,7 @@ impl Host {
         let workspace = Some(Workspace { directories: repositories.into_boxed_slice() });
         let deliver = self.delivery_grant(script.deliveries);
         let charter = Charter {
+            mode: smith_domain_run::Mode::Finite,
             reserve: finishing_reserve(script, budget, change || deliver.is_some()),
             instructions: Box::new([]),
             brief: smith_domain_run::Brief {

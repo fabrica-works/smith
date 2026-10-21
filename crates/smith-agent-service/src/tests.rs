@@ -44,6 +44,7 @@ pub(crate) fn priced_charter() -> smith_domain::run::Charter {
     use skein_lib::Duration;
     use smith_domain::run;
     run::Charter {
+        mode: run::Mode::Finite,
         reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::default(),
         brief: run::Brief {

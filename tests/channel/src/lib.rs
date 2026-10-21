@@ -1135,7 +1135,7 @@ impl World {
 pub fn typed_charter(bytes: &[u8]) -> smith_host_domain::Charter {
     let value = agent::decode_charter(bytes, &smith_charter::CEILINGS, &test_endpoints()).unwrap_or_else(|_| {
         agent::decode_charter(
-            include_bytes!("../../../crates/smith-charter/golden/v3/record_charter_smallest.bin"),
+            include_bytes!("../../../crates/smith-charter/golden/v4/record_charter_smallest.bin"),
             &smith_charter::CEILINGS,
             &test_endpoints(),
         )

@@ -1,6 +1,6 @@
 # The run
 
-Provisional, 2026-10-05, revised 2026-10-20. What a smith run is, as a
+Provisional, 2026-10-05, revised 2026-10-21. What a smith run is, as a
 domain layer: one activation of an agent, from the charter its host gives
 it to the answer it gives back. It is the child domain `smith-domain-run`,
 composed with its sessions by `smith-domain` (README.md, section 4). The
@@ -13,6 +13,10 @@ is listed in section 15.
   workspace, the messages that triggered it and, when it resumes, a
   transcript; it answers once. Between runs nothing of the agent is live:
   continuity is the transcript, which the host keeps turn by turn.
+- **Finite or open.** The host selects `Mode::Finite`, with a result accepted
+  through `finish`, or `Mode::Open`, whose text replies wait and whose
+  activation parks. Open requires `wait` and forbids `deliver`; it offers
+  neither terminal tool. The host decides what ends the conversation.
 - **A flexible LLM driver.** A chat with a person, research, a triage, a
   review, operating a system through its host's tools, a coordinator
   revising a plan, a code change: what a run is for is its charter's. The
@@ -69,6 +73,10 @@ session   one conversation with an LLM; runs the workspace's tools
 
 What the host gives a run to set it up:
 
+- **Mode:** `Finite` or `Open`, stated by every creator. Open requires
+  waiting authority and no delivery grant, otherwise admission refuses
+  it as a malformed charter. Its bounded result contract remains present
+  and is still validated, but is never offered or priced as a finish schema.
 - **Instructions:** the role, as text, the first part of main's system
   text (3.3): a chat, a researcher, a coordinator, a reviewer with a
   lens, an operator, a producer of a change. A host gives its own;
@@ -145,8 +153,8 @@ role (3.1), first; the brief's sections; then the sections about its
 own mechanics, because those are what it enforces: the workspace, if
 any, and what it may write; the tools; each directory's guide; the
 checks; the budget (`## Budget`, 9.2); sub-agents, when granted (5.3);
-how to finish (the contract, as the LLM must meet it); and how waiting
-works, when `wait` is granted. The domain decides what each says and in which order, and
+how to finish in Finite (the contract, as the LLM must meet it), or how to
+reply in Open; and how waiting works, when `wait` is granted. The domain decides what each says and in which order, and
 writes it as text, as it writes the results and problems of the run's
 own tools and the host's, and the notes it appends (9.2), so a
 transcript keeps exactly what the LLM was told. The workspace tools'
@@ -455,6 +463,18 @@ host tool for it, as temper's `delegate` does.
   fence, and its host holds it, the watchdog paused; the run is idle only
   when that fence covers every message its host sent (host.md, section
   4). Time spent waiting counts against wall time (section 9).
+- **Open text replies.** Main ending a turn with nonempty assistant text
+  under an EndTurn stop has replied. Reasoning, metadata and refusal blocks
+  do not count as assistant text. After the real turn is told, queued
+  messages take precedence; otherwise the run tells Waiting with its read
+  fence and listens for the charter's waiting interval. A new message
+  continues main as a user message, once, without a tool result. No tool
+  call or result is invented, and a successful reply spends no nudge.
+  A zero interval parks immediately. Explicit `wait` can park silently;
+  empty, truncated, refused and no-calls ends keep their unsuccessful-end
+  policy (7.2). In the wind-down a successful text reply tells its fence
+  and parks at once; queued unread words belong to a later activation,
+  never to work beyond this budget.
 - **Awaiting** a first message is waiting without a session (3.4): told,
   timed and parked the same way. It has read nothing, so its waiting
   names no fence.
@@ -710,8 +730,12 @@ answers as it was ending; the host has the delivery's own answer.
      jobs run on: a `finish` that delivers, or a `deliver`, cancels them
      before its checks (8.1), and the run's end, which closes main's
      session, cancels any left.
-  2. Main then gets at most the reserve's turns of completions, the first
-     with the run's note that the budget is spent and it is to finish now
+  2. In Open, main gets the reserve's completions for a last text reply,
+     with no tool choice. The note says to reply with what it has and
+     promise no later work. A successful text end publishes its fence
+     and parks, including with unread words queued (section 6).
+     In Finite, main then gets at most the reserve's turns of completions,
+     the first with the run's note that the budget is spent and it is to finish now
      with what it has. They offer only `finish`, and `deliver` when
      granted: the same tool definitions are sent, and the model is told to
      choose among those only (session.md, section 5).
@@ -723,6 +747,10 @@ answers as it was ending; the host has the delivery's own answer.
   as its next user message. The program's tools are not narrowed, so
   the agent refuses every call but `finish` and `deliver` from then on,
   each as an invalid call is answered (protocol/programs.md, 5.7).
+  Open's root likewise supplies no tool choice and rejects all calls.
+  The program adapter's explicit interrupt transition currently recognizes
+  only a nonempty finishing choice; distinguishing Open wind-down from
+  other text-only requests remains an adapter decision (section 15).
 - **A sub-agent's share** runs out on its own: its final turn (5.3) ends
   it, and its parent goes on.
 
@@ -741,6 +769,8 @@ exact values are the facts', in milliseconds (protocol/events.md).
 - **A usage line** at the end of every sub-agent's result: whether the
   child stopped for its budget (5.3), what it used, in turns and time,
   and the turns and time the run has left above its reserve.
+- **Open replies,** under `## Replying` (section 6), and a last-reply note
+  in place of Finite finishing instructions (9.1).
 - **The wind-down's note** (9.1) and **a child's final-turn note** (5.3),
   appended.
 - **Threshold notes,** with messages mid-work (section 6): as the run's
@@ -968,6 +998,14 @@ timings, budgets and shares within its own (`docs/design/testing.md`).
   mid-run, and merges in progress.
 
 ## 15. Open questions
+
+- **Open on a program backend:** the root preserves Open's offerings and
+  text-only final choice. The adapter still launches with a result JSON
+  schema and maps structured output to a finish call; it also recognizes
+  only Finite's choice in its interrupt/result/input-close transition.
+  Open launch/output handling and the distinction between its wind-down
+  and other text-only requests need an adapter decision before that path
+  supports Open.
 
 - **A sub-agent's result:** its final message today; whether a sub-agent
   may be given a contract of its own.

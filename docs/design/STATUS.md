@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-20. How far smith's code is from its design, and which
+Updated 2026-10-21. How far smith's code is from its design, and which
 plans take it there. The designer keeps this file (skein's
 development.md, section 3.3).
 
@@ -21,6 +21,12 @@ development.md, section 3.3).
 | perf (round 1) | active on hetzner2 since 2026-10-20 | the 2026-10-20 revision, from the dogfood's comparison with Codex: a write making its missing directories, and its store's every answer answered (`domain/tools.md` 3, 4 and 7, `protocol/agent.md` 2); a no-op edit a match, a call refused unchanged only when its edits leave the file as loaded (`domain/tools.md` 3, `domain/session.md` 5); a poll's default wait `job_poll` under the ceiling `job_wait` (`domain/tools.md` 5, `protocol/llm.md` 3, `protocol/limits.md` 2.3 and 11, `shell.md` 6.5); `--dir`, several directories (`shell.md` 4), the guides sharing what the charter leaves (`protocol/limits.md` 3.9, `domain/run.md` 3.3); `--ephemeral` off the state directory (`shell.md` 4.2); a failed write abandoning its destination, said on standard error by every shell (`protocol/events.md` 5.2); the task role's plan, edits and finish (`shell.md` 6.6); skein's cut exchange `Unavailable` and gzip on the Codex route, repinned; a plain tree past its snapshot's bounds counted as changed, never refusing a start (`protocol/hosts.md` 5.5, `domain/host.md` 8); a session knowing its 256 files read or written last (`domain/tools.md` 4), the summary within 1,000 words (`domain/run.md` 3.3), the task role's whole-file writes and each check once (`shell.md` 6.6) | `~/src/rust/tmp/owners/smith-perf/ (not versioned)` |
 | sources | active on hel8 since 2026-10-20 | the first part of LLM accounts, sources: the host domain's grant naming its value's form; Claude Code as a program backend, with its sign-in, command, tools, stream, notices, budget and sessions, and the fake program (`protocol/programs.md` 1-9, `domain/tools.md` 10, `protocol/agent.md` 1 and 4); program sources checked and signed out, accounts by source with `none`, `smith login` and `logout` (`protocol/hosts.md` 2, 5.2-5.6, `shell.md` 4-7); a program's event fields (`protocol/events.md` 3.9, 3.10 and 6) | `~/src/rust/tmp/owners/smith-sources/plan.md (not versioned)` |
 | Claude Code, and smith on Anthropic | drafting | `benchmarks.md`, sections 6, 7 and 10: Claude Code as the third agent, smith's probes on Anthropic models. Reworked before it runs, after reliability, for the harness's own login (`benchmarks.md`, section 10), not the user's `~/.claude` | `~/src/rust/plans/reliability-plan/smith/11-claude.md (not versioned)` |
+
+Open run lifecycle (`domain/run.md`, 3.1, 6 and 9.1): explicit mode,
+text replies listening without a call, and native text-only final turns are
+implemented. Program root routing preserves mode; the program adapter's
+launch/structured-output handling and Open wind-down interrupt remain the
+question in run.md, section 15.
 
 ## 2. The design
 

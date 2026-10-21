@@ -15,7 +15,7 @@ use smith_domain::run;
 )]
 pub fn encode_charter(
     source: &run::Charter,
-    limits: &wire::v3::Limits,
+    limits: &wire::v4::Limits,
     endpoints: &Endpoints,
 ) -> Result<Box<[u8]>, Error> {
     let mut brief = List::with_capacity(count(source.brief.sections.len())?);
@@ -134,6 +134,10 @@ pub fn encode_charter(
     let record = wire::Charter::new(
         limits,
         wire::CharterParts {
+            mode: match source.mode {
+                run::Mode::Finite => wire::Mode::Finite,
+                run::Mode::Open => wire::Mode::Open,
+            },
             instructions: source.instructions.clone(),
             brief,
             tools,
@@ -173,7 +177,7 @@ fn count(length: usize) -> Result<u32, Error> {
     }
 }
 
-fn fields(source: &[run::outcome::FieldRule], limits: &wire::v3::Limits) -> Result<List<wire::FieldRule>, Error> {
+fn fields(source: &[run::outcome::FieldRule], limits: &wire::v4::Limits) -> Result<List<wire::FieldRule>, Error> {
     let mut fields = List::with_capacity(count(source.len())?);
     for field in source {
         let item = wire::FieldRule::new(limits, wire::FieldRuleParts { name: field.name.clone(), max: field.max })?;
@@ -184,18 +188,18 @@ fn fields(source: &[run::outcome::FieldRule], limits: &wire::v3::Limits) -> Resu
     Ok(fields)
 }
 
-fn change(source: &run::outcome::ChangeSpec, limits: &wire::v3::Limits) -> Result<wire::ChangeRule, Error> {
+fn change(source: &run::outcome::ChangeSpec, limits: &wire::v4::Limits) -> Result<wire::ChangeRule, Error> {
     Ok(wire::ChangeRule::new(
         limits,
         wire::ChangeRuleParts { checks_must_pass: source.checks_must_pass, fields: fields(&source.fields, limits)? },
     )?)
 }
 
-fn text(source: &run::outcome::TextSpec, limits: &wire::v3::Limits) -> Result<wire::TextRule, Error> {
+fn text(source: &run::outcome::TextSpec, limits: &wire::v4::Limits) -> Result<wire::TextRule, Error> {
     Ok(wire::TextRule::new(limits, wire::TextRuleParts { max: source.max, fields: fields(&source.fields, limits)? })?)
 }
 
-fn llm(source: &run::charter::Llm, limits: &wire::v3::Limits, endpoints: &Endpoints) -> Result<wire::Llm, Error> {
+fn llm(source: &run::charter::Llm, limits: &wire::v4::Limits, endpoints: &Endpoints) -> Result<wire::Llm, Error> {
     let endpoint = match endpoints.name_of(source.endpoint.0, source.dialect) {
         Some(name) => Box::from(name),
         None => return Err(Error::Endpoints),
@@ -221,4 +225,35 @@ fn llm(source: &run::charter::Llm, limits: &wire::v3::Limits, endpoints: &Endpoi
             )?,
         },
     )?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skein_lib::{Duration, Reader};
+
+    #[test]
+    #[expect(
+        clippy::disallowed_macros,
+        reason = "programming-model.md, section 10.2: a unit test reads its frozen golden"
+    )]
+    fn both_lifecycle_modes_cross_the_charter_boundary() {
+        let mut endpoints = List::with_capacity(1);
+        endpoints.push(crate::Endpoint { name: Box::default(), number: 17, dialect: 23 }).expect("one endpoint");
+        let endpoints = Endpoints::new(endpoints);
+        let golden = include_bytes!("../../smith-charter/golden/v4/record_charter_smallest.bin");
+        let charter = wire::Charter::decode(&wire::CEILINGS, &mut Reader::new(golden)).expect("current golden");
+        let mut writer = Writer::new(usize::try_from(charter.measure()).expect("bounded charter"));
+        charter.encode(&mut writer).expect("measured charter");
+        let source = writer.finish();
+        for mode in [run::Mode::Finite, run::Mode::Open] {
+            let mut charter = crate::decode_charter(&source, &wire::CEILINGS, &endpoints).expect("known endpoint");
+            charter.mode = mode;
+            charter.grants.wait = true;
+            charter.waiting = Duration::from_secs(30);
+            let encoded = encode_charter(&charter, &wire::CEILINGS, &endpoints).expect("charter encodes");
+            assert_eq!(crate::decode_charter(&encoded, &wire::CEILINGS, &endpoints), Ok(charter));
+        }
+        assert_eq!(crate::decode_charter(&[0, 3], &wire::CEILINGS, &endpoints), Err(run::Invalid::CharterVersion));
+    }
 }

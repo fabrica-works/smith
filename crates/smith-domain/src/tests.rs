@@ -173,6 +173,7 @@ const USAGE: Usage = Usage {
 fn decoded_batch_reserves_refusal_cells_before_any_payload() {
     let cell = u64::try_from(size_of::<Decoded>()).expect("cell size fits");
     let offered = crate::translate::Offered {
+        main: true,
         host_tools: Box::new([]),
         finish: false,
         deliver: false,
@@ -515,6 +516,7 @@ fn account_grants() -> Box<[crate::Grant]> {
 
 fn charter() -> Charter {
     Charter {
+        mode: run::Mode::Finite,
         reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::new([]),
         brief: smith_domain_run::Brief {

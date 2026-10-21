@@ -13,7 +13,7 @@
 use alloc::boxed::Box;
 
 use crate::budget::{Budget, Granted};
-use crate::charter::Reserve;
+use crate::charter::{Mode, Reserve};
 use skein_lib::{Duration, Writer};
 
 use crate::boundary::Stop;
@@ -46,6 +46,8 @@ pub(crate) const CHILD_FINAL: &[u8] =
 pub(crate) fn child_final_note() -> Box<[u8]> {
     skein_lib::bytes::copy_of(CHILD_FINAL)
 }
+
+const REPLYING: &[u8] = b"## Replying\n\nEnd your turn with text to reply; a reply does not end the conversation. The run then waits as for `wait`, but with no call to answer: the next messages come as a user message, at once if any came while you worked. To wait without replying, call `wait` with no text.\n";
 
 const WAIT: &[u8] = b"Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n";
 
@@ -83,7 +85,7 @@ fn render_fixed(text: &mut Text) {
     text.put(&opening(false, None));
     text.put(b"\n\n");
     render_fixed_budget(text);
-    render_wind_down(text, Reserve { turns: u32::MAX, time: Duration::from_nanos(u64::MAX) });
+    render_wind_down(Mode::Finite, text, Reserve { turns: u32::MAX, time: Duration::from_nanos(u64::MAX) });
     text.put(&finish_now());
     text.put(&child_final_note());
     text.put(SUMMARY);
@@ -97,11 +99,11 @@ fn render_fixed_budget(text: &mut Text) {
     let granted =
         Granted { turns: u32::MAX, time, spend: u64::MAX, turns_set: crate::Set::Pool, time_set: crate::Set::Pool };
     let mut main = Text::measuring();
-    render_budget(&mut main, budget, reserve, true);
+    render_budget(Mode::Finite, &mut main, budget, reserve, true);
     let mut child = Text::measuring();
     render_share(&mut child, granted, u32::MAX);
     if main.len >= child.len {
-        render_budget(text, budget, reserve, true);
+        render_budget(Mode::Finite, text, budget, reserve, true);
     } else {
         render_share(text, granted, u32::MAX);
     }
@@ -152,11 +154,11 @@ pub(crate) fn opening(brief: bool, messages: Option<Box<[u8]>>) -> Box<[u8]> {
 }
 
 /// The first final completion receives this appended after the latest results.
-pub(crate) fn wind_down_note(reserve: Reserve) -> Box<[u8]> {
+pub(crate) fn wind_down_note(mode: Mode, reserve: Reserve) -> Box<[u8]> {
     let mut measured = Text::measuring();
-    render_wind_down(&mut measured, reserve);
+    render_wind_down(mode, &mut measured, reserve);
     let mut text = measured.writing();
-    render_wind_down(&mut text, reserve);
+    render_wind_down(mode, &mut text, reserve);
     text.finish()
 }
 
@@ -165,12 +167,23 @@ pub(crate) fn finish_now() -> Box<[u8]> {
     skein_lib::bytes::copy_of(b"Finish now with what you have. Use finish, or deliver when offered.")
 }
 
-fn render_wind_down(text: &mut Text, reserve: Reserve) {
-    text.put(b"The ordinary budget is spent. Finish now with what you have. You have at most ");
+/// A final Open completion that has not replied asks again within its cap.
+pub(crate) fn last_reply() -> Box<[u8]> {
+    skein_lib::bytes::copy_of(b"Reply now with what you have. Use text only; promise no later work.")
+}
+
+fn render_wind_down(mode: Mode, text: &mut Text, reserve: Reserve) {
+    text.put(match mode {
+        Mode::Finite => b"The ordinary budget is spent. Finish now with what you have. You have at most ",
+        Mode::Open => b"The ordinary budget is spent. Reply now with what you have. You have at most ",
+    });
     text.put_decimal(reserve.turns);
     text.put(b" final completions and ");
     render_duration(text, reserve.time);
-    text.put(b" to finish. Use only finish, or deliver when offered.");
+    text.put(match mode {
+        Mode::Finite => b" to finish. Use only finish, or deliver when offered.",
+        Mode::Open => b" to reply. Use text only; promise no later work.",
+    });
 }
 
 /// Count every charter-dependent system byte, with the selected guide bound.
@@ -235,11 +248,11 @@ pub(crate) fn system(charter: &Charter, mounted: Option<&Workspace>, found: &Fou
     let mut measured = Text::measuring();
     render_main_prefix(&mut measured, charter);
     render_system(&mut measured, charter, mounted, found, families, true);
-    render_budget(&mut measured, budget, charter.reserve, families.agents);
+    render_budget(charter.mode, &mut measured, budget, charter.reserve, families.agents);
     let mut text = measured.writing();
     render_main_prefix(&mut text, charter);
     render_system(&mut text, charter, mounted, found, families, true);
-    render_budget(&mut text, budget, charter.reserve, families.agents);
+    render_budget(charter.mode, &mut text, budget, charter.reserve, families.agents);
     text.finish()
 }
 
@@ -271,6 +284,7 @@ pub fn budget_prompt_bytes() -> Option<u64> {
     let mut main = Text::measuring();
     let time = Duration::from_nanos(u64::MAX);
     render_budget(
+        Mode::Finite,
         &mut main,
         Budget { turns: u32::MAX, spend: u64::MAX, time },
         Reserve { turns: u32::MAX, time },
@@ -285,7 +299,7 @@ pub fn budget_prompt_bytes() -> Option<u64> {
     u64::try_from(main.len.max(child.len)).ok()
 }
 
-fn render_budget(text: &mut Text, budget: Budget, reserve: Reserve, agents: bool) {
+fn render_budget(mode: Mode, text: &mut Text, budget: Budget, reserve: Reserve, agents: bool) {
     text.put(b"\n## Budget\n\nAt open, you have ");
     text.put_decimal(budget.turns);
     text.put(b" turns and ");
@@ -294,7 +308,14 @@ fn render_budget(text: &mut Text, budget: Budget, reserve: Reserve, agents: bool
     text.put_decimal(reserve.turns);
     text.put(b" turns and ");
     render_duration(text, reserve.time);
-    text.put(b" to finish. When the ordinary budget is spent, live children close and you finish on that reserve.\n");
+    text.put(match mode {
+        Mode::Finite => {
+            b" to finish. When the ordinary budget is spent, live children close and you finish on that reserve.\n"
+        }
+        Mode::Open => {
+            b" for a last reply. When the ordinary budget is spent, live children close and you give it then.\n"
+        }
+    });
     if agents {
         text.put(b"Sub-agents share only what is above the reserve. Ask for focused turn or time shares; leaving a part unasked gives the child all of that part left.\n");
     }
@@ -327,11 +348,11 @@ fn render_duration(text: &mut Text, duration: Duration) {
 
 /// What a run says to an LLM that stopped for `stop` without finishing, in its
 /// nudge numbered `nudge` of `nudges`.
-pub(crate) fn nudge(stop: Stop, nudge: u32, nudges: u32) -> Box<[u8]> {
+pub(crate) fn nudge(mode: Mode, stop: Stop, nudge: u32, nudges: u32) -> Box<[u8]> {
     let mut measured = Text::measuring();
-    render_nudge(&mut measured, stop, nudge, nudges);
+    render_nudge(&mut measured, mode, stop, nudge, nudges);
     let mut text = measured.writing();
-    render_nudge(&mut text, stop, nudge, nudges);
+    render_nudge(&mut text, mode, stop, nudge, nudges);
     text.finish()
 }
 
@@ -390,7 +411,10 @@ fn render_system(
         if charter.grants.wait {
             text.put(WAIT);
         }
-        render_finishing(text, &charter.outcome, !found.checks.is_empty());
+        match charter.mode {
+            Mode::Finite => render_finishing(text, &charter.outcome, !found.checks.is_empty()),
+            Mode::Open => text.put(REPLYING),
+        }
         if let Some(spec) = &charter.grants.deliver {
             text.host = true;
             text.put(b"\n## Delivery\n\nYou may call `deliver` during the run, then continue. Its opaque fields are: ");
@@ -632,19 +656,28 @@ fn render_verdict(text: &mut Text, rule: &VerdictRule) {
     }
 }
 
-fn render_nudge(text: &mut Text, stop: Stop, nudge: u32, nudges: u32) {
+fn render_nudge(text: &mut Text, mode: Mode, stop: Stop, nudge: u32, nudges: u32) {
     text.put(match stop {
         Stop::Budget => unreachable!("only main is nudged, and it has no session final turn"),
-        Stop::EndTurn => b"You stopped without calling `finish`, so the work is not done.",
+        Stop::EndTurn => match mode {
+            Mode::Finite => b"You stopped without calling `finish`, so the work is not done.",
+            Mode::Open => b"You ended your turn with no text, so you have not replied.",
+        },
         Stop::MaxTokens => b"Your answer was cut off: it ran out of tokens.",
         Stop::Refusal => b"You declined to go on.",
         Stop::NoCalls => b"You said you would call a tool, and named none.",
     });
-    text.put(b" Carry on with the work, and call `finish` when it is done. This is reminder ");
+    text.put(match mode {
+        Mode::Finite => b" Carry on with the work, and call `finish` when it is done. This is reminder ",
+        Mode::Open => b" Carry on, and reply with text or call `wait`. This is reminder ",
+    });
     text.put_decimal(nudge);
     text.put(b" of ");
     text.put_decimal(nudges);
-    text.put(b": if you stop again after the last one, the run ends unfinished.");
+    text.put(match mode {
+        Mode::Finite => b": if you stop again after the last one, the run ends unfinished.",
+        Mode::Open => b": if you stop again without replying after the last one, the run ends unfinished.",
+    });
 }
 
 /// A text being rendered: measured first, then written into a box of exactly
@@ -703,7 +736,7 @@ impl Text {
 mod tests {
     use super::{Text, child, nudge, system};
     use crate::boundary::Stop;
-    use crate::charter::{Charter, Families, Grants, Tools};
+    use crate::charter::{Charter, Families, Grants, Mode, Tools};
     use crate::outcome::{ChangeSpec, FieldRule, ItemRule, ItemSpec, OutcomeSpec, TextSpec, VerdictRule};
     use crate::prepare::{Found, Guide};
     use crate::tests::{bytes, charter, workspace};
@@ -917,6 +950,7 @@ At open, your share is 3 turns and less than a second. Your answer may hold at m
         }
         let mut measured = Text::measuring();
         super::render_budget(
+            Mode::Finite,
             &mut measured,
             crate::Budget { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), spend: u64::MAX },
             crate::charter::Reserve { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) },
@@ -985,7 +1019,7 @@ At open, your share is 3 turns and less than a second. Your answer may hold at m
             (Stop::NoCalls, "You said you would call a tool, and named none."),
         ];
         for (stop, first) in cases {
-            let rendered = nudge(stop, 1, 2);
+            let rendered = nudge(Mode::Finite, stop, 1, 2);
             let rendered = text(&rendered);
             assert!(rendered.starts_with(first) && rendered.ends_with(rest), "{rendered}");
             assert_eq!(rendered.len(), first.len() + rest.len());
@@ -1032,3 +1066,7 @@ At open, your share is 3 turns and less than a second. Your answer may hold at m
         }
     }
 }
+
+#[cfg(test)]
+#[path = "prompt/open_tests.rs"]
+mod open_tests;

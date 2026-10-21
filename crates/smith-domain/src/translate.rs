@@ -39,6 +39,7 @@ pub(crate) const FIRST: u64 = 4;
 )]
 pub(crate) struct Offered {
     pub(crate) host_tools: Box<[run::HostTool]>,
+    pub(crate) main: bool,
     pub(crate) finish: bool,
     pub(crate) deliver: bool,
     pub(crate) agents: bool,
@@ -86,7 +87,8 @@ pub(crate) fn spec(
     } = opening;
     let families = Families { agents: families.agents && program.is_none(), ..families };
     let authority = authority(workspace, tools)?;
-    let offered = Offered { host_tools: host_tools.clone(), finish, deliver, agents: families.agents, wait };
+    let offered =
+        Offered { main: ordinal == 0, host_tools: host_tools.clone(), finish, deliver, agents: families.agents, wait };
     let capacity = u32::try_from(host_tools.len()).ok()?.checked_add(4)?;
     let mut delegated = List::with_capacity(capacity);
     for (index, tool) in host_tools.iter().enumerate() {
