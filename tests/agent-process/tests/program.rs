@@ -200,6 +200,18 @@ fn changed_charter(change: impl FnOnce(&mut smith_charter::CharterParts)) -> Box
 }
 
 #[test]
+fn an_open_charter_refuses_a_program_grant() {
+    let charter = changed_charter(|parts| {
+        parts.mode = smith_charter::Mode::Open;
+        let mut tools = parts.tools.clone().into_parts();
+        tools.wait = true;
+        tools.deliver = None;
+        parts.tools = smith_charter::Tools::new(&smith_charter::CEILINGS, tools).expect("Open tools");
+    });
+    refused(Case::default(), &charter, &program(b"source"));
+}
+
+#[test]
 fn a_program_grant_for_a_sub_agent_is_refused() {
     let charter = changed_charter(|parts| {
         parts.models = skein_lib::List::with_capacity(1);

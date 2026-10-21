@@ -1033,7 +1033,8 @@ pub enum Invalid {
     /// ordinals and require a positive receiving delivery timeout.
     Workspace,
     /// The host declarations exceed count/storage bounds, repeat/reserve a name,
-    /// have empty opaque fields or a zero deadline, or the receiving retry limits are invalid.
+    /// have empty opaque fields or a zero deadline, or the receiving retry limits are invalid,
+    /// or a grant this run cannot use (protocol/programs.md, section 2).
     Grants,
     /// The result contract permits no form, exceeds the verdict count cap,
     /// declares invalid or duplicate names/caps/ranges, or its smallest

@@ -279,6 +279,11 @@ pub(super) fn install(
     match value {
         channel::GrantValue::Program(source) => {
             let program = service.program.as_mut().ok_or(())?;
+            // protocol/programs.md, section 2: an Open main runs on the direct backend only.
+            match start.charter.mode {
+                domain::run::Mode::Finite => {}
+                domain::run::Mode::Open => return Err(()),
+            }
             if start.charter.llm.account != Some(name.account)
                 || !program.endpoints.contains(&start.charter.llm.endpoint.0)
             {

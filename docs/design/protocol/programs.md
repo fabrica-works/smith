@@ -73,6 +73,10 @@ open is section 9.
   (events.md, 3.3). A sub-agent's LLM never runs on one either: a start
   that grants a program source for a sub-agent's LLM's account, and
   not for main's, is refused at the entrance (domain/run.md, section 4).
+- **Open runs are not offered on a program backend.** A start whose
+  charter is Open and grants a program source is refused at the entrance,
+  as invalid grants, before the program is checked or started
+  (domain/run.md, section 4). Open runs on the direct backend (section 9).
 
 ## 3. Choosing the backend
 
@@ -486,6 +490,10 @@ conditions. smith keeps each as a rule of its own:
   events, and that `-p` reads the login.
 
 ## 9. Open questions
+
+- **Open on a program backend:** a launch without a result schema, a
+  text end taken only at its `result`, and an interrupt for its last
+  reply. Default: refused at the entrance (section 2).
 
 - **Anthropic's terms for a product:** whether a product that runs the
   person's own Claude Code falls under the allowance for a person's own

@@ -248,7 +248,9 @@ that is not empty, or a message.
    start carries no grant for, a grant the agent cannot install
    (protocol/channel.md, section 6), a program source granted for a
    sub-agent's LLM and not for main's (protocol/programs.md,
-   section 2)). The start's messages are admitted or refused with it.
+   section 2), an Open charter granted a program source
+   (protocol/programs.md, section 2)). The start's messages are admitted
+   or refused with it.
 2. **Prepares:** reads each workspace directory's guide and looks for its
    checks (8.1).
 3. **Equips** its main session: prompt, tools, workspace authority, LLM,
@@ -747,10 +749,7 @@ answers as it was ending; the host has the delivery's own answer.
   as its next user message. The program's tools are not narrowed, so
   the agent refuses every call but `finish` and `deliver` from then on,
   each as an invalid call is answered (protocol/programs.md, 5.7).
-  Open's root likewise supplies no tool choice and rejects all calls.
-  The program adapter's explicit interrupt transition currently recognizes
-  only a nonempty finishing choice; distinguishing Open wind-down from
-  other text-only requests remains an adapter decision (section 15).
+  An Open run is never granted a program source (section 4).
 - **A sub-agent's share** runs out on its own: its final turn (5.3) ends
   it, and its parent goes on.
 
@@ -999,13 +998,9 @@ timings, budgets and shares within its own (`docs/design/testing.md`).
 
 ## 15. Open questions
 
-- **Open on a program backend:** the root preserves Open's offerings and
-  text-only final choice. The adapter still launches with a result JSON
-  schema and maps structured output to a finish call; it also recognizes
-  only Finite's choice in its interrupt/result/input-close transition.
-  Open launch/output handling and the distinction between its wind-down
-  and other text-only requests need an adapter decision before that path
-  supports Open.
+Open on a program backend is refused at the entrance; the adapter's
+Open launch, output and wind-down are protocol/programs.md, section 9's
+question.
 
 - **A sub-agent's result:** its final message today; whether a sub-agent
   may be given a contract of its own.

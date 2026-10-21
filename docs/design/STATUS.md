@@ -24,9 +24,9 @@ development.md, section 3.3).
 
 Open run lifecycle (`domain/run.md`, 3.1, 6 and 9.1): explicit mode,
 text replies listening without a call, and native text-only final turns are
-implemented. Program root routing preserves mode; the program adapter's
-launch/structured-output handling and Open wind-down interrupt remain the
-question in run.md, section 15.
+implemented. Open on a program backend is refused at the entrance; the
+adapter's Open launch, output and wind-down are protocol/programs.md,
+section 9's question.
 
 ## 2. The design
 
