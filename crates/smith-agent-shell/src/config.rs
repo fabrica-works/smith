@@ -680,7 +680,10 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
 }
 
 fn credential_limits(limits: &llm::ComponentLimits) -> shared::client::CredentialLimits {
-    shared::client::CredentialLimits { value: limits.grant_value_bytes, account_id: limits.grant_value_bytes }
+    shared::client::CredentialLimits {
+        value: limits.grant_value_bytes,
+        account_id: limits.grant_value_bytes.min(smith_channel::CEILINGS.withdrawn_value_id),
+    }
 }
 
 fn tls_transport() -> String {

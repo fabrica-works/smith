@@ -639,7 +639,9 @@ fn component_limits(
         contract_bytes: domain.run.run_bytes.checked_mul(2).ok_or(derived(Layer::Llm, "contract_bytes"))?,
         llms: domain.run.models.checked_add(1).ok_or(derived(Layer::Llm, "llms"))?,
         accounts: ACCOUNTS,
-        grant_value_bytes: 2048,
+        // Each grant value the channel admits installs: a signed-in plan's
+        // access token is a JWT of some kilobytes.
+        grant_value_bytes: smith_channel::CEILINGS.credential_value_bytes,
     })
 }
 

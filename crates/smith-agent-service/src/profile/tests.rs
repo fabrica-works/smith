@@ -144,6 +144,14 @@ fn a_zero_refresh_lead_names_its_policy_key() {
     assert_eq!(words(&refusal).as_ref(), b"deadlines: policy.refresh_lead=0 ns; policy.deadline_minimum=0 ns");
 }
 
+/// A signed-in plan's access token is a JWT of some kilobytes: each grant value the standard
+/// profile's channel admits, its LLM component holds.
+#[test]
+fn the_standard_component_holds_each_grant_value_its_channel_admits() {
+    let limits = super::derive(&profile(), &declarations()).expect("standard profile");
+    assert!(limits.llm.grant_value_bytes >= limits.channel.bodies.credential_value_bytes);
+}
+
 #[test]
 fn the_standard_exit_grace_exceeds_its_teardown_bound() {
     let selected = profile();
