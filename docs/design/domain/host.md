@@ -292,11 +292,14 @@ policy.
   the backend the run runs on (protocol/programs.md, section 3). The
   host's domain knows each grant's form, the credential's scheme or the
   source's name, never the credential, so that a host in one process can
-  refuse what it cannot run (section 9.1).
+  refuse what it cannot run (section 9.1). A host lends as a key only a
+  credential it never renews.
 - **Notices go up for the host to act on:** a credential unauthorized,
   an account limited, an account refused. The run that met one ends
-  failed for its account, except an unauthorized credential, which a
-  refreshed grant may answer (session.md, section 4). A host never moves
+  failed for its account, except an unauthorized bearer, which a
+  refreshed grant may answer. An actual unauthorized response on a key
+  ends its run at once unless a newer generation is already held
+  (session.md, section 4). A host never moves
   a run to another account; which account its next run takes is the
   host's.
 - **The local host's sources.** Each account the local host lends has

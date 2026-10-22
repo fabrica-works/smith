@@ -382,7 +382,9 @@ limits.md, 2.4, gives.
 - **A value is one of,** told apart by a tag in the record, so no form
   is read as another and the withdrawn one needs no guess:
   - **a credential:** its scheme, `bearer` or `key`, and its bytes,
-    never empty. The dialect sends it as its provider takes that scheme
+    never empty. A key is a credential its host never renews; a bearer
+    may be renewed by a later generation (domain/session.md, section 4).
+    The dialect sends it as its provider takes that scheme
     (llm.md, section 7). It carries no account's id;
   - **a program source:** its name, 1 to 32 characters of `a-z`, `0-9`
     and `-`, which names its configuration directory in the agent's

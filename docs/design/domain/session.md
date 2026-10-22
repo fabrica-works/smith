@@ -201,9 +201,16 @@ child domain `smith-domain-session`, whose own child is the tools domain
 - **Credentials** are the protocol layer's. An unauthorised credential,
   an exhausted account and a refused one are each a notice the session
   raises, which the agent sends to its host as unauthorized, limited and
-  refused (host.md, section 7). An unauthorised failure is transient, so
-  a refreshed credential may answer the retry; the others end the
-  session as a failure of its model, naming the account. A model with no
+  refused (host.md, section 7). An unauthorised failure is transient when
+  a refreshed credential may answer the retry: its call's grant was not
+  a key, or a newer generation is already held. An actual unauthorised
+  response on a key with none newer fails at once, after its notice,
+  with the same class, evidence, report and account: no host renews a key
+  (protocol/channel.md, section 6). The call retains its issued grant's
+  renewal policy even if a later generation arrives while it is in
+  flight. A missing or lapsed grant that fails unsent keeps its recovery
+  retries. The others end the session as a failure of its model, naming
+  the account. A model with no
   account raises none of them: no grant can come for it, so each ends
   the session as a failure of its model, with its provider's failure
   class and no account (protocol/charter.md, section 2). An unsupported
@@ -644,7 +651,8 @@ budgets.
     the charter's LLM with no opaque block sent;
   - an exhausted account, a refused one and an unsupported request,
     each failing at once with no retry, and an unauthorised credential
-    answered by a refreshed grant;
+    answered by a refreshed grant; an unauthorised key failing at once,
+    except when a newer generation is already held;
   - a conversation compacted at the threshold, and after a context too
     long; context too long on the compaction, failing; calls in a
     compaction's answer not run; a request skein finds too large, taken

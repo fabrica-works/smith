@@ -456,7 +456,8 @@ A completion's prompt is built from what the domain gives:
   its request carries no credential field (skein's `llm-connection.md`,
   section 4.2). It never reads the table, so it never fails as a grant
   missing.
-- **A credential's scheme says how it is sent.** A bearer goes as an
+- **A credential's scheme says how it is sent, and whether its host may
+  renew it** (channel.md, section 6). A bearer goes as an
   authorization bearer and a key as its provider's key, as the
   endpoint's dialect sends that scheme (skein's `llm.md`, 2.6). A scheme the
   dialect does not take is a value the agent cannot install (channel.md,
