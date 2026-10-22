@@ -62,6 +62,16 @@ The contract is domain/host.md's.
   On the way down, it encodes the domain's start (its charter and
   transcript among it), messages, answers, acknowledgements, grants and
   cancel.
+- **Reads are the domain's.** After the opening, the half reads the agent's
+  channel only when `smith-host-domain` asks, one read at a time, and reads
+  nothing ahead. Each read is answered once: by one record, one live piece
+  or the channel's end. A read the domain holds back holds the agent back,
+  as when a run goes past its window (channel.md, section 7;
+  domain/host.md, section 6). Opening and send outcomes do not answer or
+  withdraw a read. Cancel leaves an outstanding read in place. A ping or
+  an unsupported-kind notice is the channel's own (skein's `channel.md`,
+  section 6), and the half reads on for the same demand. An end that comes
+  between reads is kept, and answers the next one, once.
 - **Deadlines become durations** on the way down, and durations become
   deadlines on the host's clock on the way up.
 - **Grants:** the domain names an account, a generation and the form of
@@ -84,8 +94,9 @@ The contract is domain/host.md's.
   4.1), and answers signed out or failed, with the detail. It reads
   nothing the sign-out removes. A run live on the source ends as a login
   lost (programs.md, 5.6).
-- **The end.** The half reads the agent's channel to its end, so that what
-  the agent said before it went is heard, then reports its terminal.
+- **The end.** The domain reads on after the answer, to the channel's end,
+  so that what the agent said before it went is heard. The end answers one
+  read, and the half reports it once.
 
 ## 3. Spawning an agent
 
@@ -115,6 +126,9 @@ could not be started, with standard error's tail as its detail.
 The domain's stops become the tree's three steps: the cancel goes down the
 channel first, then the termination signal, then the kill. Gone means the
 tree was proved empty and the channel was read to its end.
+The half reports the tree reaped only after the channel's end has answered
+a read: it closes standard output then, and io releases the child only
+once its pipes are closed.
 
 - **Exit evidence.** io's exit status goes up with the process's end,
   never dropped: `exit`, the code the agent exited with or the signal

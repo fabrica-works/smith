@@ -2,8 +2,8 @@
 //! domain/host.md, section 4). The component keeps a bounded standard-error
 //! tail, the opening deadline, and the child's three pipe tokens. It never
 //! knows host policy or credential values. `spawn`, `from_io`, `fire` and
-//! `signal` translate process events; `channel_mut` supplies the existing
-//! channel entry points after the opening.
+//! `signal` translate process events; `read` demands one channel terminal,
+//! `send_*` encodes output, and `next_channel_down`/`channel_down` route its IO.
 
 use alloc::boxed::Box;
 use core::mem::size_of;
@@ -148,6 +148,15 @@ impl Process {
     #[must_use]
     pub const fn io_owner(&self) -> Token {
         self.io_owner
+    }
+
+    /// Demand one record, live piece or end from the opened child channel.
+    pub fn read(&mut self, above: &mut Queue<ProcessEvent>, below: &mut Queue<IoRequest>) {
+        assert!(self.phase == Phase::Ready, "application reads follow Spawned");
+        assert!(!self.channel_ended, "no read after the delivered channel end");
+        self.channel.read(&mut self.channel_events, &mut self.channel_below);
+        self.drain_channel(above, below);
+        self.finish(above);
     }
 
     /// Send the run's Start once the child channel is ready.
@@ -530,6 +539,9 @@ impl Process {
             return;
         }
         if self.child.is_some() && (!self.input_closed || !self.output_closed || !self.error_closed) {
+            return;
+        }
+        if self.phase == Phase::Ready && !self.channel_ended {
             return;
         }
         let detail = self.tail.to_boxed();

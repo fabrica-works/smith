@@ -137,6 +137,11 @@ struct RawStart {
     transcript: Option<Box<[Box<[u8]>]>>,
 }
 
+enum HostReads {
+    Automatic,
+    Held,
+}
+
 struct Peer {
     half: Half,
     below: Queue<Lower>,
@@ -152,6 +157,8 @@ struct Peer {
     host_answer: Option<smith_host_domain::channel::Answer>,
     agent_start: Option<Box<agent::DecodedStart>>,
     raw_start: Option<RawStart>,
+    host_reads: HostReads,
+    host_read_count: u64,
 }
 
 impl Peer {
@@ -173,6 +180,8 @@ impl Peer {
             host_answer: None,
             agent_start: None,
             raw_start: None,
+            host_reads: HostReads::Automatic,
+            host_read_count: 0,
         };
         if let Half::Host(host) = &mut peer.half {
             host.open(&mut peer.host_events, &mut peer.below);
@@ -198,6 +207,15 @@ impl Peer {
             host_answer: None,
             agent_start: None,
             raw_start: None,
+            host_reads: HostReads::Automatic,
+            host_read_count: 0,
+        }
+    }
+
+    fn read_host(&mut self) {
+        if let Half::Host(host) = &mut self.half {
+            self.host_read_count = self.host_read_count.checked_add(1).expect("bounded application demands");
+            host.read(&mut self.host_events, &mut self.below);
         }
     }
 
@@ -296,6 +314,27 @@ impl Peer {
     #[expect(clippy::too_many_lines, reason = "the world collects both channel halves' ordered events")]
     fn observations(&mut self, output: &mut Vec<Observation>) {
         while let Some(event) = self.host_events.pop() {
+            let read_next = match &event {
+                host::OpenEvent::Hangup { .. }
+                | host::OpenEvent::Sent { .. }
+                | host::OpenEvent::Unsent { .. }
+                | host::OpenEvent::WriteFailed => false,
+                host::OpenEvent::Opened { .. }
+                | host::OpenEvent::MessageRefused { .. }
+                | host::OpenEvent::Admitted
+                | host::OpenEvent::Waiting { .. }
+                | host::OpenEvent::Long { .. }
+                | host::OpenEvent::LongDone
+                | host::OpenEvent::Turn { .. }
+                | host::OpenEvent::Live { .. }
+                | host::OpenEvent::Fact { .. }
+                | host::OpenEvent::Unauthorized { .. }
+                | host::OpenEvent::Limited { .. }
+                | host::OpenEvent::Refused { .. }
+                | host::OpenEvent::Call { .. }
+                | host::OpenEvent::Withdraw { .. }
+                | host::OpenEvent::Answer { .. } => true,
+            };
             match event {
                 host::OpenEvent::Opened { version } => output.push(Observation::HostOpened(version)),
                 host::OpenEvent::Hangup { why } => output.push(Observation::HostEnded(why)),
@@ -364,6 +403,12 @@ impl Peer {
                         output.push(Observation::TranscriptFailed(reason.value().clone()));
                     }
                     assert!(self.host_answer.replace(answer).is_none(), "one typed host last word");
+                }
+            }
+            if read_next {
+                match self.host_reads {
+                    HostReads::Automatic => self.read_host(),
+                    HostReads::Held => {}
                 }
             }
         }
@@ -518,6 +563,23 @@ impl World {
             observed: Vec::new(),
             channel: limits.channel,
         }
+    }
+
+    /// Hold future automatic reads without revoking an outstanding demand.
+    pub fn host_holds_reads(&mut self) {
+        self.host.host_reads = HostReads::Held;
+    }
+
+    /// Demand one host terminal, leaving future automatic reads held.
+    pub fn host_reads(&mut self) {
+        self.host_holds_reads();
+        self.host.read_host();
+    }
+
+    /// Actual application demands, excluding opening and control continuation.
+    #[must_use]
+    pub fn host_read_count(&self) -> u64 {
+        self.host.host_read_count
     }
 
     /// Drive the finite opening until no new bytes remain.
@@ -1182,5 +1244,59 @@ pub fn window_turn_fixture() -> smith_domain_session::record::Turn {
             role: llm::Role::User,
             content: Box::new([llm::Block::Text { text: b"the task and summary".as_slice().into(), replay: None }]),
         }]),
+    }
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::*;
+
+    #[test]
+    fn channel_controls_continue_the_same_application_read() {
+        let mut world = World::new(smith_channel::CEILINGS, smith_channel::CEILINGS, StreamMode::Two);
+        world.host_holds_reads();
+        world.settle();
+        world.send_start(Box::from(
+            &include_bytes!("../../../crates/smith-charter/golden/v4/record_charter_smallest.bin")[..],
+        ));
+        world.settle();
+        for control in [Control::Ping, Control::Unsupported { kind: 0x010f }] {
+            let frame = control_frame(&control, &world.channel).expect("bounded channel control");
+            world.host.incoming.extend(frame.bytes().iter().copied());
+        }
+        world.agent_admits();
+        world.host_reads();
+        world.settle();
+        assert_eq!(world.host_read_count(), 1, "controls continue the existing demand");
+        assert_eq!(world.observations().iter().filter(|event| **event == Observation::HostAdmitted).count(), 1);
+        world.agent_waits(None);
+        world.settle();
+        assert!(!world.observations().contains(&Observation::HostWaiting { read: None }));
+        world.host_reads();
+        world.settle();
+        assert_eq!(world.host_read_count(), 2);
+        assert_eq!(
+            world.observations().iter().filter(|event| **event == Observation::HostWaiting { read: None }).count(),
+            1
+        );
+    }
+
+    #[test]
+    fn clean_eof_between_reads_answers_the_next_read_once() {
+        let mut world = World::new(smith_channel::CEILINGS, smith_channel::CEILINGS, StreamMode::Two);
+        world.host_holds_reads();
+        world.settle();
+        world.host.receive(LowerEvent::Read(stream::Up::End));
+        world.settle();
+        assert_eq!(world.host_read_count(), 0);
+        assert!(!world.observations().iter().any(|event| matches!(event, Observation::HostEnded(_))));
+        world.host_reads();
+        world.host.receive(LowerEvent::Read(stream::Up::End));
+        world.settle();
+        assert_eq!(world.host_read_count(), 1);
+        assert_eq!(
+            world.observations().iter().filter(|event| **event == Observation::HostEnded(Closed::Stream)).count(),
+            1
+        );
     }
 }

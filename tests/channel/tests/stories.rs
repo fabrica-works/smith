@@ -854,6 +854,90 @@ fn admitted_notice_world() -> World {
 }
 
 #[test]
+fn cancellation_records_and_end_each_wait_for_their_read() {
+    #[expect(clippy::wildcard_enum_match_arm, reason = "this story selects the four demanded terminals it queues")]
+    fn terminals(world: &World) -> Vec<&'static str> {
+        world
+            .observations()
+            .iter()
+            .filter_map(|observation| match observation {
+                Observation::HostAdmitted => Some("admitted"),
+                Observation::HostTurn { .. } => Some("turn"),
+                Observation::HostAnswer { .. } => Some("answer"),
+                Observation::HostEnded(_) => Some("end"),
+                _ => None,
+            })
+            .collect()
+    }
+
+    let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+    world.host_holds_reads();
+    world.settle();
+    world.send_start(Box::from(
+        &include_bytes!("../../../crates/smith-charter/golden/v4/record_charter_smallest.bin")[..],
+    ));
+    world.settle();
+    world.agent_admits();
+    world.settle();
+    assert_eq!(world.host_read_count(), 0, "opening is internal");
+    assert!(terminals(&world).is_empty(), "admission waits for demand");
+    world.host_reads();
+    world.settle();
+    assert_eq!(world.host_read_count(), 1);
+    assert_eq!(terminals(&world), ["admitted"]);
+
+    world.host_cancels();
+    world.settle();
+    world.agent_tells_turn(1, None, &window_turn_fixture());
+    world.agent_answers(smith_domain::run::Answer::Failed {
+        failure: smith_domain::run::Failure::Cancelled,
+        spent: smith_domain::run::Spend::ZERO,
+        turns: 1,
+    });
+    world.settle();
+    assert_eq!(world.host_read_count(), 1);
+    assert_eq!(terminals(&world), ["admitted"], "queued final records stay below the read boundary");
+    assert!(world.take_host_answer().is_none());
+
+    world.host_reads();
+    world.settle();
+    assert_eq!(world.host_read_count(), 2);
+    assert_eq!(terminals(&world), ["admitted", "turn"]);
+    assert!(world.take_host_answer().is_none(), "one read cannot also deliver Answer");
+    assert!(world.observations().iter().any(|observation| matches!(
+        observation,
+        Observation::HostTurn { number: 1, spent: 0, read: None, opens_window: true, .. }
+    )));
+
+    world.host_reads();
+    world.settle();
+    assert_eq!(world.host_read_count(), 3);
+    assert_eq!(terminals(&world), ["admitted", "turn", "answer"]);
+    assert_eq!(
+        world.take_host_answer(),
+        Some(smith_host_domain::channel::Answer {
+            read: None,
+            turns: 1,
+            spent: 0,
+            result: smith_host_domain::channel::RunResult::Failed {
+                failure: smith_host_domain::channel::RunFailure::Cancelled,
+            },
+        })
+    );
+
+    world.host_reads();
+    world.settle();
+    assert_eq!(world.host_read_count(), 4);
+    assert_eq!(terminals(&world), ["admitted", "turn", "answer", "end"]);
+    assert!(world.observations().contains(&Observation::HostEnded(Closed::Stream)));
+    assert_eq!(world.observations().iter().filter(|event| **event == Observation::AgentCancel).count(), 1);
+    assert!(!world.observations().iter().any(|event| matches!(event, Observation::AgentAcknowledged { .. })));
+    world.settle();
+    assert_eq!(world.host_read_count(), 4);
+    assert_eq!(terminals(&world), ["admitted", "turn", "answer", "end"], "end is reported once");
+}
+
+#[test]
 fn a_cancel_with_a_host_call_in_flight_keeps_its_terminal_and_one_answer() {
     let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     world.settle();

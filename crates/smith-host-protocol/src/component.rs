@@ -1,4 +1,8 @@
-//! Host-side opening machine (protocol/channel.md, sections 2 and 5).
+//! Host-side channel (protocol/hosts.md, section 2; domain/host.md, section 6).
+//! Keeps the opening, one application demand and at most one held closure reason,
+//! never host policy or read-ahead records. `open` runs the handshake; `read`
+//! demands one record, live piece or end; `send_*`, `from_below` and `fire`
+//! translate output and stream events without spending that demand.
 use alloc::boxed::Box;
 use skein_channel::{Closed, Event, Lower, LowerEvent, Machine, Request, Role, Schema, StreamMode, frame_writer};
 use skein_lib::{Duration, Map, Queue, Reader, Time, Token, Writer};
@@ -97,6 +101,8 @@ pub struct Component {
     events: Queue<Event>,
     phase: Phase,
     ended: bool,
+    reading: bool,
+    held: Option<Closed>,
     calls_by_name: Map<CallKey, Token>,
     calls_by_token: Map<Token, CallKey>,
     next_call: u64,
@@ -135,6 +141,8 @@ impl Component {
             events: Queue::with_capacity(8),
             phase: Phase::Opening,
             ended: false,
+            reading: false,
+            held: None,
             calls_by_name: Map::with_capacity(limits.calls),
             calls_by_token: Map::with_capacity(limits.calls),
             next_call: 1,
@@ -153,6 +161,22 @@ impl Component {
     pub fn open(&mut self, to_service: &mut Queue<OpenEvent>, below: &mut Queue<Lower>) {
         self.machine.down(Request::Open { credential: Box::default() }, &mut self.events, below);
         self.fire(to_service, below);
+    }
+
+    /// Demand one record, one live piece or the channel's end, answered once.
+    pub fn read(&mut self, to_service: &mut Queue<OpenEvent>, below: &mut Queue<Lower>) {
+        assert!(self.phase != Phase::Opening, "application reads follow opening");
+        assert!(!self.reading, "one application read at a time");
+        assert!(!self.ended, "no read after the delivered end");
+        self.reading = true;
+        match self.held.take() {
+            Some(why) => self.end(why, to_service),
+            None => {
+                self.machine.down(Request::Read, &mut self.events, below);
+                self.drain(to_service, below);
+                self.fire(to_service, below);
+            }
+        }
     }
 
     /// Set the monotonic clock used to turn agent-relative deadlines into host deadlines.
@@ -378,7 +402,6 @@ impl Component {
                         None => {
                             self.phase = Phase::Opened;
                             to_service.push(OpenEvent::Opened { version });
-                            self.machine.down(Request::Read, &mut self.events, below);
                         }
                     }
                 }
@@ -396,8 +419,10 @@ impl Component {
                                     }
                                     smith_channel::MessageRefusal::Ending => smith_host_domain::MessageRefusal::Ending,
                                 };
-                                to_service.push(OpenEvent::MessageRefused { name: Token::new(record.name()), reason });
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(
+                                    OpenEvent::MessageRefused { name: Token::new(record.name()), reason },
+                                    to_service,
+                                );
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -422,13 +447,15 @@ impl Component {
                                                     {
                                                         self.refuse_rules(b"invalid answer", below);
                                                     } else {
-                                                        to_service.push(OpenEvent::Call {
-                                                            call,
-                                                            name: key.domain(),
-                                                            deadline: self.now.saturating_add(record.deadline()),
-                                                            ask,
-                                                        });
-                                                        self.machine.down(Request::Read, &mut self.events, below);
+                                                        self.deliver(
+                                                            OpenEvent::Call {
+                                                                call,
+                                                                name: key.domain(),
+                                                                deadline: self.now.saturating_add(record.deadline()),
+                                                                ask,
+                                                            },
+                                                            to_service,
+                                                        );
                                                     }
                                                 }
                                                 None => self.refuse_rules(b"invalid answer", below),
@@ -447,8 +474,7 @@ impl Component {
                                 let key = CallKey::from_wire(record.name());
                                 match self.calls_by_name.get(&key) {
                                     Some(call) => {
-                                        to_service.push(OpenEvent::Withdraw { call: *call });
-                                        self.machine.down(Request::Read, &mut self.events, below);
+                                        self.deliver(OpenEvent::Withdraw { call: *call }, to_service);
                                     }
                                     None => self.refuse_rules(b"invalid answer", below),
                                 }
@@ -463,8 +489,7 @@ impl Component {
                                     Some(name) => Some(Token::new(*name)),
                                     None => None,
                                 };
-                                to_service.push(OpenEvent::Waiting { read });
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(OpenEvent::Waiting { read }, to_service);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -488,19 +513,21 @@ impl Component {
                                         self.live.turn(turn.number());
                                         let body = smith_host_domain::TurnValue::new(value, u64::MAX)
                                             .expect("codec bounds ensure representable ownership");
-                                        to_service.push(OpenEvent::Turn {
-                                            turn: channel::Turn {
-                                                number: turn.number(),
-                                                opens_window: turn.opens_window(),
-                                                spent: turn.spent(),
-                                                read: match turn.last_read() {
-                                                    Some(name) => Some(Token::new(*name)),
-                                                    None => None,
+                                        self.deliver(
+                                            OpenEvent::Turn {
+                                                turn: channel::Turn {
+                                                    number: turn.number(),
+                                                    opens_window: turn.opens_window(),
+                                                    spent: turn.spent(),
+                                                    read: match turn.last_read() {
+                                                        Some(name) => Some(Token::new(*name)),
+                                                        None => None,
+                                                    },
+                                                    body,
                                                 },
-                                                body,
                                             },
-                                        });
-                                        self.machine.down(Request::Read, &mut self.events, below);
+                                            to_service,
+                                        );
                                     }
                                     None => self.refuse_rules(b"invalid answer", below),
                                 }
@@ -516,15 +543,17 @@ impl Component {
                         match smith_channel::Live::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(piece) => match self.live.check(&piece) {
                                 Ok(()) => {
-                                    to_service.push(OpenEvent::Live {
-                                        turn: piece.turn(),
-                                        retry: piece.retry(),
-                                        kind: piece.kind().clone(),
-                                        offset: piece.offset(),
-                                        bytes: Box::from(piece.bytes()),
-                                        call: piece.call().clone(),
-                                    });
-                                    self.machine.down(Request::Read, &mut self.events, below);
+                                    self.deliver(
+                                        OpenEvent::Live {
+                                            turn: piece.turn(),
+                                            retry: piece.retry(),
+                                            kind: piece.kind().clone(),
+                                            offset: piece.offset(),
+                                            bytes: Box::from(piece.bytes()),
+                                            call: piece.call().clone(),
+                                        },
+                                        to_service,
+                                    );
                                 }
                                 Err(rule) => self.refuse_rules(rule.reason(), below),
                             },
@@ -534,8 +563,7 @@ impl Component {
                     0x010f if self.phase == Phase::Admitted => {
                         match smith_channel::Fact::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(_) => {
-                                to_service.push(OpenEvent::Fact { body });
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(OpenEvent::Fact { body }, to_service);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -543,8 +571,7 @@ impl Component {
                     0x010d | 0x010e | 0x0113 if self.phase == Phase::Admitted => {
                         match notices::decode(&self.bodies, kind, &body) {
                             Ok(notice) => {
-                                to_service.push(notice);
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(notice, to_service);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -558,8 +585,7 @@ impl Component {
                                     smith_channel::Operation::Command => smith_domain::Operation::Command,
                                 };
                                 self.long_open = self.long_open.checked_add(1).expect("bounded active operations");
-                                to_service.push(OpenEvent::Long { operation, span: long.span() });
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(OpenEvent::Long { operation, span: long.span() }, to_service);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -568,8 +594,7 @@ impl Component {
                         match smith_channel::LongDone::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(_) => {
                                 self.long_open = self.long_open.checked_sub(1).expect("one begun operation ends");
-                                to_service.push(OpenEvent::LongDone);
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(OpenEvent::LongDone, to_service);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -578,8 +603,7 @@ impl Component {
                         match smith_channel::Admitted::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(_) => {
                                 self.phase = Phase::Admitted;
-                                to_service.push(OpenEvent::Admitted);
-                                self.machine.down(Request::Read, &mut self.events, below);
+                                self.deliver(OpenEvent::Admitted, to_service);
                             }
                             Err(_) => self.refuse_rules(b"invalid answer", below),
                         }
@@ -596,8 +620,7 @@ impl Component {
                                 match decode_answer(&record, &self.charter) {
                                     Ok(answer) => {
                                         self.phase = Phase::Answered;
-                                        to_service.push(OpenEvent::Answer { answer, record });
-                                        self.machine.down(Request::Read, &mut self.events, below);
+                                        self.deliver(OpenEvent::Answer { answer, record }, to_service);
                                     }
                                     Err(_) => self.refuse_rules(b"invalid answer", below),
                                 }
@@ -609,16 +632,11 @@ impl Component {
                     },
                     _ => self.refuse_rules(b"invalid answer", below),
                 },
-                Some(Event::Closed { why }) => {
-                    if !self.ended {
-                        self.ended = true;
-                        to_service.push(OpenEvent::Hangup { why });
-                    }
-                }
+                Some(Event::Closed { why }) => self.end(why, to_service),
                 Some(Event::Ended) => {
-                    if !self.ended {
-                        self.ended = true;
-                        to_service.push(OpenEvent::Hangup { why: Closed::Stream });
+                    // Clean EOF between demands stays in the machine's ReadState::Ended.
+                    if self.reading {
+                        self.end(Closed::Stream, to_service);
                     }
                 }
                 Some(Event::Sent { token }) => {
@@ -627,9 +645,33 @@ impl Component {
                 Some(Event::Unsent { token, why }) => {
                     to_service.push(OpenEvent::Unsent { token, why });
                 }
-                Some(Event::Ping | Event::Unsupported { .. } | Event::Refused { .. } | Event::Drained) | None => {}
+                Some(Event::Ping | Event::Unsupported { .. }) => {
+                    if self.reading {
+                        self.machine.down(Request::Read, &mut self.events, below);
+                    }
+                }
+                Some(Event::Refused { .. } | Event::Drained) | None => {}
                 Some(Event::OutputFailed) => to_service.push(OpenEvent::WriteFailed),
             }
+        }
+    }
+
+    fn deliver(&mut self, event: OpenEvent, to_service: &mut Queue<OpenEvent>) {
+        assert!(self.reading, "one record answers one application read");
+        self.reading = false;
+        to_service.push(event);
+    }
+
+    fn end(&mut self, why: Closed, to_service: &mut Queue<OpenEvent>) {
+        if self.ended || self.held.is_some() {
+            return;
+        }
+        if self.phase == Phase::Opening || self.reading {
+            self.reading = false;
+            self.ended = true;
+            to_service.push(OpenEvent::Hangup { why });
+        } else {
+            self.held = Some(why);
         }
     }
 
@@ -695,6 +737,7 @@ mod tests {
         let mut component =
             Component::new(&limits, StreamMode::Two, smith_protocol_channel::Endpoints::new(names)).expect("component");
         component.phase = Phase::Admitted;
+        component.reading = true;
         component
     }
 
@@ -739,6 +782,7 @@ mod tests {
             component.drain(&mut above, &mut below);
             component.fire(&mut above, &mut below);
             assert!(above.is_empty(), "malformed value never reaches the host domain");
+            assert!(component.reading, "refusal preserves demand until Hangup");
             let Some(Lower::Write(stream::OutputDown::Room { right, .. })) = below.pop() else {
                 panic!("rules refusal requests write room")
             };
@@ -756,6 +800,27 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_reason_waits_for_one_read_without_being_overwritten() {
+        let mut component = component();
+        component.reading = false;
+        let mut above = Queue::with_capacity(8);
+        let mut below = Queue::with_capacity(16);
+        component.events.push(Event::Closed { why: skein_channel::Closed::Truncated });
+        component.events.push(Event::Closed { why: skein_channel::Closed::Stream });
+        component.events.push(Event::Ended);
+        component.drain(&mut above, &mut below);
+        assert!(above.is_empty(), "closure between reads is held");
+        component.read(&mut above, &mut below);
+        assert_eq!(above.pop(), Some(OpenEvent::Hangup { why: skein_channel::Closed::Truncated }));
+        assert!(!component.reading);
+        assert!(below.is_empty(), "held closure answers synchronously");
+        component.events.push(Event::Closed { why: skein_channel::Closed::Stream });
+        component.events.push(Event::Ended);
+        component.drain(&mut above, &mut below);
+        assert!(above.is_empty(), "duplicate closure cannot repeat the end");
+    }
+
+    #[test]
     fn a_concrete_turn_and_result_reach_the_host_as_equal_values() {
         let mut component = component();
         let source = smith_host_world::turn_value(512).into_value();
@@ -769,6 +834,7 @@ mod tests {
         assert_eq!(turn.body.into_value(), source);
         let source = smith_host_world::declared_value(32).into_value();
         let bytes = smith_protocol_channel::encode_result(&source, &component.charter).expect("result codec");
+        component.reading = true;
         component.events.push(Event::Body { kind: 0x0110, body: accepted_body(bytes) });
         component.drain(&mut above, &mut below);
         let Some(OpenEvent::Answer { answer, .. }) = above.pop() else { panic!("typed result") };

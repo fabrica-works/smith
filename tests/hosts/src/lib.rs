@@ -469,11 +469,10 @@ impl HostService {
                 self.domain_events
                     .push(host::Input::Process(host::process::Event::Signalled { owner: self.agent_owner() }));
             }
-            host::Output::Process(
-                host::process::Request::Read { .. }
-                | host::process::Request::Wait { .. }
-                | host::process::Request::Reap { .. },
-            )
+            host::Output::Process(host::process::Request::Read { .. }) => {
+                self.process.as_mut().expect("spawned child").read(&mut self.process_events, &mut self.io_requests);
+            }
+            host::Output::Process(host::process::Request::Wait { .. } | host::process::Request::Reap { .. })
             | host::Output::Parent(
                 host::parent::Request::Waiting { .. }
                 | host::parent::Request::Long { .. }

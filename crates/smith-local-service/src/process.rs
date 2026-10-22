@@ -1280,6 +1280,10 @@ impl ProcessAdapter {
             host::process::Request::Read { .. } => {
                 assert!(!self.reading, "one host read at a time");
                 self.reading = true;
+                self.process
+                    .as_mut()
+                    .expect("Spawn precedes Read")
+                    .read(&mut self.process_events, &mut self.io_requests);
             }
             host::process::Request::Wait { .. } | host::process::Request::Reap { .. } => {}
         }
@@ -1492,12 +1496,9 @@ mod tests {
         assert!(events.is_empty(), "no record without a held Read");
         assert!(!adapter.work_pending(Time::ZERO), "prefetched records wait without spinning");
         for text in [b"first".as_slice(), b"second".as_slice()] {
-            adapter.request(
-                host::process::Request::Read { owner, process: Token::new(9) },
-                &mut None,
-                &Map::with_capacity(1),
-                &mut events,
-            );
+            // This fixture tests the outer terminal ledger with already queued events,
+            // below request forwarding: a real Read now also requires an opened Process.
+            adapter.reading = true;
             adapter.drain_process(&mut events);
             match events.pop().expect("one read terminal") {
                 host::Input::Process(host::process::Event::Received {
@@ -1512,5 +1513,12 @@ mod tests {
             assert!(events.is_empty(), "one terminal per Read");
         }
         assert!(adapter.process_events.is_empty());
+        adapter.reading = true;
+        adapter
+            .process_events
+            .push(protocol::ProcessEvent::Channel { agent: owner, event: Box::new(protocol::OpenEvent::WriteFailed) });
+        adapter.drain_process(&mut events);
+        assert!(adapter.reading, "an independent write failure leaves the read owed");
+        assert!(events.is_empty());
     }
 }

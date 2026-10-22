@@ -48,7 +48,7 @@ instead.
 | `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned. 3, 4, 5, 7, 8: the ask in the start and live content in pieces, with their order and best effort: live-text. 4: reasoning and a tool call's input as live content, with no producer: not planned (live-text's `later.md`) |
 | `protocol/charter.md` | yes | Nothing |
 | `protocol/events.md` | partly | 3.2: `containment: "trees"`: not planned. |
-| `protocol/hosts.md` | partly | 3: the tree: not planned. 4: connecting later: not planned. |
+| `protocol/hosts.md` | partly: section 2 reads on demand, one record, live piece or end per read; section 3 reaps after the demanded end | 3: the tree: not planned. 4: connecting later: not planned. |
 | `protocol/limits.md` | partly | 2.3, 2.4, 3.6: the piece, the interval and the held bytes of live content: live-text. |
 | `protocol/llm.md` | partly | 6: deltas handed over for the channel's ask: live-text. 12: edit formats per dialect: not planned. |
 | `protocol/programs.md` | partly | 8: the live suite's checks of what the fake program assumes, built (`tests/end-to-end/live.rs`) and not yet run against Claude Code: not planned. |
