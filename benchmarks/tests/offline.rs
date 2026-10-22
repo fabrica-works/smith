@@ -128,7 +128,7 @@ fn a_comparison_deadline_at_the_run_defaults_is_refused() {
         for deadline in [3_600, 3_601, u64::MAX] {
             let document = document
                 .replace("kind = \"fixture\"", &format!("kind = \"{kind}\""))
-                .replace("deadline_seconds = 900", &format!("deadline_seconds = {deadline}"));
+                .replace("deadline_seconds = 1800", &format!("deadline_seconds = {deadline}"));
             std::fs::write(&file, document).expect("deadline document");
             let error = check_task(&file, &design()).expect_err("comparison deadline refuses");
             assert_eq!(error.key, "deadline_seconds", "{kind}: {deadline}");

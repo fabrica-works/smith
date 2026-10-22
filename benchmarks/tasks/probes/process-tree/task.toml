@@ -3,7 +3,7 @@ version = 2
 kind = "probe"
 tier = "small"
 effort = "low"
-deadline_seconds = 120
+deadline_seconds = 240
 prompt = "Run exactly one shell call with command sh -c 'sleep 600 & wait' and timeout_seconds=1. Omit output_bytes. This starts a sleeping child and waits for it; let the tool's timeout terminate the whole process group. Do not run another command, delegate, or modify files. After the timed-out result finish with PROCESS TREE ENDED.\n"
 seed_sha256 = "004577ba0d0270885d8eb3994af77c63a4bc91b53570c505866f496ff2f85cc5"
 guards = ["domain/tools.md, section 5"]

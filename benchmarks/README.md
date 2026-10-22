@@ -212,7 +212,7 @@ The repository reference is the spike's successful Codex solution as
 `reference/solution.patch`, excluding its dated workflow log. Validation
 applies that patch to a private bundle copy. It prints the repository
 oracle and every grade command's bounded output. The five grader
-command deadlines sum to 180 seconds; focused and fuzzy nextest still
+command deadlines sum to 360 seconds (180 seconds before the user's doubling of 10-22, provisional); focused and fuzzy nextest still
 use the frozen seed's 15 and 60 second budgets. Both arms start from the
 same unbuilt copy, with no shared attempt cache.
 

@@ -2,7 +2,7 @@ id = "shell-cwd"
 version = 2
 kind = "repository"
 tier = "working"
-deadline_seconds = 1200
+deadline_seconds = 2400
 prompt = "Add an optional string cwd argument to Smith's existing shell tool so commands can run in a specified mounted-workspace directory. With cwd omitted, preserve current behavior. Relative values resolve from the kit's original working directory; absolute values resolve through the existing mounted-repository authority rules. Reuse the same path normalization and deepest-mounted-root selection as other workspace tools. The selected working directory applies only to that call; it does not alter later omitted-cwd calls. Reject malformed arguments, NUL-bearing/overlong paths, and paths outside the mounted workspace before starting a process. Preserve environment, roots and write authority, timeout clamping, isolation, cancellation, and exactly one terminal per call. Preserve the existing public Call::Shell { command, timeout } constructor so current Rust callers still compile; another typed call form is permitted for an explicit working directory. Offer and decode the argument through the actual LLM protocol, route it through the tools domain and machine boundary, and include all newly owned path bytes in checked admission/memory accounting. Add meaningful regression tests and update the relevant domain/protocol contracts. Run the relevant tests and the required repository checks. Do not add dependencies or change the shared Skein source. Keep your implementation within Smith's documented production Rust subset. Read AGENTS.md and the copied foundation documents in docs/foundation. Do not use MCP tools, including codebase-memory; this explicit benchmark instruction overrides inherited memory instructions. Work only in this checkout, without reading external graders, reference solutions, other attempts, or private credentials. Temporary files go under `$TMPDIR`. Do not publish or push; offline builds and local fake-provider tests are permitted.\n"
 seed_sha256 = "6083aea14a57168a014f1f1de1c8ef368c490c1a113e77264105ccb502dbc4f0"
 setup = [["cargo", "build", "--offline", "--locked", "--workspace", "--all-targets"]]
@@ -20,25 +20,25 @@ CARGO_PROFILE_TEST_DEBUG = "0"
 
 [[grade]]
 command = ["sh", "-c", "cp Cargo.lock ../grader/Cargo.lock && cargo test --offline --manifest-path ../grader/Cargo.toml"]
-deadline_seconds = 40
+deadline_seconds = 80
 max_output_bytes = 4194304
 
 [[grade]]
 command = ["cargo", "fmt", "--check"]
-deadline_seconds = 5
+deadline_seconds = 10
 max_output_bytes = 4194304
 
 [[grade]]
 command = ["cargo", "clippy", "--offline", "--workspace", "--all-targets", "--", "-D", "warnings"]
-deadline_seconds = 25
-max_output_bytes = 4194304
-
-[[grade]]
-command = ["cargo", "nextest", "run", "--offline", "--workspace"]
 deadline_seconds = 50
 max_output_bytes = 4194304
 
 [[grade]]
+command = ["cargo", "nextest", "run", "--offline", "--workspace"]
+deadline_seconds = 100
+max_output_bytes = 4194304
+
+[[grade]]
 command = ["cargo", "nextest", "run", "--offline", "--workspace", "--profile", "fuzzy"]
-deadline_seconds = 60
+deadline_seconds = 120
 max_output_bytes = 4194304

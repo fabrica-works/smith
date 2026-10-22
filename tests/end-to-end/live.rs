@@ -253,8 +253,8 @@ fn run(
     let bounds = |hard, teardown| Bounds {
         hard,
         teardown,
-        grace: Duration::from_secs(1),
-        settlement: Duration::from_secs(5),
+        grace: Duration::from_secs(2),
+        settlement: Duration::from_secs(10),
         stdout: 20_000_000,
         stderr: 65_536,
         force_walk: true,
@@ -272,7 +272,7 @@ fn run(
         command(check_arguments),
         Box::default(),
         Capture::Raw,
-        bounds(Duration::from_secs(15), Duration::ZERO),
+        bounds(Duration::from_secs(30), Duration::ZERO),
     )
     .expect("live check settles");
     assert!(check.exit == smith_bench::Exit::Code(0), "live check must pass; diagnostic bytes withheld");
@@ -283,7 +283,7 @@ fn run(
         command(arguments),
         format!("{prompt}\n").into_bytes().into(),
         Capture::Agent(Box::new(smith_bench::agent::Observing::Smith(observer(environment, scratch, teardown)))),
-        bounds(Duration::from_secs(130), teardown),
+        bounds(Duration::from_secs(260), teardown),
     )
     .expect("shipped live exec settles");
     assert_exec(&mut result, scratch, prompt, expectation, account, resumed);

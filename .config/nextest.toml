@@ -1,13 +1,16 @@
+# Test-time caps doubled provisionally at the user's request, 10-22.
+# Slow periods are doubled; terminate-after counts stay fixed, so termination
+# deadlines double as well.
 # The two test suites (docs/development/workflow.md): the focused one, every
-# test but the fuzzy ones, within 15 seconds; and the fuzzy one, the test
-# binaries named fuzzy_* beside each world's focused tests, within a minute. A
+# test but the fuzzy ones, within 30 seconds; and the fuzzy one, the test
+# binaries named fuzzy_* beside each world's focused tests, within two minutes. A
 # suite past its budget fails, naming the tests it stopped; a test past its
 # slow period is flagged SLOW as it runs.
 
 [profile.default]
 default-filter = "not binary(/^fuzzy_/) and not ((package(=smith) or package(=smith-agent-process-world)) and binary(=live))"
-global-timeout = "15s"
-slow-timeout = { period = "3s" }
+global-timeout = "30s"
+slow-timeout = { period = "6s" }
 
 # Start the focused tests measured over one second before the worlds.
 # Rechecked after smith-t5: dense prompt 1.362s focused / 1.282s serial;
@@ -24,21 +27,21 @@ priority = 10
 
 [profile.fuzzy]
 default-filter = "binary(/^fuzzy_/) and not binary(=live)"
-global-timeout = "60s"
-slow-timeout = { period = "20s" }
+global-timeout = "120s"
+slow-timeout = { period = "40s" }
 
 # Measuring, not gating: no budget. With -j 1, each test's own time:
 #   cargo nextest run --workspace --profile measure -j 1
 #   cargo nextest run --workspace --profile measure -j 1 --ignore-default-filter -E 'binary(/^fuzzy_/)'
 [profile.measure]
-global-timeout = "1h"
-slow-timeout = { period = "60s" }
+global-timeout = "2h"
+slow-timeout = { period = "120s" }
 
 # Real backends are opt-in and never part of the merge gate.
 [profile.live]
 default-filter = "(package(=smith) or package(=smith-agent-process-world)) and binary(=live)"
-global-timeout = "10m"
-slow-timeout = { period = "60s" }
+global-timeout = "20m"
+slow-timeout = { period = "120s" }
 test-threads = 1
 retries = 0
 fail-fast = false

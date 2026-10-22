@@ -1,4 +1,4 @@
-deadline_seconds = 330
+deadline_seconds = 660
 deciding = ["end", "exit-code", "answer", "tool-call", "call-count", "calls-per-response", "prompt-within-window", "compaction-carried"]
 # At medium effort, version 3's base calibration stopped on three wrong
 # sums in five attempts despite written running sums (rulings 121, 124).

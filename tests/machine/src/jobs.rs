@@ -36,7 +36,7 @@ impl World {
             vec![Terminal {
                 owner,
                 expected: job_terminals(&requests),
-                deadline: base.saturating_add(Duration::from_secs(2)),
+                deadline: base.saturating_add(Duration::from_secs(4)),
             }],
         );
         let mut world = skein_world::real::World::new(referee);
@@ -51,7 +51,7 @@ impl World {
                 &self.environment,
             )
         });
-        let outcome = world.run(&clock, Duration::from_secs(2));
+        let outcome = world.run(&clock, Duration::from_secs(4));
         assert!(outcome.killed.is_empty(), "job activation settles without harness cleanup");
         assert!(outcome.procs[0].component.closed(), "machine reports closed after its retained children settle");
         self.now = Time::from_nanos(outcome.end.as_nanos().saturating_sub(outcome.start.as_nanos()));

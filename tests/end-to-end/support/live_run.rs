@@ -179,7 +179,7 @@ fn run_with_peer(
     assert_no_children();
     let clock = Clock::new();
     let now = clock.now().now;
-    let budget = if peer.is_some() { Duration::from_secs(5) } else { Duration::from_secs(130) };
+    let budget = if peer.is_some() { Duration::from_secs(10) } else { Duration::from_secs(260) };
     let mut binary = start(Vec::new(), scratch.path(), Mode::Terminal);
     let streams = binary.take_streams().expect("live controlling terminal");
     let descriptors = streams.descriptors();
@@ -212,7 +212,7 @@ fn run_with_peer(
     if let Some(peer) = peer {
         world.spawn(|| Process::Script(Proc::Peer(Box::new(peer))));
     }
-    let outcome = world.run(&clock, budget.saturating_add(Duration::from_secs(1)));
+    let outcome = world.run(&clock, budget.saturating_add(Duration::from_secs(2)));
     assert!(outcome.procs.iter().all(Host::is_empty), "live binary and terminal fully drained");
     assert_no_children();
 }

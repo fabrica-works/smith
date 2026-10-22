@@ -66,7 +66,7 @@ pub fn run() {
             skein_fake_peers::Transport::Tls,
         ))))
     });
-    let outcome = world.run(&clock, Duration::from_secs(2));
+    let outcome = world.run(&clock, Duration::from_secs(4));
     assert!(outcome.procs.iter().all(Host::is_empty), "sample host and peer settle");
     let host = outcome
         .procs

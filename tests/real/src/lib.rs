@@ -219,7 +219,7 @@ impl World {
                 .spawn(|| Proc::Issuer(Box::new(process::IssuerProcess::configured(skein_fake_peers::Transport::Tls))));
             world.spawn(|| Proc::Browser(Box::default()));
         }
-        self.outcome = Some(world.run(&Clock::new(), Duration::from_secs(5)));
+        self.outcome = Some(world.run(&Clock::new(), Duration::from_secs(10)));
         let outcome = self.outcome.as_ref().expect("settled checked world");
         assert!(outcome.procs.iter().all(Host::is_empty), "all real processes have settled");
         assert!(outcome.killed.is_empty(), "normal stories kill no hosted child");
