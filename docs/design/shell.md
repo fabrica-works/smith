@@ -1345,7 +1345,9 @@ whether the settings are admitted.
 
 ## 10. The world
 
-Within the focused suite's 15 seconds and the fuzzy suite's 60:
+Within the focused suite's 30 seconds (15 seconds before the user's doubling
+of 10-22, provisional) and the fuzzy suite's 120 seconds: (suite's 60:
+before the user's doubling of 10-22, provisional)
 
 - **Step tests in `smith-local-shell`:**
   - each command's arguments to its typed value, and each usage error;

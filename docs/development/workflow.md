@@ -43,16 +43,17 @@ The suites are those of skein's `docs/foundation/testing-strategy.md`
 (section 8). smith's domains and their world stories are specified in
 `docs/design/domain/`.
 
-- **The default suite** is every crate's unit tests and each world's
-  focused tests (`tests/<world>/tests/*.rs`): focused tests of
-  expected behaviour (scenarios, referee tests, replay, facts changing
-  nothing, memory against the worst case), and a cheap random world as a
-  smoke test where one helps. It is what `cargo nextest run --workspace`
-  runs, and it takes at most **15 seconds**.
+- **The default suite** is every crate's unit tests and each world's focused
+  tests (`tests/<world>/tests/*.rs`): focused tests of expected behaviour
+  (scenarios, referee tests, replay, facts changing nothing, memory against
+  the worst case), and a cheap random world as a smoke test where one helps.
+  It is what `cargo nextest run --workspace` runs, and it takes at most **30
+  seconds** (15 seconds before the user's doubling of 10-22, provisional).
 - **The fuzzy suite** is the worlds' `tests/fuzzy_*.rs`: randomized tests,
   such as sweeps of random worlds and domains driven at random, over many
-  seeds. It is not run by default, only with `--profile fuzzy`, as the
-  gate before merging to main, and it takes at most **1 minute**.
+  seeds. It is not run by default, only with `--profile fuzzy`, as the gate
+  before merging to main, and it takes at most **2 minutes** (1 minute
+  before the user's doubling of 10-22, provisional).
 
 The budgets are enforced, not advisory: `.config/nextest.toml` gives each
 profile a `global-timeout`, so a suite that runs past its budget fails,

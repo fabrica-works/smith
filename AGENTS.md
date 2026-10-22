@@ -5,9 +5,11 @@
   section 1, and pushes. A
   Markdown-only change lands with `land --docs`, as that document
   specifies. Rust doc comments do not skip the checks.
-- The focused suite takes at most 15 seconds and the fuzzy suite at most
-  60 seconds. Measure worlds on an idle machine with the workflow's
-  serial profile; keep additions within those budgets.
+- The focused suite takes at most 30 seconds (15 seconds before the user's
+  doubling of 10-22, provisional) and the fuzzy suite at most 120 seconds
+  (60 seconds before the user's doubling of 10-22, provisional). Measure
+  worlds on an idle machine with the workflow's serial profile; keep
+  additions within those budgets.
 - smith follows skein's `docs/foundation/programming-model.md`,
   `testing-strategy.md` and `notes.md`. Read them before writing code:
   the first two are rules, and a departure needs its reason, stated in
