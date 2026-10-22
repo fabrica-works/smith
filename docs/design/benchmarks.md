@@ -193,7 +193,8 @@ workspace, ending in one result (section 8). The kinds are a closed set:
   11.3), or a **comparison** (another agent, or main against a
   candidate). An arm built from a commit is built in the harness's own
   clone, outside every developer checkout, and named by the commit and
-  the binary's SHA-256. One build runs at a time: it holds an exclusive
+  the binary's SHA-256. smith arms use Cargo's default dev profile,
+  without `--release`. One build runs at a time: it holds an exclusive
   lock over the clone and its target, and a second waits.
 
 ## 4. Tiers

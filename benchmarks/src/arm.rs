@@ -202,21 +202,13 @@ pub fn binary_digest(path: &Path) -> Result<String, String> {
 fn cargo_binaries(clone: &Path, target: &Path) -> Result<Vec<PathBuf>, String> {
     let mut command = Command::new("cargo");
     command
-        .args([
-            "build",
-            "--release",
-            "--locked",
-            "--package",
-            "smith",
-            "--bins",
-            "--message-format=json-render-diagnostics",
-        ])
+        .args(["build", "--locked", "--package", "smith", "--bins", "--message-format=json-render-diagnostics"])
         .current_dir(clone)
         .env("CARGO_TARGET_DIR", target)
         .env("CARGO_BUILD_JOBS", "1")
         .stdin(Stdio::null())
         .stderr(Stdio::inherit());
-    let records = output(&mut command, "cargo build --release --locked")?;
+    let records = output(&mut command, "cargo build --locked")?;
     let mut binaries = Vec::new();
     for line in records.lines() {
         let record: serde_json::Value =

@@ -17,10 +17,11 @@ heavy --gate cargo run -p smith-bench -- suite smoke --arm DIRECTORY
 ```
 
 `build COMMIT [--repository REPOSITORY]` prints the archived arm directory
-as its last line. It builds only the named commit in a private clone and
-records executable digests and the rustc version. Dirty sources, dirty
-clones and altered archives are refused. `--commit`, `--control` and
-`--parent` reuse these archives; live commands never compile a smith arm.
+as its last line. It builds only the named commit in a private clone, using
+Cargo's default dev profile without `--release`, and records executable
+digests and the rustc version. Dirty sources, dirty clones and altered
+archives are refused. `--commit`, `--control` and `--parent` reuse these
+archives; live commands never compile a smith arm.
 
 ```text
 probe PROBE [--agent smith|codex|smith-claude-code] [--attempts N] [--commit COMMIT | --arm DIRECTORY]

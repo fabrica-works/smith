@@ -139,7 +139,7 @@ Only what is left on `main`:
 Scope: four commands that build an arm, prepare the requests, run them and print what happened (benchmarks.md, 4.2, 5.1, 9 and 11.5): `probe`, `calibrate`, `fix`, `suite`; the README's command section, run notes removed.
 Needs: nothing.
 Files: `benchmarks/src/probe.rs` (new), `src/main.rs`, `src/fix.rs` (`run` :146, `calibrate` :181), `src/batch.rs` (`probe_suite` :318), `src/run/outcomes.rs` (`Neutral::task` :35), `src/lib.rs`, `benchmarks/README.md`; tests `tests/probe_command.rs` (new), `tests/common/mod.rs`, `tests/smith_adapter.rs` (fixtures moved), `tests/probes.rs` (:164).
-Shape: the commands, each run from a worktree with no uncommitted change as `heavy --gate cargo run -p smith-bench -- <command>`, after the arm is built in the build lane with `heavy cargo run -p smith-bench -- build <commit>`, which prints the arm's directory as its last line; `--commit`, `--control` and `--parent` reuse the arm `build` archived for their commit, so that no release build holds the gate lane:
+Shape: the commands, each run from a worktree with no uncommitted change as `heavy --gate cargo run -p smith-bench -- <command>`, after the arm is built in the build lane with `heavy cargo run -p smith-bench -- build <commit>`, which prints the arm's directory as its last line; `--commit`, `--control` and `--parent` reuse the arm `build` archived for their commit, so that no arm build holds the gate lane:
   `probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]`;
   `calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]`;
   `fix PROBE --parent COMMIT [--commit COMMIT]`;
