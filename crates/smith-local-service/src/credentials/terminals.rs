@@ -29,6 +29,7 @@ impl Accounts {
                             grant: smith_domain::Grant {
                                 name: smith_domain::GrantName { account: account.number, generation },
                                 valid,
+                                renewable: true,
                             },
                         },
                         value: token,

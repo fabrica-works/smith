@@ -716,3 +716,120 @@ fn encode_saved_parts(parts: smith_transcript::TurnParts) -> Box<[u8]> {
     turn.encode(&mut writer).expect("fixture room");
     writer.finish()
 }
+
+fn grant_charter() -> smith_domain::run::Charter {
+    use skein_lib::Duration;
+    use smith_domain::run::{self, charter, outcome};
+    run::Charter {
+        mode: run::Mode::Finite,
+        resume: false,
+        waiting: Duration::from_secs(30),
+        instructions: Box::default(),
+        brief: run::Brief { sections: Box::default() },
+        conventions: None,
+        grants: charter::Grants {
+            wait: true,
+            deliver: None,
+            agents: false,
+            host_tools: Box::default(),
+            tools: charter::Tools { inspect: false, modify: false, shell: false },
+        },
+        outcome: outcome::OutcomeSpec {
+            change: None,
+            verdicts: Box::default(),
+            failure: None,
+            report: Some(outcome::TextSpec { max: 1024, fields: Box::default() }),
+        },
+        budget: run::Budget { turns: 64, spend: 10_000, time: Duration::from_secs(3600) },
+        reserve: charter::Reserve { turns: 0, time: Duration::ZERO },
+        llm: charter::Llm {
+            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
+            dialect: 0,
+            account: Some(7),
+            endpoint: charter::Endpoint(0),
+            model: b"model".as_slice().into(),
+            effort: None,
+            window: 8192,
+            output: 512,
+        },
+        models: Box::default(),
+    }
+}
+
+#[test]
+fn grant_forms_keep_their_policy_at_start_and_refresh() {
+    use skein_lib::{Duration, List, Secret};
+    use smith_channel as wire;
+    let limits = wire::CEILINGS;
+    let credential = |scheme| {
+        wire::GrantValue::Credential(
+            wire::CredentialValue::new(
+                &limits,
+                wire::CredentialValueParts { scheme, bytes: Secret::new(b"fixture".as_slice().into()) },
+            )
+            .expect("bounded credential"),
+        )
+    };
+    for (value, renewable) in [
+        (credential(wire::Scheme::Key), false),
+        (credential(wire::Scheme::Bearer), true),
+        (
+            wire::GrantValue::Withdrawn(
+                wire::WithdrawnValue::new(
+                    &limits,
+                    wire::WithdrawnValueParts {
+                        id: b"fixture-id".as_slice().into(),
+                        bearer: Secret::new(b"fixture".as_slice().into()),
+                    },
+                )
+                .expect("bounded withdrawn form"),
+            ),
+            true,
+        ),
+        (
+            wire::GrantValue::Program(
+                wire::ProgramValue::new(&limits, wire::ProgramValueParts { name: b"claude-code".as_slice().into() })
+                    .expect("bounded program form"),
+            ),
+            true,
+        ),
+    ] {
+        let grant = wire::Grant::new(
+            &limits,
+            wire::GrantParts { account: 7, generation: 2, valid: Duration::from_secs(3600), value },
+        )
+        .expect("bounded wire grant");
+        let refresh = crate::translate::refreshed_grant(&grant);
+        assert_eq!(
+            refresh,
+            smith_domain::Grant {
+                name: smith_domain::GrantName { account: 7, generation: 2 },
+                valid: Duration::from_secs(3600),
+                renewable,
+            },
+            "actual refresh conversion"
+        );
+        let mut grants = List::with_capacity(1);
+        grants.push(grant).expect("one grant");
+        let start = wire::Start::new(
+            &limits,
+            wire::StartParts {
+                identity: None,
+                activation: 1,
+                charter: Box::default(),
+                workspace: None,
+                transcript: Box::default(),
+                answered: List::with_capacity(0),
+                grants,
+                window: wire::Window::new(&limits, wire::WindowParts { turns: 8, bytes: 65_536 }).expect("window"),
+                messages: List::with_capacity(0),
+                live: None,
+            },
+        )
+        .expect("bounded start envelope");
+        let decoded = crate::start_context(start, grant_charter(), None).expect("actual start conversion");
+        assert_eq!(decoded.grants.len(), 1);
+        let kept = &decoded.grants[0];
+        assert_eq!((kept.name, kept.valid, kept.renewable), (refresh.name, refresh.valid, renewable));
+    }
+}

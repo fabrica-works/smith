@@ -252,6 +252,7 @@ enum Delivery {
     Host { relay: run::RelayName, reply: run::HostReply },
     Job { owner: Token },
     Cancel,
+    Grant { grant: Grant },
 }
 
 #[derive(Debug)]
@@ -337,6 +338,9 @@ pub struct CompletionObservation {
     /// Caller-selected model from actual Complete. Contract: domain/run.md, section 9.
     pub model: Box<[u8]>,
 
+    /// Grant selected at actual dispatch, including its generation.
+    pub grant: Option<GrantName>,
+
     /// Actual completion start clock. Contract: domain/run.md, section 10.
     pub started: Time,
 
@@ -378,6 +382,8 @@ pub struct World {
     settings: Settings,
     failure: Option<(agent::llm::Failure, agent::llm::Evidence)>,
     failure_report: agent::llm::Report,
+    failure_count: Option<u32>,
+    unauthorized: Vec<(Time, GrantName)>,
     now: Time,
     rng: Rng,
     agent: agent::Domain,
@@ -476,6 +482,7 @@ fn choose_start(
                 charter: selected_charter.unwrap_or_else(|| charter(settings)),
                 workspace,
                 grants: Box::new([Grant {
+                    renewable: true,
                     name: GrantName { account: 0, generation: 1 },
                     valid: Duration::from_secs(7200),
                 }]),
@@ -492,7 +499,11 @@ impl World {
     pub fn hold_grant(&mut self, account: u32) {
         let start = self.stage.next_event().expect("pending start");
         self.stage.push(Event::Grant {
-            grant: Grant { name: GrantName { account, generation: 1 }, valid: Duration::from_secs(7200) },
+            grant: Grant {
+                renewable: true,
+                name: GrantName { account, generation: 1 },
+                valid: Duration::from_secs(7200),
+            },
         });
         self.stage.push(start);
     }
@@ -513,6 +524,30 @@ impl World {
         let mut world = Self::new(settings);
         world.failure = Some((failure, evidence));
         world
+    }
+
+    /// Script this many genuine fake-provider failures before its ordinary successful script.
+    /// Uses the same typed terminal metadata as `with_failure`; the referee still sees every call.
+    pub fn fail_calls(&mut self, count: u32, failure: agent::llm::Failure, evidence: agent::llm::Evidence) {
+        self.failure_count = Some(count);
+        self.failure = Some((failure, evidence));
+    }
+
+    /// Schedule an existing host grant independently of an in-flight provider call.
+    pub fn grant_at(&mut self, at: Time, grant: Grant) {
+        self.schedule.send(at, Delivery::Grant { grant });
+    }
+
+    /// Actual unauthorized notices, retaining their rejected generations.
+    #[must_use]
+    pub fn unauthorized(&self) -> &[(Time, GrantName)] {
+        &self.unauthorized
+    }
+
+    /// The root's remaining alarm after its actual boundary observations.
+    #[must_use]
+    pub fn next_deadline(&self) -> Option<Time> {
+        self.agent.next_deadline()
     }
 
     /// Installs the bounded report accompanying scripted provider failures.
@@ -577,6 +612,7 @@ impl World {
             transcript: None,
             answered: Box::default(),
             grants: Box::new([Grant {
+                renewable: true,
                 name: GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(7200),
             }]),
@@ -599,6 +635,7 @@ impl World {
             transcript: None,
             answered: Box::default(),
             grants: Box::new([Grant {
+                renewable: true,
                 name: GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(7200),
             }]),
@@ -736,6 +773,8 @@ impl World {
             terminals: 0,
             failure: None,
             failure_report: agent::llm::Report::none(),
+            failure_count: None,
+            unauthorized: Vec::new(),
         }
     }
 
@@ -1130,6 +1169,12 @@ impl World {
         match &mut self.backend {
             Backend::Typed { provider, stage, .. } => {
                 while let Some(event) = stage.next_event() {
+                    if matches!(&event, provider::Event::Call { .. })
+                        && let Some(remaining) = self.failure_count.as_mut()
+                    {
+                        stage.env.limits.overloaded = if *remaining > 0 { 1000 } else { 0 };
+                        *remaining = remaining.saturating_sub(1);
+                    }
                     provider::step(provider, &stage.env, event, &mut stage.out);
                 }
                 while stage.has_room() && provider.is_due(self.now) {
@@ -1283,7 +1328,7 @@ impl World {
                     self.check_notices.push((self.now, false));
                 }
             }
-            Request::Complete { owner, prompt, .. } => {
+            Request::Complete { owner, prompt, grant, .. } => {
                 if prompt.asker == llm::Asker::Child
                     && (prompt.tools.modify || prompt.tools.shell)
                     && self.writing_opened.insert(prompt.affinity.thread)
@@ -1309,6 +1354,7 @@ impl World {
                 self.completions.push(CompletionObservation {
                     owner,
                     model: prompt.model.clone(),
+                    grant,
                     started: self.now,
                     terminal: None,
                 });
@@ -1591,10 +1637,8 @@ impl World {
                 self.host_history.withdraw(relay).expect("withdraw retains actual terminal");
                 assert!(self.host_pending.contains_key(&(relay.owner.raw(), relay.attempt)));
             }
-            Request::MessageRefused { .. }
-            | Request::Unauthorized { .. }
-            | Request::Refused { .. }
-            | Request::Limited { .. } => {}
+            Request::Unauthorized { grant } => self.unauthorized.push((self.now, grant)),
+            Request::MessageRefused { .. } | Request::Refused { .. } | Request::Limited { .. } => {}
         }
     }
 
@@ -1634,6 +1678,7 @@ impl World {
 
     fn deliver(&mut self, delivery: Delivery) {
         match delivery {
+            Delivery::Grant { grant } => self.stage.push(Event::Grant { grant }),
             Delivery::Message { name, label, text } => {
                 let mut rendered = label.to_vec();
                 rendered.extend_from_slice(b": ");
@@ -2314,7 +2359,11 @@ fn finishing_reserve(settings: &Settings, change: bool) -> run::charter::Reserve
 pub fn world(settings: &Settings, charter: run::Charter, granted: &[u32]) -> World {
     let grants = granted
         .iter()
-        .map(|account| Grant { name: GrantName { account: *account, generation: 1 }, valid: Duration::from_secs(7200) })
+        .map(|account| Grant {
+            renewable: true,
+            name: GrantName { account: *account, generation: 1 },
+            valid: Duration::from_secs(7200),
+        })
         .collect();
     World::with_start(
         *settings,
@@ -2353,6 +2402,7 @@ mod bridge_tests {
             charter: charter(&settings),
             workspace: None,
             grants: Box::new([Grant {
+                renewable: true,
                 name: GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(7200),
             }]),
@@ -2399,6 +2449,7 @@ mod bridge_tests {
             charter,
             workspace: None,
             grants: Box::new([Grant {
+                renewable: true,
                 name: GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(7200),
             }]),

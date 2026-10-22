@@ -444,12 +444,21 @@ impl Harness {
     }
 
     fn admit_named(&mut self, call: u64, charter: Charter) -> (Token, Token, Prompt, crate::llm::CompletionName) {
+        self.admit_named_grants(call, charter, account_grants())
+    }
+
+    fn admit_named_grants(
+        &mut self,
+        call: u64,
+        charter: Charter,
+        grants: Box<[crate::Grant]>,
+    ) -> (Token, Token, Prompt, crate::llm::CompletionName) {
         let emitted = self.step(Event::Start {
             messages: Box::default(),
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             answered: Box::default(),
             workspace: Some(workspace()),
-            grants: account_grants(),
+            grants,
             reply_to: ReplyTo::new(Token::new(call)),
             host_run: Token::new(call),
             identity: None,
@@ -509,6 +518,7 @@ fn workspace() -> Workspace {
 
 fn account_grants() -> Box<[crate::Grant]> {
     Box::new([crate::Grant {
+        renewable: true,
         name: crate::GrantName { account: 0, generation: 0 },
         valid: Duration::from_secs(100_000),
     }])
@@ -558,7 +568,11 @@ fn root_refuses_invalid_grants_before_admission() {
         answered: Box::default(),
         workspace: Some(workspace()),
         grants: Box::new(
-            [crate::Grant { name: crate::GrantName { account: 0, generation: 0 }, valid: Duration::from_secs(60) }; 5],
+            [crate::Grant {
+                renewable: true,
+                name: crate::GrantName { account: 0, generation: 0 },
+                valid: Duration::from_secs(60),
+            }; 5],
         ),
         reply_to: ReplyTo::new(Token::new(7)),
         host_run: Token::new(7),
@@ -835,7 +849,11 @@ fn grant_updates_do_not_change_a_call_in_flight_and_rejections_are_once_per_gene
     let limits = Limits { session: session::Limits { retries: 3, ..LIMITS.session }, ..LIMITS };
     let mut h = Harness::with(&limits);
     let (_, owner, _) = h.admit(7, charter());
-    let next = crate::Grant { name: crate::GrantName { account: 0, generation: 1 }, valid: Duration::from_secs(60) };
+    let next = crate::Grant {
+        renewable: true,
+        name: crate::GrantName { account: 0, generation: 1 },
+        valid: Duration::from_secs(60),
+    };
     assert!(h.step(Event::Grant { grant: next }).is_empty());
     assert_eq!(
         &*h.step(Event::Failed {
@@ -1568,6 +1586,7 @@ fn convention_main(harness: &mut Harness, selected: Option<run::Conventions>) ->
         workspace: mounted,
         transcript: None,
         grants: Box::new([crate::Grant {
+            renewable: true,
             name: crate::GrantName { account: 0, generation: 1 },
             valid: Duration::from_secs(3600),
         }]),
@@ -1803,6 +1822,10 @@ fn settle_default_convention_control(harness: &mut Harness, run: Token, main: To
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one maximum-bound guide scenario retains every receiving and refusal assertion"
+)]
 fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discovery() {
     for maximum_paths in [false, true] {
         let run = run::Limits { run_bytes: 16_384, ..LIMITS.run };
@@ -1859,6 +1882,7 @@ fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discover
             charter: Charter { conventions: selected, ..charter() },
             transcript: None,
             grants: Box::new([crate::Grant {
+                renewable: true,
                 name: crate::GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(3600),
             }]),
@@ -2455,4 +2479,119 @@ fn account_notices(requests: &[Request]) -> List<&Request> {
         }
     }
     notices
+}
+
+#[test]
+fn a_key_race_uses_the_new_generation_then_ends_on_its_own_policy() {
+    let limits = Limits { session: session::Limits { retries: 3, ..LIMITS.session }, ..LIMITS };
+    for renewable in [false, true] {
+        let mut h = Harness::with(&limits);
+        let first = crate::Grant {
+            name: crate::GrantName { account: 0, generation: 1 },
+            valid: Duration::from_secs(60),
+            renewable,
+        };
+        let (_, owner, _, _) = h.admit_named_grants(7, charter(), Box::new([first]));
+        let next = crate::Grant { name: crate::GrantName { account: 0, generation: 2 }, renewable: false, ..first };
+        assert!(h.step(Event::Grant { grant: next }).is_empty());
+        // Repeated or older refreshes cannot replace the usable generation or its policy.
+        assert!(h.step(Event::Grant { grant: crate::Grant { renewable: true, ..next } }).is_empty());
+        assert!(h.step(Event::Grant { grant: first }).is_empty());
+        let failed = || Event::Failed {
+            owner,
+            failure: crate::llm::Failure::Unauthorized,
+            evidence: crate::llm::Evidence::Response { status: Some(401) },
+            detail: Box::default(),
+            report: crate::llm::Report::none(),
+        };
+        assert_eq!(&*h.step(failed()), &[Request::Unauthorized { grant: first.name }]);
+        h.env.now = h.domain.next_deadline().expect("retry of the old attempt");
+        let emitted = h.fire();
+        let [Request::Complete { grant, .. }] = emitted.as_ref() else { panic!("retry on newer generation") };
+        assert_eq!(*grant, Some(next.name));
+        let terminal = h.step(failed());
+        let [Request::Unauthorized { grant }, Request::Answer { answer, .. }] = terminal.as_ref() else {
+            panic!("one notice and one activation terminal, got {terminal:?}");
+        };
+        assert_eq!(*grant, next.name);
+        assert_eq!(
+            answer,
+            &run::Answer::Failed {
+                failure: run::Failure::Model(run::Fault::Completion {
+                    failure: run::CompletionFailure::Unauthorized,
+                    evidence: run::CompletionEvidence::Response { status: Some(401) },
+                    model: 0,
+                    attempts: 2,
+                    report: run::Report::none(),
+                }),
+                spent: run::Spend::ZERO,
+                turns: 0,
+            }
+        );
+        assert!(h.domain.next_deadline().is_none());
+        h.domain.reclaim();
+        assert_eq!((h.domain.peers(), h.domain.flights(), h.domain.tickets()), (0, 0, 0));
+        assert!(h.domain.completions.is_empty());
+    }
+}
+
+#[test]
+#[expect(
+    clippy::print_stderr,
+    clippy::disallowed_macros,
+    reason = "unit test records actual metadata layout and container measurements (programming-model.md, section 10.2)"
+)]
+fn renewal_metadata_layout_and_container_costs_are_derived() {
+    use crate::domain::{Credential, IssuedCompletion};
+    use skein_lib::Map;
+    // Frozen pre-change field shapes; the types themselves price the before containers.
+    #[expect(dead_code, reason = "pre-change layout evidence, never instantiated")]
+    struct BeforeGrant {
+        name: crate::GrantName,
+        valid: Duration,
+    }
+    #[expect(dead_code, reason = "pre-change layout evidence, never instantiated")]
+    struct BeforeCredential {
+        name: crate::GrantName,
+        expires: Time,
+        rejected: Option<u64>,
+    }
+    #[expect(dead_code, reason = "pre-change layout evidence, never instantiated")]
+    struct BeforeIssued {
+        grant: Option<crate::GrantName>,
+        name: crate::llm::CompletionName,
+    }
+    let layouts = [
+        ("Grant", size_of::<BeforeGrant>(), size_of::<crate::Grant>()),
+        ("Credential", size_of::<BeforeCredential>(), size_of::<Credential>()),
+        ("IssuedCompletion", size_of::<BeforeIssued>(), size_of::<IssuedCompletion>()),
+    ];
+    for (name, before, after) in layouts {
+        eprintln!(
+            "{name}: before={before}, after={after}, delta={}",
+            after.checked_sub(before).expect("metadata only adds storage")
+        );
+        assert!(
+            after >= before && after <= before.checked_add(align_of::<crate::Grant>()).expect("small metadata layout")
+        );
+    }
+    for accounts in [1, LIMITS.accounts] {
+        let before = Map::<u32, BeforeCredential>::worst_case(accounts).expect("before credentials");
+        let after = Map::<u32, Credential>::worst_case(accounts).expect("after credentials");
+        eprintln!(
+            "Credential Map capacity={accounts}: before={before}, after={after}, delta={}",
+            after.checked_sub(before).expect("metadata only adds storage")
+        );
+        assert!(after >= before);
+    }
+    for conversations in [1, LIMITS.run.conversations] {
+        let before = Map::<Token, BeforeIssued>::worst_case(conversations).expect("before issued");
+        let after = Map::<Token, IssuedCompletion>::worst_case(conversations).expect("after issued");
+        eprintln!(
+            "IssuedCompletion Map capacity={conversations}: before={before}, after={after}, delta={}",
+            after.checked_sub(before).expect("metadata only adds storage")
+        );
+        assert!(after >= before);
+    }
+    eprintln!("root worst_case at root unit LIMITS: {}", worst_case(&LIMITS).expect("valid root limits"));
 }

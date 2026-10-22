@@ -1230,6 +1230,7 @@ fn transient_failures_are_retried_after_a_backoff_until_the_retries_run_out() {
     for _ in 0..LIMITS.retries {
         assert_eq!(
             h.step(Event::Failed {
+                retry_ok: true,
                 owner,
                 failure: Failure::Overloaded,
                 evidence: crate::llm::Evidence::Unknown,
@@ -1243,6 +1244,7 @@ fn transient_failures_are_retried_after_a_backoff_until_the_retries_run_out() {
         drop(calling(h.fire()));
     }
     let end = h.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::Overloaded,
         evidence: crate::llm::Evidence::Unknown,
@@ -1268,7 +1270,13 @@ fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
     let (owner, _) = h.open(2);
     let failure = Failure::RateLimited { retry_after: Duration::from_secs(5) };
     assert_eq!(
-        h.step(Event::Failed { owner, failure, evidence: crate::llm::Evidence::Unknown, detail: Box::default() }),
+        h.step(Event::Failed {
+            retry_ok: true,
+            owner,
+            failure,
+            evidence: crate::llm::Evidence::Unknown,
+            detail: Box::default()
+        }),
         None
     );
     assert_eq!(h.domain.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(5))));
@@ -1276,8 +1284,13 @@ fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
     for failure in [Failure::Invalid, Failure::Refused, Failure::Unsupported] {
         let mut h = Harness::new(&LIMITS);
         let (owner, _) = h.open(1);
-        let terminal =
-            h.step(Event::Failed { owner, failure, evidence: crate::llm::Evidence::Unknown, detail: Box::default() });
+        let terminal = h.step(Event::Failed {
+            retry_ok: true,
+            owner,
+            failure,
+            evidence: crate::llm::Evidence::Unknown,
+            detail: Box::default(),
+        });
         assert_eq!(
             terminal,
             Some(ended(
@@ -1321,6 +1334,7 @@ fn each_attempt_keeps_model_progress_and_the_same_session_expiry() {
     );
     assert_eq!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: crate::llm::Evidence::Unknown,
@@ -1342,6 +1356,7 @@ fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
     h.after(BUDGET.time);
     assert_eq!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::TimedOut { phase: crate::llm::Phase::Whole },
             evidence: crate::llm::Evidence::Response { status: None },
@@ -1362,6 +1377,7 @@ fn each_transient_timeout_phase_retries_with_the_same_absolute_expiry() {
         let (owner, _) = h.open(1);
         assert_eq!(
             h.step(Event::Failed {
+                retry_ok: true,
                 owner,
                 failure: Failure::TimedOut { phase },
                 evidence: crate::llm::Evidence::Unknown,
@@ -1373,6 +1389,7 @@ fn each_transient_timeout_phase_retries_with_the_same_absolute_expiry() {
         let Some(Request::Complete { deadlines, .. }) = h.fire() else { panic!("retry for {phase:?}") };
         assert_eq!(deadlines.whole, Time::ZERO.saturating_add(BUDGET.time));
         let end = h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::TimedOut { phase: crate::llm::Phase::Whole },
             evidence: crate::llm::Evidence::Response { status: None },
@@ -1403,6 +1420,7 @@ fn whole_expiry_or_elapsed_session_time_ends_once_even_with_no_retries() {
         }
         assert_eq!(
             h.step(Event::Failed {
+                retry_ok: true,
                 owner,
                 failure: Failure::TimedOut { phase },
                 evidence: crate::llm::Evidence::Unknown,
@@ -1428,6 +1446,7 @@ fn a_completion_that_wins_the_race_with_a_close_still_ends_the_session() {
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
     assert_eq!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: crate::llm::Evidence::Unknown,
@@ -1464,6 +1483,7 @@ fn closing_a_session_with_nothing_in_flight_ends_it_at_once() {
     let (owner, _) = h.open(1);
     assert_eq!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Unavailable,
             evidence: crate::llm::Evidence::Unknown,
@@ -1534,6 +1554,7 @@ fn an_expiring_session_in_backoff_or_yielded_ends_at_once() {
     let (owner, _) = h.open(1);
     assert_eq!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Unavailable,
             evidence: crate::llm::Evidence::Unknown,
@@ -1820,6 +1841,7 @@ fn a_late_oversized_completion_keeps_its_retry_attempt_count() {
     let (owner, _) = h.open(1);
     assert!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: crate::llm::Evidence::Unknown,
@@ -1913,6 +1935,7 @@ fn retries_cancels_and_refusals_are_told_too() {
     let (owner, _) = h.open(1);
     assert_eq!(
         h.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: crate::llm::Evidence::Unknown,
@@ -2363,6 +2386,7 @@ fn failed_retried_and_cancelled_facts_keep_one_response_number_and_step_times() 
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
     drop(h.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::Overloaded,
         evidence: crate::llm::Evidence::Unknown,
@@ -2776,6 +2800,7 @@ fn a_childs_final_note_follows_settled_results_and_is_not_repeated_on_retry() {
     assert_eq!(messages.last().unwrap().content.as_ref(), &[text(b"Answer now.")]);
     assert_eq!(
         harness.step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: crate::llm::Evidence::Unknown,
@@ -2866,6 +2891,7 @@ fn a_native_request_limit_is_context_too_long_without_retry() {
             if cap == Cap::Request { Failure::Limit { which: Limit::Window, bound: 65_536 } } else { failure };
         assert_eq!(
             harness.step(Event::Failed {
+                retry_ok: true,
                 owner,
                 failure,
                 evidence: crate::llm::Evidence::Unsent,
@@ -3067,6 +3093,7 @@ fn a_compaction_carries_no_guard() {
         crate::llm::Purpose::Ordinary { guard: Some(crate::llm::Guard { line: 64_512, last_prompt: 15, from: 1 }) }
     );
     let (_, compacted) = calling(harness.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::ContextTooLong,
         evidence: crate::llm::Evidence::Unsent,
@@ -3103,18 +3130,30 @@ mod batched_change;
 
 #[test]
 fn an_unauthorized_call_is_retried_only_for_an_account() {
+    use crate::llm::Evidence;
     let failure = Failure::Unauthorized;
-    let failed = End::Failed { detail: Box::default(), failure, evidence: crate::llm::Evidence::Unknown, attempts: 1 };
-    for (account, expected) in [(Some(0), None), (None, Some(ended(failed, 0)))] {
+    let response = Evidence::Response { status: Some(401) };
+    for (account, retry_ok, evidence, terminal) in [
+        (Some(0), true, Evidence::Unknown, false),
+        (Some(0), false, Evidence::Unknown, false),
+        (Some(0), false, Evidence::Unsent, false),
+        (Some(0), true, response, false),
+        (Some(0), false, response, true),
+        (Some(0), false, Evidence::Response { status: None }, true),
+        (None, true, Evidence::Unknown, true),
+        (None, false, Evidence::Unknown, true),
+        (None, true, response, true),
+        (None, false, Evidence::Unsent, true),
+    ] {
         let mut harness = Harness::new(&LIMITS);
         let (owner, _) = harness.open_with(1, Spec { account, ..spec() });
-        let request = harness.step(Event::Failed {
-            owner,
-            failure,
-            evidence: crate::llm::Evidence::Unknown,
-            detail: Box::default(),
-        });
-        assert_eq!(request, expected, "account {account:?}");
+        let request = harness.step(Event::Failed { owner, failure, evidence, detail: Box::default(), retry_ok });
+        let expected = if terminal {
+            Some(ended(End::Failed { detail: Box::default(), failure, evidence, attempts: 1 }, 0))
+        } else {
+            None
+        };
+        assert_eq!(request, expected, "account {account:?}, retry_ok {retry_ok}, evidence {evidence:?}");
     }
 }
 

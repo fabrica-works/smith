@@ -508,6 +508,7 @@ impl World {
             charter,
             workspace,
             grants: Box::new([Grant {
+                renewable: true,
                 name: GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(7200),
             }]),

@@ -126,7 +126,16 @@ fn failed(
     detail: Box<[u8]>,
     report: crate::llm::Report,
 ) {
-    let grant = crate::operation::completion_done(domain, owner).grant;
+    let issued = crate::operation::completion_done(domain, owner);
+    let grant = issued.grant;
+    let retry_ok = issued.renewable
+        || match grant {
+            Some(name) => match domain.grants.get(&name.account) {
+                Some(held) => held.name.generation > name.generation && held.expires > env.now,
+                None => false,
+            },
+            None => false,
+        };
     let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
     let peer = domain.peers.get_mut(id).expect("a peer lives as its session");
     let conversation = peer.conversation;
@@ -172,7 +181,7 @@ fn failed(
         | crate::llm::Failure::Protocol
         | crate::llm::Failure::Cancelled => {}
     }
-    session_step(domain, env, session::Event::Failed { owner, failure, evidence, detail });
+    session_step(domain, env, session::Event::Failed { owner, failure, evidence, detail, retry_ok });
 }
 
 /// Resume the one unsent main completion when its host has kept enough turns.
@@ -830,9 +839,13 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             return session_step(domain, env, session::Event::BudgetDenied { owner, reason });
         }
     }
+    let mut renewable = true;
     let grant = match account {
         Some(account) => match domain.grants.get(&account) {
-            Some(held) if held.expires > env.now => Some(held.name),
+            Some(held) if held.expires > env.now => {
+                renewable = held.renewable;
+                Some(held.name)
+            }
             Some(_) | None => return unsent_unauthorized(domain, env, conversation, owner),
         },
         None => None,
@@ -840,7 +853,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     crate::operation::begin_completion(
         domain,
         owner,
-        crate::domain::IssuedCompletion { grant, name },
+        crate::domain::IssuedCompletion { renewable, grant, name },
         conversation,
         deadlines.whole,
         out,
@@ -866,6 +879,7 @@ fn unsent_unauthorized(domain: &mut Domain, env: &Env<Limits>, conversation: Tok
         env,
         session::Event::Failed {
             owner,
+            retry_ok: true,
             failure: crate::llm::Failure::Unauthorized,
             evidence: crate::llm::Evidence::Unsent,
             detail: Box::default(),
@@ -1063,7 +1077,12 @@ fn granted(domain: &mut Domain, env: &Env<Limits>, grant: crate::Grant) {
         Some(old) => old.rejected,
         None => None,
     };
-    let entry = Credential { name: grant.name, expires: env.now.saturating_add(Duration::from_nanos(valid)), rejected };
+    let entry = Credential {
+        name: grant.name,
+        expires: env.now.saturating_add(Duration::from_nanos(valid)),
+        rejected,
+        renewable: grant.renewable,
+    };
     if domain.grants.contains_key(&grant.name.account) || domain.grants.len() < env.limits.accounts {
         let inserted = domain.grants.insert(grant.name.account, entry);
         assert!(inserted.is_ok(), "known account or checked room");

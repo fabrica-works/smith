@@ -33,6 +33,7 @@ impl World {
         self.sessions.get_mut(&opener).expect("known session").measures.push(measured);
         if refused {
             self.agent_stage.push(agent::Event::Failed {
+                retry_ok: true,
                 owner,
                 failure: Failure::ContextTooLong,
                 evidence: agent::llm::Evidence::Unsent,

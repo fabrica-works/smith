@@ -28,6 +28,8 @@ pub struct Mount {
 pub struct Grant {
     pub name: smith_domain::GrantName,
     pub valid: skein_lib::Duration,
+    /// A key is never renewed by its host (protocol/channel.md, section 6).
+    pub renewable: bool,
 }
 
 /// Start context after channel and charter decoding, before io root attachment.
@@ -78,6 +80,7 @@ pub fn start_context(
         let item = Grant {
             name: smith_domain::GrantName { account: grant.account(), generation: grant.generation() },
             valid: grant.valid(),
+            renewable: renewable(grant.value()),
         };
         if grants.push(item).is_err() {
             return Err(Error::ResultCapacity);
@@ -888,5 +891,25 @@ const fn completion_phase(phase: run::Phase) -> channel::CompletionPhase {
         run::Phase::Head => channel::CompletionPhase::Head,
         run::Phase::Idle => channel::CompletionPhase::Idle,
         run::Phase::Whole => channel::CompletionPhase::Whole,
+    }
+}
+
+/// Renewal policy already carried by the existing wire form (protocol/channel.md, section 6).
+pub(crate) fn renewable(value: &channel::GrantValue) -> bool {
+    match value {
+        channel::GrantValue::Credential(credential) => match credential.scheme() {
+            channel::Scheme::Key => false,
+            channel::Scheme::Bearer => true,
+        },
+        channel::GrantValue::Program(_) | channel::GrantValue::Withdrawn(_) => true,
+    }
+}
+
+/// Refresh conversion used after the channel retains the value (protocol/channel.md, section 6).
+pub(crate) fn refreshed_grant(value: &channel::Grant) -> smith_domain::Grant {
+    smith_domain::Grant {
+        name: smith_domain::GrantName { account: value.account(), generation: value.generation() },
+        valid: value.valid(),
+        renewable: renewable(value.value()),
     }
 }

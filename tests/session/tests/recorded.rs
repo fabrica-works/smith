@@ -667,6 +667,7 @@ fn exact_failure_classes_and_transport_evidence_survive_policy_without_diagnosti
                     assert!(world.end.is_none());
                 }
                 world.step(session::Event::Failed {
+                    retry_ok: true,
                     owner: world.completing.expect("one actual provider terminal"),
                     failure,
                     evidence,

@@ -95,6 +95,7 @@ pub fn outcome(
     match result {
         Ok(answer) => Event::Completed { owner, completion: completion(answer, tickets, opener, served) },
         Err(error) => Event::Failed {
+            retry_ok: true,
             owner,
             failure: failure(error),
             evidence: smith_domain_session::llm::Evidence::Unknown,

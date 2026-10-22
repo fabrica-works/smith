@@ -90,7 +90,18 @@ fn checked_count(length: usize) -> Result<u32, host::Invalid> {
 }
 
 pub(crate) const fn grant(value: host::Grant) -> smith::Grant {
-    smith::Grant { name: smith::GrantName { account: value.account, generation: value.generation }, valid: value.valid }
+    let renewable = match value.form {
+        host::Form::Credential(scheme) => match scheme {
+            host::Scheme::Key => false,
+            host::Scheme::Bearer => true,
+        },
+        host::Form::Withdrawn | host::Form::Program(_) => true,
+    };
+    smith::Grant {
+        name: smith::GrantName { account: value.account, generation: value.generation },
+        valid: value.valid,
+        renewable,
+    }
 }
 
 pub(crate) fn host_reply(value: host::Reply) -> Option<run::HostReply> {

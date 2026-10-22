@@ -1724,6 +1724,7 @@ impl World {
     /// Hands every delivery that is due to its destination.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
+    #[expect(clippy::too_many_lines, reason = "one exhaustive delivery table preserves actual terminal ownership")]
     fn deliver(&mut self) {
         while let Some(delivery) = self.wire.next(self.now) {
             match delivery {
@@ -1797,6 +1798,7 @@ impl World {
                         self.stats.failed_after_cancel += 1;
                     }
                     self.agent_stage.push(agent::Event::Failed {
+                        retry_ok: true,
                         owner,
                         failure: Failure::TimedOut { phase },
                         evidence: smith_domain_session::llm::Evidence::Unknown,

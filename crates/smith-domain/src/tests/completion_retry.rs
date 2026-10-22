@@ -229,6 +229,7 @@ fn a_restored_prefix_names_the_next_source_sequence_without_changing_the_retry()
         answered: Box::default(),
         workspace: None,
         grants: Box::new([crate::Grant {
+            renewable: true,
             name: crate::GrantName { account: 0, generation: 0 },
             valid: Duration::from_secs(100_000),
         }]),

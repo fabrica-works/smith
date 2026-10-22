@@ -153,7 +153,11 @@ fn a_colocated_host_gets_typed_machine_terminals_without_an_agent_channel() {
     assert_eq!(owner, Token::new(17));
     assert!(effects.event().is_none());
     assert!(effects.submissions().is_empty());
-    let grant = domain::Grant { name: domain::GrantName { account: 0, generation: 1 }, valid: Duration::from_secs(60) };
+    let grant = domain::Grant {
+        renewable: true,
+        name: domain::GrantName { account: 0, generation: 1 },
+        valid: Duration::from_secs(60),
+    };
     let value = channel::GrantValue::Withdrawn { account_id: Box::from(&b"acc"[..]), bearer: Box::from(&b"token"[..]) };
     effects.grant(grant, &value, Time::ZERO).expect("first grant");
     effects.grant(grant, &value, Time::from_nanos(1)).expect("same saved generation on another activation");

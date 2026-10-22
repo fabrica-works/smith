@@ -258,7 +258,7 @@ fn carried_start_messages_cross_the_wire_in_order_and_an_overfull_start_is_refus
                 grants: decoded
                     .grants
                     .iter()
-                    .map(|grant| agent::Grant { name: grant.name, valid: grant.valid })
+                    .map(|grant| agent::Grant { renewable: true, name: grant.name, valid: grant.valid })
                     .collect(),
             },
             &mut out,
@@ -361,7 +361,11 @@ fn an_empty_start_waits_without_a_fence_and_the_first_wire_message_opens_main() 
             workspace: None,
             transcript: decoded.transcript,
             answered: decoded.answered,
-            grants: decoded.grants.iter().map(|grant| agent::Grant { name: grant.name, valid: grant.valid }).collect(),
+            grants: decoded
+                .grants
+                .iter()
+                .map(|grant| agent::Grant { renewable: true, name: grant.name, valid: grant.valid })
+                .collect(),
         },
         &mut out,
     );
@@ -460,7 +464,11 @@ fn composed_start() -> Composed {
             workspace: None,
             transcript: decoded.transcript,
             answered: decoded.answered,
-            grants: decoded.grants.iter().map(|grant| agent::Grant { name: grant.name, valid: grant.valid }).collect(),
+            grants: decoded
+                .grants
+                .iter()
+                .map(|grant| agent::Grant { renewable: true, name: grant.name, valid: grant.valid })
+                .collect(),
         },
         &mut out,
     );

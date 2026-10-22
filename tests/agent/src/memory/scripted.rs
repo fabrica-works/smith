@@ -68,6 +68,7 @@ impl Memory {
             answered: Box::new([]),
             workspace: Some(super::workspace()),
             grants: Box::new([smith_domain::Grant {
+                renewable: true,
                 name: smith_domain::GrantName { account: 0, generation: 0 },
                 valid: Duration::from_secs(100_000),
             }]),

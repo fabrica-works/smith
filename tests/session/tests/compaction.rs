@@ -36,6 +36,7 @@ fn asked(seed: u64) -> World {
 
 fn context_too_long(world: &mut World) {
     world.step(session::Event::Failed {
+        retry_ok: true,
         owner: world.completing.expect("pending request"),
         failure: llm::Failure::ContextTooLong,
         evidence: llm::Evidence::Response { status: None },
@@ -459,6 +460,7 @@ fn a_final_note_due_during_a_compaction_retry_waits_for_the_new_window() {
     assert_eq!(world.prompts.last().expect("compaction").choice, llm::ToolChoice::None);
     world.env.now = skein_lib::Time::ZERO.saturating_add(skein_lib::Duration::from_secs(2));
     world.step(session::Event::Failed {
+        retry_ok: true,
         owner: world.completing.expect("compaction"),
         failure: llm::Failure::Overloaded,
         evidence: llm::Evidence::Response { status: None },
@@ -638,6 +640,7 @@ fn the_guards_refusal_compacts_the_window_once() {
     let detail = b"past the line: last prompt 1000 + new part 600 > line 1488";
     for _ in 0..2 {
         world.step(session::Event::Failed {
+            retry_ok: true,
             owner: world.completing.expect("ordinary request then compaction"),
             failure: llm::Failure::ContextTooLong,
             evidence: llm::Evidence::Unsent,

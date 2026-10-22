@@ -1057,6 +1057,7 @@ impl Counted {
             charter: charter(restoring),
             transcript: history,
             grants: Box::new([Grant {
+                renewable: true,
                 name: GrantName { account: 0, generation: 1 },
                 valid: Duration::from_secs(3600),
             }]),
@@ -1712,7 +1713,11 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
         charter: active,
         workspace: mounted,
         transcript: None,
-        grants: Box::new([Grant { name: GrantName { account: 0, generation: 1 }, valid: Duration::from_secs(3600) }]),
+        grants: Box::new([Grant {
+            renewable: true,
+            name: GrantName { account: 0, generation: 1 },
+            valid: Duration::from_secs(3600),
+        }]),
     });
     assert!(counted.admitted.is_some() && counted.read.is_some());
     assert_eq!(counted.calls, 0, "maximum retained paths and caller Start coexist before any provider effect");

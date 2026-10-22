@@ -158,6 +158,7 @@ fn an_actual_command_crosses_the_channel_and_outlasts_no_progress_until_its_term
         }),
         grants: Box::from([agent::Grant {
             name: agent::GrantName { account: 0, generation: 1 },
+            renewable: true,
             valid: Duration::from_secs(7200),
         }]),
     });

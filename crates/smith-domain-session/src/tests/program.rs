@@ -129,6 +129,7 @@ fn restored_program(fresh: bool) -> (Harness, Token) {
 fn a_gone_session_carries_the_window_over() {
     let (mut h, owner) = restored_program(false);
     let (owner, prompt) = calling(h.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::SessionGone,
         evidence: crate::llm::Evidence::Unsent,
@@ -148,12 +149,14 @@ fn a_gone_session_carries_the_window_over() {
 fn a_second_gone_session_ends_the_session() {
     let (mut h, owner) = restored_program(false);
     calling(h.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::SessionGone,
         evidence: crate::llm::Evidence::Unsent,
         detail: bytes(b"missing"),
     }));
     let ended = h.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::SessionGone,
         evidence: crate::llm::Evidence::Unsent,
@@ -168,6 +171,7 @@ fn a_second_gone_session_ends_the_session() {
 fn a_gone_session_carries_a_fresh_window_over() {
     let (mut h, owner) = restored_program(true);
     let (owner, prompt) = calling(h.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::SessionGone,
         evidence: crate::llm::Evidence::Unsent,

@@ -242,8 +242,8 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::Narrowed { owner, note, choice, names } => {
             session::narrowed(domain, env, owner, note, choice, names, out);
         }
-        Event::Failed { owner, failure, evidence, detail } => {
-            session::failed(domain, env, owner, failure, evidence, detail, out);
+        Event::Failed { owner, failure, evidence, detail, retry_ok } => {
+            session::failed(domain, env, owner, failure, evidence, detail, retry_ok, out);
         }
         Event::Cancelled { owner } => session::cancelled(domain, env, owner, out),
         Event::Done { owner, done } => session::io_done(domain, env, owner, done, out),

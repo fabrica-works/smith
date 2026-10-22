@@ -3,10 +3,10 @@
 //! the child domains (programming-model.md, section 4.5) before it returns, routing what is for the protocol
 //! layer out.
 //! It retains the run and session children, conversation and credential
-//! bindings, pending starts, turn handoffs, unsent completions waiting for
+//! bindings and issued renewal policies, pending starts, turn handoffs, unsent completions waiting for
 //! acknowledgements and bounded notices. [`step`],
 //! [`fire`] and [`resume`] are its entries (domain/run.md, sections 2, 3, 10,
-//! 13; domain/session.md, sections 3 and 5). It never knows provider
+//! 13; domain/session.md, sections 3–5). It never knows provider
 //! wire syntax, encoded turn size, credential secrets, forge state or host delivery policy.
 //!
 //! Hand-offs between the run and the sessions go both ways, so a chain of them
@@ -127,12 +127,14 @@ pub(crate) struct TurnHandoff {
 /// Issued provider identity survives session closing and is consumed by its terminal.
 #[derive(Debug)]
 pub(crate) struct IssuedCompletion {
+    pub(crate) renewable: bool,
     pub(crate) grant: Option<GrantName>,
     pub(crate) name: crate::llm::CompletionName,
 }
 
 #[derive(Debug)]
 pub(crate) struct Credential {
+    pub(crate) renewable: bool,
     pub(crate) name: GrantName,
     pub(crate) expires: Time,
     pub(crate) rejected: Option<u64>,

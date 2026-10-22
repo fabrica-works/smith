@@ -106,6 +106,7 @@ fn a_compactions_room_keeps_no_output_for_its_summary() {
     let owner = harness.yielded_with(selected, answer);
     let (_, prompt) = calling(harness.step(Event::Continue { session: owner, content: bytes(b"continue") }));
     let (_, summary) = calling(harness.step(Event::Failed {
+        retry_ok: true,
         owner,
         failure: Failure::ContextTooLong,
         evidence: crate::llm::Evidence::Unsent,

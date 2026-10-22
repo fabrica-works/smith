@@ -86,13 +86,15 @@ pub struct GrantName {
     pub generation: u64,
 }
 
-/// Credential-validity notice supplied by the host; the domain keeps only its name and monotonic lifetime.
+/// Credential metadata supplied by the host; the domain keeps its name, lifetime and renewal policy.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Grant {
     /// Host-supplied numeric credential account and generation; no secret credential bytes.
     pub name: GrantName,
     /// Remaining monotonic validity of the granted credential.
     pub valid: Duration,
+    /// False for a key, which its host never renews (domain/session.md, section 4).
+    pub renewable: bool,
 }
 
 /// Typed host, provider and IO inputs routed to the owned children. Start yields

@@ -303,6 +303,7 @@ fn fill(original: &Limits, route: Route, full_service: bool) {
         } else {
             assert!(
                 step(Event::Failed {
+                    retry_ok: true,
                     owner,
                     failure: Failure::Overloaded,
                     evidence: smith_domain_session::llm::Evidence::Unknown,
@@ -390,6 +391,7 @@ fn fill_service_tail(
     );
     assert!(
         step(Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: smith_domain_session::llm::Evidence::Unknown,
@@ -1124,6 +1126,7 @@ fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
         &meter,
         bound,
         Event::Failed {
+            retry_ok: true,
             owner,
             failure: Failure::Overloaded,
             evidence: smith_domain_session::llm::Evidence::Unknown,

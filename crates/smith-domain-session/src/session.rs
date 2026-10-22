@@ -818,6 +818,7 @@ fn unsent_finished(domain: &mut Domain, env: &Env<Limits>, owner: Token, end: En
     conclude(domain, env, id, out, mark);
 }
 
+#[expect(clippy::too_many_arguments, reason = "the terminal carries its issued credential retry eligibility")]
 pub(crate) fn failed(
     domain: &mut Domain,
     env: &Env<Limits>,
@@ -825,6 +826,7 @@ pub(crate) fn failed(
     failure: Failure,
     evidence: crate::llm::Evidence,
     detail: Box<[u8]>,
+    retry_ok: bool,
     out: &mut Queue<Request>,
 ) {
     let mark = out.len();
@@ -866,7 +868,7 @@ pub(crate) fn failed(
                     None => call(&mut session.conversation, id, 0, env, out),
                 }
             } else {
-                call_failed(attempt, failure, evidence, &session.conversation, &mut domain.rng, env)
+                call_failed(attempt, failure, evidence, retry_ok, &session.conversation, &mut domain.rng, env)
             }
         }
         State::Closing { end, waiting: waiting @ Waiting { call: true, .. } } => {
@@ -1859,6 +1861,7 @@ fn call_failed(
     attempt: u32,
     failure: Failure,
     evidence: crate::llm::Evidence,
+    retry_ok: bool,
     conversation: &Conversation,
     rng: &mut Rng,
     env: &Env<Limits>,
@@ -1885,8 +1888,12 @@ fn call_failed(
         | Failure::Unauthorized
         | Failure::Exhausted { .. } => failure,
     };
+    let response = match evidence {
+        crate::llm::Evidence::Response { .. } => true,
+        crate::llm::Evidence::Unsent | crate::llm::Evidence::Unknown => false,
+    };
     let decision = match failure {
-        Failure::Unauthorized if conversation.account.is_none() => Retry::Fail,
+        Failure::Unauthorized if conversation.account.is_none() || (!retry_ok && response) => Retry::Fail,
         Failure::Unauthorized
         | Failure::Overloaded
         | Failure::Unavailable

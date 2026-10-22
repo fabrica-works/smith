@@ -603,3 +603,29 @@ fn the_inline_answer_measures_the_exhausted_accounts_wait() {
         );
     }
 }
+
+#[test]
+fn grant_forms_keep_their_policy_at_start_and_refresh() {
+    for (form, renewable, admitted) in [
+        (host::Form::Credential(host::Scheme::Key), false, true),
+        (host::Form::Credential(host::Scheme::Bearer), true, true),
+        (host::Form::Withdrawn, true, true),
+        (host::Form::Program(host::SourceName::new(b"claude-code").expect("source name")), true, false),
+    ] {
+        let mut source = start();
+        source.grants[0].form = form;
+        let refresh = translate::grant(source.grants[0]);
+        assert_eq!(refresh.renewable, renewable, "refresh {form:?}");
+        assert_eq!(refresh.name, smith::GrantName { account: 0, generation: 1 });
+        assert_eq!(refresh.valid, source.grants[0].valid);
+        let decoded = translate::start(Token::new(1), source, &bounds());
+        if admitted {
+            let smith::Event::Start { grants, .. } = decoded.expect("existing form admitted") else {
+                panic!("expected root Start");
+            };
+            assert_eq!(grants.as_ref(), &[refresh], "start {form:?}");
+        } else {
+            assert_eq!(decoded, Err(host::Invalid::Grants), "program admission remains restricted");
+        }
+    }
+}

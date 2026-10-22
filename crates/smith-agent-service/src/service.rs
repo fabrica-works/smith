@@ -578,7 +578,7 @@ impl Service {
                 return;
             }
             grants
-                .push(domain::Grant { name: grant.name, valid: grant.valid })
+                .push(domain::Grant { name: grant.name, valid: grant.valid, renewable: grant.renewable })
                 .expect("grant count was checked at Start");
         }
         self.run_started = self.domain_env.now;

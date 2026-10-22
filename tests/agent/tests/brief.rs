@@ -376,6 +376,7 @@ fn the_first_provider_request_contains_the_carried_messages_with_the_briefs_inst
             transcript: None,
             answered: Box::default(),
             grants: Box::new([smith_domain::Grant {
+                renewable: true,
                 name: smith_domain::GrantName { account: 0, generation: 1 },
                 valid: skein_lib::Duration::from_secs(7200),
             }]),
@@ -592,6 +593,7 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
         transcript: Some(saved),
         answered: Box::default(),
         grants: Box::new([smith_domain::Grant {
+            renewable: true,
             name: smith_domain::GrantName { account: 0, generation: 1 },
             valid: Duration::from_secs(7200),
         }]),

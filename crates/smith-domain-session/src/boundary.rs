@@ -141,6 +141,8 @@ pub enum Event {
     /// Terminal for `Complete`: the call produced no message.
     Failed {
         owner: Token,
+        /// Whether an actual unauthorized call may recover; unsent calls remain recoverable.
+        retry_ok: bool,
         failure: Failure,
 
         /// Exact content-free transport evidence carried by the terminal.

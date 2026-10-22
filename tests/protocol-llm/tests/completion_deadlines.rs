@@ -148,7 +148,7 @@ fn deliver_failure(peer: &mut Peer, world: &mut World) {
         },
         "status follows the actual independent response head, never inferred from its diagnostic"
     );
-    world.step(session::Event::Failed { owner, failure, evidence, detail });
+    world.step(session::Event::Failed { owner, failure, evidence, detail, retry_ok: true });
 }
 
 #[test]

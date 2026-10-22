@@ -582,6 +582,7 @@ fn a_failed_sessions_end_carries_its_last_detail() {
     let mut world = recorded::World::new(6812, 256);
     world.open(recorded::opening(None, u64::MAX));
     world.step(session::Event::Failed {
+        retry_ok: true,
         owner: world.completing.expect("provider request"),
         failure: llm::Failure::Invalid,
         evidence: llm::Evidence::Response { status: Some(400) },
@@ -610,6 +611,7 @@ fn a_later_failure_replaces_the_kept_detail() {
     let mut world = recorded::World::new(6813, 256);
     world.open(recorded::opening(None, u64::MAX));
     world.step(session::Event::Failed {
+        retry_ok: true,
         owner: world.completing.expect("first provider request"),
         failure: llm::Failure::Overloaded,
         evidence: llm::Evidence::Response { status: Some(503) },
@@ -617,6 +619,7 @@ fn a_later_failure_replaces_the_kept_detail() {
     });
     world.fire();
     world.step(session::Event::Failed {
+        retry_ok: true,
         owner: world.completing.expect("second provider request"),
         failure: llm::Failure::Invalid,
         evidence: llm::Evidence::Response { status: Some(400) },
@@ -632,6 +635,7 @@ fn no_prompt_holds_a_kept_detail() {
     let mut world = recorded::World::new(6814, 256);
     world.open(recorded::opening(None, u64::MAX));
     world.step(session::Event::Failed {
+        retry_ok: true,
         owner: world.completing.expect("first provider request"),
         failure: llm::Failure::Overloaded,
         evidence: llm::Evidence::Response { status: Some(503) },

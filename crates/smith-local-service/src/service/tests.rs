@@ -7,7 +7,11 @@ use smith_host_domain::{Form, Scheme};
 use smith_protocol_channel::GrantValue;
 
 fn grant() -> smith_domain::Grant {
-    smith_domain::Grant { name: smith_domain::GrantName { account: 7, generation: 1 }, valid: Duration::from_secs(60) }
+    smith_domain::Grant {
+        renewable: true,
+        name: smith_domain::GrantName { account: 7, generation: 1 },
+        valid: Duration::from_secs(60),
+    }
 }
 
 #[test]

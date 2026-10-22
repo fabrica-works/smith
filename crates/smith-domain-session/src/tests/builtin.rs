@@ -264,6 +264,7 @@ fn an_owed_result_settles_at_a_retryable_failure() {
     drop(next_prompt(&mut harness));
     assert_eq!(
         harness.step(Event::Failed {
+            retry_ok: true,
             owner: session,
             failure: Failure::Unavailable,
             evidence: crate::llm::Evidence::Unsent,
@@ -381,6 +382,7 @@ fn failing_after_a_full_builtin_batch_fills_its_fact_bound() {
         Failure::Invalid,
         crate::llm::Evidence::Unsent,
         Box::default(),
+        true,
         &mut harness.out,
     );
     assert_full_facts(&mut harness, bound);

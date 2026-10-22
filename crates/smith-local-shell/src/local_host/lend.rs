@@ -37,6 +37,10 @@ impl Lent {
             agent::Grant {
                 name: agent::GrantName { account, generation: next },
                 valid: Duration::from_nanos(u64::MAX),
+                renewable: match value {
+                    GrantValue::Key(_) => false,
+                    GrantValue::Bearer(_) | GrantValue::Program(_) | GrantValue::Withdrawn { .. } => true,
+                },
             },
             value.clone(),
         )

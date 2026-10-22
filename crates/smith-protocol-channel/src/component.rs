@@ -803,9 +803,8 @@ impl Component {
                             };
                             match kept {
                                 Ok(()) => {
-                                    to_service.push(OpenEvent::Grant {
-                                        grant: smith_domain::Grant { name, valid: grant.valid() },
-                                    });
+                                    to_service
+                                        .push(OpenEvent::Grant { grant: crate::translate::refreshed_grant(grant) });
                                     self.machine.down(Request::Read, &mut self.events, below);
                                 }
                                 Err(_) => self.refuse_rules(below),

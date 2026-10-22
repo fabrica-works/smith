@@ -715,6 +715,7 @@ mod plain {
 
 #[test]
 #[expect(clippy::wildcard_enum_match_arm, reason = "the story names unexpected shell requests")]
+#[expect(clippy::too_many_lines, reason = "one inline composition story retains all boundary and cleanup assertions")]
 fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_spawning() {
     use skein_lib::Queue;
     let config = colocated_config();
@@ -740,6 +741,7 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
                 local::Request::Credential { account: 0 } => service.credential(
                     smith_domain::Grant {
                         name: smith_domain::GrantName { account: 0, generation: 1 },
+                        renewable: true,
                         valid: Duration::from_secs(7200),
                     },
                     smith_protocol_channel::GrantValue::Withdrawn {

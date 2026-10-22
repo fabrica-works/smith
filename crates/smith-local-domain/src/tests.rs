@@ -472,6 +472,7 @@ pub(super) fn spawned_chat_with_saved_hello() -> (Domain, Env<Limits>, Queue<Req
             form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             grant: smith_domain::Grant {
                 name: smith_domain::GrantName { account: 7, generation: 1 },
+                renewable: true,
                 valid: Duration::from_secs(60),
             },
         },
@@ -685,6 +686,7 @@ fn an_inline_runs_facts_wait_for_the_service() {
             form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             grant: smith_domain::Grant {
                 name: smith_domain::GrantName { account: 7, generation: 1 },
+                renewable: true,
                 valid: Duration::from_secs(60),
             },
         },
@@ -855,6 +857,7 @@ fn a_headless_start_reading_its_repository_head() -> (Domain, Env<Limits>, Queue
             form: smith_host_domain::Form::Credential(smith_host_domain::Scheme::Bearer),
             grant: smith_domain::Grant {
                 name: smith_domain::GrantName { account: 7, generation: 1 },
+                renewable: true,
                 valid: Duration::from_secs(60),
             },
         },
