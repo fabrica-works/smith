@@ -197,8 +197,8 @@ pub fn limits(mut io: skein_io::Limits, accounts: u32, refresh_lead: Duration) -
         exchanges: 1,
         listeners: 1,
         server: skein_http::server::Limits {
-            head: 1024,
-            headers: 8,
+            head: 16_384,
+            headers: 64,
             body: 1024,
             read: 1024,
             response: 1024,
@@ -248,3 +248,6 @@ pub(crate) fn status_words(source: &Source, openai: bool) -> &'static str {
         Source::SignIn { .. } | Source::Nothing => "",
     }
 }
+
+#[cfg(test)]
+mod tests;

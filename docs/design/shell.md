@@ -965,7 +965,11 @@ profile (2.1).
     usage, with `chatgpt.tokens.use.direct` required for a run;
     `resource` `https://api.openai.com/v1`.
   - **The redirect** `http://127.0.0.1:<port>/auth/callback`, whose port
-    alone may change between sign-ins (section 7).
+    alone may change between sign-ins (section 7). The callback listener
+    admits a request head of at most 16 KiB and 64 header fields: room for
+    a browser's roughly 2 KiB, 20-field navigation, its authorization
+    query and client hints, with bounded headroom for larger codes and
+    browser metadata.
   - **The condition:** OpenAI sanctions plan usage for open-source
     programs, and smith is MIT-licensed (3.1). A preset carries a
     provider's registration only on such a sanction; one withdrawn is a
