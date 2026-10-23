@@ -43,10 +43,7 @@ pub fn encode_start(
     }
     let mut messages = List::with_capacity(limits.start_messages);
     for message in start.messages {
-        let item = wire::Message::new(
-            limits,
-            wire::MessageParts { name: message.name.raw(), label: message.label, text: message.text },
-        )?;
+        let item = encode_message(message, limits)?;
         if messages.push(item).is_err() {
             return Err(Error::MissingValue);
         }
@@ -349,4 +346,17 @@ fn credential_value(bytes: Box<[u8]>, scheme: wire::Scheme, limits: &wire::Limit
         wire::CredentialValue::new(limits, wire::CredentialValueParts { scheme, bytes: skein_lib::Secret::new(bytes) })
             .or(Err(Error::Grants))?;
     Ok(wire::GrantValue::Credential(value))
+}
+
+/// Encode the same named control message in Start and on the live channel.
+pub(crate) fn encode_message(message: channel::Message, limits: &wire::Limits) -> Result<wire::Message, Error> {
+    Ok(wire::Message::new(
+        limits,
+        wire::MessageParts {
+            name: message.name.raw(),
+            label: message.label,
+            text: message.text,
+            finish_requested: message.finish_requested,
+        },
+    )?)
 }

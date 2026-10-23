@@ -1,5 +1,5 @@
-//! The budget's finishing phase and deferred child closures (domain/run.md,
-//! section 9.1). This keeps the exhausted ordinary part, final requests made,
+//! The run's finishing phase and deferred child closures (domain/run.md,
+//! sections 6 and 9.1). This keeps the cause, final requests made,
 //! and bounded ready runs. It never knows provider syntax or child results.
 
 use skein_lib::{Id, Set};
@@ -7,36 +7,54 @@ use skein_lib::{Id, Set};
 use crate::Exhausted;
 use crate::run::Run;
 
-/// Where a working run is after its ordinary pool is spent.
+/// Why a run begins its existing finishing allowance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Cause {
+    /// Ordinary budget admission exhausted this part.
+    Budget(Exhausted),
+    /// An admitted host message asked an Open main to reply and park.
+    Host,
+}
+
+impl Cause {
+    pub(crate) const fn exhausted(self) -> Option<Exhausted> {
+        match self {
+            Cause::Budget(exhausted) => Some(exhausted),
+            Cause::Host => None,
+        }
+    }
+}
+
+/// A run finishing after ordinary exhaustion or an admitted host request.
 #[derive(Debug)]
 pub(crate) enum WindDown {
     /// Child terminals settle before main's final completion.
-    Settling { children: u32, exhausted: Exhausted },
+    Settling { children: u32, cause: Cause },
     /// Main requests at most the reserve's turns; its first gate carries a note.
-    Finishing { used: u32, noted: bool, exhausted: Exhausted },
+    Finishing { used: u32, noted: bool, cause: Cause },
 }
 
 impl WindDown {
-    pub(crate) const fn new(children: u32, exhausted: Exhausted) -> WindDown {
+    pub(crate) const fn new(children: u32, cause: Cause) -> WindDown {
         if children == 0 {
-            WindDown::Finishing { used: 0, noted: false, exhausted }
+            WindDown::Finishing { used: 0, noted: false, cause }
         } else {
-            WindDown::Settling { children, exhausted }
+            WindDown::Settling { children, cause }
         }
     }
 
-    pub(crate) const fn exhausted(&self) -> Exhausted {
+    pub(crate) const fn cause(&self) -> Cause {
         match self {
-            WindDown::Settling { exhausted, .. } | WindDown::Finishing { exhausted, .. } => *exhausted,
+            WindDown::Settling { cause, .. } | WindDown::Finishing { cause, .. } => *cause,
         }
     }
 
     pub(crate) fn child_ended(&mut self) -> bool {
         match self {
-            WindDown::Settling { children, exhausted } => {
+            WindDown::Settling { children, cause } => {
                 *children = children.checked_sub(1).expect("one terminal per retained child");
                 if *children == 0 {
-                    *self = WindDown::Finishing { used: 0, noted: false, exhausted: *exhausted };
+                    *self = WindDown::Finishing { used: 0, noted: false, cause: *cause };
                     true
                 } else {
                     false

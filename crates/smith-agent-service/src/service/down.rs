@@ -26,11 +26,11 @@ pub(super) fn domain_down(service: &mut Service) {
             if service.domain_events.room() == 0 {
                 break;
             }
-            let PendingMessage { name, label, text } = match service.pending_messages.pop() {
+            let PendingMessage { finish_requested, name, label, text } = match service.pending_messages.pop() {
                 Some(message) => message,
                 None => break,
             };
-            service.domain_events.push(domain::Event::Message { run, name, label, text });
+            service.domain_events.push(domain::Event::Message { finish_requested, run, name, label, text });
         }
     }
     for _ in 0..service.domain_requests.capacity() {

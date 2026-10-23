@@ -21,7 +21,12 @@ pub(crate) fn start(client: Token, source: host::Start, limits: &Limits) -> Resu
     let mut messages = List::with_capacity(count);
     for message in source.messages {
         messages
-            .push(run::Message { name: message.name, label: message.label, text: message.text })
+            .push(run::Message {
+                finish_requested: message.finish_requested,
+                name: message.name,
+                label: message.label,
+                text: message.text,
+            })
             .expect("checked count");
     }
     let count = checked_count(source.grants.len())?;

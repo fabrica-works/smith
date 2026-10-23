@@ -18,6 +18,7 @@ fn two_full_inline_slots_and_their_emitted_prompts_fit_the_worst_case() {
         let mut start = inline::start(319, Job::HostTools);
         start.messages = (1..=limits.smith.run.messages)
             .map(|name| smith_host_domain::Message {
+                finish_requested: false,
                 name: Token::new(u64::from(name)),
                 label: Box::default(),
                 text: vec![b'x'; usize::try_from(limits.smith.run.message_bytes - 2).expect("small message cap")]

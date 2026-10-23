@@ -89,7 +89,15 @@ pub fn start_context(
     let mut messages = List::with_capacity(parts.messages.len());
     for message in parts.messages.into_boxed() {
         let parts = message.into_parts();
-        if messages.push(run::Message { name: Token::new(parts.name), label: parts.label, text: parts.text }).is_err() {
+        if messages
+            .push(run::Message {
+                finish_requested: parts.finish_requested,
+                name: Token::new(parts.name),
+                label: parts.label,
+                text: parts.text,
+            })
+            .is_err()
+        {
             return Err(Error::ResultCapacity);
         }
     }

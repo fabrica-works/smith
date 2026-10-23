@@ -385,6 +385,7 @@ fn message_admission_includes_the_label_separator_at_the_bound_and_one_byte_over
         &mut domain,
         &env,
         Input::Parent(parent::Event::Message {
+            finish_requested: false,
             agent: owner,
             name: Token::new(10),
             label: Box::from(*b"peer"),
@@ -397,6 +398,7 @@ fn message_admission_includes_the_label_separator_at_the_bound_and_one_byte_over
         &mut domain,
         &env,
         Input::Parent(parent::Event::Message {
+            finish_requested: false,
             agent: owner,
             name: Token::new(11),
             label: Box::from(*b"peer"),
@@ -419,6 +421,7 @@ fn message_admission_includes_the_label_separator_at_the_bound_and_one_byte_over
 fn carried_messages_are_checked_before_spawn_with_the_runs_rendered_byte_arithmetic() {
     let limits = crate::Limits { messages: 2, message_bytes: 9, ..limits() };
     let message = |name, text: &[u8]| crate::Message {
+        finish_requested: false,
         name: Token::new(name),
         label: b"person".as_slice().into(),
         text: text.into(),

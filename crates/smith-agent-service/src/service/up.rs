@@ -384,11 +384,11 @@ pub(super) fn channel_event(service: &mut Service, event: channel::OpenEvent) {
                 service.start_ready();
             }
         }
-        channel::OpenEvent::Message { name, label, text } => {
+        channel::OpenEvent::Message { finish_requested, name, label, text } => {
             if let Some(run) = service.admitted {
-                service.domain_events.push(domain::Event::Message { run, name, label, text });
+                service.domain_events.push(domain::Event::Message { finish_requested, run, name, label, text });
             } else {
-                service.pending_messages.push(PendingMessage { name, label, text });
+                service.pending_messages.push(PendingMessage { finish_requested, name, label, text });
             }
         }
         channel::OpenEvent::HostReturned { relay, reply } => {

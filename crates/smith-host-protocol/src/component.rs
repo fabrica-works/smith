@@ -219,9 +219,7 @@ impl Component {
     /// Relay one named sender label and text to the admitted agent.
     pub fn send_message(
         &mut self,
-        name: Token,
-        label: Box<[u8]>,
-        text: Box<[u8]>,
+        message: channel::Message,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
         below: &mut Queue<Lower>,
@@ -229,8 +227,7 @@ impl Component {
         if self.phase != Phase::Admitted {
             return Err(Error::Order);
         }
-        let record =
-            smith_channel::Message::new(&self.bodies, smith_channel::MessageParts { name: name.raw(), label, text })?;
+        let record = crate::translate::encode_message(message, &self.bodies)?;
         let Ok(length) = usize::try_from(record.measure()) else {
             return Err(Error::MissingValue);
         };
@@ -722,7 +719,7 @@ mod tests {
             endpoints: 1,
             calls: 1,
             start_bytes: u32::try_from(
-                smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+                smith_channel::v5::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
             )
             .expect("Start frame range"),
             channel: skein_channel::Limits {

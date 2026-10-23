@@ -12,7 +12,7 @@ fn limits() -> Limits {
     let decoded_call_bytes = 4096;
     let channel_bodies = smith_channel::CEILINGS;
     let schema = smith_channel::schema(&channel_bodies).expect("bounded channel schema");
-    let version = schema.version(4).expect("v4");
+    let version = schema.version(5).expect("v5");
     let mut largest = 0;
     for kind in &version.kinds {
         largest = largest.max(kind.largest);
@@ -243,14 +243,19 @@ fn machine_terminal_and_channel_message_keep_their_domain_names() {
     }
     channel_event(
         &mut service,
-        channel::OpenEvent::Message { name: owner, label: Box::from(&b"host"[..]), text: Box::from(&b"hello"[..]) },
+        channel::OpenEvent::Message {
+            finish_requested: true,
+            name: owner,
+            label: Box::from(&b"host"[..]),
+            text: Box::from(&b"hello"[..]),
+        },
     );
     assert_eq!(service.pending_messages.len(), 1);
     assert!(service.domain_events.is_empty());
     service.admitted = Some(Token::new(9));
     domain_down(&mut service);
     match service.domain_events.pop().expect("message") {
-        domain::Event::Message { run, name, label, text } => {
+        domain::Event::Message { finish_requested: true, run, name, label, text } => {
             assert_eq!(label.as_ref(), b"host");
             assert_eq!(run, Token::new(9));
             assert_eq!(name, owner);
@@ -473,7 +478,7 @@ fn event_service() -> Service {
             profile: b"test".as_slice().into(),
             capture: smith_events::Capture::Calls,
             delivery: smith_events::Delivery::Complete,
-            versions: smith_events::Versions { events: 4, channel: 4, charter: 4, transcript: 6, chat_store: None },
+            versions: smith_events::Versions { events: 4, channel: 5, charter: 4, transcript: 6, chat_store: None },
             limits: List::with_capacity(0),
         },
     );

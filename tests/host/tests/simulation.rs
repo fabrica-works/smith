@@ -71,6 +71,7 @@ fn turn(world: &mut World, number: u32, spent: u64, read: Option<Token>, bytes: 
 }
 fn message(world: &mut World, name: u64, bytes: usize) {
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.agent(),
         name: Token::new(name),
         label: Box::new([]),
@@ -112,6 +113,7 @@ fn process_started_precedes_agent_admitted_and_start_is_first() {
     assert!(!world.seen.admitted);
     // A guessed lower token before Started is not a legitimate parent handle.
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.owner(),
         name: Token::new(2),
         label: Box::new([]),
@@ -486,18 +488,20 @@ fn a_message_sends_its_label_and_text_to_the_agent_as_given() {
     let mut world = World::new(242, limits());
     world.live();
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.agent(),
         name: Token::new(34),
         label: b"reviewer".as_slice().into(),
         text: b"ready to proceed".as_slice().into(),
     }));
-    let Some(Down::Message { name, label, text }) = world.seen.down.last() else {
+    let Some(Down::Message { finish_requested: false, name, label, text }) = world.seen.down.last() else {
         panic!("the host sends the accepted message");
     };
     assert_eq!(*name, Token::new(34));
     assert_eq!(label.as_ref(), b"reviewer");
     assert_eq!(text.as_ref(), b"ready to proceed");
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.agent(),
         name: Token::new(35),
         label: b"x".as_slice().into(),
@@ -1374,6 +1378,7 @@ fn the_kit_counts_the_label_separator_at_the_exact_message_bound_and_one_byte_ov
     let mut world = World::new(1051, smith_host_domain::Limits { message_bytes: 12, messages: 2, ..limits() });
     world.live();
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.agent(),
         name: Token::new(1),
         label: Box::from(*b"peer"),
@@ -1382,6 +1387,7 @@ fn the_kit_counts_the_label_separator_at_the_exact_message_bound_and_one_byte_ov
     assert!(world.seen.bounces.is_empty(), "twelve rendered bytes fit");
     world.sent();
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.agent(),
         name: Token::new(2),
         label: Box::from(*b"peer"),

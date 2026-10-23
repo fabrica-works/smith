@@ -16,6 +16,7 @@ fn story(seed: u64) -> (Vec<String>, Vec<Option<smith_host_domain::RunResult>>) 
         world.schedule.send(
             at,
             parent::Event::Message {
+                finish_requested: false,
                 agent: world.handle(Token::new(client)),
                 name: Token::new(90 + client),
                 label: b"person".as_slice().into(),

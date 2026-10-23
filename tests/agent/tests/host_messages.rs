@@ -44,12 +44,15 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut u3
                 let name = Token::new(u64::from(*woke));
                 *woke += 1;
                 host.event(Input::Parent(parent::Event::Message {
+                    finish_requested: false,
                     agent: host.agent(),
                     name,
                     label: b"person".as_slice().into(),
                     text: b"live host".as_slice().into(),
                 }));
-                let Down::Message { name, label, text } = host.seen.down.last().expect("actual downlink write") else {
+                let Down::Message { finish_requested: false, name, label, text } =
+                    host.seen.down.last().expect("actual downlink write")
+                else {
                     panic!("parent input must become the actual Message Send")
                 };
                 agent.message_at(*at, *name, label.clone(), text.clone());

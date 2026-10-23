@@ -177,7 +177,12 @@ impl Lines {
             };
             if let Some(name) = name {
                 messages
-                    .push(host::Message { name, label: Box::from(LABEL), text: line.text.clone() })
+                    .push(host::Message {
+                        finish_requested: false,
+                        name,
+                        label: Box::from(LABEL),
+                        text: line.text.clone(),
+                    })
                     .expect("one message per held line");
                 line.stage = Stage::Relayed { name };
             }

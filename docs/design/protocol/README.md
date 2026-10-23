@@ -360,6 +360,8 @@ to an older reader or writer. Each has one version at a time.
   - **transcripts' sixth:** an opening turn's account and backend
     (transcript.md, section 6);
   - **the events' fourth** (events.md, section 6).
+- **The channel's fifth** adds the typed `finish_requested` bit to live and
+  Start-carried messages; its halves move together (channel.md, sections 2–3).
 - **A build says which it speaks.** `smith check` prints each format's
   version (`docs/design/shell.md`), and the event stream's header carries
   them (events.md, section 3.2), so a mismatch shows before a run.

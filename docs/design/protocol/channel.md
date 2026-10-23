@@ -73,6 +73,10 @@ of domain/host.md, section 2.
   one version, its release's, and offers only that one: the channel is
   pre-release, and no half reads an older version (README.md, section
   8).
+  Version 5 adds `Message.finish_requested`, a required boolean after text,
+  including messages nested in Start. It replaces version 4; kind numbers,
+  charter v4 and transcript v6 stay unchanged. Each message body grows by
+  one byte; generated bounds and golden bytes follow the new schema.
 - **The credential** is empty over a spawned agent's pipes. A connected
   agent's is still open (README.md, section 11).
 - **The agent accepts at once** over pipes. A daemon decides by its
@@ -100,7 +104,7 @@ of domain/host.md, section 2.
 | Kind | Record | When |
 |---|---|---|
 | start | the start (below) | first, once |
-| message | a name; the sender's label; the text | any time after the start, in order |
+| message | a name; the sender's label; the text; `finish_requested` | any time after the start, in order |
 | answer | a call's name, and its answer (below) | once per call, also after a cancel |
 | acknowledge | a turn's number: that turn and every one before it are kept durably | as the host keeps them |
 | grant | an account; a generation; how long it is valid; its value (section 6) | when the host refreshes one |
@@ -141,8 +145,8 @@ of domain/host.md, section 2.
   they have no open place in the history to go back to (domain/run.md,
   section 6);
 - **the messages** that triggered the run, if any: each a message record
-  (a name, the sender's label, the text), in order, at most as many as
-  the run's inbox holds, each within the run's message bound as the run
+  (a name, the sender's label, the text, `finish_requested`), in order, at
+  most as many as the run's inbox holds, each within its message bound as it
   reads it (section 5); a start whose messages do not fit is invalid.
   They enter the inbox at admission, before any message sent after the
   start (domain/host.md, section 2). A headless host sends its prompt so;

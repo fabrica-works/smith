@@ -62,7 +62,7 @@ pub enum Observation {
     /// A saved host decision reached the domain vocabulary with its stable name.
     AgentSavedHost { activation: u64, tool: Box<[u8]>, text: Box<[u8]>, error: bool },
     /// Host's sender label and message text reached the agent's domain face.
-    AgentMessage { name: skein_lib::Token, label: Box<[u8]>, text: Box<[u8]> },
+    AgentMessage { finish_requested: bool, name: skein_lib::Token, label: Box<[u8]>, text: Box<[u8]> },
     /// The host saw the run wait after reading a named message.
     HostWaiting { read: Option<skein_lib::Token> },
     /// The host received a long operation's bounded span.
@@ -447,8 +447,8 @@ impl Peer {
                     assert!(self.agent_start.replace(start).is_none(), "one decoded Start per channel");
                 }
                 agent::OpenEvent::Ended { why } => output.push(Observation::AgentEnded(why)),
-                agent::OpenEvent::Message { name, label, text } => {
-                    output.push(Observation::AgentMessage { name, label, text });
+                agent::OpenEvent::Message { finish_requested, name, label, text } => {
+                    output.push(Observation::AgentMessage { finish_requested, name, label, text });
                 }
                 agent::OpenEvent::HostReturned { relay, reply } => {
                     output.push(Observation::AgentHostReturned { relay, reply });
@@ -480,7 +480,7 @@ pub fn test_endpoints() -> agent::Endpoints {
 
 fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
     let schema = smith_channel::schema(&bodies).expect("bounded bodies");
-    let version = schema.version(4).expect("v4");
+    let version = schema.version(5).expect("v5");
     let largest = version.kinds.iter().map(|kind| kind.largest).max().expect("kinds");
     skein_channel::Limits {
         chunk: 4096,
@@ -850,12 +850,10 @@ impl World {
     }
 
     /// Relay one named message through the host's half.
-    pub fn send_message(&mut self, name: skein_lib::Token, label: Box<[u8]>, text: Box<[u8]>) {
+    pub fn send_message(&mut self, name: skein_lib::Token, label: Box<[u8]>, text: Box<[u8]>, finish_requested: bool) {
         if let Half::Host(host) = &mut self.host.half {
             host.send_message(
-                name,
-                label,
-                text,
+                smith_host_domain::Message { finish_requested, name, label, text },
                 skein_lib::Token::new(5),
                 &mut self.host.host_events,
                 &mut self.host.below,

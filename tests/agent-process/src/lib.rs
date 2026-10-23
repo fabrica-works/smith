@@ -307,7 +307,7 @@ fn host_with_limits(mut limits: channel::Limits) -> ScriptedPeer {
         }
     }
     limits.channel.output_bytes = largest.checked_add(8).expect("host frame");
-    ScriptedPeer::new(schema, Role::Initiator, limits.channel, 4, Box::new([])).expect("scripted host")
+    ScriptedPeer::new(schema, Role::Initiator, limits.channel, 5, Box::new([])).expect("scripted host")
 }
 
 /// One activation Start sent by the scripted host, ending with an Answer.

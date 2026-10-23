@@ -23,7 +23,7 @@ fn open_main_is_told_to_reply_without_a_result_contract() {
 #[test]
 fn open_last_reply_and_wind_down_use_the_approved_words() {
     assert_eq!(
-        wind_down_note(Mode::Open, Reserve { turns: 2, time: Duration::from_millis(750) }).as_ref(),
+        wind_down_note(Mode::Open, crate::wind_down::Cause::Budget(crate::Exhausted::Turns), Reserve { turns: 2, time: Duration::from_millis(750) }).as_ref(),
         b"The ordinary budget is spent. Reply now with what you have. You have at most 2 final completions and less than a second to reply. Use text only; promise no later work."
     );
     assert_eq!(last_reply().as_ref(), b"Reply now with what you have. Use text only; promise no later work.");
@@ -52,7 +52,14 @@ fn open_mechanics_fit_the_existing_finite_measurement() {
     render_budget(Mode::Finite, &mut finite, budget, reserve, true);
     render_budget(Mode::Open, &mut open, budget, reserve, true);
     assert!(open.len <= finite.len);
-    assert!(wind_down_note(Mode::Open, reserve).len() <= wind_down_note(Mode::Finite, reserve).len());
+    assert!(
+        wind_down_note(Mode::Open, crate::wind_down::Cause::Budget(crate::Exhausted::Turns), reserve).len()
+            <= wind_down_note(Mode::Finite, crate::wind_down::Cause::Budget(crate::Exhausted::Turns), reserve).len()
+    );
+    assert!(
+        wind_down_note(Mode::Open, crate::wind_down::Cause::Host, reserve).len()
+            <= wind_down_note(Mode::Finite, crate::wind_down::Cause::Budget(crate::Exhausted::Turns), reserve).len()
+    );
     assert!(last_reply().len() <= finish_now().len());
     let mut finishing = Text::measuring();
     render_finishing(

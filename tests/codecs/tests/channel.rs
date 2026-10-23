@@ -2,11 +2,11 @@
 
 use skein_channel::Direction;
 use skein_lib::Reader;
-use smith_channel::{Answer, CEILINGS, Start, V4, schema};
+use smith_channel::{Answer, CEILINGS, Start, V5, schema};
 
 #[test]
 fn channel_goldens_decode_at_their_measured_length() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v4");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v5");
     for name in ["record_start_smallest.bin", "record_start_full.bin"] {
         let bytes = std::fs::read(root.join(name)).expect("start golden");
         let value = Start::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("start decodes");
@@ -24,9 +24,9 @@ fn every_required_kind_has_its_direction_and_bound_in_the_schema() {
     let table = schema(&CEILINGS).expect("schema bounds fit");
     assert_eq!(table.magic, *b"smth");
     assert_eq!(table.versions.len(), 1);
-    let version = table.version(4).expect("version four");
+    let version = table.version(5).expect("version five");
     assert_eq!(version.kinds.len(), 20);
-    for (index, rule) in V4.iter().enumerate() {
+    for (index, rule) in V5.iter().enumerate() {
         assert!(rule.required, "all initial kinds are required");
         let kind = version.kind(rule.kind).expect("required kind is listed");
         assert_eq!(kind.direction, rule.direction);
@@ -46,7 +46,7 @@ fn every_required_kind_has_its_direction_and_bound_in_the_schema() {
 
 #[test]
 fn message_refusal_goldens_keep_each_typed_reason() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v4");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v5");
     for name in ["record_message_refused_smallest.bin", "record_message_refused_full.bin"] {
         let bytes = std::fs::read(root.join(name)).expect("refusal golden");
         let value =
@@ -59,13 +59,13 @@ fn message_refusal_goldens_keep_each_typed_reason() {
 fn channel_start_goldens_seal_the_optional_fixed_sixteen_byte_identity() {
     let absent = Start::decode(
         &CEILINGS,
-        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v4/record_start_smallest.bin")),
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v5/record_start_smallest.bin")),
     )
     .expect("absent identity golden");
     assert_eq!(absent.identity(), &None);
     let present = Start::decode(
         &CEILINGS,
-        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v4/record_start_full.bin")),
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v5/record_start_full.bin")),
     )
     .expect("present identity golden");
     assert_eq!(present.identity(), &Some([165; 16]));
@@ -75,13 +75,13 @@ fn channel_start_goldens_seal_the_optional_fixed_sixteen_byte_identity() {
 fn channel_turn_goldens_keep_the_declared_window_flag() {
     let first = smith_channel::Turn::decode(
         &CEILINGS,
-        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v4/record_turn_full.bin")),
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v5/record_turn_full.bin")),
     )
     .expect("window flag golden");
     assert!(first.opens_window());
     let ordinary = smith_channel::Turn::decode(
         &CEILINGS,
-        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v4/record_turn_smallest.bin")),
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v5/record_turn_smallest.bin")),
     )
     .expect("ordinary flag golden");
     assert!(!ordinary.opens_window());
@@ -89,7 +89,7 @@ fn channel_turn_goldens_keep_the_declared_window_flag() {
 
 #[test]
 fn live_goldens_decode_at_their_measured_length() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v4");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/smith-channel/golden/v5");
     for name in ["record_live_smallest.bin", "record_live_full.bin"] {
         let bytes = std::fs::read(root.join(name)).expect("live golden");
         let value = smith_channel::Live::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("live decodes");
@@ -129,12 +129,12 @@ fn credential_value(scheme: smith_channel::Scheme) -> smith_channel::GrantValue 
     )
 }
 
-fn program_value(name: &[u8]) -> Result<smith_channel::GrantValue, smith_channel::v4::Problem> {
+fn program_value(name: &[u8]) -> Result<smith_channel::GrantValue, smith_channel::v5::Problem> {
     smith_channel::ProgramValue::new(&CEILINGS, smith_channel::ProgramValueParts { name: Box::from(name) })
         .map(smith_channel::GrantValue::Program)
 }
 
-fn withdrawn_value(id: &[u8], bearer_length: usize) -> Result<smith_channel::GrantValue, smith_channel::v4::Problem> {
+fn withdrawn_value(id: &[u8], bearer_length: usize) -> Result<smith_channel::GrantValue, smith_channel::v5::Problem> {
     smith_channel::WithdrawnValue::new(
         &CEILINGS,
         smith_channel::WithdrawnValueParts {

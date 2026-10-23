@@ -5,9 +5,9 @@
 use skein_channel::{Direction, Kind, Role, Schema, Term, Version};
 use skein_lib::List;
 
-use crate::v4;
+use crate::v5;
 
-/// A version-four body's number, sender, admission obligation and codec.
+/// A version-five body's number, sender, admission obligation and codec.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[expect(
     clippy::partial_pub_fields,
@@ -53,8 +53,8 @@ pub enum Overflow {
     Frame,
 }
 
-/// The 20 kinds required by channel version four, in wire number order.
-pub const V4: &[KindRule] = &[
+/// The 20 kinds required by channel version five, in wire number order.
+pub const V5: &[KindRule] = &[
     KindRule { kind: 0x0100, direction: Direction::FromInitiator, required: true, body: Body::Start },
     KindRule { kind: 0x0101, direction: Direction::FromInitiator, required: true, body: Body::Message },
     KindRule { kind: 0x0102, direction: Direction::FromInitiator, required: true, body: Body::HostAnswer },
@@ -77,42 +77,42 @@ pub const V4: &[KindRule] = &[
     KindRule { kind: 0x0113, direction: Direction::FromResponder, required: true, body: Body::AccountRefused },
 ];
 
-/// Build the version-four channel schema from receiving codec limits.
+/// Build the version-five channel schema from receiving codec limits.
 #[expect(clippy::manual_let_else, reason = "the strict step subset uses exhaustive matches")]
-pub fn schema(limits: &v4::Limits) -> Result<Schema, Overflow> {
+pub fn schema(limits: &v5::Limits) -> Result<Schema, Overflow> {
     let mut kinds = List::with_capacity(20);
-    for rule in V4 {
+    for rule in V5 {
         let largest = match rule.body {
-            Body::Start => v4::Start::worst_case_bytes(limits),
-            Body::Message => v4::Message::worst_case_bytes(limits),
-            Body::MessageRefused => v4::MessageRefused::worst_case_bytes(limits),
-            Body::HostAnswer => v4::HostAnswer::worst_case_bytes(limits),
-            Body::Acknowledge => v4::Acknowledge::worst_case_bytes(limits),
-            Body::GrantRefresh => v4::GrantRefresh::worst_case_bytes(limits),
-            Body::Cancel => v4::Cancel::worst_case_bytes(limits),
-            Body::Admitted => v4::Admitted::worst_case_bytes(limits),
-            Body::Call => v4::Call::worst_case_bytes(limits),
-            Body::Withdraw => v4::Withdraw::worst_case_bytes(limits),
-            Body::Turn => v4::Turn::worst_case_bytes(limits),
-            Body::Waiting => v4::Waiting::worst_case_bytes(limits),
-            Body::Long => v4::Long::worst_case_bytes(limits),
-            Body::LongDone => v4::LongDone::worst_case_bytes(limits),
-            Body::Unauthorized => v4::Unauthorized::worst_case_bytes(limits),
-            Body::Limited => v4::Limited::worst_case_bytes(limits),
-            Body::Fact => v4::Fact::worst_case_bytes(limits),
-            Body::Answer => v4::Answer::worst_case_bytes(limits),
-            Body::AccountRefused => v4::AccountRefused::worst_case_bytes(limits),
-            Body::Live => v4::Live::worst_case_bytes(limits),
+            Body::Start => v5::Start::worst_case_bytes(limits),
+            Body::Message => v5::Message::worst_case_bytes(limits),
+            Body::MessageRefused => v5::MessageRefused::worst_case_bytes(limits),
+            Body::HostAnswer => v5::HostAnswer::worst_case_bytes(limits),
+            Body::Acknowledge => v5::Acknowledge::worst_case_bytes(limits),
+            Body::GrantRefresh => v5::GrantRefresh::worst_case_bytes(limits),
+            Body::Cancel => v5::Cancel::worst_case_bytes(limits),
+            Body::Admitted => v5::Admitted::worst_case_bytes(limits),
+            Body::Call => v5::Call::worst_case_bytes(limits),
+            Body::Withdraw => v5::Withdraw::worst_case_bytes(limits),
+            Body::Turn => v5::Turn::worst_case_bytes(limits),
+            Body::Waiting => v5::Waiting::worst_case_bytes(limits),
+            Body::Long => v5::Long::worst_case_bytes(limits),
+            Body::LongDone => v5::LongDone::worst_case_bytes(limits),
+            Body::Unauthorized => v5::Unauthorized::worst_case_bytes(limits),
+            Body::Limited => v5::Limited::worst_case_bytes(limits),
+            Body::Fact => v5::Fact::worst_case_bytes(limits),
+            Body::Answer => v5::Answer::worst_case_bytes(limits),
+            Body::AccountRefused => v5::AccountRefused::worst_case_bytes(limits),
+            Body::Live => v5::Live::worst_case_bytes(limits),
         };
         let largest = largest.ok_or(Overflow::Body)?;
         let largest = match u32::try_from(largest) {
             Ok(largest) => largest,
             Err(_) => return Err(Overflow::Frame),
         };
-        kinds.push(Kind { kind: rule.kind, direction: rule.direction, largest }).expect("V4 has exactly 20 kinds");
+        kinds.push(Kind { kind: rule.kind, direction: rule.direction, largest }).expect("V5 has exactly 20 kinds");
     }
     let mut versions = List::with_capacity(1);
-    versions.push(Version { version: 4, kinds }).expect("one version has one slot");
+    versions.push(Version { version: 5, kinds }).expect("one version has one slot");
     Ok(Schema { magic: *b"smth", versions })
 }
 
@@ -120,7 +120,7 @@ pub fn schema(limits: &v4::Limits) -> Result<Schema, Overflow> {
 /// Contract: `protocol/channel.md`, section 2.
 #[must_use]
 pub fn peer_terms_gap(schema: &Schema, role: Role, version: u16, terms: &List<Term>) -> Option<u16> {
-    required_terms_gap(schema, role, version, terms, V4)
+    required_terms_gap(schema, role, version, terms, V5)
 }
 
 fn required_terms_gap(
@@ -154,7 +154,7 @@ fn required_terms_gap(
 
 impl KindRule {
     /// The wire format version this codec writes and reads.
-    pub const FORMAT_VERSION: u64 = 4;
+    pub const FORMAT_VERSION: u64 = 5;
 }
 
 #[cfg(test)]
@@ -176,15 +176,15 @@ mod optional_tests {
             kinds.push(Kind { kind: rule.kind, direction: rule.direction, largest: 32 }).expect("four test kinds");
         }
         let mut versions = List::with_capacity(1);
-        versions.push(Version { version: 4, kinds }).expect("one test version");
+        versions.push(Version { version: 5, kinds }).expect("one test version");
         let schema = Schema { magic: *b"smth", versions };
         let mut host_terms = List::with_capacity(1);
         host_terms.push(Term { kind: 0x0100, largest: 32 }).expect("one required kind");
-        assert_eq!(required_terms_gap(&schema, Role::Initiator, 4, &host_terms, &rules), None);
-        assert_eq!(required_terms_gap(&schema, Role::Initiator, 4, &List::with_capacity(0), &rules), Some(0x0100));
+        assert_eq!(required_terms_gap(&schema, Role::Initiator, 5, &host_terms, &rules), None);
+        assert_eq!(required_terms_gap(&schema, Role::Initiator, 5, &List::with_capacity(0), &rules), Some(0x0100));
         let mut agent_terms = List::with_capacity(1);
         agent_terms.push(Term { kind: 0x0102, largest: 32 }).expect("one required kind");
-        assert_eq!(required_terms_gap(&schema, Role::Responder, 4, &agent_terms, &rules), None);
-        assert_eq!(required_terms_gap(&schema, Role::Responder, 4, &List::with_capacity(0), &rules), Some(0x0102));
+        assert_eq!(required_terms_gap(&schema, Role::Responder, 5, &agent_terms, &rules), None);
+        assert_eq!(required_terms_gap(&schema, Role::Responder, 5, &List::with_capacity(0), &rules), Some(0x0102));
     }
 }

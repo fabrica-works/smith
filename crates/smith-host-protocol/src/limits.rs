@@ -36,7 +36,7 @@ pub enum Error {
     /// The service sent a record before or after its permitted channel phase.
     Order,
     /// A host record does not fit the configured channel body limits.
-    Body(smith_channel::v4::Problem),
+    Body(smith_channel::v5::Problem),
     /// The measured frame could not be written.
     Frame(skein_channel::FrameError),
     /// A measured body could not be written into its allocation.
@@ -47,8 +47,8 @@ pub enum Error {
     Value,
 }
 
-impl From<smith_channel::v4::Problem> for Error {
-    fn from(problem: smith_channel::v4::Problem) -> Error {
+impl From<smith_channel::v5::Problem> for Error {
+    fn from(problem: smith_channel::v5::Problem) -> Error {
         Error::Body(problem)
     }
 }

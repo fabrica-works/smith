@@ -12,6 +12,8 @@ use skein_lib::{Duration, Time, Token};
 /// Named labelled message carried in a parent Start, ending with its activation.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Message {
+    /// Admitted Open messages request a final reply; Finite treats them as ordinary words.
+    pub finish_requested: bool,
     pub name: Token,
     pub label: Box<[u8]>,
     pub text: Box<[u8]>,
@@ -751,6 +753,8 @@ pub enum Down {
     },
     /// Named ordered parent message.
     Message {
+        /// Admitted Open messages request a final reply; Finite ignores this bit.
+        finish_requested: bool,
         /// Opaque parent name; reserved until read fence covers it.
         name: Token,
         /// Opaque sender label; label and text together fit `Limits::message_bytes`.

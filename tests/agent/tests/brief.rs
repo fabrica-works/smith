@@ -356,11 +356,13 @@ fn the_first_provider_request_contains_the_carried_messages_with_the_briefs_inst
         let start = smith_domain::Event::Start {
             messages: Box::new([
                 run::Message {
+                    finish_requested: false,
                     name: Token::new(99),
                     label: b"person".as_slice().into(),
                     text: b"first".as_slice().into(),
                 },
                 run::Message {
+                    finish_requested: false,
                     name: Token::new(0),
                     label: b"person".as_slice().into(),
                     text: b"second".as_slice().into(),
@@ -598,6 +600,7 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
             valid: Duration::from_secs(7200),
         }]),
         messages: Box::new([run::Message {
+            finish_requested: false,
             name: Token::new(0),
             label: b"person".as_slice().into(),
             text: b"waking line".as_slice().into(),

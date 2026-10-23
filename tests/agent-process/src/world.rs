@@ -1151,7 +1151,7 @@ impl World {
         self.message = Some(
             smith_channel::Message::new(
                 &smith_channel::CEILINGS,
-                smith_channel::MessageParts { name, label: label.into(), text: text.into() },
+                smith_channel::MessageParts { finish_requested: false, name, label: label.into(), text: text.into() },
             )
             .expect("selected host message fits the real channel schema"),
         );

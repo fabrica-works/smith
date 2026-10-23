@@ -1119,7 +1119,7 @@ impl Counted {
     fn wake(&mut self, name: Token, text: Box<[u8]>) {
         self.waiting = false;
         let run = self.admitted.expect("actual admitted handle");
-        self.step(Event::Message { label: b"host".as_slice().into(), run, name, text });
+        self.step(Event::Message { finish_requested: false, label: b"host".as_slice().into(), run, name, text });
     }
 
     fn schema_constructor(&self, prompt: &llm::Prompt) -> u64 {
@@ -1347,7 +1347,13 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
         counted.waiting = false;
         let run = counted.admitted.expect("actual admitted handle");
         let text = if at == 0 { vec![b'x'; LARGE - 6].into_boxed_slice() } else { b"x".as_slice().into() };
-        counted.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(u64::from(at)), text });
+        counted.step(Event::Message {
+            finish_requested: false,
+            label: Box::from(&b"host"[..]),
+            run,
+            name: Token::new(u64::from(at)),
+            text,
+        });
         counted.cycle(configuration, cycles + 1);
         assert!(counted.waiting, "wake {at}: records={} answer={:?}", counted.records.len(), counted.answer);
     }

@@ -1,4 +1,4 @@
-//! Bounded channel records and the version-four kind table. This crate keeps no
+//! Bounded channel records and the version-five kind table. This crate keeps no
 //! runtime state and knows no domain, credentials or host policy. Generated
 //! constructors, encoders and decoders handle bodies; [`schema`] advertises
 //! their largest permitted encodings. Contracts: `protocol/channel.md`,
@@ -10,18 +10,18 @@
 extern crate alloc;
 
 #[rustfmt::skip]
-#[path = "generated/v4.rs"]
-pub mod v4;
+#[path = "generated/v5.rs"]
+pub mod v5;
 
 mod kinds;
 
-pub use kinds::{KindRule, Overflow, V4, peer_terms_gap, schema};
-pub use v4::{
+pub use kinds::{KindRule, Overflow, V5, peer_terms_gap, schema};
+pub use v5::{
     Cap, CompletionLimit, CompletionPhase, LimitFailure, LimitFailureParts, PathCap, PathCapParts, PoolLimit,
     PoolLimitParts, ResponseEvidence, ResponseEvidenceParts, TimeoutFailure, TimeoutFailureParts,
 };
 
-pub use v4::{
+pub use v5::{
     Accepted, AcceptedParts, AccountRefused, AccountRefusedParts, Acknowledge, AcknowledgeParts, Admitted,
     AdmittedParts, Answer, AnswerParts, AnsweredCall, AnsweredCallParts, Ask, BudgetCeiling, BudgetCeilingValue,
     BudgetCeilingValueParts, BudgetChecks, BudgetChecksParts, BudgetCompletion, BudgetCompletionParts, BudgetFailure,

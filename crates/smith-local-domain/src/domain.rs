@@ -934,7 +934,13 @@ fn send_line(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
             &mut domain.agent,
             env.now,
             env.wall,
-            parent::Event::Message { agent: run, name, label: message.label, text: message.text },
+            parent::Event::Message {
+                finish_requested: message.finish_requested,
+                agent: run,
+                name,
+                label: message.label,
+                text: message.text,
+            },
         );
         observe(domain, Fact::Message { name });
     }

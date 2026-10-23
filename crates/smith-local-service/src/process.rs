@@ -1236,10 +1236,8 @@ impl ProcessAdapter {
                             &mut self.io_requests,
                         )
                     }
-                    host::Down::Message { name, label, text } => process.send_message(
-                        name,
-                        label,
-                        text,
+                    host::Down::Message { finish_requested, name, label, text } => process.send_message(
+                        host::Message { finish_requested, name, label, text },
                         send_token,
                         &mut self.process_events,
                         &mut self.io_requests,

@@ -1278,6 +1278,7 @@ impl World {
             && let Some(message) = self.awaiting_message.take()
         {
             self.run_stage.push(run::Event::Message {
+                finish_requested: message.finish_requested,
                 run,
                 name: message.name,
                 label: message.label,
@@ -2057,6 +2058,7 @@ impl World {
         let name = Token::new(u64::MAX.wrapping_sub(self.message_name));
         self.message_name += 1;
         self.run_stage.push(run::Event::Message {
+            finish_requested: false,
             run,
             name,
             label: b"person".as_slice().into(),

@@ -57,8 +57,10 @@ impl Inbox {
     }
 
     /// Move the admitted Start batch ahead of every later relayed message.
-    pub(crate) fn carry(&mut self, facts: &mut Facts, token: Token, messages: Box<[crate::Message]>) {
+    pub(crate) fn carry(&mut self, facts: &mut Facts, token: Token, messages: Box<[crate::Message]>) -> bool {
+        let mut finish_requested = false;
         for message in messages {
+            finish_requested |= message.finish_requested;
             let bytes = message
                 .label
                 .len()
@@ -77,6 +79,7 @@ impl Inbox {
                 bytes: u64::try_from(bytes).expect("bounded message"),
             });
         }
+        finish_requested
     }
 
     /// Retain one relayed message, or refuse before retaining or rendering it.

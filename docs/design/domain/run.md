@@ -427,6 +427,14 @@ host tool for it, as temper's `delegate` does.
   to its host, typed, with the message's name and the reason, and is
   that message's terminal (host.md, section 2). Host messages reach
   main only; sub-agents never receive them.
+- **Host-requested finish.** Each message carries `finish_requested`, false
+  for ordinary words. Only admission of a true message puts Open into the
+  existing wind-down (9.1), waking Listening or Waiting. Start-carried and
+  preparation-time requests retain this effect until main can act. The next
+  successful text reply publishes its fence and parks; unread words retain
+  their existing terminal. Refusals change no policy, and repeats never renew
+  the allowance. Finite ignores the bit and processes an ordinary amendment,
+  retaining its terminal tools. Cancel and all hard limits remain unchanged.
 - **Offered in order.** Admitted messages queue in arrival order. The run
   offers them at main's opening (3.4), with a `wait`'s result, and
   whenever main yields: every message queued, in order, at most one
@@ -727,6 +735,9 @@ answers as it was ending; the host has the delivery's own answer.
   and its host decides what wakes it. The run's budget is in one of two
   stages, ordinary or winding down, and the change is a fact (section
   11).
+  An admitted Open finish request also starts this phase (section 6), with
+  an explicit host cause and a host-request note, without charging spend or
+  claiming budget exhaustion. It uses the same reserve and hard deadline.
   1. Live sub-agents are closed and settled, each call answered once,
      and their jobs end with them (session.md, section 5). Main's own
      jobs run on: a `finish` that delivers, or a `deliver`, cancels them

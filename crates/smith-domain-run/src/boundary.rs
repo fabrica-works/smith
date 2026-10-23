@@ -62,6 +62,8 @@ pub struct Window {
 /// Named, labelled message carried by a host Start; it ends with that start or its run.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Message {
+    /// Admitted Open messages request a final reply; Finite treats them as ordinary words.
+    pub finish_requested: bool,
     /// Opaque parent name, unique among the start's messages.
     pub name: Token,
     pub label: Box<[u8]>,
@@ -109,6 +111,8 @@ pub enum Event {
     /// Parent-labelled live message; names, including zero, are opaque and
     /// unique for the active run. Admission yields a typed terminal on refusal.
     Message {
+        /// Admitted Open messages request a final reply; Finite ignores this bit.
+        finish_requested: bool,
         /// Admitted live run handle.
         run: Token,
 

@@ -177,14 +177,12 @@ impl Process {
     /// Relay a named parent message to the admitted child.
     pub fn send_message(
         &mut self,
-        name: Token,
-        label: Box<[u8]>,
-        text: Box<[u8]>,
+        message: channel::Message,
         token: Token,
         above: &mut Queue<ProcessEvent>,
         below: &mut Queue<IoRequest>,
     ) -> Result<(), Error> {
-        self.channel.send_message(name, label, text, token, &mut self.channel_events, &mut self.channel_below)?;
+        self.channel.send_message(message, token, &mut self.channel_events, &mut self.channel_below)?;
         self.drain_channel(above, below);
         Ok(())
     }

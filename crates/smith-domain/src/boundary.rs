@@ -144,6 +144,8 @@ pub enum Event {
     /// `Limits.run.messages` and `Limits.run.message_bytes`. Accepted messages
     /// emit no separate admission terminal; the read fence reports consumption.
     Message {
+        /// Admitted Open messages request a final reply; Finite ignores this bit.
+        finish_requested: bool,
         /// Admitted live run handle.
         run: Token,
 

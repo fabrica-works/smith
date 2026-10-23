@@ -62,6 +62,9 @@ The contract is domain/host.md's.
   On the way down, it encodes the domain's start (its charter and
   transcript among it), messages, answers, acknowledgements, grants and
   cancel.
+  Named live and Start-carried messages preserve `finish_requested` through
+  both spawned and inline adapters. False is ordinary text; only the run's
+  admission can apply a true bit (domain/run.md, section 6).
 - **Reads are the domain's.** After the opening, the half reads the agent's
   channel only when `smith-host-domain` asks, one read at a time, and reads
   nothing ahead. Each read is answered once: by one record, one live piece

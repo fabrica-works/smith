@@ -8,19 +8,19 @@ fn the_halves_open_on_the_highest_version_both_speak() {
     for mode in [StreamMode::One, StreamMode::Two] {
         let mut world = World::new(CEILINGS, CEILINGS, mode);
         world.settle();
-        assert!(world.observations().contains(&Observation::HostOpened(4)));
-        assert!(world.observations().contains(&Observation::AgentOpened(4)));
+        assert!(world.observations().contains(&Observation::HostOpened(5)));
+        assert!(world.observations().contains(&Observation::AgentOpened(5)));
     }
 }
 
 #[test]
 fn no_version_in_common_ends_the_channel_before_a_start() {
-    for version in [1, 2, 3] {
+    for version in [1, 2, 3, 4] {
         let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
         world.agent_hears_foreign_version(version);
         world.settle();
         assert!(world.observations().contains(&Observation::AgentEnded(Closed::RefusedHere(1))), "version {version}");
-        assert!(!world.observations().contains(&Observation::AgentOpened(4)), "version {version}");
+        assert!(!world.observations().contains(&Observation::AgentOpened(5)), "version {version}");
     }
 }
 
@@ -621,9 +621,10 @@ fn a_message_reaches_the_llm_with_its_senders_label() {
     world.agent_admits();
     world.settle();
     let name = skein_lib::Token::new(31);
-    world.send_message(name, Box::from(*b"Ada"), Box::from(*b"Please retry"));
+    world.send_message(name, Box::from(*b"Ada"), Box::from(*b"Please retry"), false);
     world.settle();
     assert!(world.observations().contains(&Observation::AgentMessage {
+        finish_requested: false,
         name,
         label: Box::from(*b"Ada"),
         text: Box::from(*b"Please retry")
@@ -631,6 +632,22 @@ fn a_message_reaches_the_llm_with_its_senders_label() {
     world.agent_waits(Some(name));
     world.settle();
     assert!(world.observations().contains(&Observation::HostWaiting { read: Some(name) }));
+}
+
+#[test]
+fn finish_requested_crosses_the_live_wire_with_name_label_and_text() {
+    let mut world = admitted_channel();
+    for (name, finish_requested) in [(31, false), (32, true)] {
+        let name = skein_lib::Token::new(name);
+        world.send_message(name, Box::from(*b"Ada"), Box::from(*b"Please finish"), finish_requested);
+        world.settle();
+        assert!(world.observations().contains(&Observation::AgentMessage {
+            finish_requested,
+            name,
+            label: Box::from(*b"Ada"),
+            text: Box::from(*b"Please finish"),
+        }));
+    }
 }
 
 #[test]
@@ -981,9 +998,10 @@ fn a_failed_agent_write_does_not_end_its_read_stream() {
     world.agent_waits(None);
     world.settle();
     assert!(world.observations().contains(&Observation::AgentWriteFailed));
-    world.send_message(skein_lib::Token::new(44), Box::from(*b"Ada"), Box::from(*b"continue"));
+    world.send_message(skein_lib::Token::new(44), Box::from(*b"Ada"), Box::from(*b"continue"), false);
     world.settle();
     assert!(world.observations().contains(&Observation::AgentMessage {
+        finish_requested: false,
         name: skein_lib::Token::new(44),
         label: Box::from(*b"Ada"),
         text: Box::from(*b"continue"),

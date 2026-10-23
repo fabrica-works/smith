@@ -85,7 +85,12 @@ fn render_fixed(text: &mut Text) {
     text.put(&opening(false, None));
     text.put(b"\n\n");
     render_fixed_budget(text);
-    render_wind_down(Mode::Finite, text, Reserve { turns: u32::MAX, time: Duration::from_nanos(u64::MAX) });
+    render_wind_down(
+        Mode::Finite,
+        crate::wind_down::Cause::Budget(crate::Exhausted::Turns),
+        text,
+        Reserve { turns: u32::MAX, time: Duration::from_nanos(u64::MAX) },
+    );
     text.put(&finish_now());
     text.put(&child_final_note());
     text.put(SUMMARY);
@@ -154,11 +159,11 @@ pub(crate) fn opening(brief: bool, messages: Option<Box<[u8]>>) -> Box<[u8]> {
 }
 
 /// The first final completion receives this appended after the latest results.
-pub(crate) fn wind_down_note(mode: Mode, reserve: Reserve) -> Box<[u8]> {
+pub(crate) fn wind_down_note(mode: Mode, cause: crate::wind_down::Cause, reserve: Reserve) -> Box<[u8]> {
     let mut measured = Text::measuring();
-    render_wind_down(mode, &mut measured, reserve);
+    render_wind_down(mode, cause, &mut measured, reserve);
     let mut text = measured.writing();
-    render_wind_down(mode, &mut text, reserve);
+    render_wind_down(mode, cause, &mut text, reserve);
     text.finish()
 }
 
@@ -172,10 +177,14 @@ pub(crate) fn last_reply() -> Box<[u8]> {
     skein_lib::bytes::copy_of(b"Reply now with what you have. Use text only; promise no later work.")
 }
 
-fn render_wind_down(mode: Mode, text: &mut Text, reserve: Reserve) {
+fn render_wind_down(mode: Mode, cause: crate::wind_down::Cause, text: &mut Text, reserve: Reserve) {
+    text.put(match cause {
+        crate::wind_down::Cause::Budget(_) => b"The ordinary budget is spent. ",
+        crate::wind_down::Cause::Host => b"The host requested wind-down. ",
+    });
     text.put(match mode {
-        Mode::Finite => b"The ordinary budget is spent. Finish now with what you have. You have at most ",
-        Mode::Open => b"The ordinary budget is spent. Reply now with what you have. You have at most ",
+        Mode::Finite => b"Finish now with what you have. You have at most ",
+        Mode::Open => b"Reply now with what you have. You have at most ",
     });
     text.put_decimal(reserve.turns);
     text.put(b" final completions and ");

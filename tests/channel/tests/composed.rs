@@ -64,21 +64,26 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
         (12, b"x".as_slice(), Some(agent::run::MessageRefusal::Full)),
     ] {
         let name = Token::new(name);
-        wire.send_message(name, Box::from(*b"peer"), Box::from(text));
+        wire.send_message(name, Box::from(*b"peer"), Box::from(text), false);
         wire.settle();
         let message = wire
             .observations()
             .iter()
             .rev()
             .find_map(|seen| match seen {
-                Observation::AgentMessage { name: seen, label, text } if *seen == name => {
+                Observation::AgentMessage { name: seen, label, text, .. } if *seen == name => {
                     Some((label.clone(), text.clone()))
                 }
                 _ => None,
             })
             .expect("channel decoded labelled message");
         while domain.pop_fact().is_some() {}
-        agent::step(&mut domain, &env, AgentEvent::Message { run, name, label: message.0, text: message.1 }, &mut out);
+        agent::step(
+            &mut domain,
+            &env,
+            AgentEvent::Message { finish_requested: false, run, name, label: message.0, text: message.1 },
+            &mut out,
+        );
         match expected {
             None => assert!(out.pop().is_none(), "exact-bound message admitted"),
             Some(expected) => {
@@ -218,6 +223,7 @@ fn carried_start_messages_cross_the_wire_in_order_and_an_overfull_start_is_refus
         }]);
         start.messages = (0..count)
             .map(|name| host::Message {
+                finish_requested: name == 0,
                 name: Token::new(99 - name),
                 label: b"person".as_slice().into(),
                 text: if name == 0 { b"first".as_slice().into() } else { b"second".as_slice().into() },
@@ -235,6 +241,8 @@ fn carried_start_messages_cross_the_wire_in_order_and_an_overfull_start_is_refus
         assert_eq!(decoded.messages.len(), usize::try_from(count).expect("two or three messages"));
         assert_eq!(decoded.messages[0].name, Token::new(99));
         assert_eq!(decoded.messages[1].name, Token::new(98));
+        assert!(decoded.messages[0].finish_requested);
+        assert!(!decoded.messages[1].finish_requested);
         let mut limits = smith_agent_world::LIMITS;
         limits.run.messages = 2;
         let mut domain = agent::Domain::new(&limits, configuration(), 7);
@@ -376,21 +384,26 @@ fn an_empty_start_waits_without_a_fence_and_the_first_wire_message_opens_main() 
     wire.agent_waits(None);
     wire.settle();
     assert!(wire.observations().contains(&Observation::HostWaiting { read: None }));
-    wire.send_message(Token::new(0), b"person".as_slice().into(), b"first".as_slice().into());
+    wire.send_message(Token::new(0), b"person".as_slice().into(), b"first".as_slice().into(), false);
     wire.settle();
     let (label, text) = wire
         .observations()
         .iter()
         .rev()
         .find_map(|seen| match seen {
-            Observation::AgentMessage { name, label, text } if *name == Token::new(0) => {
+            Observation::AgentMessage { name, label, text, .. } if *name == Token::new(0) => {
                 Some((label.clone(), text.clone()))
             }
             _ => None,
         })
         .expect("actual decoded message");
     while domain.pop_fact().is_some() {}
-    agent::step(&mut domain, &env, AgentEvent::Message { run, name: Token::new(0), label, text }, &mut out);
+    agent::step(
+        &mut domain,
+        &env,
+        AgentEvent::Message { finish_requested: false, run, name: Token::new(0), label, text },
+        &mut out,
+    );
     let Some(AgentRequest::Long { operation: agent::Operation::Completion, .. }) = out.pop() else {
         panic!("first wire work announces actual provider issuance");
     };

@@ -162,7 +162,9 @@ fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Re
             );
         }
         Event::Acknowledge { run, turn } => run::acknowledge(domain, run, turn),
-        Event::Message { run, name, label, text } => run::message(domain, env, run, name, label, text, out),
+        Event::Message { finish_requested, run, name, label, text } => {
+            run::message(domain, env, run, crate::Message { finish_requested, name, label, text }, out);
+        }
         Event::Turn { conversation, record, sequence, opens_window } => {
             run::turn(domain, conversation, record, sequence, opens_window, out);
         }

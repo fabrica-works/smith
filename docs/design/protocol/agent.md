@@ -16,6 +16,9 @@ are limits.md's, and its event vocabulary events.md's.
 
 ## 1. In one page
 
+Live and Start-carried messages preserve `finish_requested` through decoding
+and pre-admission buffering to the run entrance (domain/run.md, section 6).
+
 - **The machine component translates the tools' and the checks'
   operations** into skein's io (domain/tools.md, section 6):
   - files loaded and stored;

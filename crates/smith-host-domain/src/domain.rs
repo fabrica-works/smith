@@ -278,7 +278,9 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
                 detail: tail(&detail, env.limits.detail_bytes),
             }));
         }
-        Input::Parent(parent::Event::Message { name, label, text, .. }) => message(agent, name, label, text, env, out),
+        Input::Parent(parent::Event::Message { finish_requested, name, label, text, .. }) => {
+            message(agent, name, label, text, finish_requested, env, out);
+        }
         Input::Parent(parent::Event::Answer { call, reply, .. }) => answered(agent, call, reply, env),
         Input::Parent(parent::Event::Acknowledge { turn, .. }) => acknowledge_turn(agent, turn),
         Input::Parent(parent::Event::Grant { grant, .. }) => grant_name(agent, grant),
@@ -716,6 +718,7 @@ fn message(
     name: Token,
     label: Box<[u8]>,
     text: Box<[u8]>,
+    finish_requested: bool,
     env: &Env<Limits>,
     out: &mut Queue<Output>,
 ) {
@@ -730,7 +733,7 @@ fn message(
     }
     agent.messages = agent.messages.checked_add(1).expect("bounded messages");
     agent.waiting = false;
-    agent.outbox.push(Down::Message { name, label, text });
+    agent.outbox.push(Down::Message { finish_requested, name, label, text });
 }
 
 fn known_read(agent: &Agent, read: Option<Token>) -> bool {

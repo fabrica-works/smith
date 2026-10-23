@@ -66,7 +66,7 @@ pub enum OpenEvent {
     /// A structurally valid Start with its charter translated before domain admission.
     Start { start: Box<DecodedStart> },
     /// A host-labelled message for the admitted run.
-    Message { name: Token, label: Box<[u8]>, text: Box<[u8]> },
+    Message { finish_requested: bool, name: Token, label: Box<[u8]>, text: Box<[u8]> },
     /// A declared host tool's one settled terminal.
     HostReturned { relay: run::RelayName, reply: run::HostReply },
     /// A delivery's one settled terminal.
@@ -674,7 +674,7 @@ impl Component {
             match event {
                 Some(Event::Opening { credential, lowest: _, highest }) => {
                     if credential.is_empty() {
-                        self.machine.down(Request::Accept { version: highest.min(4) }, &mut self.events, below);
+                        self.machine.down(Request::Accept { version: highest.min(5) }, &mut self.events, below);
                     } else {
                         self.machine.down(
                             Request::Refuse { reason: UNAUTHORIZED, text: Box::from(*b"credential on pipe") },
@@ -705,6 +705,7 @@ impl Component {
                     match smith_channel::Message::decode(&self.bodies, &mut Reader::new(&body)) {
                         Ok(message) => {
                             to_service.push(OpenEvent::Message {
+                                finish_requested: message.finish_requested(),
                                 name: Token::new(message.name()),
                                 label: Box::from(message.label()),
                                 text: Box::from(message.text()),

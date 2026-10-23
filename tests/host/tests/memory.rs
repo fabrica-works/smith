@@ -236,6 +236,7 @@ fn maximum_v2_starts_and_full_queued_replies_fit_every_slot() {
             for name in 0..limits.messages {
                 measured.step(
                     Input::Parent(parent::Event::Message {
+                        finish_requested: false,
                         agent: owner,
                         name: Token::new(100 + u64::from(name)),
                         label: Box::new([]),
@@ -295,6 +296,7 @@ fn maximum_start_io_ownership_coexists_with_full_pre_read_message_queue() {
     let owner = measured.spawn(1);
     measured.step(
         Input::Parent(parent::Event::Message {
+            finish_requested: false,
             agent: owner,
             name: Token::new(100),
             label: Box::new([]),
@@ -306,6 +308,7 @@ fn maximum_start_io_ownership_coexists_with_full_pre_read_message_queue() {
     for name in 0..limits.messages {
         measured.step(
             Input::Parent(parent::Event::Message {
+                finish_requested: false,
                 agent: owner,
                 name: Token::new(100 + u64::from(name)),
                 label: Box::new([]),
@@ -402,6 +405,7 @@ fn maximum_carried_start_messages_are_owned_and_priced_during_spawn() {
     let mut start = maximum_start(limits);
     start.messages = (0..limits.messages)
         .map(|name| host::Message {
+            finish_requested: false,
             name: Token::new(u64::from(name)),
             label: Box::default(),
             text: bytes(limits.message_bytes - 2),

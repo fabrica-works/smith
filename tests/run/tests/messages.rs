@@ -65,11 +65,13 @@ fn a_start_carrying_messages_opens_on_the_briefs_instruction_then_the_messages_i
     let mut world = World::new(settings);
     world.carry_messages(Box::new([
         smith_domain_run::Message {
+            finish_requested: false,
             name: Token::new(99),
             label: b"person".as_slice().into(),
             text: b"first".as_slice().into(),
         },
         smith_domain_run::Message {
+            finish_requested: false,
             name: Token::new(0),
             label: b"person".as_slice().into(),
             text: b"second".as_slice().into(),
@@ -138,6 +140,7 @@ fn an_empty_brief_opens_on_the_first_message_after_its_actual_awaiting_notice() 
     let mut world = World::new(settings);
     world.empty_brief(true);
     world.message_when_awaiting(smith_domain_run::Message {
+        finish_requested: false,
         name: Token::new(0),
         label: b"person".as_slice().into(),
         text: b"first work".as_slice().into(),

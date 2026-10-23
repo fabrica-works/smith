@@ -403,7 +403,12 @@ mod tests {
             &process::Request::Send {
                 owner: Token::new(7),
                 process: Token::new(8),
-                message: host::Down::Message { name: Token::new(name), label: Box::new([]), text: Box::new([]) },
+                message: host::Down::Message {
+                    finish_requested: false,
+                    name: Token::new(name),
+                    label: Box::new([]),
+                    text: Box::new([]),
+                },
             },
             clock(milliseconds),
         );
@@ -520,7 +525,12 @@ mod tests {
         let mut messages = skein_lib::List::with_capacity(names);
         for name in 1..=names {
             messages
-                .push(host::Message { name: Token::new(u64::from(name)), label: Box::new([]), text: Box::new([]) })
+                .push(host::Message {
+                    finish_requested: false,
+                    name: Token::new(u64::from(name)),
+                    label: Box::new([]),
+                    text: Box::new([]),
+                })
                 .unwrap();
         }
         timing.sent(

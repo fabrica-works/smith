@@ -18,6 +18,8 @@ pub enum Event {
     },
     /// Parent message, ending refused if the ingress cannot admit it.
     Message {
+        /// Admitted Open messages request a final reply; Finite ignores this bit.
+        finish_requested: bool,
         agent: Token,
         /// Opaque parent message name.
         name: Token,

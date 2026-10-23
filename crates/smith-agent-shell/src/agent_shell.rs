@@ -274,7 +274,7 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
         delivery: trace.delivery.encoded(),
         versions: smith_events::Versions {
             events: smith_events::VERSION,
-            channel: 4,
+            channel: 5,
             charter: 4,
             transcript: 6,
             chat_store: None,

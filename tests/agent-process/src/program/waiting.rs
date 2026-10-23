@@ -65,7 +65,12 @@ pub(super) fn initial(enabled: bool) -> Option<smith_channel::Message> {
     enabled.then(|| {
         smith_channel::Message::new(
             &smith_channel::CEILINGS,
-            smith_channel::MessageParts { name: 0, label: b"host".as_slice().into(), text: b"Begin".as_slice().into() },
+            smith_channel::MessageParts {
+                finish_requested: false,
+                name: 0,
+                label: b"host".as_slice().into(),
+                text: b"Begin".as_slice().into(),
+            },
         )
         .expect("initial message")
     })
@@ -75,6 +80,7 @@ pub(crate) fn message() -> skein_channel::Frame {
     let message = smith_channel::Message::new(
         &smith_channel::CEILINGS,
         smith_channel::MessageParts {
+            finish_requested: false,
             name: 1,
             label: b"host".as_slice().into(),
             text: b"The next instruction".as_slice().into(),

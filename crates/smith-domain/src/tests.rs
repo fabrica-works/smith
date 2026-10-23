@@ -2206,6 +2206,7 @@ fn root_awaiting_opens_no_session_or_provider_call_until_the_first_message() {
     assert_eq!((harness.domain.starts.len(), harness.domain.peers.len(), harness.domain.sessions.len()), (1, 0, 0));
     assert!(harness.next().is_empty());
     let emitted = harness.step(Event::Message {
+        finish_requested: false,
         run,
         name: Token::new(1),
         label: bytes(b"person"),
@@ -2282,6 +2283,7 @@ fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() 
     };
     let run = *run;
     let emitted = harness.step(Event::Message {
+        finish_requested: false,
         run,
         name: Token::new(2),
         label: bytes(b"person"),

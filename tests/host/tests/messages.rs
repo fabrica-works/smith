@@ -6,6 +6,7 @@ use smith_host_world::{World, inline, limits, start, turn_value};
 
 fn message(world: &mut World, name: u64) {
     world.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: world.agent(),
         name: Token::new(name),
         label: b"person".as_slice().into(),
@@ -85,8 +86,12 @@ fn malformed_channel_reports_all_accepted_names_before_fault_and_retains_lower_t
 fn failed_process_admission_reports_the_initial_messages_before_gone() {
     let mut world = World::new(505, limits());
     let mut source = start();
-    source.messages =
-        Box::from([Message { name: Token::new(1), label: b"person".as_slice().into(), text: b"hi".as_slice().into() }]);
+    source.messages = Box::from([Message {
+        finish_requested: false,
+        name: Token::new(1),
+        label: b"person".as_slice().into(),
+        text: b"hi".as_slice().into(),
+    }]);
     world.spawn(source);
     world.event(Input::Process(process::Event::Unspawned { owner: world.owner(), detail: Box::default() }));
     assert_eq!(world.seen.unread, Some(vec![Token::new(1)]));
@@ -103,6 +108,7 @@ fn inline_stop_and_drop_report_the_queued_message_and_settle_the_actual_provider
         world.event(parent::Event::Spawn { client, start: inline::start(506, Job::Waiting) });
         let agent = world.handle(client);
         world.event(parent::Event::Message {
+            finish_requested: false,
             agent,
             name: Token::new(99),
             label: b"person".as_slice().into(),
@@ -115,6 +121,7 @@ fn inline_stop_and_drop_report_the_queued_message_and_settle_the_actual_provider
             assert_eq!(world.seen[&client].fault, Some(Fault::Exited));
         }
         world.event(parent::Event::Message {
+            finish_requested: false,
             agent,
             name: Token::new(100),
             label: b"person".as_slice().into(),

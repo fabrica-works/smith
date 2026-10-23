@@ -77,7 +77,9 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         }
         Event::Acknowledge { run, turn } => return acknowledge(domain, env, run, turn),
         Event::Grant { grant } => return granted(domain, env, grant),
-        Event::Message { run, name, label, text } => run::Event::Message { run, name, label, text },
+        Event::Message { finish_requested, run, name, label, text } => {
+            run::Event::Message { finish_requested, run, name, label, text }
+        }
         Event::Cancel { run } => run::Event::Cancel { run },
         Event::HostReturned { relay, reply } => run::Event::HostReturned { relay, reply },
         Event::Delivered { owner, delivery } => run::Event::Delivered { owner, delivery },

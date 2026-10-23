@@ -282,7 +282,7 @@ fn spawn(agent: &mut Domain, env: &Env<Limits>, client: Token, start: host::Star
 fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mut Queue<Output>) {
     match event {
         parent::Event::Spawn { client, start } => spawn(agent, env, client, start, out),
-        parent::Event::Message { agent: handle, name, label, text } => {
+        parent::Event::Message { finish_requested, agent: handle, name, label, text } => {
             let id = Id::<Slot>::from_token(handle);
             let slot = match agent.slots.get_mut(id) {
                 Some(slot) => slot,
@@ -305,7 +305,7 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
                             return;
                         }
                     }
-                    root_step(agent, env, id, smith::Event::Message { run, name, label, text }, out);
+                    root_step(agent, env, id, smith::Event::Message { finish_requested, run, name, label, text }, out);
                 }
                 None => out.push(Output::Parent(parent::Request::MessageRefused {
                     client: slot.client,

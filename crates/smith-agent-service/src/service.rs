@@ -48,6 +48,7 @@ use smith_protocol_machine as machine;
 
 #[derive(Debug)]
 struct PendingMessage {
+    finish_requested: bool,
     name: Token,
     label: Box<[u8]>,
     text: Box<[u8]>,

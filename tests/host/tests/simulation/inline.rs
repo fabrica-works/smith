@@ -197,6 +197,7 @@ fn an_inline_run_waits_parks_and_resumes_from_its_transcript() {
     next.logical_run = Token::new(1);
     next.transcript = Some(host::Transcript::new(history, u64::MAX).expect("saved concrete history"));
     next.messages = Box::from([host::Message {
+        finish_requested: false,
         name: Token::new(92),
         label: b"person".as_slice().into(),
         text: b"Continue".as_slice().into(),
@@ -233,6 +234,7 @@ fn a_message_past_the_runs_bound_is_refused_typed_by_either_kind() {
     spawn(&mut world, 1, Job::HostTools);
     let agent = world.handle(Token::new(1));
     world.event(parent::Event::Message {
+        finish_requested: false,
         agent,
         name: Token::new(90),
         label: Box::default(),
@@ -245,6 +247,7 @@ fn a_message_past_the_runs_bound_is_refused_typed_by_either_kind() {
     spawned.live();
     let agent = spawned.agent();
     spawned.event(Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent,
         name: Token::new(90),
         label: Box::default(),

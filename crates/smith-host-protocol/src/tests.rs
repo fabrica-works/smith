@@ -17,7 +17,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
         endpoints: 1,
         calls: 8,
         start_bytes: u32::try_from(
-            smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            smith_channel::v5::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
         )
         .expect("Start frame range"),
         channel: skein_channel::Limits {
@@ -109,7 +109,7 @@ fn the_host_sends_open_before_the_domain_hears_anything() {
         endpoints: 1,
         calls: 8,
         start_bytes: u32::try_from(
-            smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            smith_channel::v5::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
         )
         .expect("Start frame range"),
         channel: skein_channel::Limits {
@@ -144,7 +144,7 @@ pub(super) fn process_limits() -> Limits {
         endpoints: 1,
         calls: 8,
         start_bytes: u32::try_from(
-            smith_channel::v4::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            smith_channel::v5::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
         )
         .expect("Start frame range"),
         channel: skein_channel::Limits {

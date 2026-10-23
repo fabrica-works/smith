@@ -127,6 +127,7 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
         &mut agent,
         &env,
         Input::Parent(parent::Event::Message {
+            finish_requested: false,
             agent: handle,
             name: Token::new(42),
             label: Box::default(),
@@ -318,6 +319,7 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
     let mut blocked = false;
     for name in 1_u64..5000 {
         let input = Input::Parent(parent::Event::Message {
+            finish_requested: false,
             agent: handles[0],
             name: Token::new(name),
             label: Box::default(),
@@ -332,6 +334,7 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
             &mut slot.root,
             &native_env,
             smith::Event::Message {
+                finish_requested: false,
                 run: slot.run.expect("admitted native run"),
                 name: Token::new(name),
                 label: Box::default(),
@@ -343,6 +346,7 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
     }
     assert!(blocked, "the real native fact queue eventually holds its producer");
     let input = Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: handles[1],
         name: Token::new(9000),
         label: Box::default(),
@@ -352,6 +356,7 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
     step(&mut domain, &env, input, &mut out);
     while domain.pop_fact(Token::new(1)).is_some() {}
     let input = Input::Parent(parent::Event::Message {
+        finish_requested: false,
         agent: handles[0],
         name: Token::new(9001),
         label: Box::default(),
