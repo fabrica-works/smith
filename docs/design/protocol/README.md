@@ -1,6 +1,6 @@
 # smith's protocol layer
 
-Provisional, 2026-10-06, revised 2026-10-19. The protocol layer of smith
+Provisional, 2026-10-06, revised 2026-10-24. The protocol layer of smith
 turns smith's vocabulary into bytes and back. It sits between an agent and
 its peers: its host, its LLM providers and its machine. It follows skein's
 `programming-model.md`, sections 4 and 8, and the domain design in
@@ -334,7 +334,11 @@ to an older reader or writer. Each has one version at a time.
   - **turns and transcripts** carry their own version, since a host keeps
     them and a later agent resumes from them (domain/session.md, section
     3). A transcript in another version fails the run as transient, and
-    its host starts afresh (domain/run.md, section 6).
+    its host starts afresh (domain/run.md, section 6). From the
+    baseline, turns are kept for a later release, and so is the local
+    host's store: a host that keeps turns patches an older turn to the
+    current version as it reads it, by smith's patches (transcript.md,
+    section 12), so a reader is still handed one version.
   - **the event stream** carries its version on every record, and a
     reader refuses a stream in another (events.md, section 6).
 - **Where each is.** The channel, the charter and the transcripts move to
