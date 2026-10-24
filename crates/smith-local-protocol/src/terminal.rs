@@ -191,23 +191,7 @@ impl Terminal {
                 local::Failure::DeliveryUnsaved => {
                     append(&mut text, b"A delivery committed, but its answer could not be saved");
                 }
-                local::Failure::Store { turn, reason } => {
-                    if let Some(number) = turn {
-                        append(&mut text, b"run failed: chat ");
-                        append(&mut text, chat);
-                        append(&mut text, b": turn ");
-                        decimal(&mut text, u64::from(*number));
-                        append(
-                            &mut text,
-                            match reason {
-                                local::StoreFailure::Read => b" could not be kept: read failed",
-                                local::StoreFailure::Write => b" could not be kept: write failed",
-                            },
-                        );
-                    } else {
-                        append(&mut text, b"The chat could not be saved");
-                    }
-                }
+                local::Failure::Store { turn, reason } => store_failure(&mut text, chat, *turn, *reason),
             },
             local::Notice::Warning(local::Warning::ForcedExit { exit, forced }) => {
                 append(&mut text, b"warning: agent forced to exit after answering");
@@ -271,6 +255,35 @@ pub fn run_failure_text(
     failure::run(&mut text, failure, diagnostic, models, account_name, endpoint_name, answered_at);
     newline(&mut text);
     text.bytes.into_boxed()
+}
+
+fn store_failure(text: &mut Shown, chat: &[u8], turn: Option<u32>, reason: local::StoreFailure) {
+    match reason {
+        local::StoreFailure::OlderBuild { why } => {
+            let words = why.words();
+            append(text, words.first().expect("older prefix").as_bytes());
+            append(text, chat);
+            append(text, words.get(1).expect("older suffix").as_bytes());
+        }
+        local::StoreFailure::Read | local::StoreFailure::Write => {
+            if let Some(number) = turn {
+                append(text, b"run failed: chat ");
+                append(text, chat);
+                append(text, b": turn ");
+                decimal(text, u64::from(number));
+                append(
+                    text,
+                    match reason {
+                        local::StoreFailure::Read => b" could not be kept: read failed",
+                        local::StoreFailure::Write => b" could not be kept: write failed",
+                        local::StoreFailure::OlderBuild { .. } => unreachable!("older words rendered above"),
+                    },
+                );
+            } else {
+                append(text, b"The chat could not be saved");
+            }
+        }
+    }
 }
 
 struct Shown {
@@ -773,4 +786,32 @@ fn chat_refused(text: &mut Shown, name: &[u8], reason: local::ChatRefusal) {
             local::ChatRefusal::Io => b": directory operation failed",
         },
     );
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::disallowed_macros,
+    clippy::disallowed_methods,
+    reason = "verbatim operator-word tests are ordinary Rust (programming-model.md, section 10.2)"
+)]
+mod older_tests {
+    use super::*;
+
+    #[test]
+    fn actual_store_failure_rendering_keeps_older_words_even_without_a_turn() {
+        for why in [
+            local::Older::Unrecorded,
+            local::Older::Layout(local::StoreFamily::Store),
+            local::Older::Layout(local::StoreFamily::Transcript),
+        ] {
+            for turn in [None, Some(3)] {
+                let notice = local::Notice::Failure(local::Failure::Store {
+                    turn,
+                    reason: local::StoreFailure::OlderBuild { why },
+                });
+                let text = notice_text(&notice, b"older", &[], 2048);
+                assert_eq!(text.as_ref(), format!("{}\n", why.words().join("older")).as_bytes());
+            }
+        }
+    }
 }

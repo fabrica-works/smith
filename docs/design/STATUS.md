@@ -1,10 +1,15 @@
 # Status
 
-Updated 2026-10-21. How far smith's code is from its design, and the
+Updated 2026-10-24. How far smith's code is from its design, and the
 work that takes it there. Owners keep the rows their work changes
 (skein's owners.md, 4.4).
 
 ## 1. Plans
+
+Local older-store refusal is in implementation review: generated local-store
+family 1, checked-root admission before recovery, named operator refusal and
+trace admission (protocol/hosts.md 5.3; domain/host.md 8; shell.md 4.1, 4.3,
+5.3). Independent QA, owner gate and landing remain required.
 
 | Plan | State | Takes the design to | Where |
 |---|---|---|---|
@@ -39,7 +44,7 @@ instead.
 | Document | Built | Left |
 |---|---|---|
 | `domain/README.md` | partly | 4: `smith-mcp` and supervised processes with a view: not planned |
-| `domain/host.md` | partly | 2, 3: live content, the ask and the host's half handing pieces to its owner: live-text. 2, 9.1: an LLM component in process handing its deltas to the owner: not planned (live-text's `later.md`). 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`). |
+| `domain/host.md` | partly; 8: older-store refusal prepared for independent QA | 2, 3: live content, the ask and the host's half handing pieces to its owner: live-text. 2, 9.1: an LLM component in process handing its deltas to the owner: not planned (live-text's `later.md`). 4: a contained tree: not planned. 8: MCP host tools: not planned. 12: an isolated mode: not planned (the reliability plan's `later.md`). |
 | `domain/run.md` | partly | 5.1: MCP servers as a tool source: not planned. 5.3, 15: work beside a writing child, a child from its parent's prefix: not planned (the reliability and parity plans' `later.md`). 6, 9.2: mid-work messages and threshold notes: not planned (the reliability plan's `later.md`). |
 | `domain/session.md` | partly | 11: provider-native compaction: not planned (the reliability plan's `later.md`). |
 | `domain/tools.md` | partly | 5: containment: not planned. |
@@ -48,13 +53,13 @@ instead.
 | `protocol/channel.md` | partly | 2, 7: a connected agent's credential and refusals: not planned. 3, 4, 5, 7, 8: the ask in the start and live content in pieces, with their order and best effort: live-text. 4: reasoning and a tool call's input as live content, with no producer: not planned (live-text's `later.md`) |
 | `protocol/charter.md` | yes | Nothing |
 | `protocol/events.md` | partly | 3.2: `containment: "trees"`: not planned. |
-| `protocol/hosts.md` | partly: section 2 reads on demand, one record, live piece or end per read; section 3 reaps after the demanded end | 3: the tree: not planned. 4: connecting later: not planned. |
+| `protocol/hosts.md` | partly: section 2 reads on demand, one record, live piece or end per read; section 3 reaps after the demanded end; 5.3: generated local-store records and layout admission prepared for independent QA | 3: the tree: not planned. 4: connecting later: not planned. |
 | `protocol/limits.md` | partly | 2.3, 2.4, 3.6: the piece, the interval and the held bytes of live content: live-text. |
 | `protocol/llm.md` | partly | 6: deltas handed over for the channel's ask: live-text. 12: edit formats per dialect: not planned. |
 | `protocol/programs.md` | partly | 8: the live suite's checks of what the fake program assumes, built (`tests/end-to-end/live.rs`) and not yet run against Claude Code: not planned. |
 | `protocol/transcript.md` | yes | Nothing |
-| `shell.md` | partly | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned (the reliability plan's `later.md`). |
-| `testing.md` | partly | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned. 2.3, 4: the live suite on smith's own accounts, built (`tests/end-to-end/live.rs`, on logins under `$SMITH_LIVE`) and not yet run on them: not planned. |
+| `shell.md` | partly; 4.1, 4.3, 5.3: named older-chat words, exit 1 and trace admission prepared for independent QA | 5.1: directories made at startup synced into their parents: not planned. 8: per-tree limits: not planned. 9: `isolate`: not planned (the reliability plan's `later.md`). |
+| `testing.md` | partly; 2.5: real-directory Store/FileIo adapter and 6.1: separate QA profile prepared | 2.1: fault sweeps: not planned. 2.2: real-loop signals: not planned. 6: the event stream's check pairing each `running` verdict with one end (`tests/agent-process/src/events.rs` passes over `job.ended` unpaired), replay by digests, containment checks: not planned. 2.3, 4: the live suite on smith's own accounts, built (`tests/end-to-end/live.rs`, on logins under `$SMITH_LIVE`) and not yet run on them: not planned. |
 | `benchmarks.md` | partly | 3.1, 5.2: each probe's and each variant's calibration in its task file (8 blocks in 4 of the 15 probe directories), with six task files and the two `history` variants to recalibrate before `suite smoke` relies on them: not planned (the parity and wall-clock plans' `later.md`). 11.1: `mid-work`, `build-environment`: not planned. 11.3: the `delegation` experiment: not planned. 15: beyond serial runs: not planned. 16.6: a change's projection on its own ratio (`summarise` multiplies in the ratios of the landed changes named to it, `benchmarks/src/parity/change.rs`): not planned. 6: Claude Code: Claude Code, and smith on Anthropic. 6, 7, 10, 11.1: each agent on the harness's own login, the `smith-claude-code` arm and the `credentials` probe on a shared sign-in record, built and not yet run on real accounts: not planned. |
 
 ## 3. Not planned

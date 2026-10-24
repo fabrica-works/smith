@@ -27,6 +27,7 @@ impl Store {
             self.takes() && self.ephemeral.is_none() && kernel::is_name(&name),
             "private cleanup is configured before loading"
         );
+        self.checked = true;
         self.ephemeral = Some(Ephemeral { parent, descriptor, name, step: Step::Files, warning: None });
     }
 
@@ -43,6 +44,9 @@ impl Store {
                 Self::io(file::Request::Close { owner: self.owner, file: self.root }, now, out);
             }
             Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Journal
             | Phase::State
             | Phase::Scan

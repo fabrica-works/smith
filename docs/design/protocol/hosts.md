@@ -226,6 +226,36 @@ what its host's protocol layer would do:
 
 ### 5.3 Transcripts
 
+Before the first durable Load reads `fresh` or `state`, it reads the bounded,
+no-follow `format` file. Its generated `Layouts` record names the
+`smith-local-store` family fingerprint, then `smith-transcript`'s. The
+committed fingerprints cover `schema/local-store-v1.schema` and
+`transcript-v6.schema`; runtime construction parses neither schema. State,
+fresh metadata, the whole turn envelope and delivery records use the generated
+local-store family version 1. A turn's body remains transcript version 6. Generated envelope decoding owns
+one bounded body copy, included in the Store's worst case. The intermediate
+body copies are released once their aggregate transcript piece is built,
+before concrete transcript decoding.
+
+A missing marker permits creation only after a complete bounded scan finds
+an empty directory, or only regular `format.skein-<16 lowercase hex>`
+interrupted-create temporaries (skein io.md, 5.2). These are never removed.
+Any other entry or incomplete scan refuses as unrecorded. Malformed,
+truncated or wrong-version markers refuse as a store-layout mismatch; IO,
+symlink, directory and size failures refuse without adopting the directory.
+The absence scan reserves the marker's own entry and name bytes, so an
+admitted interrupted create remains within the next scan's bounds. Store
+layout is compared before transcript layout. No refusal writes,
+removes or renames a file in that Store.
+
+Creation uses `Expect::Absent`; only durable `Stored` permits Loaded-empty.
+A conflict never overwrites the winner. A matching marker permits existing
+journal recovery. One checked bit is reset on selection; every save asserts
+it. Repeated Loads of the owned checked root skip only this check. The
+fresh journal never removes `format`. A uniquely created ephemeral root is
+checked at creation and retains its empty Load and known-file cleanup,
+without marker IO. Jig-held transcripts are outside this check.
+
 - **Each chat** has a directory under smith's state directory
   (`docs/design/shell.md`).
 - **One store, one chat at a time.** The chat store's root is the

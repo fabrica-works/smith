@@ -146,7 +146,7 @@ impl ProcessAdapter {
             return None;
         }
         let mut files =
-            file_layer::FileIo::with_whole_limit(66, 4096, 8194, 64 << 20, skein_lib::Duration::from_secs(30));
+            file_layer::FileIo::with_whole_limit(66, 4096, 8196, 64 << 20, skein_lib::Duration::from_secs(30));
         files.seed_randomness(seed);
         Some(Self {
             io: io::Io::new(&limits.io),
@@ -205,7 +205,7 @@ impl ProcessAdapter {
         } else {
             0
         };
-        let store = file_layer::FileIo::worst_case(66, 4096, 8194, 64 << 20)?
+        let store = file_layer::FileIo::worst_case(66, 4096, 8196, 64 << 20)?
             .checked_add(local_protocol::Store::worst_case(store_limits())?)?
             .checked_add(
                 smith_protocol_channel::Endpoints::worst_case(

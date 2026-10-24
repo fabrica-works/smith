@@ -382,7 +382,7 @@ The interactive chat, the local host of domain/host.md, section 8:
 - **Its event stream,** with `--trace PATH`, is appended to a file. A
   benchmark harness reads it as it grows, while a scripted person types
   at the terminal.
-- **It exits** 0 once its input ends, and 2 or 3 when startup refuses.
+- **It exits** 0 once its input ends, 1 when the chat Store refuses an older build, and 2 or 3 when startup refuses.
 
 ### 4.2 `smith exec`
 
@@ -461,7 +461,7 @@ A headless run's code follows its answer (domain/run.md, section 10):
 | Code | Meaning | When |
 |---|---|---|
 | 0 | accepted | an accepted answer, however long its teardown took |
-| 1 | run failed | a failed answer: the model (a provider's failure past its retries, a field the provider does not take, a limited account, a limit that fired), the program it ran on, policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing; the result's file not written after an accepted answer (`-o`); or a start refused as busy |
+| 1 | run failed | a failed answer: the model (a provider's failure past its retries, a field the provider does not take, a limited account, a limit that fired), the program it ran on, policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing or refusing an older build, even before a run starts; the result's file not written after an accepted answer (`-o`); or a start refused as busy |
 | 2 | usage or configuration | arguments, a settings refusal (5.3), a start the run refused as invalid, a writable repository whose head the start cannot read (one with no commit among them), an account whose provider refused smith's registration |
 | 3 | credentials | an account the run needs without a usable credential: not signed in, its sign-in lapsed or without a scope it needs, no key kept, a variable unset, a program not signed in, signed in otherwise or whose check failed; also a run that failed for its account: unauthorized past a refreshed grant, a program's login lost, or refused by its provider |
 | 4 | budget | a failed answer for its budget: spend, time or turns |
@@ -840,10 +840,29 @@ account = "claude-alice"      # the endpoint's account, when its provider has se
     `token_format`: "the provider's preset gives the registration";
   - an endpoint's `identity`, `dialect = "codex"`, and the `codex`
     endpoint: "use `openai/<model>`".
-- **A chat kept by an earlier version is refused,** naming it and its
-  transcript's version, and never carried over, such as one on the
-  withdrawn `codex` endpoint (protocol/transcript.md, section 6). The
-  person starts another chat.
+- **An older local chat is refused before Store mutation,** with exit 1,
+  whether interactive or headless, including /resume. The named chat lives
+  under the workspace's `chats` tree in smith's state directory (5.1).
+  A missing layout record says:
+
+> Chat `<chat>` was kept by an older build of smith, from before chats recorded their layouts, and this start has changed nothing in its directory. Before the first release a chat is not translated, so every start refuses this one until it is moved. To start afresh, stop each smith using it, move its directory under smith's state directory aside, whole, and start again: nothing is deleted, and the next start makes a new, empty chat, without this chat's history or its deliveries' answers.
+
+A different store layout says:
+
+> Chat `<chat>` was kept by an older build of smith, whose records' layout differs from this build's, and this start has changed nothing in its directory. Before the first release a chat is not translated, so every start refuses this one until it is moved. To start afresh, stop each smith using it, move its directory under smith's state directory aside, whole, and start again: nothing is deleted, and the next start makes a new, empty chat, without this chat's history or its deliveries' answers.
+
+A different transcript layout says:
+
+> Chat `<chat>` was kept by an older build of smith, whose turns' layout differs from this build's, and this start has changed nothing in its directory. Before the first release a chat is not translated, so every start refuses this one until it is moved. To start afresh, stop each smith using it, move its directory under smith's state directory aside, whole, and start again: nothing is deleted, and the next start makes a new, empty chat, without this chat's history or its deliveries' answers.
+
+Earlier startup may already prepare credentials, make directories, generate
+child configuration and open traces outside the Store. An operator-configured
+credentials directory inside the chats tree is an explicit exception to the
+unchanged-directory claim. Explicitly colocated `-o` output may be written
+after the refused Load outcome, during teardown; those later output bytes
+are outside that claim. Configured local and generated child trace destinations
+resolving inside the workspace's chats tree, including aliases and absent
+files under existing parents, are refused before any trace open.
 
 ### 5.4 Generated agent configuration
 

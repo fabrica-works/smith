@@ -1,9 +1,9 @@
-//! Typed local chat records and durable-file requests (protocol/hosts.md,
-//! section 5.3). The caller stores each `File` with Skein file `Store`, whose
-//! terminal follows the file sync, rename, and directory sync. This module
-//! retains no file descriptor or secret. `save_state`, `save_turn`, and the
-//! decoders translate the domain's concrete records without interpreting a
-//! conversation.
+//! Generated local chat codecs and serial durable-file requests
+//! (domain/host.md, section 8; protocol/hosts.md, section 5.3).
+//! Store keeps its selected root, checked bit, versions and bounded loading
+//! buffers, never conversation policy or another build's record layout.
+//! `Store::request` and `from_io` drive IO; `save_state`, `save_turn` and
+//! the decoders translate concrete records without interpreting a conversation.
 
 mod boundary;
 mod machine;
@@ -20,12 +20,6 @@ use smith_domain::Transcript;
 use smith_local_domain::ChatState;
 use smith_protocol_channel::{self as channel, Endpoints};
 use smith_transcript as transcript;
-
-/// Exact bytes in the fixed local metadata file, including its opaque identity.
-pub const STATE_BYTES: usize = 4 + 8 + 16 + 8 + 8 + 1 + 8;
-
-/// Bytes identifying the read fence and window boundary before a turn body.
-pub const TURN_HEADER: usize = 4 + 8 + 1 + 8 + 1;
 
 /// One file replacement; the service acknowledges it only after a durable store terminal.
 #[derive(Debug, PartialEq, Eq)]
@@ -49,50 +43,43 @@ pub enum StoreError {
 
 /// The metadata file after the caller has durably stored it.
 #[must_use]
+#[expect(clippy::manual_map, reason = "strict subset keeps optional boundary conversion as an explicit match")]
 pub fn save_state(state: ChatState) -> File {
-    let mut writer = Writer::new(STATE_BYTES);
-    writer.put(b"SMLS").expect("fixed state header fits");
-    writer.put(&CHAT_STORE_VERSION.to_be_bytes()).expect("fixed store version fits");
-    writer.put(&state.identity.bytes()).expect("fixed identity fits");
-    writer.put(&state.activation.to_be_bytes()).expect("fixed activation fits");
-    writer.put(&state.next_message.to_be_bytes()).expect("fixed message counter fits");
-    match state.read {
-        Some(read) => {
-            writer.put(&[1]).expect("fixed read flag fits");
-            writer.put(&read.raw().to_be_bytes()).expect("fixed read token fits");
-        }
-        None => {
-            writer.put(&[0]).expect("fixed read flag fits");
-            writer.put(&0_u64.to_be_bytes()).expect("fixed absent token fits");
-        }
-    }
-    File { name: Box::from(&b"state"[..]), bytes: writer.finish() }
+    let read = match state.read {
+        Some(read) => Some(read.raw()),
+        None => None,
+    };
+    let record = crate::local_store_v1::State::new(
+        &crate::local_store_v1::CEILINGS,
+        crate::local_store_v1::StateParts {
+            identity: state.identity.bytes(),
+            activation: state.activation,
+            next_message: state.next_message,
+            read,
+        },
+    )
+    .expect("metadata has no variable bounds");
+    let mut writer = Writer::new(usize::try_from(record.measure()).expect("measured bytes fit usize"));
+    record.encode(&mut writer).expect("measured metadata");
+    File { name: b"state".as_slice().into(), bytes: writer.finish() }
 }
 
-/// Read a complete local metadata file.
+/// Read a complete generated local metadata file.
+#[expect(clippy::manual_map, reason = "strict subset keeps optional boundary conversion as an explicit match")]
 pub fn decode_state(bytes: &[u8]) -> Result<ChatState, StoreError> {
-    if bytes.len() != STATE_BYTES {
-        return Err(StoreError::Malformed);
-    }
-    let mut reader = Reader::new(bytes);
-    if reader.bytes(4) != Some(&b"SMLS"[..]) || reader.u64() != Some(CHAT_STORE_VERSION) {
-        return Err(StoreError::Malformed);
-    }
-    let key: [u8; 16] = reader.bytes(16).ok_or(StoreError::Malformed)?.try_into().or(Err(StoreError::Malformed))?;
-    let identity = smith_domain::run::Identity::new(key);
-    let activation = reader.u64().ok_or(StoreError::Malformed)?;
-    let next_message = reader.u64().ok_or(StoreError::Malformed)?;
-    let flag = reader.u8().ok_or(StoreError::Malformed)?;
-    let raw = reader.u64().ok_or(StoreError::Malformed)?;
-    let read = match flag {
-        0 if raw == 0 => None,
-        1 => Some(Token::new(raw)),
-        0 | 2..=u8::MAX => return Err(StoreError::Malformed),
+    let record = crate::local_store_v1::State::decode(&crate::local_store_v1::CEILINGS, &mut Reader::new(bytes))
+        .or(Err(StoreError::Malformed))?
+        .into_parts();
+    let read = match record.read {
+        Some(read) => Some(Token::new(read)),
+        None => None,
     };
-    if !reader.is_empty() {
-        return Err(StoreError::Malformed);
-    }
-    Ok(ChatState { identity, activation, next_message, read })
+    Ok(ChatState {
+        identity: smith_domain::run::Identity::new(record.identity),
+        activation: record.activation,
+        next_message: record.next_message,
+        read,
+    })
 }
 
 /// Fixed-width numeric path for one turn, sortable in transcript order.
@@ -113,6 +100,7 @@ pub fn turn_name(place: u32) -> Box<[u8]> {
 }
 
 /// Encode one concrete turn for a durable numbered file.
+#[expect(clippy::manual_map, reason = "strict subset keeps optional boundary conversion as an explicit match")]
 pub fn save_turn(
     place: u32,
     read: Option<Token>,
@@ -125,34 +113,30 @@ pub fn save_turn(
         return Err(StoreError::Malformed);
     }
     let Ok(bytes) = channel::encode_turn(turn, limits, endpoints) else { return Err(StoreError::Turn) };
-    let mut writer = Writer::new(TURN_HEADER.checked_add(bytes.len()).ok_or(StoreError::TooLarge)?);
-    writer.put(b"SMLT").expect("bounded turn header");
-    writer.put(&CHAT_STORE_VERSION.to_be_bytes()).expect("bounded store version");
-    match read {
-        Some(read) => {
-            writer.put(&[1]).expect("bounded turn flag");
-            writer.put(&read.raw().to_be_bytes()).expect("bounded read token");
-        }
-        None => {
-            writer.put(&[0]).expect("bounded turn flag");
-            writer.put(&0_u64.to_be_bytes()).expect("bounded read token");
-        }
-    }
-    writer.put(&[u8::from(opens_window)]).expect("bounded window flag");
-    writer.put(&bytes).expect("bounded turn body");
+    let read = match read {
+        Some(read) => Some(read.raw()),
+        None => None,
+    };
+    let record = crate::local_store_v1::Turn::new(
+        &crate::local_store_v1::CEILINGS,
+        crate::local_store_v1::TurnParts { read, opens_window, body: bytes },
+    )
+    .or(Err(StoreError::TooLarge))?;
+    let mut writer = Writer::new(usize::try_from(record.measure()).expect("measured bytes fit usize"));
+    record.encode(&mut writer).expect("measured turn envelope");
     Ok(File { name: turn_name(place), bytes: writer.finish() })
 }
 
-/// Read the window flag without decoding the retained turn body.
+/// Read the whole generated envelope without interpreting the transcript body.
 pub fn turn_opens_window(bytes: &[u8]) -> Result<bool, StoreError> {
-    if bytes.get(..4) != Some(b"SMLT") || bytes.get(4..12) != Some(CHAT_STORE_VERSION.to_be_bytes().as_slice()) {
-        return Err(StoreError::Malformed);
-    }
-    match bytes.get(TURN_HEADER.checked_sub(1).expect("nonzero header")) {
-        Some(0) => Ok(false),
-        Some(1) => Ok(true),
-        Some(2..=u8::MAX) | None => Err(StoreError::Malformed),
-    }
+    turn_opens_window_bounded(bytes, crate::local_store_v1::CEILINGS.turn_body)
+}
+
+pub(super) fn turn_opens_window_bounded(bytes: &[u8], file_bytes: u32) -> Result<bool, StoreError> {
+    let limits = envelope_limits(file_bytes);
+    let record =
+        crate::local_store_v1::Turn::decode(&limits, &mut Reader::new(bytes)).or(Err(StoreError::Malformed))?;
+    Ok(record.opens_window())
 }
 
 /// Decode only the last window's ordered files before returning Loaded.
@@ -161,9 +145,20 @@ pub fn decode_turns(
     limits: &transcript::v6::Limits,
     endpoints: &Endpoints,
 ) -> Result<(Option<Transcript>, Option<Token>), StoreError> {
+    decode_turns_bounded(files, limits, endpoints, crate::local_store_v1::CEILINGS.turn_body)
+}
+
+#[expect(clippy::manual_map, reason = "strict subset keeps optional boundary conversion as an explicit match")]
+pub(super) fn decode_turns_bounded(
+    files: &[Box<[u8]>],
+    limits: &transcript::v6::Limits,
+    endpoints: &Endpoints,
+    file_bytes: u32,
+) -> Result<(Option<Transcript>, Option<Token>), StoreError> {
+    let envelope = envelope_limits(file_bytes);
     let mut start = None;
     for (index, file) in files.iter().enumerate() {
-        if turn_opens_window(file)? {
+        if turn_opens_window_bounded(file, file_bytes)? {
             start = Some(index);
         }
     }
@@ -176,26 +171,30 @@ pub fn decode_turns(
     let mut bodies = List::with_capacity(count);
     let mut last_read = None;
     for file in files {
-        let mut reader = Reader::new(file);
-        if reader.bytes(4) != Some(&b"SMLT"[..]) || reader.u64() != Some(CHAT_STORE_VERSION) {
-            return Err(StoreError::Malformed);
-        }
-        let flag = reader.u8().ok_or(StoreError::Malformed)?;
-        let raw = reader.u64().ok_or(StoreError::Malformed)?;
-        last_read = match flag {
-            0 if raw == 0 => None,
-            1 => Some(Token::new(raw)),
-            0 | 2..=u8::MAX => return Err(StoreError::Malformed),
+        let record = crate::local_store_v1::Turn::decode(&envelope, &mut Reader::new(file))
+            .or(Err(StoreError::Malformed))?
+            .into_parts();
+        last_read = match record.read {
+            Some(read) => Some(Token::new(read)),
+            None => None,
         };
-        reader.u8().ok_or(StoreError::Malformed)?;
-        bodies
-            .push(Box::from(reader.bytes(reader.remaining()).ok_or(StoreError::Malformed)?))
-            .expect("bounded turn count");
+        bodies.push(record.body).expect("bounded turn count");
     }
+    let count = bodies.len();
     let piece = channel::transcript_piece(bodies.as_slice()).ok_or(StoreError::Malformed)?;
-    match channel::decode_transcript(&piece, bodies.len(), u32::MAX, limits, endpoints) {
+    // The aggregate piece now owns the bodies' bytes. Release those copies
+    // before typed transcript decoding; whole-envelope reads have their own copy.
+    drop(bodies);
+    match channel::decode_transcript(&piece, count, u32::MAX, limits, endpoints) {
         Ok(transcript) => Ok((transcript, last_read)),
         Err(_) => Err(StoreError::Malformed),
+    }
+}
+
+fn envelope_limits(file_bytes: u32) -> crate::local_store_v1::Limits {
+    crate::local_store_v1::Limits {
+        turn_body: file_bytes.min(crate::local_store_v1::CEILINGS.turn_body),
+        ..crate::local_store_v1::CEILINGS
     }
 }
 
@@ -214,13 +213,7 @@ pub(crate) mod tests {
         let file = save_state(state);
         assert_eq!(file.name.as_ref(), b"state");
         assert_eq!(decode_state(&file.bytes), Ok(state));
-        assert_eq!(file.bytes.len(), STATE_BYTES);
-        let mut previous = Writer::new(STATE_BYTES.saturating_sub(16));
-        previous.put(b"SMLS").expect("old fixed header fits");
-        previous.put(file.bytes.get(20..).expect("fixed fields follow identity")).expect("old fixed fields fit");
-        let previous_format = previous.finish();
-        assert_eq!(decode_state(&previous_format), Err(StoreError::Malformed), "identity is required");
-        let truncated = file.bytes.get(..STATE_BYTES.saturating_sub(1)).expect("state has bytes");
+        let truncated = file.bytes.get(..file.bytes.len().saturating_sub(1)).expect("state has bytes");
         assert_eq!(decode_state(truncated), Err(StoreError::Malformed));
     }
 
@@ -282,9 +275,14 @@ pub(crate) mod tests {
             ..first.clone()
         };
         let earlier = save_turn(1, None, true, &first, &transcript::CEILINGS, &endpoints).expect("first file");
-        let mut unread_body = Writer::new(TURN_HEADER + 21);
-        unread_body.put(&earlier.bytes[..TURN_HEADER]).expect("header fits");
-        unread_body.put(b"not a transcript body").expect("unread body fits");
+        let mut envelope =
+            crate::local_store_v1::Turn::decode(&crate::local_store_v1::CEILINGS, &mut Reader::new(&earlier.bytes))
+                .unwrap()
+                .into_parts();
+        envelope.body = b"not a transcript body".as_slice().into();
+        let envelope = crate::local_store_v1::Turn::new(&crate::local_store_v1::CEILINGS, envelope).unwrap();
+        let mut unread_body = Writer::new(usize::try_from(envelope.measure()).expect("measured bytes fit usize"));
+        envelope.encode(&mut unread_body).unwrap();
         let window_file = save_turn(3, None, true, &window, &transcript::CEILINGS, &endpoints).expect("window file");
         let ordinary = smith_domain::Turn {
             model: b"model".as_slice().into(),

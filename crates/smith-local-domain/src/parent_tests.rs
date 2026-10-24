@@ -789,3 +789,58 @@ fn the_host_answer_clock_precedes_teardown_and_durable_saves() {
     let Some(Request::Show { .. }) = out.pop() else { panic!("settled answer is shown") };
     let Some(Request::Answered { .. }) = out.pop() else { panic!("settled answer reaches the shell") };
 }
+
+#[expect(
+    clippy::disallowed_macros,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "verbatim contract tests are ordinary Rust (programming-model.md, section 10.2)"
+)]
+mod older {
+    use super::*;
+    #[test]
+    fn older_store_words_match_all_three_shell_contract_blockquotes_verbatim() {
+        let documented = include_str!("../../../docs/design/shell.md");
+        let quotes: Vec<_> = documented
+            .lines()
+            .filter_map(|line| line.strip_prefix("> Chat "))
+            .map(|line| format!("Chat {line}"))
+            .collect();
+        let reasons = [
+            crate::Older::Unrecorded,
+            crate::Older::Layout(crate::StoreFamily::Store),
+            crate::Older::Layout(crate::StoreFamily::Transcript),
+        ];
+        assert_eq!(quotes.len(), reasons.len());
+        for (why, quoted) in reasons.iter().zip(quotes) {
+            assert_eq!(why.words().join("<chat>"), quoted);
+        }
+    }
+
+    #[test]
+    fn an_older_load_before_any_run_preserves_its_reason_through_notice_cause_and_exit_one() {
+        for why in [
+            crate::Older::Unrecorded,
+            crate::Older::Layout(crate::StoreFamily::Store),
+            crate::Older::Layout(crate::StoreFamily::Transcript),
+        ] {
+            let (mut domain, env, mut out) = running(crate::tests::config());
+            domain.run = None;
+            domain.chat.phase = Phase::Loading;
+            let reason = crate::StoreFailure::OlderBuild { why };
+            crate::step(&mut domain, &env, Event::StoreFailed { turn: None, reason }, &mut out);
+            assert_eq!(domain.end_cause, Some(crate::EndCause::Host { turn: None, reason }));
+            let Some(Request::Notice { notice: Notice::Failure(Failure::Store { turn: None, reason: found }) }) =
+                out.pop()
+            else {
+                panic!("older notice before exit");
+            };
+            assert_eq!(found, reason);
+            let Some(Request::Exit { status }) = out.pop() else {
+                panic!("older-load exit");
+            };
+            assert_eq!(status, crate::ExitStatus::RunFailed);
+            assert!(out.is_empty());
+        }
+    }
+}
