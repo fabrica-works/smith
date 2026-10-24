@@ -305,7 +305,7 @@ impl Fake {
             return;
         }
         match event {
-            Event::Shutdown { signal: kernel::ServiceSignal::Interrupt } => {
+            Event::Shutdown { signal: kernel::ServiceSignal::Interrupt, .. } => {
                 if self.arguments.iter().any(|argument| argument == "-p") {
                     self.effects(vec![Effect::Seen(crate::Seen::Interrupted)]);
                 }
@@ -316,7 +316,7 @@ impl Fake {
                 };
                 self.effects(effects);
             }
-            Event::Shutdown { signal: kernel::ServiceSignal::Terminate } => {
+            Event::Shutdown { signal: kernel::ServiceSignal::Terminate, .. } => {
                 if self.arguments.iter().any(|argument| argument == "-p") {
                     self.effects(vec![Effect::Seen(crate::Seen::Terminated)]);
                 }

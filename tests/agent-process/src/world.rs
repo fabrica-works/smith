@@ -205,7 +205,7 @@ impl Parent {
     fn completed(&mut self, complete: kernel::Complete) {
         match complete.kind {
             Op::Spawn { spawn } => {
-                let Ok(Done::Spawned { pidfd }) = complete.result else { panic!("hosted startup failed") };
+                let Ok(Done::Spawned { pidfd, .. }) = complete.result else { panic!("hosted startup failed") };
                 self.close(spawn.root);
                 self.pidfd = Some(pidfd);
                 self.input = spawn.pipes[0].parent;

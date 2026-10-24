@@ -83,7 +83,7 @@ pub(super) fn route_io_event(service: &mut Service, event: io::Event) {
     }
     match event {
         io::Event::Resized | io::Event::Window { .. } => {}
-        io::Event::Shutdown { signal: _ } => teardown::shutdown(service),
+        io::Event::Shutdown { .. } => teardown::shutdown(service),
         io::Event::Stream { owner, up } if Some(owner) == service.input => {
             service.channel.as_mut().expect("framed agent owns its channel").from_below(
                 ChannelLowerEvent::Read(up),

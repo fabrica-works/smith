@@ -142,7 +142,7 @@ impl Parent {
         let result = complete.result.expect("parent operation succeeds");
         match self.phase {
             Phase::Spawn => {
-                let Done::Spawned { pidfd } = result else { panic!("child spawn") };
+                let Done::Spawned { pidfd, .. } = result else { panic!("child spawn") };
                 let Op::Spawn { spawn } = complete.kind else { panic!("spawn operation") };
                 self.child = Some(pidfd);
                 self.pipes = (0..3)
