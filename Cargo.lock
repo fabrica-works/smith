@@ -1401,6 +1401,7 @@ dependencies = [
  "smith-agent-shell",
  "smith-local-domain",
  "smith-local-process-world",
+ "smith-local-protocol",
  "smith-local-shell",
 ]
 
