@@ -256,6 +256,7 @@ fn resources(process: &ProcessResult) -> Result<Resources, String> {
     let cpu_scope = match process.counts.method {
         Method::Cgroup => ResourceScope::Cgroup,
         Method::Walk => ResourceScope::PidfdWalk,
+        Method::Group => ResourceScope::ProcessGroup,
     };
     let (peak_memory_scope, peak_rss_bytes) = match process.counts.peak_scope {
         PeakScope::Tree => (ResourceScope::Cgroup, Measure::Observed { value: process.counts.peak_rss_bytes }),

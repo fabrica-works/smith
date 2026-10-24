@@ -267,6 +267,7 @@ fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
         let scope = match scope {
             ResourceScope::Cgroup => "cgroup",
             ResourceScope::PidfdWalk => "pidfd-walk",
+            ResourceScope::ProcessGroup => "process-group",
             ResourceScope::LargestProcess => "largest-process",
             ResourceScope::AgentProcess => "agent-process",
             ResourceScope::Unavailable => "unavailable",

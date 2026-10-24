@@ -318,7 +318,7 @@ fn kernel_cancel_targets_the_right_layer_operation() {
 fn termination_signal_cancels_the_admitted_run() {
     let mut service = service();
     service.admitted = Some(Token::new(91));
-    route_io_event(&mut service, io::Event::Shutdown { signal: kernel::ServiceSignal::Terminate });
+    route_io_event(&mut service, io::Event::Shutdown { signal: kernel::ServiceSignal::Terminate, from: None });
     match service.domain_events.pop().expect("cancel event") {
         domain::Event::Cancel { run } => assert_eq!(run, Token::new(91)),
         other => panic!("unexpected signal result: {other:?}"),
@@ -328,7 +328,7 @@ fn termination_signal_cancels_the_admitted_run() {
 #[test]
 fn signal_during_opening_waits_for_the_admitted_run_handle() {
     let mut service = service();
-    route_io_event(&mut service, io::Event::Shutdown { signal: kernel::ServiceSignal::Interrupt });
+    route_io_event(&mut service, io::Event::Shutdown { signal: kernel::ServiceSignal::Interrupt, from: None });
     assert!(service.cancel_pending);
     service.admitted = Some(Token::new(19));
     domain_down(&mut service);
