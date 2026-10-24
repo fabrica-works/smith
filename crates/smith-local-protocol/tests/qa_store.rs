@@ -227,7 +227,8 @@ fn trailing_bytes_do_not_make_a_valid_marker() {
     bytes.extend_from_slice(b"trailing record");
     write_files(disk.path(), &[(FORMAT_NAME, &bytes), ("fresh", b"do not recover")]);
     let path = disk.path().to_path_buf();
-    refused_unchanged(&mut disk, &path, StoreFailure::OlderBuild { why: Older::Layout(StoreFamily::Store) });
+    // The fixed-size marker read rejects this oversized file before decoding.
+    refused_unchanged(&mut disk, &path, StoreFailure::Read);
 }
 
 #[test]

@@ -243,6 +243,8 @@ interrupted-create temporaries (skein io.md, 5.2). These are never removed.
 Any other entry or incomplete scan refuses as unrecorded. Malformed,
 truncated or wrong-version markers refuse as a store-layout mismatch; IO,
 symlink, directory and size failures refuse without adopting the directory.
+The marker read is capped at its fixed generated encoding bound; a complete
+marker followed by extra bytes is a size failure before decoding.
 The absence scan reserves the marker's own entry and name bytes, so an
 admitted interrupted create remains within the next scan's bounds. Store
 layout is compared before transcript layout. No refusal writes,
