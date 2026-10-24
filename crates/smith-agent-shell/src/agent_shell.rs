@@ -235,13 +235,9 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
         .and_then(|bytes| bytes.checked_add(service::program_worst_case(&configuration.service)?))
         .and_then(|bytes| {
             bytes.checked_add(if configuration.trace.is_some() {
-                // The retained startup header's four strings; its structure is in Agent.
+                // The retained startup header's three strings; its structure is in Agent.
                 u64::try_from(
-                    b"smith"
-                        .len()
-                        .checked_add(env!("CARGO_PKG_VERSION").len())?
-                        .checked_add(env!("SMITH_BUILD").len())?
-                        .checked_add(b"standard".len())?,
+                    b"smith".len().checked_add(env!("CARGO_PKG_VERSION").len())?.checked_add(b"standard".len())?,
                 )
                 .ok()?
                 .checked_add(header_bytes)?
@@ -264,7 +260,6 @@ fn prepare(mut configuration: config::Configuration, resources: &Resources) -> R
         agent: smith_events::Agent {
             name: b"smith".as_slice().into(),
             version: env!("CARGO_PKG_VERSION").as_bytes().into(),
-            build: env!("SMITH_BUILD").as_bytes().into(),
         },
         mode: smith_events::Mode::Agent,
         containment: smith_events::Containment::Groups,
@@ -530,11 +525,7 @@ fn derivation_refusal(field: &'static str) -> String {
 /// The shipped agent identity, shared with the product's event header.
 #[must_use]
 pub fn identity() -> smith_events::Agent {
-    smith_events::Agent {
-        name: b"smith".as_slice().into(),
-        version: env!("CARGO_PKG_VERSION").as_bytes().into(),
-        build: env!("SMITH_BUILD").as_bytes().into(),
-    }
+    smith_events::Agent { name: b"smith".as_slice().into(), version: env!("CARGO_PKG_VERSION").as_bytes().into() }
 }
 
 #[cfg(test)]

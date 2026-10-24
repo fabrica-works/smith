@@ -602,7 +602,6 @@ fn product_memory(with_program: bool) {
                 b"smith"
                     .len()
                     .checked_add(env!("CARGO_PKG_VERSION").len())
-                    .and_then(|bytes| bytes.checked_add(env!("SMITH_BUILD").len()))
                     .and_then(|bytes| bytes.checked_add(b"standard".len()))
                     .expect("header strings"),
             )

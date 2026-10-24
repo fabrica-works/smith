@@ -302,11 +302,7 @@ fn value_role(name: &str, spelling: &str) -> Role {
 }
 
 fn value_agent(_name: &str, _spelling: &str) -> Agent {
-    Agent {
-        name: Box::from("sample\n\"🌍".as_bytes()),
-        version: Box::from("sample\n\"🌍".as_bytes()),
-        build: Box::from("sample\n\"🌍".as_bytes()),
-    }
+    Agent { name: Box::from("sample\n\"🌍".as_bytes()), version: Box::from("sample\n\"🌍".as_bytes()) }
 }
 
 fn value_versions(_name: &str, _spelling: &str) -> Versions {

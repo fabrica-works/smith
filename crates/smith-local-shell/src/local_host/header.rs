@@ -98,7 +98,7 @@ impl Local {
         >::worst_case(
             header.limits.capacity(),
         )?)?;
-        for name in [&header.agent.name, &header.agent.version, &header.agent.build, &header.profile] {
+        for name in [&header.agent.name, &header.agent.version, &header.profile] {
             bytes = bytes.checked_add(u64::try_from(name.len()).ok()?)?;
         }
         if let Some(chat) = &header.chat {

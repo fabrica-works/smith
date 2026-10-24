@@ -98,7 +98,6 @@ fn drawn_declarations_are_named_or_fit_complete_process_memory() {
             b"smith"
                 .len()
                 .checked_add(env!("CARGO_PKG_VERSION").len())
-                .and_then(|bytes| bytes.checked_add(env!("SMITH_BUILD").len()))
                 .and_then(|bytes| bytes.checked_add(b"standard".len()))
                 .expect("header strings"),
         )

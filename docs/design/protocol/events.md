@@ -116,7 +116,7 @@ conversation, which is `conversation`.
 | Field | Type | What it is |
 |---|---|---|
 | `wall_ms` | integer | the wall clock at the process's start, in milliseconds since the Unix epoch |
-| `agent` | object | `name`, `version` and `build`: the release and the build's identity |
+| `agent` | object | `name` and `version`: the agent name and release version |
 | `mode` | string | `agent`, a spawned agent process; `exec`, headless; or `chat`, interactive |
 | `chat` | string, optional | the product's chat, by its name, under `exec` and `chat` (`docs/design/shell.md`, section 4) |
 | `pid` | integer | the process's id |
@@ -493,7 +493,7 @@ when it is about one; and the kind's fields.
 
 | Record | Fed by |
 |---|---|
-| `session.started` | the shell: the wall clock, the process id, the build; the configuration: profile, capture and delivery; the service's effective limits (limits.md, section 9); the machine's containment |
+| `session.started` | the shell: the wall clock, the process id, the agent name and version; the configuration: profile, capture and delivery; the service's effective limits (limits.md, section 9); the machine's containment |
 | `run.started` | the run's fact that it was admitted (domain/run.md, section 11), with the charter's main model, budget, reserve, tools and contract |
 | `run.completed` | the run's answer (domain/run.md, section 10), where the stream's writer meets it: the agent service as it sends it, or the local service as its local domain receives it from its agent: status, typed failure, result, turns, spend and the final fence; the run's usage totals; a refusal at the entrance |
 | `conversation.opened`, `.closed` | the run's facts that a conversation opened or closed, with its parent, a child's effective share and clamp reasons; the session's end, with its turns and usage |
@@ -644,8 +644,9 @@ The vocabulary is pre-release, like every format (README.md, section 8).
   - each record at its largest, within its bound, measured against the
     counting allocator.
 - **Drift.** The goldens are committed. A change that alters one fails
-  until the golden and the version change with it, and this document
-  with them; a reader test refuses a golden line of another version.
+  until the schema, code, golden and this document change together.
+  Before the first release the version stays fixed (skein's `codec.md`,
+  section 5); a reader test refuses a golden line of another version.
 - **Conformance,** in the agent's simulated world (agent.md, section 8)
   and the local host's (hosts.md, section 7). The referee reads the
   stream through `smith-events`' reader, as a consumer does, and checks:

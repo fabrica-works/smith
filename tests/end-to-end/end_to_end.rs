@@ -583,7 +583,8 @@ fn smith_check_json_shows_each_value_with_its_layer() {
     for tool in ["sh", "rg", "git"] {
         assert!(report["tools"][tool].as_str().expect("tool path").starts_with('/'));
     }
-    assert!(report["build"]["build"].as_str().is_some_and(|identity| !identity.is_empty()));
+    assert_eq!(report["agent"], serde_json::json!({"name":"smith", "version":env!("CARGO_PKG_VERSION")}));
+    assert!(report.get("build").is_none(), "check reports the agent name and version");
 }
 
 #[test]

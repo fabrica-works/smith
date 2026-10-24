@@ -467,11 +467,7 @@ fn event_service() -> Service {
         smith_events::SessionStarted {
             chat: None,
             wall_ms: 0,
-            agent: smith_events::Agent {
-                name: b"test".as_slice().into(),
-                version: Box::default(),
-                build: Box::default(),
-            },
+            agent: smith_events::Agent { name: b"test".as_slice().into(), version: Box::default() },
             mode: smith_events::Mode::Agent,
             containment: smith_events::Containment::Groups,
             pid: 1,

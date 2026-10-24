@@ -35,7 +35,7 @@ pub struct Report {
     pub version: u64,
     pub settings: Settings,
     pub formats: BTreeMap<&'static str, u64>,
-    pub build: serde_json::Value,
+    pub agent: serde_json::Value,
     pub tools: BTreeMap<&'static str, PathBuf>,
     pub programs: BTreeMap<&'static str, PathBuf>,
     pub environment: Vec<String>,
@@ -167,7 +167,7 @@ fn report_for(
             ("chat_store", smith_local_protocol::Store::FORMAT_VERSION),
             ("check", CHECK_VERSION),
         ]),
-        build: serde_json::json!({"name":text(&identity.name),"version":text(&identity.version),"build":text(&identity.build)}),
+        agent: serde_json::json!({"name":text(&identity.name),"version":text(&identity.version)}),
         tools,
         programs,
         environment,
@@ -221,7 +221,7 @@ pub fn render_text(report: &Report) -> String {
         let source = value.origin.description();
         lines.push(format!("{key} = {} (from {source})", value.value));
     }
-    lines.push(format!("build {}", report.build));
+    lines.push(format!("agent {}", report.agent));
     lines.push(format!("formats {}", serde_json::to_string(&report.formats).expect("format names")));
     for (name, path) in &report.tools {
         lines.push(format!("{name} = {}", path.display()));

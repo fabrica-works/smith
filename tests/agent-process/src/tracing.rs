@@ -137,7 +137,6 @@ impl Host for Tracing {
                     agent: smith_events::Agent {
                         name: b"smith".as_slice().into(),
                         version: b"world".as_slice().into(),
-                        build: b"deterministic".as_slice().into(),
                     },
                     mode: smith_events::Mode::Agent,
                     containment: smith_events::Containment::Groups,

@@ -16,7 +16,7 @@ fn payload(length: u32) -> Box<[u8]> {
 }
 
 fn max_agent(limits: &smith_events::Limits) -> Agent {
-    Agent { name: payload(limits.string), version: payload(limits.string), build: payload(limits.string) }
+    Agent { name: payload(limits.string), version: payload(limits.string) }
 }
 
 fn max_versions(_limits: &smith_events::Limits) -> Versions {

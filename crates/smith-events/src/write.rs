@@ -391,8 +391,6 @@ fn write_agent(json: &mut Encoder, value: &Agent, _capture: &Capture) {
     json.string(&value.name);
     json.key(b"version");
     json.string(&value.version);
-    json.key(b"build");
-    json.string(&value.build);
     json.object_end();
 }
 
@@ -1180,7 +1178,6 @@ fn validate_role(value: &Role, limits: &Limits) -> Result<(), Error> {
 fn validate_agent(value: &Agent, limits: &Limits) -> Result<(), Error> {
     check_text(&value.name, limits.string)?;
     check_text(&value.version, limits.string)?;
-    check_text(&value.build, limits.string)?;
     Ok(())
 }
 

@@ -538,8 +538,8 @@ ones `smith exec` with the same flags would have. `check`'s own
   and in its unit (protocol/limits.md, section 9), the same names the
   event stream's header uses;
 - each format's version: the channel, the charter, the transcript, the
-  event stream, the chat store and this document's own; and the build's
-  identity;
+  event stream, the chat store and this document's own; and the agent's
+  name and version, in `agent`;
 - each account: its provider, its source, its number (section 7) and
   its state: usable, with where its credential is kept and when it
   expires; not signed in; must sign in again; signed in without a scope

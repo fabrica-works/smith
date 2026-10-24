@@ -402,12 +402,11 @@ pub enum Role {
     Unknown(Box<[u8]>),
 }
 
-/// The build identity the shell supplies at process startup.
+/// The agent name and version the shell supplies at process startup.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Agent {
     pub name: Box<[u8]>,
     pub version: Box<[u8]>,
-    pub build: Box<[u8]>,
 }
 
 /// The format versions the shell announces at process startup.
