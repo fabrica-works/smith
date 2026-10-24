@@ -5,63 +5,324 @@
 //! replaced through Skein's synced whole-file store before the effect starts
 //! or its terminal is told to the agent.
 
+use crate::{File, StoreError, local_store_v1 as wire};
 use alloc::boxed::Box;
-use skein_lib::{List, Reader};
+use skein_lib::{List, Reader, Writer};
 use smith_domain::run;
 use smith_local_domain::{DeliveryIntent, DeliveryRecord, DeliveryState, IntentDirectory, PushTarget};
 
-use crate::{File, StoreError};
-
-const MAGIC: &[u8] = b"SMLD\x01";
-
-/// Encode a bounded delivery record under its stable call name.
+/// Encode a generated delivery record under its stable call name.
 pub fn save_delivery(record: &DeliveryRecord, max_bytes: u32) -> Result<File, StoreError> {
-    let mut out = List::with_capacity(max_bytes);
-    put(&mut out, MAGIC)?;
-    put_u64(&mut out, record.name.activation)?;
-    put_u32(&mut out, record.name.completion)?;
-    put_u32(&mut out, record.name.position)?;
-    match &record.state {
-        DeliveryState::Intent(intent) => {
-            put_u8(&mut out, 0)?;
-            put_intent(&mut out, intent)?;
-        }
-        DeliveryState::Answer(answer) => {
-            put_u8(&mut out, 1)?;
-            put_answer(&mut out, answer)?;
-        }
+    if payload_bytes(record)? > u64::from(max_bytes) {
+        return Err(StoreError::TooLarge);
     }
-    put_receipts(&mut out, &record.landed)?;
-    Ok(File { name: delivery_name(record.name), bytes: out.into_boxed() })
+    let name = wire::CallName::new(
+        &wire::CEILINGS,
+        wire::CallNameParts {
+            activation: record.name.activation,
+            completion: record.name.completion,
+            position: record.name.position,
+        },
+    )
+    .or(Err(StoreError::Malformed))?;
+    let state = match &record.state {
+        DeliveryState::Intent(intent) => wire::DeliveryState::Intent(encode_intent(intent)?),
+        DeliveryState::Answer(answer) => wire::DeliveryState::Answer(
+            wire::DeliveryAnswer::new(&wire::CEILINGS, wire::DeliveryAnswerParts { answer: encode_answer(answer)? })
+                .or(Err(StoreError::TooLarge))?,
+        ),
+    };
+    let value = wire::Delivery::new(
+        &wire::CEILINGS,
+        wire::DeliveryParts { name, state, landed: encode_receipts(&record.landed)? },
+    )
+    .or(Err(StoreError::TooLarge))?;
+    if value.measure() > max_bytes {
+        return Err(StoreError::TooLarge);
+    }
+    let mut writer = Writer::new(usize::try_from(value.measure()).expect("measured bytes fit usize"));
+    value.encode(&mut writer).expect("measured delivery");
+    Ok(File { name: delivery_name(record.name), bytes: writer.finish() })
 }
 
-/// Decode one complete bounded delivery record after a durable load.
+/// Decode the generated grammar and preserve the domain's constructor checks.
 pub fn decode_delivery(bytes: &[u8], max_bytes: u32) -> Result<DeliveryRecord, StoreError> {
     if bytes.len() > usize::try_from(max_bytes).expect("u32 fits usize") {
         return Err(StoreError::TooLarge);
     }
-    let mut reader = Reader::new(bytes);
-    if reader.bytes(5) != Some(MAGIC) {
-        return Err(StoreError::Malformed);
-    }
-    let name = run::CallName {
-        activation: number_u64(&mut reader)?,
-        completion: number_u32(&mut reader)?,
-        position: number_u32(&mut reader)?,
-    };
+    let value =
+        wire::Delivery::decode(&wire::CEILINGS, &mut Reader::new(bytes)).or(Err(StoreError::Malformed))?.into_parts();
+    let name = value.name.into_parts();
     if name.activation == 0 || name.completion == 0 {
         return Err(StoreError::Malformed);
     }
-    let state = match number_u8(&mut reader)? {
-        0 => DeliveryState::Intent(read_intent(&mut reader)?),
-        1 => DeliveryState::Answer(read_answer(&mut reader)?),
-        2..=u8::MAX => return Err(StoreError::Malformed),
+    let state = match value.state {
+        wire::DeliveryState::Intent(intent) => DeliveryState::Intent(decode_intent(intent)?),
+        wire::DeliveryState::Answer(answer) => DeliveryState::Answer(decode_answer(answer.into_parts().answer)?),
     };
-    let landed = read_receipts(&mut reader)?;
-    if !reader.is_empty() {
-        return Err(StoreError::Malformed);
+    Ok(DeliveryRecord {
+        name: run::CallName { activation: name.activation, completion: name.completion, position: name.position },
+        state,
+        landed: decode_receipts(value.landed)?,
+    })
+}
+
+// Check aggregate payload ownership before the generated adapters copy it.
+// This is not a wire measurement: generated measure remains the sole encoded
+// length, and also checks tags, counts, versions and field overhead below.
+fn payload_bytes(record: &DeliveryRecord) -> Result<u64, StoreError> {
+    let state = match &record.state {
+        DeliveryState::Intent(intent) => {
+            count(intent.directories.len())?;
+            let mut bytes = 0_u64;
+            for directory in &intent.directories {
+                if let Some(head) = &directory.head {
+                    bytes = add_bytes(bytes, head)?;
+                }
+                if let Some(push) = &directory.push {
+                    bytes = add_bytes(bytes, &push.remote)?;
+                    bytes = add_bytes(bytes, &push.branch)?;
+                }
+            }
+            bytes
+        }
+        DeliveryState::Answer(answer) => answer_bytes(answer)?,
+    };
+    state.checked_add(receipt_bytes(&record.landed)?).ok_or(StoreError::TooLarge)
+}
+
+fn answer_bytes(answer: &run::Delivery) -> Result<u64, StoreError> {
+    match answer {
+        run::Delivery::Delivered(delivered) => receipt_bytes(delivered.receipts()),
+        run::Delivery::Nothing | run::Delivery::Stale => Ok(0),
+        run::Delivery::Refused(refused) => {
+            let bytes = add_bytes(0, refused.explanation())?;
+            match refused.marker() {
+                Some(marker) => add_bytes(bytes, marker.path()),
+                None => Ok(bytes),
+            }
+        }
+        run::Delivery::Failed(failed) => add_bytes(0, failed.diagnostic.output()),
     }
-    Ok(DeliveryRecord { name, state, landed })
+}
+
+fn receipt_bytes(receipts: &[run::Receipt]) -> Result<u64, StoreError> {
+    count(receipts.len())?;
+    let mut bytes = 0_u64;
+    for receipt in receipts {
+        bytes = add_bytes(bytes, receipt.text())?;
+    }
+    Ok(bytes)
+}
+
+fn add_bytes(total: u64, bytes: &[u8]) -> Result<u64, StoreError> {
+    total.checked_add(u64::try_from(bytes.len()).or(Err(StoreError::TooLarge))?).ok_or(StoreError::TooLarge)
+}
+
+fn count(length: usize) -> Result<u32, StoreError> {
+    let length = u32::try_from(length).or(Err(StoreError::TooLarge))?;
+    if length > run::MAX_DIRECTORIES {
+        return Err(StoreError::TooLarge);
+    }
+    Ok(length)
+}
+
+fn encode_intent(intent: &DeliveryIntent) -> Result<wire::DeliveryIntent, StoreError> {
+    let mut directories = List::with_capacity(count(intent.directories.len())?);
+    for entry in &intent.directories {
+        let push = match &entry.push {
+            Some(push) => Some(
+                wire::PushTarget::new(
+                    &wire::CEILINGS,
+                    wire::PushTargetParts { remote: push.remote.clone(), branch: push.branch.clone() },
+                )
+                .or(Err(StoreError::TooLarge))?,
+            ),
+            None => None,
+        };
+        let value = wire::IntentDirectory::new(
+            &wire::CEILINGS,
+            wire::IntentDirectoryParts {
+                directory: entry.directory,
+                changed: entry.changed,
+                head: entry.head.clone(),
+                push,
+            },
+        )
+        .or(Err(StoreError::TooLarge))?;
+        directories.push(value).or(Err(StoreError::TooLarge))?;
+    }
+    wire::DeliveryIntent::new(&wire::CEILINGS, wire::DeliveryIntentParts { directories }).or(Err(StoreError::TooLarge))
+}
+
+fn decode_intent(intent: wire::DeliveryIntent) -> Result<DeliveryIntent, StoreError> {
+    let source = intent.into_parts().directories;
+    let mut directories = List::with_capacity(source.len());
+    let mut previous = None;
+    for entry in source.into_boxed() {
+        let entry = entry.into_parts();
+        if entry.directory >= run::MAX_DIRECTORIES || !increasing(previous, entry.directory) {
+            return Err(StoreError::Malformed);
+        }
+        previous = Some(entry.directory);
+        match &entry.head {
+            Some(head) if head.is_empty() => return Err(StoreError::Malformed),
+            Some(_) | None => {}
+        }
+        let push = match entry.push {
+            Some(push) => {
+                let push = push.into_parts();
+                Some(PushTarget { remote: push.remote, branch: push.branch })
+            }
+            None => None,
+        };
+        directories
+            .push(IntentDirectory { directory: entry.directory, changed: entry.changed, head: entry.head, push })
+            .expect("bounded directories");
+    }
+    Ok(DeliveryIntent { directories: directories.into_boxed() })
+}
+
+fn encode_receipts(receipts: &[run::Receipt]) -> Result<List<wire::Receipt>, StoreError> {
+    let mut values = List::with_capacity(count(receipts.len())?);
+    for receipt in receipts {
+        let value = wire::Receipt::new(
+            &wire::CEILINGS,
+            wire::ReceiptParts { directory: receipt.directory(), text: receipt.text().into() },
+        )
+        .or(Err(StoreError::TooLarge))?;
+        values.push(value).or(Err(StoreError::TooLarge))?;
+    }
+    Ok(values)
+}
+
+fn decode_receipts(values: List<wire::Receipt>) -> Result<Box<[run::Receipt]>, StoreError> {
+    let mut receipts = List::with_capacity(values.len());
+    let mut previous = None;
+    for value in values.into_boxed() {
+        let value = value.into_parts();
+        if !increasing(previous, value.directory) {
+            return Err(StoreError::Malformed);
+        }
+        previous = Some(value.directory);
+        receipts
+            .push(run::Receipt::new(value.directory, value.text).ok_or(StoreError::Malformed)?)
+            .expect("bounded receipts");
+    }
+    Ok(receipts.into_boxed())
+}
+
+fn increasing(previous: Option<u32>, current: u32) -> bool {
+    match previous {
+        Some(prior) => prior < current,
+        None => true,
+    }
+}
+
+fn encode_answer(answer: &run::Delivery) -> Result<wire::Answer, StoreError> {
+    match answer {
+        run::Delivery::Delivered(delivered) => Ok(wire::Answer::Delivered(
+            wire::Delivered::new(
+                &wire::CEILINGS,
+                wire::DeliveredParts { receipts: encode_receipts(delivered.receipts())? },
+            )
+            .or(Err(StoreError::TooLarge))?,
+        )),
+        run::Delivery::Nothing => Ok(wire::Answer::Nothing),
+        run::Delivery::Stale => Ok(wire::Answer::Stale),
+        run::Delivery::Refused(refused) => {
+            let marker = match refused.marker() {
+                Some(marker) => Some(
+                    wire::Marker::new(
+                        &wire::CEILINGS,
+                        wire::MarkerParts { directory: marker.directory(), path: marker.path().into() },
+                    )
+                    .or(Err(StoreError::TooLarge))?,
+                ),
+                None => None,
+            };
+            Ok(wire::Answer::Refused(
+                wire::DeliveryRefusal::new(
+                    &wire::CEILINGS,
+                    wire::DeliveryRefusalParts { marker, explanation: refused.explanation().into() },
+                )
+                .or(Err(StoreError::TooLarge))?,
+            ))
+        }
+        run::Delivery::Failed(failed) => Ok(wire::Answer::Failed(
+            wire::DeliveryFailure::new(
+                &wire::CEILINGS,
+                wire::DeliveryFailureParts {
+                    directory: failed.directory,
+                    reason: encode_reason(failed.reason),
+                    output: failed.diagnostic.output().into(),
+                    cut: failed.diagnostic.cut(),
+                },
+            )
+            .or(Err(StoreError::TooLarge))?,
+        )),
+    }
+}
+
+fn decode_answer(answer: wire::Answer) -> Result<run::Delivery, StoreError> {
+    match answer {
+        wire::Answer::Delivered(delivered) => Ok(run::Delivery::Delivered(
+            run::Delivered::new(decode_receipts(delivered.into_parts().receipts)?).ok_or(StoreError::Malformed)?,
+        )),
+        wire::Answer::Nothing => Ok(run::Delivery::Nothing),
+        wire::Answer::Stale => Ok(run::Delivery::Stale),
+        wire::Answer::Refused(refused) => {
+            let refused = refused.into_parts();
+            let marker = match refused.marker {
+                Some(marker) => {
+                    let marker = marker.into_parts();
+                    Some(run::Marker::new(marker.directory, marker.path).ok_or(StoreError::Malformed)?)
+                }
+                None => None,
+            };
+            Ok(run::Delivery::Refused(
+                run::DeliveryRefusal::new(marker, refused.explanation).ok_or(StoreError::Malformed)?,
+            ))
+        }
+        wire::Answer::Failed(failed) => {
+            let failed = failed.into_parts();
+            Ok(run::Delivery::Failed(run::DeliveryFailure {
+                directory: failed.directory,
+                reason: decode_reason(failed.reason),
+                diagnostic: run::Diagnostic::new(&failed.output, failed.cut),
+            }))
+        }
+    }
+}
+
+fn encode_reason(reason: run::DeliveryReason) -> wire::DeliveryReason {
+    match reason {
+        run::DeliveryReason::Unreachable => wire::DeliveryReason::Unreachable,
+        run::DeliveryReason::RefusedByTarget => wire::DeliveryReason::RefusedByTarget,
+        run::DeliveryReason::TimedOut => wire::DeliveryReason::TimedOut,
+        run::DeliveryReason::Broken => wire::DeliveryReason::Broken,
+        run::DeliveryReason::TooLarge => wire::DeliveryReason::TooLarge,
+        run::DeliveryReason::Missing => wire::DeliveryReason::Missing,
+        run::DeliveryReason::Busy => wire::DeliveryReason::Busy,
+        run::DeliveryReason::Unavailable => wire::DeliveryReason::Unavailable,
+        run::DeliveryReason::Cancelled => wire::DeliveryReason::Cancelled,
+        run::DeliveryReason::Unknown => wire::DeliveryReason::Unknown,
+    }
+}
+
+fn decode_reason(reason: wire::DeliveryReason) -> run::DeliveryReason {
+    match reason {
+        wire::DeliveryReason::Unreachable => run::DeliveryReason::Unreachable,
+        wire::DeliveryReason::RefusedByTarget => run::DeliveryReason::RefusedByTarget,
+        wire::DeliveryReason::TimedOut => run::DeliveryReason::TimedOut,
+        wire::DeliveryReason::Broken => run::DeliveryReason::Broken,
+        wire::DeliveryReason::TooLarge => run::DeliveryReason::TooLarge,
+        wire::DeliveryReason::Missing => run::DeliveryReason::Missing,
+        wire::DeliveryReason::Busy => run::DeliveryReason::Busy,
+        wire::DeliveryReason::Unavailable => run::DeliveryReason::Unavailable,
+        wire::DeliveryReason::Cancelled => run::DeliveryReason::Cancelled,
+        wire::DeliveryReason::Unknown => run::DeliveryReason::Unknown,
+    }
 }
 
 fn delivery_name(name: run::CallName) -> Box<[u8]> {
@@ -88,253 +349,6 @@ fn decimal(out: &mut [u8], cursor: &mut usize, value: u64, width: usize) {
         number /= 10;
     }
     *cursor = end;
-}
-
-fn put(out: &mut List<u8>, bytes: &[u8]) -> Result<(), StoreError> {
-    for byte in bytes {
-        if out.push(*byte).is_err() {
-            return Err(StoreError::TooLarge);
-        }
-    }
-    Ok(())
-}
-
-fn put_u8(out: &mut List<u8>, value: u8) -> Result<(), StoreError> {
-    put(out, &[value])
-}
-fn put_u32(out: &mut List<u8>, value: u32) -> Result<(), StoreError> {
-    put(out, &value.to_be_bytes())
-}
-fn put_u64(out: &mut List<u8>, value: u64) -> Result<(), StoreError> {
-    put(out, &value.to_be_bytes())
-}
-
-fn put_bytes(out: &mut List<u8>, bytes: &[u8]) -> Result<(), StoreError> {
-    let Ok(len) = u32::try_from(bytes.len()) else { return Err(StoreError::TooLarge) };
-    put_u32(out, len)?;
-    put(out, bytes)
-}
-
-fn put_optional(out: &mut List<u8>, value: Option<&[u8]>) -> Result<(), StoreError> {
-    match value {
-        Some(bytes) => {
-            put_u8(out, 1)?;
-            put_bytes(out, bytes)
-        }
-        None => put_u8(out, 0),
-    }
-}
-
-fn put_intent(out: &mut List<u8>, intent: &DeliveryIntent) -> Result<(), StoreError> {
-    put_count(out, intent.directories.len())?;
-    for entry in &intent.directories {
-        put_u32(out, entry.directory)?;
-        put_u8(out, u8::from(entry.changed))?;
-        put_optional(out, entry.head.as_deref())?;
-        match &entry.push {
-            Some(push) => {
-                put_u8(out, 1)?;
-                put_bytes(out, &push.remote)?;
-                put_bytes(out, &push.branch)?;
-            }
-            None => put_u8(out, 0)?,
-        }
-    }
-    Ok(())
-}
-
-fn put_receipts(out: &mut List<u8>, receipts: &[run::Receipt]) -> Result<(), StoreError> {
-    put_count(out, receipts.len())?;
-    for receipt in receipts {
-        put_u32(out, receipt.directory())?;
-        put_bytes(out, receipt.text())?;
-    }
-    Ok(())
-}
-
-fn put_answer(out: &mut List<u8>, answer: &run::Delivery) -> Result<(), StoreError> {
-    match answer {
-        run::Delivery::Delivered(delivered) => {
-            put_u8(out, 0)?;
-            put_receipts(out, delivered.receipts())
-        }
-        run::Delivery::Nothing => put_u8(out, 1),
-        run::Delivery::Refused(refused) => {
-            put_u8(out, 2)?;
-            match refused.marker() {
-                Some(marker) => {
-                    put_u8(out, 1)?;
-                    put_u32(out, marker.directory())?;
-                    put_bytes(out, marker.path())?;
-                }
-                None => put_u8(out, 0)?,
-            }
-            put_bytes(out, refused.explanation())
-        }
-        run::Delivery::Failed(failed) => {
-            put_u8(out, 3)?;
-            put_u32(out, failed.directory)?;
-            put_u8(out, reason_tag(failed.reason))?;
-            put_bytes(out, failed.diagnostic.output())?;
-            put_u64(out, failed.diagnostic.cut())
-        }
-        run::Delivery::Stale => put_u8(out, 4),
-    }
-}
-
-fn reason_tag(reason: run::DeliveryReason) -> u8 {
-    match reason {
-        run::DeliveryReason::Unreachable => 0,
-        run::DeliveryReason::RefusedByTarget => 1,
-        run::DeliveryReason::TimedOut => 2,
-        run::DeliveryReason::Broken => 3,
-        run::DeliveryReason::TooLarge => 4,
-        run::DeliveryReason::Missing => 5,
-        run::DeliveryReason::Busy => 6,
-        run::DeliveryReason::Unavailable => 7,
-        run::DeliveryReason::Cancelled => 8,
-        run::DeliveryReason::Unknown => 9,
-    }
-}
-
-fn read_reason(tag: u8) -> Result<run::DeliveryReason, StoreError> {
-    match tag {
-        0 => Ok(run::DeliveryReason::Unreachable),
-        1 => Ok(run::DeliveryReason::RefusedByTarget),
-        2 => Ok(run::DeliveryReason::TimedOut),
-        3 => Ok(run::DeliveryReason::Broken),
-        4 => Ok(run::DeliveryReason::TooLarge),
-        5 => Ok(run::DeliveryReason::Missing),
-        6 => Ok(run::DeliveryReason::Busy),
-        7 => Ok(run::DeliveryReason::Unavailable),
-        8 => Ok(run::DeliveryReason::Cancelled),
-        9 => Ok(run::DeliveryReason::Unknown),
-        10..=u8::MAX => Err(StoreError::Malformed),
-    }
-}
-
-fn put_count(out: &mut List<u8>, count: usize) -> Result<(), StoreError> {
-    if count > usize::try_from(run::MAX_DIRECTORIES).expect("fixed directory cap fits") {
-        return Err(StoreError::TooLarge);
-    }
-    put_u32(out, u32::try_from(count).expect("bounded count fits"))
-}
-
-fn number_u8(reader: &mut Reader<'_>) -> Result<u8, StoreError> {
-    reader.u8().ok_or(StoreError::Malformed)
-}
-fn number_u32(reader: &mut Reader<'_>) -> Result<u32, StoreError> {
-    reader.u32().ok_or(StoreError::Malformed)
-}
-fn number_u64(reader: &mut Reader<'_>) -> Result<u64, StoreError> {
-    reader.u64().ok_or(StoreError::Malformed)
-}
-fn read_bytes(reader: &mut Reader<'_>) -> Result<Box<[u8]>, StoreError> {
-    let count = number_u32(reader)?;
-    Ok(Box::from(reader.bytes(count).ok_or(StoreError::Malformed)?))
-}
-fn read_optional(reader: &mut Reader<'_>) -> Result<Option<Box<[u8]>>, StoreError> {
-    match number_u8(reader)? {
-        0 => Ok(None),
-        1 => Ok(Some(read_bytes(reader)?)),
-        2..=u8::MAX => Err(StoreError::Malformed),
-    }
-}
-
-fn read_count(reader: &mut Reader<'_>) -> Result<u32, StoreError> {
-    let count = number_u32(reader)?;
-    if count > run::MAX_DIRECTORIES {
-        return Err(StoreError::Malformed);
-    }
-    Ok(count)
-}
-
-fn read_intent(reader: &mut Reader<'_>) -> Result<DeliveryIntent, StoreError> {
-    let count = read_count(reader)?;
-    let mut directories = List::with_capacity(count);
-    let mut previous = None;
-    for _ in 0..count {
-        let directory = number_u32(reader)?;
-        if directory >= run::MAX_DIRECTORIES || !increasing(previous, directory) {
-            return Err(StoreError::Malformed);
-        }
-        previous = Some(directory);
-        let changed = match number_u8(reader)? {
-            0 => false,
-            1 => true,
-            2..=u8::MAX => return Err(StoreError::Malformed),
-        };
-        let head = read_optional(reader)?;
-        match &head {
-            Some(bytes) if bytes.is_empty() || bytes.len() > run::Receipt::CAPACITY => {
-                return Err(StoreError::Malformed);
-            }
-            Some(_) | None => {}
-        }
-        let push = match number_u8(reader)? {
-            0 => None,
-            1 => Some(PushTarget { remote: read_bytes(reader)?, branch: read_bytes(reader)? }),
-            2..=u8::MAX => return Err(StoreError::Malformed),
-        };
-        directories.push(IntentDirectory { directory, changed, head, push }).expect("decoded count reserved");
-    }
-    Ok(DeliveryIntent { directories: directories.into_boxed() })
-}
-
-fn read_receipts(reader: &mut Reader<'_>) -> Result<Box<[run::Receipt]>, StoreError> {
-    let count = read_count(reader)?;
-    let mut receipts = List::with_capacity(count);
-    let mut previous = None;
-    for _ in 0..count {
-        let directory = number_u32(reader)?;
-        if !increasing(previous, directory) {
-            return Err(StoreError::Malformed);
-        }
-        previous = Some(directory);
-        let text = read_bytes(reader)?;
-        let receipt = run::Receipt::new(directory, text).ok_or(StoreError::Malformed)?;
-        receipts.push(receipt).expect("decoded count reserved");
-    }
-    Ok(receipts.into_boxed())
-}
-
-fn increasing(previous: Option<u32>, current: u32) -> bool {
-    match previous {
-        Some(prior) => prior < current,
-        None => true,
-    }
-}
-
-fn read_answer(reader: &mut Reader<'_>) -> Result<run::Delivery, StoreError> {
-    match number_u8(reader)? {
-        0 => Ok(run::Delivery::Delivered(run::Delivered::new(read_receipts(reader)?).ok_or(StoreError::Malformed)?)),
-        1 => Ok(run::Delivery::Nothing),
-        2 => {
-            let marker = match number_u8(reader)? {
-                0 => None,
-                1 => Some(run::Marker::new(number_u32(reader)?, read_bytes(reader)?).ok_or(StoreError::Malformed)?),
-                2..=u8::MAX => return Err(StoreError::Malformed),
-            };
-            let explanation = read_bytes(reader)?;
-            Ok(run::Delivery::Refused(run::DeliveryRefusal::new(marker, explanation).ok_or(StoreError::Malformed)?))
-        }
-        3 => {
-            let directory = number_u32(reader)?;
-            let reason = read_reason(number_u8(reader)?)?;
-            let output = read_bytes(reader)?;
-            if output.len() > run::Diagnostic::CAPACITY {
-                return Err(StoreError::Malformed);
-            }
-            let cut = number_u64(reader)?;
-            Ok(run::Delivery::Failed(run::DeliveryFailure {
-                directory,
-                reason,
-                diagnostic: run::Diagnostic::new(&output, cut),
-            }))
-        }
-        4 => Ok(run::Delivery::Stale),
-        5..=u8::MAX => Err(StoreError::Malformed),
-    }
 }
 
 #[cfg(test)]
@@ -409,5 +423,193 @@ mod tests {
         };
         let file = save_delivery(&refused, 4096).expect("bounded refusal");
         assert_eq!(decode_delivery(&file.bytes, 4096), Ok(refused));
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::disallowed_macros,
+    clippy::disallowed_methods,
+    reason = "codec adapter tests are ordinary Rust (programming-model.md, section 10.2)"
+)]
+mod validity_tests {
+    use super::*;
+
+    fn record(state: DeliveryState) -> DeliveryRecord {
+        DeliveryRecord {
+            name: run::CallName { activation: 7, completion: 3, position: 1 },
+            state,
+            landed: Box::new([]),
+        }
+    }
+
+    fn encoded_wire(value: &wire::Delivery) -> Box<[u8]> {
+        let mut writer = Writer::new(usize::try_from(value.measure()).unwrap());
+        value.encode(&mut writer).unwrap();
+        writer.finish()
+    }
+
+    fn empty_answer() -> wire::DeliveryParts {
+        let file = save_delivery(&record(DeliveryState::Answer(run::Delivery::Nothing)), 4096).unwrap();
+        wire::Delivery::decode(&wire::CEILINGS, &mut Reader::new(&file.bytes)).unwrap().into_parts()
+    }
+
+    #[test]
+    fn every_answer_and_failure_reason_survives_the_generated_adapter() {
+        let mut answers = vec![
+            run::Delivery::Nothing,
+            run::Delivery::Stale,
+            run::Delivery::Refused(run::DeliveryRefusal::new(None, b"cannot deliver".as_slice().into()).unwrap()),
+        ];
+        for reason in [
+            run::DeliveryReason::Unreachable,
+            run::DeliveryReason::RefusedByTarget,
+            run::DeliveryReason::TimedOut,
+            run::DeliveryReason::Broken,
+            run::DeliveryReason::TooLarge,
+            run::DeliveryReason::Missing,
+            run::DeliveryReason::Busy,
+            run::DeliveryReason::Unavailable,
+            run::DeliveryReason::Cancelled,
+            run::DeliveryReason::Unknown,
+        ] {
+            answers.push(run::Delivery::Failed(run::DeliveryFailure {
+                directory: 1,
+                reason,
+                diagnostic: run::Diagnostic::new(&[b'x'; run::Diagnostic::CAPACITY], 19),
+            }));
+        }
+        for answer in answers {
+            let value = record(DeliveryState::Answer(answer));
+            let file = save_delivery(&value, 4096).unwrap();
+            assert_eq!(decode_delivery(&file.bytes, 4096), Ok(value));
+        }
+    }
+
+    #[test]
+    fn nonzero_call_names_and_ordered_bounded_intent_directories_are_still_required() {
+        for (activation, completion) in [(0, 3), (7, 0)] {
+            let mut value = record(DeliveryState::Answer(run::Delivery::Nothing));
+            value.name.activation = activation;
+            value.name.completion = completion;
+            let file = save_delivery(&value, 4096).unwrap();
+            assert_eq!(decode_delivery(&file.bytes, 4096), Err(StoreError::Malformed));
+        }
+        for directories in [vec![1, 0], vec![0, 0], vec![run::MAX_DIRECTORIES]] {
+            let value = record(DeliveryState::Intent(DeliveryIntent {
+                directories: directories
+                    .into_iter()
+                    .map(|directory| IntentDirectory { directory, changed: false, head: None, push: None })
+                    .collect(),
+            }));
+            let file = save_delivery(&value, 4096).unwrap();
+            assert_eq!(decode_delivery(&file.bytes, 4096), Err(StoreError::Malformed));
+        }
+        let value = record(DeliveryState::Intent(DeliveryIntent {
+            directories: Box::new([IntentDirectory {
+                directory: 0,
+                changed: false,
+                head: Some(Box::new([])),
+                push: None,
+            }]),
+        }));
+        let file = save_delivery(&value, 4096).unwrap();
+        assert_eq!(decode_delivery(&file.bytes, 4096), Err(StoreError::Malformed));
+    }
+
+    #[test]
+    fn receipt_constructors_and_order_survive_the_generated_grammar() {
+        for rows in [
+            vec![(0, b"".as_slice())],
+            vec![(run::MAX_DIRECTORIES, b"ok")],
+            vec![(1, b"first"), (0, b"second")],
+            vec![(0, b"first"), (0, b"second")],
+        ] {
+            let mut parts = empty_answer();
+            let mut landed = List::with_capacity(u32::try_from(rows.len()).unwrap());
+            for (directory, text) in rows {
+                landed
+                    .push(
+                        wire::Receipt::new(&wire::CEILINGS, wire::ReceiptParts { directory, text: text.into() })
+                            .unwrap(),
+                    )
+                    .unwrap();
+            }
+            parts.landed = landed;
+            let value = wire::Delivery::new(&wire::CEILINGS, parts).unwrap();
+            assert_eq!(decode_delivery(&encoded_wire(&value), 4096), Err(StoreError::Malformed));
+        }
+    }
+
+    #[test]
+    fn delivered_and_refused_constructors_still_reject_invalid_payloads() {
+        for answer in [
+            wire::Answer::Delivered(
+                wire::Delivered::new(&wire::CEILINGS, wire::DeliveredParts { receipts: List::with_capacity(0) })
+                    .unwrap(),
+            ),
+            wire::Answer::Refused(
+                wire::DeliveryRefusal::new(
+                    &wire::CEILINGS,
+                    wire::DeliveryRefusalParts { marker: None, explanation: Box::new([]) },
+                )
+                .unwrap(),
+            ),
+            wire::Answer::Refused(
+                wire::DeliveryRefusal::new(
+                    &wire::CEILINGS,
+                    wire::DeliveryRefusalParts {
+                        marker: Some(
+                            wire::Marker::new(
+                                &wire::CEILINGS,
+                                wire::MarkerParts { directory: 0, path: b"../outside".as_slice().into() },
+                            )
+                            .unwrap(),
+                        ),
+                        explanation: b"markers".as_slice().into(),
+                    },
+                )
+                .unwrap(),
+            ),
+        ] {
+            let mut parts = empty_answer();
+            parts.state = wire::DeliveryState::Answer(
+                wire::DeliveryAnswer::new(&wire::CEILINGS, wire::DeliveryAnswerParts { answer }).unwrap(),
+            );
+            let value = wire::Delivery::new(&wire::CEILINGS, parts).unwrap();
+            assert_eq!(decode_delivery(&encoded_wire(&value), 4096), Err(StoreError::Malformed));
+        }
+    }
+}
+
+#[cfg(test)]
+mod aggregate_tests {
+    use super::*;
+
+    #[test]
+    fn generated_adaptation_checks_aggregate_payload_before_copying_intent_fields() {
+        let record = DeliveryRecord {
+            name: run::CallName { activation: 1, completion: 1, position: 0 },
+            state: DeliveryState::Intent(DeliveryIntent {
+                directories: Box::new([
+                    IntentDirectory {
+                        directory: 0,
+                        changed: true,
+                        head: None,
+                        push: Some(PushTarget { remote: Box::new([b'x'; 2048]), branch: Box::new([b'y'; 2048]) }),
+                    },
+                    IntentDirectory {
+                        directory: 1,
+                        changed: true,
+                        head: None,
+                        push: Some(PushTarget { remote: b"r".as_slice().into(), branch: b"b".as_slice().into() }),
+                    },
+                ]),
+            }),
+            landed: Box::new([]),
+        };
+        assert_eq!(save_delivery(&record, 4096), Err(StoreError::TooLarge));
+        let file = save_delivery(&record, 8192).expect("payload and generated field overhead fit");
+        assert_eq!(decode_delivery(&file.bytes, 8192), Ok(record));
     }
 }

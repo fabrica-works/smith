@@ -1,0 +1,20 @@
+family smith-local-store 1
+
+versioned record State { identity: fixed 16 activation: u64 next_message: u64 read: option u64 }
+# The body is the existing transcript-v6 Turn. Store applies its file byte bound too.
+versioned record Turn { read: option u64 opens_window: bool body: bytes 67108864 holds smith-transcript Turn }
+record CallName { activation: u64 completion: u32 position: u32 }
+record PushTarget { remote: bytes 1048576 branch: bytes 1048576 }
+record IntentDirectory { directory: u32 changed: bool head: option bytes 512 push: option PushTarget }
+record DeliveryIntent { directories: list 64 IntentDirectory }
+record Receipt { directory: u32 text: bytes 512 }
+record Delivered { receipts: list 64 Receipt }
+record Marker { directory: u32 path: bytes 4096 }
+record DeliveryRefusal { marker: option Marker explanation: bytes 512 }
+enum DeliveryReason { unreachable, refused_by_target, timed_out, broken, too_large, missing, busy, unavailable, cancelled, unknown }
+record DeliveryFailure { directory: u32 reason: DeliveryReason output: bytes 512 cut: u64 }
+enum Answer { delivered: Delivered, nothing, refused: DeliveryRefusal, failed: DeliveryFailure, stale }
+record DeliveryAnswer { answer: Answer }
+enum DeliveryState { intent: DeliveryIntent, answer: DeliveryAnswer }
+versioned record Delivery { name: CallName state: DeliveryState landed: list 64 Receipt }
+versioned record Layouts { store: fixed 32 transcript: fixed 32 }

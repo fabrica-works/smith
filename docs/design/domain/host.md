@@ -401,7 +401,14 @@ the inline agent it is the `smith` product:
   transcript and given in every start, so the chat keeps its provider's
   cache across activations and resumes.
 - **Transcripts in files,** in smith's state directory, so a chat resumes
-  across invocations.
+  across invocations. The Store first checks its recorded layouts
+  (protocol/hosts.md, 5.3). It keeps one checked bit for the selected root,
+  never learns an older layout and never translates or wipes old records.
+  An unrecorded chat, a different store layout or a different transcript
+  layout is `StoreFailure::OlderBuild`, with the typed `Older` reason.
+  It follows StoreFailed, EndCause::Host and RunFailed, including before
+  a run exists or on /resume: show the named chat's words and close with
+  exit 1. Saves require a checked root; close settles outstanding work.
 - **Delivery in place:** a commit in each writable repository, with the
   result's fields as its message, nothing pushed unless configured; a
   plain directory's files kept as they are, changed or not by a bounded

@@ -57,8 +57,8 @@ mod agent_tests;
 
 pub use boundary::{
     AccountFailure, AgentFailure, ChatRefusal, ChatState, Checks, CredentialFailure, DeliveryIntent, DeliveryRecord,
-    DeliveryState, Event, ExitStatus, Failure, GitOp, GitResult, IntentDirectory, Notice, Reading, Request,
-    StoreFailure, Undelivered, Warning,
+    DeliveryState, Event, ExitStatus, Failure, GitOp, GitResult, IntentDirectory, Notice, Older, Reading, Request,
+    StoreFailure, StoreFamily, Undelivered, Warning,
 };
 pub use choices::Slash;
 pub use config::{Config, Contract, Invalid, Mode, PushTarget, charter};

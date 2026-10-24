@@ -20,6 +20,11 @@ extern crate alloc;
 
 mod borrowed;
 mod delivery_store;
+pub mod format;
+
+#[rustfmt::skip]
+#[path = "generated/local_store_v1.rs"]
+pub mod local_store_v1;
 mod git;
 mod git_child;
 mod markers;
@@ -37,8 +42,8 @@ pub use git_child::{GitChild, git_child_worst_case};
 pub use markers::{MarkerAction, Markers, markers_worst_case};
 pub use plain::{Plain, PlainAction, PlainLimits, Snapshot, plain_worst_case};
 pub use store::{
-    Action, CHAT_STORE_VERSION, File, History, RecordName, STATE_BYTES, Store, StoreError, StoreFault, StoreLimits,
-    StoreRequest, TURN_HEADER, decode_state, decode_turns, save_state, save_turn, turn_name, turn_opens_window,
+    Action, CHAT_STORE_VERSION, File, History, RecordName, Store, StoreError, StoreFault, StoreLimits, StoreRequest,
+    decode_state, decode_turns, save_state, save_turn, turn_name, turn_opens_window,
 };
 pub use terminal::{
     Entered, Event as TerminalEvent, Limits as TerminalLimits, Slash, Terminal, entered, max_out as terminal_max_out,

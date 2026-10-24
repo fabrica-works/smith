@@ -8,7 +8,7 @@
 # slow period is flagged SLOW as it runs.
 
 [profile.default]
-default-filter = "not binary(/^fuzzy_/) and not ((package(=smith) or package(=smith-agent-process-world)) and binary(=live))"
+default-filter = "not binary(/^fuzzy_/) and not binary(/^qa_/) and not ((package(=smith) or package(=smith-agent-process-world)) and binary(=live))"
 global-timeout = "30s"
 slow-timeout = { period = "6s" }
 
@@ -26,7 +26,7 @@ filter = "kind(test)"
 priority = 10
 
 [profile.fuzzy]
-default-filter = "binary(/^fuzzy_/) and not binary(=live)"
+default-filter = "binary(/^fuzzy_/) and not binary(/^qa_/) and not binary(=live)"
 global-timeout = "120s"
 slow-timeout = { period = "40s" }
 
@@ -45,3 +45,9 @@ slow-timeout = { period = "120s" }
 test-threads = 1
 retries = 0
 fail-fast = false
+
+# Independent design-only adversarial checks, outside the normal gate.
+[profile.qa]
+default-filter = "binary(/^qa_/)"
+global-timeout = "120s"
+slow-timeout = { period = "6s" }

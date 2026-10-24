@@ -1,13 +1,14 @@
 //! Serial durable chat operations (protocol/hosts.md, 5.3; skein io.md, 5.2).
 //! The owner retains only record versions and bounded loading buffers. It knows
 //! neither the conversation's policy nor whether a turn was acknowledged.
+mod compatibility;
 mod ephemeral;
 mod selection;
 
 use selection::Selection;
 
 use super::boundary::{Action, History, RecordName, StoreFault, StoreLimits, StoreRequest};
-use super::{File, STATE_BYTES, decode_state, decode_turns, save_state, save_turn, turn_opens_window};
+use super::{File, decode_state, decode_turns_bounded, save_state, save_turn, turn_opens_window_bounded};
 use alloc::boxed::Box;
 use core::mem::{replace, size_of};
 use skein_io::{
@@ -23,6 +24,9 @@ use smith_protocol_channel::Endpoints;
 enum Phase {
     Idle,
     Selecting,
+    Format,
+    Admit,
+    CreateFormat,
     Journal,
     State,
     Scan,
@@ -61,6 +65,7 @@ pub struct Store {
     endpoints: Endpoints,
     phase: Phase,
     loading: bool,
+    checked: bool,
     closing: bool,
     fresh: Option<ChatState>,
     state: Option<ChatState>,
@@ -89,7 +94,11 @@ impl Store {
         endpoints: Endpoints,
     ) -> Option<Self> {
         Self::worst_case(limits)?;
-        if limits.file_bytes == 0 || limits.turns == 0 || limits.deliveries == 0 || limits.scan_bytes == 0 {
+        if limits.file_bytes < crate::format::max_bytes()
+            || limits.turns == 0
+            || limits.deliveries == 0
+            || limits.scan_bytes < Self::marker_entry_bytes()
+        {
             return None;
         }
         let records = limits.turns.checked_add(limits.deliveries)?.checked_add(2)?;
@@ -105,6 +114,7 @@ impl Store {
             endpoints,
             phase: Phase::Idle,
             loading: false,
+            checked: false,
             closing: false,
             fresh: None,
             state: None,
@@ -123,9 +133,15 @@ impl Store {
     /// Loading, decoding and a retry's owned replacement can coexist.
     #[must_use]
     pub fn worst_case(limits: StoreLimits) -> Option<u64> {
+        limits.turns.checked_add(limits.deliveries)?.checked_add(4)?;
         let records = limits.turns.checked_add(limits.deliveries)?.checked_add(2)?;
+        // Three aggregate file bounds cover retained envelopes, the combined
+        // transcript piece and typed decoding (or a write and its retry).
+        // Charge a fourth for the generated envelope's owned body. The
+        // intermediate body list is released before typed decoding.
         u64::from(limits.file_bytes)
-            .checked_mul(4)?
+            .checked_mul(3)?
+            .checked_add(u64::from(limits.file_bytes))?
             .checked_add(limits.scan_bytes)?
             .checked_add(Map::<Box<[u8]>, Digest>::worst_case(records)?)?
             .checked_add(u64::from(records).checked_mul(42)?)?
@@ -148,6 +164,9 @@ impl Store {
         match self.phase {
             Phase::Idle => true,
             Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -182,22 +201,32 @@ impl Store {
                 self.turns.clear();
                 self.deliveries.clear();
                 self.versions = Map::with_capacity(self.versions.capacity());
-                self.phase = Phase::Journal;
-                self.load(b"fresh".as_slice().into(), now, out);
+                if self.checked {
+                    self.load_current(now, out);
+                } else {
+                    self.phase = Phase::Format;
+                    self.load(b"format".as_slice().into(), now, out);
+                }
             }
-            StoreRequest::SaveState { state, history } => match history {
-                History::Kept => self.write(RecordName::State, save_state(state), local::Event::StateSaved, now, out),
-                History::Fresh if self.ephemeral.is_some() => {
-                    self.write(RecordName::State, save_state(state), local::Event::StateSaved, now, out);
+            StoreRequest::SaveState { state, history } => {
+                assert!(self.checked, "Load must check the selected root before any save");
+                match history {
+                    History::Kept => {
+                        self.write(RecordName::State, save_state(state), local::Event::StateSaved, now, out);
+                    }
+                    History::Fresh if self.ephemeral.is_some() => {
+                        self.write(RecordName::State, save_state(state), local::Event::StateSaved, now, out);
+                    }
+                    History::Fresh => {
+                        self.fresh = Some(state);
+                        let mut journal = save_state(state);
+                        journal.name = b"fresh".as_slice().into();
+                        self.write(RecordName::Journal, journal, local::Event::StateSaved, now, out);
+                    }
                 }
-                History::Fresh => {
-                    self.fresh = Some(state);
-                    let mut journal = save_state(state);
-                    journal.name = b"fresh".as_slice().into();
-                    self.write(RecordName::Journal, journal, local::Event::StateSaved, now, out);
-                }
-            },
+            }
             StoreRequest::SaveTurn { number, read, opens_window, turn } => {
+                assert!(self.checked, "Load must check the selected root before any save");
                 let record = RecordName::Turn(turn.sequence);
                 match save_turn(turn.sequence, read, opens_window, &turn, &smith_transcript::CEILINGS, &self.endpoints)
                 {
@@ -206,6 +235,7 @@ impl Store {
                 }
             }
             StoreRequest::SaveDelivery { record } => {
+                assert!(self.checked, "Load must check the selected root before any save");
                 let name = RecordName::Delivery(record.name);
                 match crate::save_delivery(&record, self.limits.file_bytes.min(1_u32 << 20_u32)) {
                     Ok(file) => self.write(name, file, local::Event::DeliverySaved { name: record.name }, now, out),
@@ -223,6 +253,10 @@ impl Store {
             return;
         }
         match self.phase {
+            Phase::Format | Phase::Admit | Phase::CreateFormat => {
+                self.compatibility_event(event, now, out);
+                return;
+            }
             Phase::Cleaning => {
                 self.cleanup_event(event, now, out);
                 return;
@@ -263,6 +297,9 @@ impl Store {
                 Phase::Journal | Phase::State => self.loaded(None, now, out),
                 Phase::Idle
                 | Phase::Selecting
+                | Phase::Format
+                | Phase::Admit
+                | Phase::CreateFormat
                 | Phase::Scan
                 | Phase::Headers
                 | Phase::Records
@@ -336,6 +373,9 @@ impl Store {
             }
             Phase::Idle
             | Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -369,6 +409,9 @@ impl Store {
             }
             Phase::Idle
             | Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -389,9 +432,16 @@ impl Store {
 
     fn load(&self, path: Box<[u8]>, now: Time, out: &mut Queue<Action>) {
         let max = match self.phase {
-            Phase::Journal | Phase::State => u32::try_from(STATE_BYTES).expect("fixed metadata"),
+            Phase::Journal | Phase::State => u32::try_from(
+                crate::local_store_v1::State::worst_case_bytes(&crate::local_store_v1::CEILINGS)
+                    .expect("fixed metadata"),
+            )
+            .expect("metadata fits u32"),
+            Phase::Format => crate::format::max_bytes(),
             Phase::Idle
             | Phase::Selecting
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Scan
             | Phase::Headers
             | Phase::Records
@@ -407,21 +457,55 @@ impl Store {
         Self::io(file::Request::Load { owner: self.owner, root: self.root, path, max, no_follow: true }, now, out);
     }
 
+    fn marker_entry_bytes() -> u64 {
+        u64::try_from(size_of::<file::Entry>())
+            .expect("entry size fits u64")
+            .checked_add(6)
+            .expect("marker name fits scan accounting")
+    }
+
     fn scan(&self, now: Time, out: &mut Queue<Action>) {
+        let reserve_marker = match self.phase {
+            Phase::Admit => true,
+            Phase::Scan => false,
+            Phase::Idle
+            | Phase::Selecting
+            | Phase::Format
+            | Phase::CreateFormat
+            | Phase::Journal
+            | Phase::State
+            | Phase::Headers
+            | Phase::Records
+            | Phase::Write
+            | Phase::Remove
+            | Phase::SyncOld
+            | Phase::RemoveJournal
+            | Phase::SyncJournal
+            | Phase::Cleaning
+            | Phase::Closing
+            | Phase::Closed => unreachable!("only absence and current-record scans"),
+        };
         let max = self
             .limits
             .turns
             .checked_add(self.limits.deliveries)
             .expect("admitted scan count")
-            .checked_add(2)
-            .expect("admitted metadata count");
+            .checked_add(4)
+            .expect("admitted metadata count")
+            .checked_sub(u32::from(reserve_marker))
+            .expect("marker entry is reserved");
+        let max_bytes = if reserve_marker {
+            self.limits.scan_bytes.checked_sub(Self::marker_entry_bytes()).expect("admitted marker scan room")
+        } else {
+            self.limits.scan_bytes
+        };
         Self::io(
             file::Request::Scan {
                 owner: self.owner,
                 root: self.root,
                 path: b".".as_slice().into(),
                 max,
-                max_bytes: self.limits.scan_bytes,
+                max_bytes,
                 no_follow: true,
             },
             now,
@@ -435,7 +519,7 @@ impl Store {
             Phase::Journal | Phase::State => self.metadata(bytes, now, out),
             Phase::Headers => {
                 let bytes = bytes.expect("record load exists");
-                match turn_opens_window(&bytes) {
+                match turn_opens_window_bounded(&bytes, self.limits.file_bytes) {
                     Ok(true) => self.window = self.path(),
                     Ok(false) => {}
                     Err(_) => {
@@ -487,6 +571,9 @@ impl Store {
             }
             Phase::Idle
             | Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Scan
             | Phase::Write
             | Phase::Remove
@@ -527,6 +614,9 @@ impl Store {
             }
             Phase::Idle
             | Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Scan
             | Phase::Headers
             | Phase::Records
@@ -563,6 +653,9 @@ impl Store {
                     },
                     Phase::Idle
                     | Phase::Selecting
+                    | Phase::Format
+                    | Phase::Admit
+                    | Phase::CreateFormat
                     | Phase::Journal
                     | Phase::State
                     | Phase::Scan
@@ -590,34 +683,7 @@ impl Store {
                     self.index = 0;
                     continue;
                 }
-                Phase::Records => {
-                    match decode_turns(self.turns.as_slice(), &smith_transcript::CEILINGS, &self.endpoints) {
-                        Ok((transcript, read)) => {
-                            if transcript.is_some() {
-                                match &mut self.state {
-                                    Some(state) => state.read = read,
-                                    None => {
-                                        self.fail(
-                                            RecordName::State,
-                                            StoreFault::Malformed { file: RecordName::State },
-                                            now,
-                                            out,
-                                        );
-                                        return;
-                                    }
-                                }
-                            }
-                            let deliveries =
-                                replace(&mut self.deliveries, List::with_capacity(self.limits.deliveries)).into_boxed();
-                            self.turns.clear();
-                            self.entries = Box::new([]);
-                            self.finish(local::Event::Loaded { state: self.state, transcript, deliveries }, now, out);
-                        }
-                        Err(_) => {
-                            self.fail(RecordName::State, StoreFault::Malformed { file: RecordName::State }, now, out);
-                        }
-                    }
-                }
+                Phase::Records => self.finish_load(now, out),
                 Phase::Remove => {
                     self.entries = Box::new([]);
                     self.phase = Phase::SyncOld;
@@ -625,6 +691,9 @@ impl Store {
                 }
                 Phase::Idle
                 | Phase::Selecting
+                | Phase::Format
+                | Phase::Admit
+                | Phase::CreateFormat
                 | Phase::Journal
                 | Phase::State
                 | Phase::Scan
@@ -637,6 +706,35 @@ impl Store {
                 | Phase::Closed => unreachable!("scan exhausted"),
             }
             return;
+        }
+    }
+
+    fn finish_load(&mut self, now: Time, out: &mut Queue<Action>) {
+        match decode_turns_bounded(
+            self.turns.as_slice(),
+            &smith_transcript::CEILINGS,
+            &self.endpoints,
+            self.limits.file_bytes,
+        ) {
+            Ok((transcript, read)) => {
+                if transcript.is_some() {
+                    match &mut self.state {
+                        Some(state) => state.read = read,
+                        None => {
+                            self.fail(RecordName::State, StoreFault::Malformed { file: RecordName::State }, now, out);
+                            return;
+                        }
+                    }
+                }
+                let deliveries =
+                    replace(&mut self.deliveries, List::with_capacity(self.limits.deliveries)).into_boxed();
+                self.turns.clear();
+                self.entries = Box::new([]);
+                self.finish(local::Event::Loaded { state: self.state, transcript, deliveries }, now, out);
+            }
+            Err(_) => {
+                self.fail(RecordName::State, StoreFault::Malformed { file: RecordName::State }, now, out);
+            }
         }
     }
 
@@ -745,6 +843,9 @@ impl Store {
             }
             Phase::Idle
             | Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -775,6 +876,9 @@ impl Store {
             Phase::Write => self.writing.as_ref().expect("pending write").file.name.clone(),
             Phase::Idle
             | Phase::Selecting
+            | Phase::Format
+            | Phase::Admit
+            | Phase::CreateFormat
             | Phase::State
             | Phase::Scan
             | Phase::SyncOld

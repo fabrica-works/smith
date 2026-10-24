@@ -302,6 +302,16 @@ Domain worlds use domains and fakes only, never protocol crates.
 
 ### 2.5 Which tier a test belongs to
 
+Local chat layout admission is proven with one crate-local real-directory
+Store/FileIo adapter under `smith-local-protocol/tests/support/disk.rs`:
+Scratch, real FileIo, Kernel and Clock, bounded queues and explicit close.
+Its `store` integration binary holds the core cases; a design-only tester
+uses the same public test surface in `qa_store`. Refusal snapshots compare
+sorted filenames, inode identities, regular-file bytes and no-follow kinds
+and symlink targets. The existing local-process power-loss composition
+covers interrupted creation and refusal immutability; one fake-backed
+process story proves operator words and exit 1.
+
 - **A boundary is tested where it lives.** An exact bound (at the cap,
   and one past it) is a test of the tier that owns the bound, with tiny
   limits: a decoder's in skein's tier, the session's in its world. A
@@ -516,6 +526,13 @@ run by the commands in `docs/development/workflow.md`:
   (domain/session.md, section 10), and the tools' world
   its jobs' polls, stops and ends among edits (domain/tools.md, section
   7).
+
+Independent adversarial binaries named `qa_*` are excluded from default and
+fuzzy selection and run under `--profile qa`. Their author reads the approved
+design and public adapter surface, without production implementation or core
+tests. An opt-in ignored extra-seed entry in the existing `fuzzy_store`
+composition is run explicitly for the additional-seed proof; normal seeds
+and cut positions remain in the fuzzy suite.
 
 The live tests are a third suite, outside the gate, under the `live`
 profile only (2.3). Benchmarks are no suite: they run by their own

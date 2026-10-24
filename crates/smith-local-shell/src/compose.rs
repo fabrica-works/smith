@@ -202,6 +202,7 @@ fn compose(
         files.temporary.as_deref(),
         &resolved.settings.paths,
     )?;
+    trace_admission(&resolved, &workspace)?;
     deliver_contract(&mut resolved.local, invocation.deliver);
     let WorkspaceRoots { paths, delivery_roots, effect_roots } = workspace_roots(&resolved.local, kind)?;
     let host_limits = host_limits(&resolved.agent, matches!(kind, AgentKind::Spawned { .. })).map_err(|why| {
@@ -417,7 +418,7 @@ fn chat_paths(
     temporary: Option<&Path>,
     paths: &settings::Paths,
 ) -> Result<(PathBuf, PathBuf), Refused> {
-    use std::{fmt::Write, os::unix::fs::DirBuilderExt, path::PathBuf};
+    use std::os::unix::fs::DirBuilderExt;
     let chat = std::str::from_utf8(chat_name).expect("decoded chat");
     if chat == "." || chat == ".." || chat.contains(['/', '\\', '\0']) {
         return Err(Refused::Usage(Usage("the chat must be one directory name".into())));
@@ -426,6 +427,13 @@ fn chat_paths(
     if let Some(path) = temporary {
         return Ok((workspace, path.into()));
     }
+    let chat_path = chats_tree(&workspace, paths)?.join(chat);
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&chat_path).map_err(|why| host(&why))?;
+    Ok((workspace, chat_path))
+}
+
+fn chats_tree(workspace: &Path, paths: &settings::Paths) -> Result<PathBuf, Refused> {
+    use std::fmt::Write;
     let digest = skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes());
     let mut key = String::new();
     for part in digest.0 {
@@ -437,9 +445,41 @@ fn chat_paths(
         .map(PathBuf::from)
         .or_else(|| paths.home.as_ref().map(|home| PathBuf::from(home).join(".local/state")))
         .ok_or_else(|| Refused::Usage(Usage("HOME or XDG_STATE_HOME is required for chats".into())))?;
-    let chat_path = base.join("smith/chats").join(key).join(chat);
-    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&chat_path).map_err(|why| host(&why))?;
-    Ok((workspace, chat_path))
+    Ok(base.join("smith/chats").join(key))
+}
+
+fn trace_admission(resolved: &settings::resolve::Resolved, workspace: &Path) -> Result<(), Refused> {
+    let Some(trace) = &resolved.agent.trace else {
+        return Ok(());
+    };
+    let tree = chats_tree(workspace, &resolved.settings.paths)?;
+    // canonicalize is the existing startup path resolver. No trace is opened here.
+    let tree = match tree.canonicalize() {
+        Ok(tree) => tree,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(why) => return Err(host(&why)),
+    };
+    trace_outside(&trace.path, &tree)
+}
+
+fn trace_outside(path: &Path, chats: &Path) -> Result<(), Refused> {
+    let resolved = match path.canonicalize() {
+        Ok(path) => path,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+            if std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+                return Err(Refused::Usage(Usage("the trace's symbolic link has no resolved destination".into())));
+            }
+            let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
+            let name =
+                path.file_name().ok_or_else(|| Refused::Usage(Usage("the trace requires a file name".into())))?;
+            parent.canonicalize().map_err(|why| host(&why))?.join(name)
+        }
+        Err(why) => return Err(host(&why)),
+    };
+    if resolved.starts_with(chats) {
+        return Err(Refused::Usage(Usage("the trace destination is inside this workspace's chats tree".into())));
+    }
+    Ok(())
 }
 
 pub(crate) fn invocation_chat(shared: &crate::command::Shared, seed: u64) -> Option<Box<[u8]>> {
@@ -568,4 +608,78 @@ fn run_opened(
     });
     files.close_startup(&mut kernel, clock);
     result
+}
+
+#[cfg(test)]
+mod trace_admission_tests {
+    use super::*;
+
+    #[test]
+    fn trace_admission_resolves_existing_files_absent_files_and_aliases_before_opening() {
+        let scratch = smith_real_world::Scratch::new();
+        let chats = scratch.path().join("chats");
+        let chat = chats.join("old");
+        std::fs::create_dir_all(&chat).unwrap();
+        let state = chat.join("state");
+        std::fs::write(&state, b"older bytes").unwrap();
+        let outside = scratch.path().join("outside");
+        trace_outside(&outside, &chats).unwrap_or_else(|why| panic!("{}", why.line()));
+        assert!(!outside.exists(), "admission does not open an ordinary outside destination");
+        let alias = scratch.path().join("alias");
+        std::os::unix::fs::symlink(&chat, &alias).unwrap();
+        let link = scratch.path().join("linked-file");
+        std::os::unix::fs::symlink(&state, &link).unwrap();
+        for path in [&state, &chat.join("trace"), &alias.join("state"), &alias.join("trace"), &link] {
+            let Err(refused) = trace_outside(path, &chats) else {
+                panic!("trace inside chats must refuse");
+            };
+            assert_eq!(refused.code(), 2);
+            assert!(refused.line().contains("inside this workspace's chats tree"));
+            assert_eq!(std::fs::read(&state).unwrap(), b"older bytes");
+            assert!(!chat.join("trace").exists());
+        }
+    }
+}
+
+#[cfg(test)]
+mod configured_trace_tests {
+    use super::*;
+
+    #[test]
+    fn configured_local_and_generated_child_traces_are_admitted_before_any_open() {
+        let scratch = smith_real_world::Scratch::new();
+        let workspace = scratch.path().canonicalize().unwrap();
+        let paths =
+            settings::Paths { state_home: Some(scratch.path().join("state").into()), ..settings::Paths::default() };
+        let tree = chats_tree(&workspace, &paths).unwrap_or_else(|why| panic!("{}", why.line()));
+        let chat = tree.join("old");
+        std::fs::create_dir_all(&chat).unwrap();
+        std::fs::write(chat.join("state"), b"old state").unwrap();
+        let alias = scratch.path().join("alias");
+        std::os::unix::fs::symlink(&chat, &alias).unwrap();
+        let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
+        for (path, allowed) in
+            [(scratch.path().join("outside"), true), (chat.join("state"), false), (alias.join("trace"), false)]
+        {
+            let source = settings::Source {
+                layer: settings::Layer::User,
+                path: "trace-admission.toml".into(),
+                text: format!(
+                    "model='codex/gpt-6-luna'\ntrace.path='{}'\n[accounts.codex]\nsource='env'\nvariable='SMITH_FIXTURE_TOKEN'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n",
+                    path.display()
+                ),
+            };
+            let mut settings = settings::from_sources(&crate::command::Shared::default(), workspace.clone(), &[source])
+                .unwrap_or_else(|why| panic!("{}", why.line()));
+            settings.paths = paths.clone();
+            let (resolved, document) =
+                settings::resolve::resolve_startup(&settings).unwrap_or_else(|why| panic!("{}", why.line()));
+            let document: serde_json::Value = serde_json::from_slice(&document).unwrap();
+            assert_eq!(document["trace"]["path"].as_str(), path.to_str());
+            assert_eq!(trace_admission(&resolved, &workspace).is_ok(), allowed);
+            assert_eq!(std::fs::read(chat.join("state")).unwrap(), b"old state");
+            assert!(!chat.join("trace").exists());
+            assert!(!scratch.path().join("outside").exists());
+        }
+    }
 }

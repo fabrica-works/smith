@@ -160,6 +160,7 @@ impl Store {
         let (root, descriptor) = selection.directory.expect("selection opened its new root");
         self.root = root;
         self.descriptor = descriptor;
+        self.checked = false;
         self.state = None;
         self.fresh = None;
         self.window = Box::new([]);
@@ -173,6 +174,7 @@ impl Store {
     fn selection_failed(&mut self, reason: local::ChatRefusal, now: Time, out: &mut Queue<Action>) {
         let selection = self.selection.take().expect("selection owns its terminal");
         if let Some((root, descriptor)) = selection.directory {
+            self.checked = false;
             self.root = root;
             self.descriptor = descriptor;
             out.push(Action::Domain(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Write }));
