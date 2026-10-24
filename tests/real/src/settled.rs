@@ -81,6 +81,16 @@ impl Before {
             (PathBuf::from("chat"), smith_local_process_world::process::lower_configuration().channel_endpoints)
         };
         let mut expected = BTreeSet::from([chat.join("state")]);
+        let marker = chat.join("format");
+        let current = smith_local_protocol::format::file();
+        assert_eq!(
+            after.get(&marker).and_then(|entry| entry.bytes.as_deref()),
+            Some(current.bytes.as_ref()),
+            "the settled chat records this build's layouts"
+        );
+        if !self.entries.contains_key(&marker) {
+            expected.insert(marker);
+        }
         if binary {
             expected.insert(PathBuf::from("agent-trace.jsonl"));
         } else if scenario.launch.placement == Placement::Spawned {

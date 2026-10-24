@@ -116,9 +116,50 @@ pub struct ChatState {
     pub read: Option<Token>,
 }
 
+/// The stored family whose layout the Store refused before loading records.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StoreFamily {
+    /// Metadata, turn envelopes, deliveries and the marker, checked first.
+    Store,
+    /// Local transcript payloads, checked after the store family.
+    Transcript,
+}
+
+/// The Store's older-build refusal, carried to the operator and exit 1.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Older {
+    /// A nonempty directory whose layouts were never recorded.
+    Unrecorded,
+    /// A malformed marker or a recorded family layout different from this build.
+    Layout(StoreFamily),
+}
+
+impl Older {
+    /// Static operator pieces, with the chat name inserted between them (shell.md, 5.3).
+    #[must_use]
+    pub fn words(&self) -> &'static [&'static str] {
+        match self {
+            Self::Unrecorded => &[
+                "Chat `",
+                "` was kept by an older build of smith, from before chats recorded their layouts, and this start has changed nothing in its directory. Before the first release a chat is not translated, so every start refuses this one until it is moved. To start afresh, stop each smith using it, move its directory under smith's state directory aside, whole, and start again: nothing is deleted, and the next start makes a new, empty chat, without this chat's history or its deliveries' answers.",
+            ],
+            Self::Layout(StoreFamily::Store) => &[
+                "Chat `",
+                "` was kept by an older build of smith, whose records' layout differs from this build's, and this start has changed nothing in its directory. Before the first release a chat is not translated, so every start refuses this one until it is moved. To start afresh, stop each smith using it, move its directory under smith's state directory aside, whole, and start again: nothing is deleted, and the next start makes a new, empty chat, without this chat's history or its deliveries' answers.",
+            ],
+            Self::Layout(StoreFamily::Transcript) => &[
+                "Chat `",
+                "` was kept by an older build of smith, whose turns' layout differs from this build's, and this start has changed nothing in its directory. Before the first release a chat is not translated, so every start refuses this one until it is moved. To start afresh, stop each smith using it, move its directory under smith's state directory aside, whole, and start again: nothing is deleted, and the next start makes a new, empty chat, without this chat's history or its deliveries' answers.",
+            ],
+        }
+    }
+}
+
 /// Why the store could not keep or load this chat.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StoreFailure {
+    /// This build cannot use the chat layouts; the Store sends it before mutation.
+    OlderBuild { why: Older },
     /// The record could not be read.
     Read,
     /// The record could not be made durable.

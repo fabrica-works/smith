@@ -1119,3 +1119,48 @@ fn slash_effort_reaches_the_next_request() {
         .collect();
     assert_eq!(efforts, vec![serde_json::json!("low"), serde_json::json!("high")]);
 }
+
+#[test]
+fn an_older_local_chat_exits_one_with_operator_words_and_unchanged_store() {
+    use std::{fmt::Write as _, os::unix::fs::MetadataExt};
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let workspace = scratch.path().canonicalize().unwrap();
+    let mut key = String::new();
+    for part in skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes()).0 {
+        write!(&mut key, "{part:016x}").expect("fixture workspace key");
+    }
+    let chat = scratch.path().join("state/smith/chats").join(key).join("old");
+    std::fs::create_dir_all(&chat).unwrap();
+    let state = smith_local_domain::ChatState {
+        identity: smith_domain::run::Identity::new([42; 16]),
+        activation: 9,
+        next_message: 1,
+        read: None,
+    };
+    for name in ["state", "fresh"] {
+        std::fs::write(chat.join(name), smith_local_protocol::save_state(state).bytes).unwrap();
+    }
+    std::fs::write(chat.join("0000000001.turn"), b"old local transcript").unwrap();
+    let snapshot = || {
+        let mut files: Vec<_> = std::fs::read_dir(&chat)
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    entry.file_name(),
+                    std::fs::symlink_metadata(entry.path()).unwrap().ino(),
+                    std::fs::read(entry.path()).unwrap(),
+                )
+            })
+            .collect();
+        files.sort();
+        files
+    };
+    let before = snapshot();
+    let ran = support::smith(&scratch, &["exec", "hello", "--chat", "old"], b"");
+    assert_eq!(ran.code, 1, "{}", String::from_utf8_lossy(&ran.stderr));
+    let expected = format!("smith: {}", smith_local_domain::Older::Unrecorded.words().join("old"));
+    assert_eq!(std::str::from_utf8(&ran.stderr).unwrap().lines().last(), Some(expected.as_str()));
+    assert_eq!(before, snapshot());
+}

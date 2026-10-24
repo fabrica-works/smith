@@ -7,9 +7,11 @@ use smith_local_domain::{self as local, ChatState, DeliveryRecord};
 /// Bounds on one file, the current window, deliveries and directory scan bytes.
 #[derive(Clone, Copy, Debug)]
 pub struct StoreLimits {
+    /// Must hold the generated Layouts marker as one whole file.
     pub file_bytes: u32,
     pub turns: u32,
     pub deliveries: u32,
+    /// Includes one entry cell and the six-byte marker name; absence scans reserve them.
     pub scan_bytes: u64,
 }
 
@@ -27,7 +29,7 @@ pub enum History {
 pub enum StoreRequest {
     /// Select one safe chat directory while idle; `create` makes a new private directory.
     SelectChat { name: Box<[u8]>, create: bool },
-    /// Recover the fresh journal and load the last window.
+    /// Check the selected root layouts, then recover fresh and load the last window.
     Load,
     /// Durably reserve the chat's next activation or reset its history.
     SaveState { state: ChatState, history: History },
