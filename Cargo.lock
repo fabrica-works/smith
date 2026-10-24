@@ -962,6 +962,7 @@ dependencies = [
  "smith-charter",
  "smith-events",
  "smith-transcript",
+ "smith-transcript-patches",
 ]
 
 [[package]]
@@ -1458,6 +1459,14 @@ version = "0.0.0"
 dependencies = [
  "skein-codec",
  "skein-lib",
+]
+
+[[package]]
+name = "smith-transcript-patches"
+version = "0.0.0"
+dependencies = [
+ "skein-codec",
+ "skein-codegen",
 ]
 
 [[package]]

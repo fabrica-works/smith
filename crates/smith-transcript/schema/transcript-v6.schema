@@ -26,7 +26,7 @@ record ByteClamp { asked: u32 ceiling: u32 }
 enum BytesClamp { within, clamped: ByteClamp }
 record Read { content: bytes 1048576 first: u32 lines: u32 total: u32 next: Next cut: ReadCut window: BytesClamp }
 record Listed { entries: list 512 Entry more: u64 }
-record Found { hits: bytes 2097152 more: u64 timed_out: bool }
+record Found { hits: bytes 2097152 pieces Hit more: u64 timed_out: bool }
 record Written { created: bool }
 record Edited { replaced: u32 }
 record ExitCode { code: u8 }

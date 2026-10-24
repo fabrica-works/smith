@@ -1,0 +1,7 @@
+patch 1
+owner fixture-smith 1
+mark fresh-windows
+
+family fixture-turn 1 to 2
+add Turn.tokens u32 0
+drop Turn.replay

@@ -16,6 +16,7 @@ skein-heap.workspace = true
 smith-events.workspace = true
 smith-charter.workspace = true
 smith-transcript.workspace = true
+smith-transcript-patches.workspace = true
 smith-channel.workspace = true
 
 [lints.rust]
